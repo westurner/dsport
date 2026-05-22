@@ -63,6 +63,7 @@ impl PyNode {
             NodeKind::Strong => "strong",
             NodeKind::Literal => "literal",
             NodeKind::BulletList { .. } => "bullet_list",
+            NodeKind::EnumeratedList { .. } => "enumerated_list",
             NodeKind::ListItem => "list_item",
             NodeKind::Reference { .. } => "reference",
             NodeKind::Target { .. } => "target",
@@ -88,6 +89,19 @@ impl PyNode {
             }
             NodeKind::BulletList { bullet } => {
                 dict.set_item("bullet", bullet.to_string())?;
+            }
+            NodeKind::EnumeratedList {
+                enumtype,
+                prefix,
+                suffix,
+                start,
+            } => {
+                dict.set_item("enumtype", *enumtype)?;
+                dict.set_item("prefix", prefix)?;
+                dict.set_item("suffix", suffix)?;
+                if let Some(s) = start {
+                    dict.set_item("start", *s)?;
+                }
             }
             NodeKind::Reference { name, refuri } => {
                 dict.set_item("name", name)?;

@@ -1,0 +1,15 @@
+---
+source: docutilsrs/tests/parser.rs
+expression: pseudo_xml(&parse_rst(src))
+---
+<document source="<string>">
+    <enumerated_list enumtype="arabic" prefix="" suffix=".">
+        <list_item>
+            <paragraph>
+                one
+        <list_item>
+            <paragraph>
+                two
+        <list_item>
+            <paragraph>
+                three

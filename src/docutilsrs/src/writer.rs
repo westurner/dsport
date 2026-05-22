@@ -59,6 +59,24 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         NodeKind::BulletList { bullet } => {
             let _ = writeln!(out, "{indent}<bullet_list bullet=\"{bullet}\">");
         }
+        NodeKind::EnumeratedList {
+            enumtype,
+            prefix,
+            suffix,
+            start,
+        } => {
+            if let Some(s) = start {
+                let _ = writeln!(
+                    out,
+                    "{indent}<enumerated_list enumtype=\"{enumtype}\" prefix=\"{prefix}\" start=\"{s}\" suffix=\"{suffix}\">"
+                );
+            } else {
+                let _ = writeln!(
+                    out,
+                    "{indent}<enumerated_list enumtype=\"{enumtype}\" prefix=\"{prefix}\" suffix=\"{suffix}\">"
+                );
+            }
+        }
         NodeKind::ListItem => {
             out.push_str(&indent);
             out.push_str("<list_item>\n");

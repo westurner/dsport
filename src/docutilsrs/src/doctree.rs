@@ -22,6 +22,15 @@ pub enum NodeKind {
     BulletList {
         bullet: char,
     },
+    /// Ordered list. `enumtype` is one of `arabic`, `loweralpha`,
+    /// `upperalpha`, `lowerroman`, `upperroman`; `prefix`/`suffix` bracket
+    /// each enumerator (e.g. `(` / `)` or `` / `.`).
+    EnumeratedList {
+        enumtype: &'static str,
+        prefix: String,
+        suffix: String,
+        start: Option<u32>,
+    },
     ListItem,
     /// Hyperlink reference. `refuri` is empty until resolved.
     Reference {

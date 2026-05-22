@@ -43,6 +43,13 @@ enum Block {
         bullet: char,
         items: Vec<String>,
     },
+    EnumeratedList {
+        enumtype: &'static str,
+        prefix: String,
+        suffix: String,
+        start: Option<u32>,
+        items: Vec<String>,
+    },
     /// Explicit hyperlink target: `.. _name: refuri`.
     Target {
         name: String,
@@ -118,10 +125,77 @@ fn split_blocks(source: &str) -> Vec<Block> {
             blocks.push(Block::BulletList { bullet, items });
             continue;
         }
+        if let Some((enumtype, prefix, suffix, first_value, _rest)) = enum_marker(line) {
+            // Resolve ambiguity: a single-letter alpha value that is also a
+            // valid roman digit (i, v, x, l, c, d, m / I, V, X, L, C, D, M)
+            // is treated as roman if the next item's value is unambiguously
+            // roman (multi-char). Otherwise we keep the alpha classification.
+            let enumtype = disambiguate_alpha_roman(enumtype, &prefix, &suffix, &lines, i);
+            let start = enumerator_value(enumtype, &first_value).filter(|&v| v != 1);
+            let mut items: Vec<String> = Vec::new();
+            while i < lines.len() {
+                let l = lines[i];
+                if l.trim().is_empty() {
+                    let mut j = i + 1;
+                    while j < lines.len() && lines[j].trim().is_empty() {
+                        j += 1;
+                    }
+                    let cont = j < lines.len()
+                        && enum_marker(lines[j])
+                            .map(|m| {
+                                m.1 == prefix && m.2 == suffix && value_matches(enumtype, &m.3)
+                            })
+                            .unwrap_or(false);
+                    if cont {
+                        i = j;
+                        continue;
+                    }
+                    break;
+                }
+                let m = match enum_marker(l) {
+                    Some(m) if m.1 == prefix && m.2 == suffix && value_matches(enumtype, &m.3) => m,
+                    _ => break,
+                };
+                items.push(m.4.to_string());
+                i += 1;
+                // Continuation lines: indent must match the enumerator width
+                // (prefix + value + suffix + space).
+                let indent_cols = prefix.len() + m.3.len() + suffix.len() + 1;
+                while i < lines.len() {
+                    let cl = lines[i];
+                    if cl.trim().is_empty()
+                        || bullet_marker(cl).is_some()
+                        || enum_marker(cl).is_some()
+                    {
+                        break;
+                    }
+                    let stripped = match cl.strip_prefix(&" ".repeat(indent_cols)) {
+                        Some(s) => s,
+                        None => break,
+                    };
+                    let last = items.last_mut().expect("just pushed");
+                    last.push('\n');
+                    last.push_str(stripped);
+                    i += 1;
+                }
+            }
+            blocks.push(Block::EnumeratedList {
+                enumtype,
+                prefix,
+                suffix,
+                start,
+                items,
+            });
+            continue;
+        }
         let mut buf: Vec<&str> = Vec::new();
         while i < lines.len() {
             let l = lines[i];
-            if l.trim().is_empty() || bullet_marker(l).is_some() || explicit_target(l).is_some() {
+            if l.trim().is_empty()
+                || bullet_marker(l).is_some()
+                || enum_marker(l).is_some()
+                || explicit_target(l).is_some()
+            {
                 break;
             }
             buf.push(l);
@@ -154,6 +228,215 @@ fn bullet_marker(line: &str) -> Option<(char, &str)> {
     Some((first, rest))
 }
 
+/// Try to match an enumerated-list marker at the start of `line`.
+///
+/// Returns `(enumtype, prefix, suffix, value, rest_of_line)`. Supported
+/// enumerators: arabic (`1`), loweralpha (`a`), upperalpha (`A`),
+/// lowerroman (`i`), upperroman (`I`), plus auto-enumerator `#`. Supported
+/// prefix/suffix: bare or `(value)` or `value.` or `value)`.
+fn enum_marker(line: &str) -> Option<(&'static str, String, String, String, &str)> {
+    let bytes = line.as_bytes();
+    let (prefix, value_start) = if bytes.first() == Some(&b'(') {
+        ("(", 1)
+    } else {
+        ("", 0)
+    };
+    // Auto-enumerator `#` is a single-character value.
+    let mut end = value_start;
+    if bytes.get(end) == Some(&b'#') {
+        end += 1;
+    } else {
+        while end < bytes.len() && bytes[end].is_ascii_alphanumeric() {
+            end += 1;
+        }
+    }
+    if end == value_start {
+        return None;
+    }
+    let value = &line[value_start..end];
+    let suffix_byte = *bytes.get(end)?;
+    let suffix = match (prefix, suffix_byte) {
+        ("(", b')') => ")",
+        ("", b'.') => ".",
+        ("", b')') => ")",
+        _ => return None,
+    };
+    let after_suffix = end + 1;
+    // Must be followed by a single space and at least one non-space char,
+    // or be the whole line (empty item — not supported).
+    let rest = line.get(after_suffix..)?;
+    if !rest.starts_with(' ') {
+        return None;
+    }
+    let body = &rest[1..];
+    if body.trim().is_empty() {
+        return None;
+    }
+    let enumtype = classify_enumerator(value)?;
+    Some((
+        enumtype,
+        prefix.to_string(),
+        suffix.to_string(),
+        value.to_string(),
+        body,
+    ))
+}
+
+/// Numeric value of an enumerator (1-based). Returns `None` for `#`.
+fn enumerator_value(enumtype: &'static str, value: &str) -> Option<u32> {
+    if value == "#" {
+        return Some(1);
+    }
+    match enumtype {
+        "arabic" => value.parse().ok(),
+        "loweralpha" => value
+            .chars()
+            .next()
+            .filter(|c| c.is_ascii_lowercase())
+            .map(|c| (c as u32) - (b'a' as u32) + 1),
+        "upperalpha" => value
+            .chars()
+            .next()
+            .filter(|c| c.is_ascii_uppercase())
+            .map(|c| (c as u32) - (b'A' as u32) + 1),
+        "lowerroman" => roman_to_int(&value.to_uppercase()),
+        "upperroman" => roman_to_int(value),
+        _ => None,
+    }
+}
+
+fn roman_to_int(s: &str) -> Option<u32> {
+    let mut total: i64 = 0;
+    let mut prev: i64 = 0;
+    for c in s.chars().rev() {
+        let v: i64 = match c {
+            'I' => 1,
+            'V' => 5,
+            'X' => 10,
+            'L' => 50,
+            'C' => 100,
+            'D' => 500,
+            'M' => 1000,
+            _ => return None,
+        };
+        if v < prev {
+            total -= v;
+        } else {
+            total += v;
+            prev = v;
+        }
+    }
+    if total <= 0 {
+        None
+    } else {
+        Some(total as u32)
+    }
+}
+
+/// Whether `value` is a valid enumerator value for `enumtype`.
+/// `#` matches any enumerator type (auto-numbering).
+fn value_matches(enumtype: &'static str, value: &str) -> bool {
+    if value == "#" {
+        return true;
+    }
+    match enumtype {
+        "arabic" => value.chars().all(|c| c.is_ascii_digit()),
+        "loweralpha" => value.len() == 1 && value.chars().next().unwrap().is_ascii_lowercase(),
+        "upperalpha" => value.len() == 1 && value.chars().next().unwrap().is_ascii_uppercase(),
+        "lowerroman" => value
+            .chars()
+            .all(|c| matches!(c, 'i' | 'v' | 'x' | 'l' | 'c' | 'd' | 'm')),
+        "upperroman" => value
+            .chars()
+            .all(|c| matches!(c, 'I' | 'V' | 'X' | 'L' | 'C' | 'D' | 'M')),
+        _ => false,
+    }
+}
+
+fn classify_enumerator(value: &str) -> Option<&'static str> {
+    if value == "#" {
+        return Some("arabic");
+    }
+    if value.chars().all(|c| c.is_ascii_digit()) {
+        return Some("arabic");
+    }
+    if value.len() == 1 {
+        let c = value.chars().next().unwrap();
+        if c.is_ascii_lowercase() {
+            return Some("loweralpha");
+        }
+        if c.is_ascii_uppercase() {
+            return Some("upperalpha");
+        }
+    }
+    if value
+        .chars()
+        .all(|c| matches!(c, 'i' | 'v' | 'x' | 'l' | 'c' | 'd' | 'm'))
+    {
+        return Some("lowerroman");
+    }
+    if value
+        .chars()
+        .all(|c| matches!(c, 'I' | 'V' | 'X' | 'L' | 'C' | 'D' | 'M'))
+    {
+        return Some("upperroman");
+    }
+    None
+}
+
+/// If `enumtype` came out as `loweralpha`/`upperalpha` but the first item's
+/// value is a roman digit AND the next list item's value is unambiguously
+/// roman (multi-letter), reclassify as `lowerroman`/`upperroman`.
+fn disambiguate_alpha_roman(
+    enumtype: &'static str,
+    prefix: &str,
+    suffix: &str,
+    lines: &[&str],
+    first_idx: usize,
+) -> &'static str {
+    let target_roman = match enumtype {
+        "loweralpha" => "lowerroman",
+        "upperalpha" => "upperroman",
+        _ => return enumtype,
+    };
+    // First item's value must itself be a roman digit.
+    let first_value = match enum_marker(lines[first_idx]) {
+        Some(m) => m.3,
+        None => return enumtype,
+    };
+    if first_value.len() != 1 {
+        return enumtype;
+    }
+    let roman_chars: &[char] = if target_roman == "lowerroman" {
+        &['i', 'v', 'x', 'l', 'c', 'd', 'm']
+    } else {
+        &['I', 'V', 'X', 'L', 'C', 'D', 'M']
+    };
+    if !roman_chars.contains(&first_value.chars().next().unwrap()) {
+        return enumtype;
+    }
+    // Scan to next item with same prefix/suffix.
+    let mut j = first_idx + 1;
+    while j < lines.len() && lines[j].trim().is_empty() {
+        j += 1;
+    }
+    if j >= lines.len() {
+        return enumtype;
+    }
+    let next = match enum_marker(lines[j]) {
+        Some(m) if m.1 == prefix && m.2 == suffix => m,
+        _ => return enumtype,
+    };
+    if next.3.len() < 2 {
+        return enumtype;
+    }
+    if next.3.chars().all(|c| roman_chars.contains(&c)) {
+        target_roman
+    } else {
+        enumtype
+    }
+}
+
 fn emit_block(tree: &mut Doctree, parent: NodeId, block: Block) {
     match block {
         Block::Paragraph(text) => {
@@ -162,6 +445,28 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, block: Block) {
         }
         Block::BulletList { bullet, items } => {
             let list = tree.append(parent, NodeKind::BulletList { bullet });
+            for item in items {
+                let li = tree.append(list, NodeKind::ListItem);
+                let p = tree.append(li, NodeKind::Paragraph);
+                parse_inline(tree, p, &item);
+            }
+        }
+        Block::EnumeratedList {
+            enumtype,
+            prefix,
+            suffix,
+            start,
+            items,
+        } => {
+            let list = tree.append(
+                parent,
+                NodeKind::EnumeratedList {
+                    enumtype,
+                    prefix,
+                    suffix,
+                    start,
+                },
+            );
             for item in items {
                 let li = tree.append(list, NodeKind::ListItem);
                 let p = tree.append(li, NodeKind::Paragraph);

@@ -87,3 +87,27 @@ fn reference_resolves_to_target() {
     let src = "See ref_.\n\n.. _ref: http://example.com";
     insta::assert_snapshot!("reference_resolved", pseudo_xml(&parse_rst(src)));
 }
+
+#[test]
+fn enumerated_list_arabic_period() {
+    let src = "1. one\n2. two\n3. three";
+    insta::assert_snapshot!("enum_arabic_period", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn enumerated_list_auto_hash() {
+    let src = "#. auto\n#. items";
+    insta::assert_snapshot!("enum_auto_hash", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn enumerated_list_loweralpha_start() {
+    let src = "c. just c";
+    insta::assert_snapshot!("enum_loweralpha_start", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn enumerated_list_lowerroman_ambiguous() {
+    let src = "i. roman\nii. two";
+    insta::assert_snapshot!("enum_lowerroman_ambiguous", pseudo_xml(&parse_rst(src)));
+}

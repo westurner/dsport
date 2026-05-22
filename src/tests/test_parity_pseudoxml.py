@@ -51,6 +51,18 @@ CASES = {
         "A ref_ then more_.\n\n.. _ref: http://r\n.. _more: http://m"
     ),
     "ref_with_inline_around": "**bold** then ref_ here.\n\n.. _ref: http://r",
+    # enumerated lists
+    "enum_arabic_period": "1. one\n2. two\n3. three",
+    "enum_loweralpha": "a. one\nb. two",
+    "enum_upperalpha_paren": "A) first\nB) second",
+    "enum_paren_arabic": "(1) first\n(2) second",
+    "enum_lowerroman": "i. roman\nii. two",
+    "enum_upperroman": "I. one\nII. two\nIII. three",
+    "enum_auto_hash": "#. auto\n#. items",
+    "enum_arabic_start": "3. three\n4. four",
+    "enum_loweralpha_start": "c. just c",
+    "enum_continuation": "1. one\n   continued\n2. two",
+    "enum_between_paragraphs": "Before.\n\n1. a\n2. b\n\nAfter.",
 }
 
 

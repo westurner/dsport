@@ -12,18 +12,18 @@ Purpose: define how coding agents and contributors should navigate this reposito
    |  |- docutils/
    |  |- sandbox/
    |  `- web/
-   |- docutils.rs/   (target Rust port, currently empty)
+   |- docutilsrs/   (target Rust port, currently empty)
    |- sphinx/
    |  |- sphinx/
    |  |- tests/
    |  |- doc/
    |  `- utils/
-   `- sphinxdoc.rs/  (target Rust port, currently empty)
+   `- sphinxdocrs/  (target Rust port, currently empty)
 
 ## Mission
 
-- Port Python docutils into `src/docutils.rs`.
-- Port Python sphinx into `src/sphinxdoc.rs`.
+- Port Python docutils into `src/docutilsrs`.
+- Port Python sphinx into `src/sphinxdocrs`.
 - Keep behavior compatible with upstream Python projects.
 - Preserve plugin interoperability across Python and Rust implementations.
 
@@ -37,7 +37,7 @@ Purpose: define how coding agents and contributors should navigate this reposito
 
 ## Priority order
 
-1. Bootstrap `docutils.rs` and `sphinxdoc.rs` Cargo crates.
+1. Bootstrap `docutilsrs` and `sphinxdocrs` Cargo crates.
 2. Port docutils parser tests and parser implementation.
 3. Port remaining docutils subsystems in dependency order.
 4. Port sphinx tests/features incrementally, prioritizing extension hooks.
@@ -54,7 +54,7 @@ Purpose: define how coding agents and contributors should navigate this reposito
 
 ## Python/Rust interop requirements
 
-- Python must be able to import and call `docutils.rs` and `sphinxdoc.rs` modules.
+- Python must be able to import and call `docutilsrs` and `sphinxdocrs` modules.
 - Rust must be able to load and execute compatible Python plugins.
 - Plugin resolution should prefer Rust equivalent when declared; otherwise fall back to Python implementation.
 

@@ -2,72 +2,104 @@
 # dsport
 
 ## Objectives
-- port docutils (src/docutils) to rust as docutils.rs
-- port sphinxdoc (src/sphinx) to rust as sphinxdoc.rs
+- port docutils (src/docutils) to rust as `docutilsrs`
+- port sphinxdoc (src/sphinx) to rust as `sphinxdocrs`
 - use test parametrization and mocks in rust to keep the tests fast
 - full python plugin/extension compatibility
 - support automatically using the rust equivalent
   of a python sphinxdoc plugin
   by adding a new metadata attribute to pyproject.toml/setup.py to indicate the name of the equivalent cargo project
-- must be able to import docutils.rs and sphinxdoc.rs from Python
+- must be able to import `docutilsrs` and `sphinxdocrs` from Python
 - must be able to import and use Python plugins from Rust
 
 
+## Decisions to lock before coding
+
+These choices unblock everything downstream. Capture each in a short ADR under `docs/adr/` when made.
+
+- **Upstream pin**: record the exact upstream version/commit of vendored `src/docutils/` and `src/sphinx/`. Parity is defined against that pin; bumps are explicit events.
+- **Names**: on-disk crate dirs, Rust crate names, and Python import names are all `docutilsrs` and `sphinxdocrs`. These do not shadow installed `docutils` / `sphinx`. The compiled PyO3 extension modules are exposed directly under those names (no separate `_`-prefixed inner module).
+- **Bindings stack**: PyO3 + maturin. Cargo workspace rooted at `src/Cargo.toml`, with `docutilsrs` and `sphinxdocrs` as members, so shared code (PyO3 conversion layer, plugin-resolver crate, test helpers) lives as path deps and tooling runs once across the workspace.
+- **Doctree representation**: owned Rust tree (arena + `NodeId` indices, enum-dispatched node kinds) with FFI converters to/from `docutils.nodes` at the boundary. Wrapper-over-Python-nodes was rejected: per-access PyO3/GIL cost is paid on every traversal, and traversals dominate transforms and writers. Converter parity is guarded by round-trip snapshot tests (Python → Rust → Python, asserted via pseudo-XML).
+- **Plugin discovery**: define a Python entry point group (e.g. `docutilsrs.equivalents`) that maps a Python dotted name to a Rust crate + symbol. This is more robust than a freeform `pyproject.toml` key and works for already-installed third-party packages.
+
 ## Plan
-- bootstrap rust workspaces
-  - create `src/docutils.rs/Cargo.toml` and `src/sphinxdoc.rs/Cargo.toml`
-  - define crate layout (`src/lib.rs`, feature flags, test modules)
-  - add CI-ready commands for `cargo fmt`, `cargo clippy`, and `cargo test`
-  - install and use `cargo insta` for snapshot-style parser/render tests
 
-- phase 1: docutils.rs parser-first parity
-  - inventory parser-related tests in `src/docutils/docutils/test/`
-  - port parser tests first, preserving fixture semantics and edge cases
-  - implement parser core and AST/data structures to satisfy the test port
-  - add a Python import surface (PyO3/maturin) for early integration checks
+### Phase 0 — bootstrap
 
-- phase 2: docutils.rs pipeline coverage
-  - port transforms, readers, and writer-path tests by priority
-  - add compatibility shims where Python behavior is relied on by callers
-  - publish a small compatibility matrix: implemented, partial, not started
+- create `src/docutilsrs/Cargo.toml` and `src/sphinxdocrs/Cargo.toml` with `cdylib` + `rlib` crate types
+- minimal `src/lib.rs` for each, exporting a `version()` PyO3 function
+- maturin-based build producing importable wheels into a local venv
+- dev loop commands documented in this README: `cargo fmt`, `cargo clippy -- -D warnings`, `cargo test`, `maturin develop`, `pytest`
+- `insta` wired for snapshot tests; one trivial snapshot landed to prove the loop
+- CI config (GitHub Actions or equivalent) running fmt/clippy/test/maturin-build on Linux
 
-- phase 3: sphinxdoc.rs incremental port
-  - inventory tests in `src/sphinx/tests/` and map dependencies on docutils
-  - port fast unit tests first, then integration tests that exercise builders
-  - prioritize extension loading and event hooks to protect plugin workflows
-  - expose import/use from Python and validate mixed Python/Rust execution
+### Phase 1 — docutilsrs vertical slice
 
-- phase 4: plugin interoperability
-  - define metadata key in `pyproject.toml`/`setup.py` for Rust equivalent crate
-  - implement plugin resolution order: native Rust equivalent, then Python plugin
-  - support Rust calling Python plugins and Python calling Rust crates
-  - add end-to-end tests that prove fallback and mixed-plugin scenarios
+Goal: one full input → doctree → output path working end-to-end on a tiny subset, not broad coverage.
 
-- quality gates
-  - keep test runtime fast using parametrization, fixtures, and mocks
-  - treat upstream docutils/sphinx behavior as the compatibility source of truth
-  - require each milestone to land with tests and a short compatibility note
+- design and land the Rust doctree data model (nodes, attributes, traversal); snapshot-compare against `docutils.nodes` for a fixed set of inputs converted via the FFI boundary
+- port the rST inline parser for a minimal grammar slice (paragraphs, emphasis, strong, literal, references); choose tests from `src/docutils/docutils/test/test_parsers/test_rst/` rather than the whole tree
+- port one trivial writer (pseudo-XML or a stripped HTML5) to exercise the full pipeline
+- expose `parse_rst(source: str) -> Doctree` to Python; validate parity by comparing pseudo-XML output against vendored docutils on the same inputs
 
-## Milestone 1 (Week 1)
+### Phase 2 — docutilsrs widening
+
+- expand parser slice by block construct: lists → tables → directives → roles → substitutions
+- port transforms in dependency order (frontmatter, references, universal); each lands with its ported test module
+- add the HTML5 writer next, then LaTeX; defer ODT/manpage until plugin story is settled
+- maintain a compatibility matrix (`docs/compat.md`): per-feature status (exact parity / accepted deviation / pending), regenerated from test annotations
+
+### Phase 3 — hybrid mode (runs in parallel with phase 2)
+
+This is the integration safety net, not a stretch goal.
+
+- Python-side `docutilsrs` package routes calls to Rust when implemented, falls back to vendored Python otherwise, on a per-component basis (parser, transform, writer)
+- Rust-side: ability to invoke a Python `Transform` or `Writer` against a Rust-owned doctree (via converter)
+- end-to-end test: a document whose parsing is Rust, one transform is Python, and writer is Rust, produces byte-identical output to pure-Python docutils
+
+### Phase 4 — sphinxdocrs incremental port
+
+- inventory `src/sphinx/tests/` and tag each test by subsystem (config, environment, builders, extensions, domains)
+- port fast unit tests first (config, util, project); defer builder integration tests until the relevant builder is ported
+- prioritize the extension/event system early so existing Sphinx extensions keep working under the Rust core
+- expose Python import surface mirroring phase 1's pattern
+
+### Phase 5 — plugin interoperability
+
+- implement the entry-point–based resolver decided above; resolution order: declared Rust equivalent → Python implementation
+- version guard: Rust equivalent declares a compatible upstream version range; mismatch falls back to Python with a warning
+- bidirectional calls: Rust → Python plugins via PyO3; Python → Rust crates via the published extension modules
+- end-to-end tests covering: pure-Python plugin, pure-Rust equivalent, fallback on version mismatch, mixed pipeline
+
+## Quality gates
+
+- `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, `pytest` all green on every PR
+- snapshot diffs against vendored Python output are the primary parity signal
+- each phase exit requires: tests, compatibility-matrix update, and a short note in `docs/changes/`
+- perf budget for parser: within 2× of CPython baseline by end of phase 2 (tightened later)
+- no upstream-source modifications under `src/docutils/` or `src/sphinx/` outside of an explicit, isolated PR
+
+## Milestone 1 (first iteration)
 
 - goal
-  - bootstrap both Rust crates and land first parser-parity test coverage in `docutils.rs`
+  - land the bootstrap so a contributor can clone, build both crates, import them from Python, and run the test loop
 
 - deliverables
-  - create `src/docutils.rs/Cargo.toml` and `src/sphinxdoc.rs/Cargo.toml`
-  - create minimal crate entrypoints (`src/lib.rs`) for both projects
-  - add baseline tooling commands and config for `cargo fmt`, `cargo clippy`, and `cargo test`
-  - install `insta` and add one snapshot-based parser test harness in `docutils.rs`
-  - port an initial small parser test subset from `src/docutils/docutils/test/`
-  - expose a minimal Python import check for `docutils.rs` (smoke test only)
+  - decisions above recorded as ADRs (upstream pin, module names, bindings stack, doctree model, plugin discovery)
+  - `Cargo.toml` + `src/lib.rs` for `docutilsrs` and `sphinxdocrs`, each exporting a PyO3 `version()`
+  - `maturin develop` produces importable `docutilsrs` and `sphinxdocrs` modules
+  - one `insta` snapshot test per crate proving the test harness works
+  - CI workflow running fmt, clippy, cargo test, maturin build, and a pytest smoke test
+  - `docs/compat.md` skeleton with the matrix columns defined
 
 - exit criteria
-  - crates build cleanly on CI/dev machine
-  - formatting/lint/test commands pass on baseline code
-  - at least one ported parser test passes in Rust
-  - one failing-not-yet-ported parser case is documented in a compatibility note
+  - fresh clone → documented commands → green build and green tests
+  - Python smoke test imports both modules and asserts on `version()`
+  - one ADR per locked decision is merged
 
-- stretch (if time remains)
-  - set up maturin scaffolding for wheel build experiments
-  - add first interop test proving Rust path fallback to Python plugin path
+- explicit non-goals for M1
+  - any real parsing
+  - any plugin resolution
+  - any writer output
 

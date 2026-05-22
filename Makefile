@@ -43,6 +43,37 @@ develop-pygments:
 develop-sphinx:
 	cd src && .venv/bin/maturin develop --manifest-path sphinxdocrs/Cargo.toml --release
 
+# ========== TODO  ==========
+test-all: \
+	test-rst2html-build-docs-docutils-readme \
+	test-rst2html5-build-docs-docutils-readme \
+	test-sphinxdocrs-build-docs-sphinx
+
+
+SPHINXRS_OUTPUT ?= ${PWD}/sphinx_out
+DOCUTILSRS_OUTPUT ?= ${PWD}/docutils_out
+
+test-sphinxdocrs-build-docs-sphinx:
+	mkdir -p "${SPHINXRS_OUTPUT}"
+	cd src/sphinxdocrs; time cargo run -q -p sphinxdocrs --bin \
+		sphinx-build-rs -- ../sphinx/doc "${SPHINXRS_OUTPUT}" 2>&1 \
+		| tee sphinx-build.log.txt
+	test -d "${SPHINXRS_OUTPUT}"
+	test -e "${SPHINXRS_OUTPUT}"/index.html
+
+test-rst2html-build-docs-docutils-readme: 
+	mkdir -p "${DOCUTILSRS_OUTPUT}"
+	cd src/docutilsrs; time cargo run -q -p docutilsrs --bin \
+		rst2html-rs -- ../docutils/docutils/README.rst "${DOCUTILSRS_OUTPUT}/"README.rst2html.html
+	test -d "${DOCUTILSRS_OUTPUT}"
+	test -e "${DOCUTILSRS_OUTPUT}"/README.rst2html.html
+
+test-rst2html5-build-docs-docutils-readme: 
+	mkdir -p "${DOCUTILSRS_OUTPUT}"
+	cd src/docutilsrs; time cargo run -q -p docutilsrs --bin \
+		rst2html5-rs -- ../docutils/docutils/README.rst "${DOCUTILSRS_OUTPUT}/"README.rst2html5.html
+	test -e "${DOCUTILSRS_OUTPUT}"/README.rst2html5.html
+
 # ========== CLEAN ==========
 clean:
 	cd src && cargo clean

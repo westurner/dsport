@@ -50,19 +50,22 @@ test-all: \
 	test-sphinxdocrs-build-docs-sphinx
 
 
-SPHINXRS_OUTPUT ?= ${PWD}/sphinx_out
-DOCUTILSRS_OUTPUT ?= ${PWD}/docutils_out
+SPHINXRS_OUTPUT ?= ${PWD}/build/tests/sphinxdocrs
+DOCUTILSRS_OUTPUT ?= ${PWD}/build/tests/docutilsrs
 
 test-sphinxdocrs-build-docs-sphinx:
 	mkdir -p "${SPHINXRS_OUTPUT}"
+	set -x; \
 	cd src/sphinxdocrs; time cargo run -q -p sphinxdocrs --bin \
 		sphinx-build-rs -- ../sphinx/doc "${SPHINXRS_OUTPUT}" 2>&1 \
-		| tee sphinx-build.log.txt
+		| tee "${SPHINXRS_OUTPUT}"/sphinx-build.log.txt
 	test -d "${SPHINXRS_OUTPUT}"
 	test -e "${SPHINXRS_OUTPUT}"/index.html
+	test -e "${SPHINXRS_OUTPUT}"/sphinx-build.log.txt
 
 test-rst2html-build-docs-docutils-readme: 
 	mkdir -p "${DOCUTILSRS_OUTPUT}"
+	set -x; \
 	cd src/docutilsrs; time cargo run -q -p docutilsrs --bin \
 		rst2html-rs -- ../docutils/docutils/README.rst "${DOCUTILSRS_OUTPUT}/"README.rst2html.html
 	test -d "${DOCUTILSRS_OUTPUT}"
@@ -70,6 +73,7 @@ test-rst2html-build-docs-docutils-readme:
 
 test-rst2html5-build-docs-docutils-readme: 
 	mkdir -p "${DOCUTILSRS_OUTPUT}"
+	set -x; \
 	cd src/docutilsrs; time cargo run -q -p docutilsrs --bin \
 		rst2html5-rs -- ../docutils/docutils/README.rst "${DOCUTILSRS_OUTPUT}/"README.rst2html5.html
 	test -e "${DOCUTILSRS_OUTPUT}"/README.rst2html5.html

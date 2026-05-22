@@ -17,6 +17,7 @@ extension-module = ["pyo3/extension-module"]
 
 [dependencies]
 pyo3 = { workspace = true, features = ["auto-initialize"] }
+pygmentsrs = { path = "../pygmentsrs" }
 
 [dev-dependencies]
 insta = { workspace = true }

@@ -45,6 +45,7 @@ name = "docutilsrs"
 version = "0.0.1"
 dependencies = [
  "insta",
+ "pygmentsrs",
  "pyo3",
 ]
 

@@ -113,6 +113,7 @@ enum Block {
     LiteralBlock {
         text: String,
         classes: String,
+        tokens: Option<Vec<crate::code_block::Span>>,
     },
     Section {
         title: String,
@@ -528,6 +529,7 @@ fn parse_blocks(lines: &[&str], base_indent: usize, base_line: u32) -> Vec<Block
                     blocks.push(Block::LiteralBlock {
                         text: text_lines.join("\n"),
                         classes: String::new(),
+                        tokens: None,
                     });
                 }
             }
@@ -1448,9 +1450,12 @@ fn parse_directive(
             } else {
                 format!("code {}", lang)
             };
+            let text = inner.join("\n");
+            let tokens = crate::code_block::tokenize(lang, &text);
             Block::LiteralBlock {
-                text: inner.join("\n"),
+                text,
                 classes,
+                tokens,
             }
         }
         "raw" => {
@@ -2104,9 +2109,30 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 parse_inline(tree, a, ctx, &text);
             }
         }
-        Block::LiteralBlock { text, classes } => {
+        Block::LiteralBlock {
+            text,
+            classes,
+            tokens,
+        } => {
             let lb = tree.append(parent, NodeKind::LiteralBlock { classes });
-            tree.append(lb, NodeKind::Text(text));
+            match tokens {
+                Some(spans) => {
+                    for (class, value) in spans {
+                        match class {
+                            Some(cls) => {
+                                let inl = tree.append(lb, NodeKind::Inline { classes: cls });
+                                tree.append(inl, NodeKind::Text(value));
+                            }
+                            None => {
+                                tree.append(lb, NodeKind::Text(value));
+                            }
+                        }
+                    }
+                }
+                None => {
+                    tree.append(lb, NodeKind::Text(text));
+                }
+            }
         }
         Block::Section {
             title,

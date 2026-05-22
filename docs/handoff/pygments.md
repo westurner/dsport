@@ -1,5 +1,17 @@
 # Handoff — Pygments syntax highlighting for `code`/`code-block`/`sourcecode`
 
+**Status**: ✅ **Landed (Phase 3 wire-up complete)**. The native
+backend lives at [src/docutilsrs/src/code_block.rs](../../src/docutilsrs/src/code_block.rs)
+and dispatches: in-workspace `pygmentsrs` crate first (Rust→Rust, no
+GIL hop) → PyO3 bridge to `docutils.utils.code_analyzer.Lexer` for
+languages pygmentsrs hasn't ported yet → `None` (raw text). Remaining
+work is widening pygmentsrs lexer coverage and tightening byte-parity
+for the python lexer; see [src/pygmentsrs/docs/compat.md](../../src/pygmentsrs/docs/compat.md).
+
+The original handoff brief is preserved below for context.
+
+---
+
 **Target agent**: implements native (Rust-side) syntax-highlighting parity
 with `docutils.parsers.rst.directives.body.CodeBlock`, replacing the
 opt-in plugin-bridge stub at `src/docutilsrs/python/docutilsrs_pygments.py`.
@@ -75,6 +87,15 @@ Notes on the upstream shape:
 
 ## Implementation approach (recommended)
 
+> **Landed approach** (supersedes Path A/B below): a hybrid was used.
+> A new in-workspace crate, [`pygmentsrs`](../../src/pygmentsrs/), ports
+> the Pygments engine + token hierarchy to Rust and is called natively
+> by the parser. The Python `code_analyzer.Lexer` bridge from Path A
+> is preserved as a fallback for languages pygmentsrs has not yet
+> ported. See [src/docutilsrs/src/code_block.rs](../../src/docutilsrs/src/code_block.rs)
+> for the dispatcher; see [README.md §Phase 2.5](../../README.md) for
+> the per-phase status of the pygmentsrs port.
+
 There is no native Rust port of Pygments. Two viable paths:
 
 ### Path A — bridge to Python `docutils.utils.code_analyzer.Lexer` (recommended first step)
@@ -109,6 +130,11 @@ Path A is the only route to parity.
 
 ## Data model decision
 
+> **Landed**: option #1. `Block::LiteralBlock` (parser) grew an
+> `Option<Vec<(Option<String>, String)>>` field; `emit_block` walks it
+> to produce `<inline classes="…">` children when `Some`, falling back
+> to the original single Text child when `None`.
+
 Pick one:
 
 1. **Extend `LiteralBlock`** to optionally carry pre-tokenized children:
@@ -127,7 +153,17 @@ demands the indirection.
 
 ## Tests to add
 
-Add new cases to [tests/test_parity_pseudoxml.py](src/tests/test_parity_pseudoxml.py)
+> **Landed**: smoke gate at
+> [src/tests/test_pygments_native.py](../../src/tests/test_pygments_native.py)
+> (5 tests covering python token inlines, text passthrough, no-lang,
+> sourcecode alias, unknown-lang fallthrough). Byte-parity gate at
+> [src/tests/test_parity_pseudoxml.py](../../src/tests/test_parity_pseudoxml.py)
+> picked up `code_block_language_text` and `code_sourcecode_text_alias`
+> (102 → **104**). The `code_block_python_*` byte-parity fixtures are
+> deferred until pygmentsrs' PythonLexer reaches byte-parity with
+> vendored pygments (tracked in pygmentsrs compat.md).
+
+Add new cases to [tests/test_parity_pseudoxml.py](../../src/tests/test_parity_pseudoxml.py)
 (the byte-parity gate). Each must produce identical pseudo-XML to
 `docutils.publish_string(src, writer="pseudoxml", settings_overrides={"_disable_config": True})`.
 
@@ -172,6 +208,11 @@ Current baseline (pre-handoff): **24 cargo tests + 184 pytest, zero
 skips**; **102** of those pytest are byte-parity cases in
 `test_parity_pseudoxml.py`. The new fixtures must keep that count
 monotonically increasing; no parity regressions.
+
+> **Post-landing**: pytest is now at **235 passed, zero skips**; the
+> byte-parity count is at **104**. Pygments-related cargo unit tests
+> (4 in `code_block.rs` + 3 token + 5 pygmentsrs snapshot) sit
+> alongside the existing docutilsrs suite.
 
 ## Documentation to update on landing
 

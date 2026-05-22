@@ -6,6 +6,7 @@
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
+pub mod code_block;
 pub mod doctree;
 pub mod html5_writer;
 pub mod latex_writer;

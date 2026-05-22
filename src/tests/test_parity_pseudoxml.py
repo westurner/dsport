@@ -89,6 +89,8 @@ CASES = {
     "image": ".. image:: foo.png\n",
     "image_with_alt": ".. image:: foo.png\n   :alt: an image\n   :width: 100\n",
     "code_no_lang": ".. code::\n\n   x = 1\n",
+    "code_block_language_text": ".. code-block:: text\n\n   hello\n   world\n",
+    "code_sourcecode_text_alias": ".. sourcecode:: text\n\n   hi\n",
     "raw": ".. raw:: html\n\n   <hr/>\n",
     # phase 2: inline roles
     "role_emphasis": ":emphasis:`hi`",

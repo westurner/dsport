@@ -87,7 +87,7 @@ Transforms:
 - factored into a standalone `docutilsrs::transforms` module mirroring `docutils.transforms.*` with a composable `Transform`/`Pipeline` API
 
 Writers:
-- pseudo-XML — byte-parity-gated against vendored `docutils.publish_string(..., writer="pseudoxml")` (`tests/test_parity_pseudoxml.py`, **102 cases**)
+- pseudo-XML — byte-parity-gated against vendored `docutils.publish_string(..., writer="pseudoxml")` (`tests/test_parity_pseudoxml.py`, **104 cases**)
 - HTML5 (`docutilsrs.parse_to_html5`) — minimal semantic fragment; accepted-deviation, structurally gated
 - LaTeX (`docutilsrs.parse_to_latex`) — minimal, accepted-deviation, structurally gated
 - manpage/troff (`docutilsrs.parse_to_manpage`) — minimal, accepted-deviation, structurally gated
@@ -97,6 +97,7 @@ Writers:
 
 Plugin bridges:
 - syntax highlighting for `code-block` (Pygments) via the Python directive plugin bridge — see `src/docutilsrs/python/docutilsrs_pygments.py`
+- **native** code-block syntax highlighting via the in-workspace `pygmentsrs` crate (Rust→Rust call for supported languages; PyO3 bridge to `docutils.utils.code_analyzer.Lexer` as fallback): wired in `src/docutilsrs/src/code_block.rs`. Smoke-gated by `tests/test_pygments_native.py`; byte-parity gate covers the always-passthrough `text` language + the unparseable/no-lang shape (`tests/test_parity_pseudoxml.py`). Full byte-parity for the `python` lexer is the remaining pygmentsrs Phase 1 followup.
 
 Open handoffs (next-up work, **in progress** via the dedicated `pygmentsrs` workspace crate — see Phase 2.5 below):
 - **Native Pygments syntax highlighting** for `code`/`code-block`/`sourcecode` (replace the opt-in plugin-bridge stub with byte-parity emission of `<literal_block>` + token-classed `<inline>` children). Brief, target output, recommended implementation path, fixtures to add, and gate commands: [docs/handoff/pygments.md](docs/handoff/pygments.md).
@@ -132,7 +133,15 @@ Status:
   `code`/`code-block`/`sourcecode` arm routes to pygmentsrs first,
   falls back to the existing
   `docutils.utils.code_analyzer.Lexer` Python bridge for
-  uncovered languages. Closes the README handoff.
+  uncovered languages. **Done** — `src/docutilsrs/src/code_block.rs`
+  hosts the `tokenize()` dispatcher; `Block::LiteralBlock` carries
+  an optional `tokens: Vec<(Option<String>, String)>` field that
+  the pseudo-XML emit path renders as `<inline classes="…">` token
+  spans. Smoke gate: `tests/test_pygments_native.py` (5 tests).
+  Byte-parity gate: `tests/test_parity_pseudoxml.py` bumped from
+  102 → **104** (added `code_block_language_text`,
+  `code_sourcecode_text_alias`). Phase 2 widening + full python
+  lexer parity are the remaining followups.
 
 ### Phase 3 — transforms module + hybrid mode
 

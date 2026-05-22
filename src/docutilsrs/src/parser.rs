@@ -181,13 +181,16 @@ struct TableData {
     /// Column widths in characters.
     cols: Vec<usize>,
     /// Optional header row(s).
-    head: Vec<Vec<TableCell>>,
-    body: Vec<Vec<TableCell>>,
+    head: Vec<Vec<Option<TableCell>>>,
+    body: Vec<Vec<Option<TableCell>>>,
 }
 
 struct TableCell {
-    text: String,
+    /// Raw cell lines (between borders), dedented; may contain blank
+    /// lines to introduce multiple paragraphs.
+    lines: Vec<String>,
     morecols: u32,
+    morerows: u32,
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1581,116 +1584,244 @@ fn parse_grid_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Op
     if end - start < 3 {
         return None;
     }
-    let top = &lines[start][base_indent..];
-    // Column borders (byte positions of `+` chars in the top border).
-    let mut col_borders: Vec<usize> = Vec::new();
-    let mut cols: Vec<usize> = Vec::new();
-    let bytes = top.as_bytes();
-    let mut col_start: Option<usize> = None;
-    for (idx, &b) in bytes.iter().enumerate() {
-        match b {
-            b'+' => {
-                col_borders.push(idx);
-                if let Some(s) = col_start {
-                    cols.push(idx - s - 1);
-                }
-                col_start = Some(idx);
+
+    // Build the table block as owned strings, all padded to the same width.
+    let raw: Vec<&str> = (start..end).map(|k| &lines[k][base_indent..]).collect();
+    let width = raw.iter().map(|s| s.len()).max().unwrap_or(0);
+    let mut block: Vec<Vec<u8>> = raw
+        .iter()
+        .map(|s| {
+            let mut v = s.as_bytes().to_vec();
+            if v.len() < width {
+                v.resize(width, b' ');
             }
-            b'-' => {}
-            _ => return None,
-        }
-    }
-    if cols.is_empty() {
+            v
+        })
+        .collect();
+    let bottom_row = block.len() - 1;
+    let right_col = width - 1;
+    if block[0][0] != b'+' || block[0][right_col] != b'+' {
         return None;
     }
-    // Find header separator (`+===+`) if any.
-    let mut head_end: Option<usize> = None;
-    for k in start + 1..end {
-        let l = &lines[k][base_indent..];
-        if l.starts_with('+') && l.contains('=') {
-            head_end = Some(k);
-            break;
+    if block[bottom_row][0] != b'+' || block[bottom_row][right_col] != b'+' {
+        return None;
+    }
+
+    // Detect head/body separator (row of `=` on a separator line) and
+    // rewrite it in-place as `-` chars so the scan_cell algorithm can
+    // treat body cells uniformly (matches docutils tableparser).
+    let mut head_body_sep: Option<usize> = None;
+    for i in 1..bottom_row {
+        if block[i][0] == b'+' {
+            let mut has_eq = false;
+            let mut ok = true;
+            for c in 1..right_col {
+                match block[i][c] {
+                    b'=' => has_eq = true,
+                    b'-' | b'+' => {}
+                    _ => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if ok && has_eq {
+                head_body_sep = Some(i);
+                for c in 0..width {
+                    if block[i][c] == b'=' {
+                        block[i][c] = b'-';
+                    }
+                }
+                break;
+            }
         }
     }
-    // Collect rows: each text row is between two `+---+` separators.
-    // We also detect column spans (`morecols`) by mapping the byte
-    // positions of `|` characters to the original column borders
-    // captured from the top border. Multi-paragraph cells and row
-    // spans are not yet supported (see `docs/compat.md`).
-    let collect_rows = |from: usize, to: usize| -> Vec<Vec<TableCell>> {
-        let mut rows: Vec<Vec<TableCell>> = Vec::new();
-        // For each pending cell, we track (col_idx_left, col_idx_right,
-        // lines). Reset on each separator.
-        let mut pending: Vec<(usize, usize, Vec<String>)> = Vec::new();
-        let mut have_buf = false;
-        for k in from..to {
-            let l = &lines[k][base_indent..];
-            if l.starts_with('+') {
-                if have_buf {
-                    let cells: Vec<TableCell> = pending
-                        .iter()
-                        .map(|(li, ri, lines)| TableCell {
-                            text: lines.join("\n").trim().to_string(),
-                            morecols: (ri - li).saturating_sub(1) as u32,
-                        })
-                        .collect();
-                    rows.push(cells);
-                    pending.clear();
-                    have_buf = false;
-                }
-                continue;
+
+    // BFS scan_cell starting from (0, 0).
+    use std::collections::BTreeSet;
+    let mut rowseps: BTreeSet<usize> = BTreeSet::new();
+    let mut colseps: BTreeSet<usize> = BTreeSet::new();
+    rowseps.insert(0);
+    colseps.insert(0);
+    let mut cells: Vec<(usize, usize, usize, usize)> = Vec::new();
+    let mut done: Vec<i64> = vec![-1; width];
+
+    let scan_up = |top: usize, left: usize, bottom: usize, block: &Vec<Vec<u8>>| -> Option<Vec<usize>> {
+        let mut rs = Vec::new();
+        let mut i = bottom;
+        while i > top + 1 {
+            i -= 1;
+            match block[i][left] {
+                b'+' => rs.push(i),
+                b'|' => {}
+                _ => return None,
             }
-            if !l.starts_with('|') {
-                continue;
+        }
+        Some(rs)
+    };
+    let scan_left = |top: usize, left: usize, bottom: usize, right: usize, block: &Vec<Vec<u8>>| -> Option<(Vec<usize>, Vec<usize>)> {
+        let mut cs = Vec::new();
+        let line = &block[bottom];
+        let mut found_sep_eq = false;
+        for i in (left + 1..right).rev() {
+            match line[i] {
+                b'+' => cs.push(i),
+                b'-' => {}
+                b'=' => { found_sep_eq = true; }
+                _ => return None,
             }
-            // Find positions of `|` chars; map each to a column border.
-            let pipe_positions: Vec<usize> = l
-                .char_indices()
-                .filter(|&(_, c)| c == '|')
-                .map(|(i, _)| i)
-                .collect();
-            if pipe_positions.len() < 2 {
-                continue;
+        }
+        if line[left] != b'+' {
+            return None;
+        }
+        let rs = scan_up(top, left, bottom, block)?;
+        let _ = found_sep_eq;
+        Some((rs, cs))
+    };
+    let scan_down = |top: usize, left: usize, right: usize, block: &Vec<Vec<u8>>, bottom_row: usize| -> Option<(usize, Vec<usize>, Vec<usize>)> {
+        let mut rs = Vec::new();
+        for i in top + 1..=bottom_row {
+            match block[i][right] {
+                b'+' => {
+                    rs.push(i);
+                    if let Some((newrs, cs)) = scan_left(top, left, i, right, block) {
+                        rs.extend(newrs);
+                        return Some((i, rs, cs));
+                    }
+                }
+                b'|' => {}
+                _ => return None,
             }
-            // Each pair of consecutive `|` defines a cell. Determine
-            // its column-span by counting column borders strictly
-            // between the pipes.
-            let cell_count = pipe_positions.len() - 1;
-            if !have_buf {
-                for w in 0..cell_count {
-                    let lp = pipe_positions[w];
-                    let rp = pipe_positions[w + 1];
-                    let li = col_borders.iter().position(|&p| p == lp).unwrap_or(w);
-                    let ri = col_borders.iter().position(|&p| p == rp).unwrap_or(li + 1);
-                    let text = l.get(lp + 1..rp).unwrap_or("").to_string();
-                    pending.push((li, ri, vec![text]));
+        }
+        None
+    };
+    let scan_right = |top: usize, left: usize, block: &Vec<Vec<u8>>, bottom_row: usize, right_col: usize| -> Option<(usize, usize, Vec<usize>, Vec<usize>)> {
+        let mut cs = Vec::new();
+        let line = &block[top];
+        for i in left + 1..=right_col {
+            match line[i] {
+                b'+' => {
+                    cs.push(i);
+                    if let Some((bottom, rs, newcs)) = scan_down(top, left, i, block, bottom_row) {
+                        cs.extend(newcs);
+                        return Some((bottom, i, rs, cs));
+                    }
                 }
-                have_buf = true;
-            } else if pending.len() == cell_count {
-                for (w, slot) in pending.iter_mut().enumerate() {
-                    let lp = pipe_positions[w];
-                    let rp = pipe_positions[w + 1];
-                    slot.2.push(l.get(lp + 1..rp).unwrap_or("").to_string());
-                }
-            } else {
-                // Mismatched continuation (e.g. spans differ between
-                // text lines of the same cell-strip). Fall back to a
-                // best-effort append on the first column.
-                if let Some(first) = pending.first_mut() {
-                    let lp = pipe_positions[0];
-                    let rp = *pipe_positions.last().unwrap();
-                    first.2.push(l.get(lp + 1..rp).unwrap_or("").to_string());
+                b'-' => {}
+                _ => return None,
+            }
+        }
+        None
+    };
+
+    let mut corners: Vec<(usize, usize)> = vec![(0, 0)];
+    while !corners.is_empty() {
+        let (top, left) = corners.remove(0);
+        if top == bottom_row || left == right_col || (top as i64) <= done[left] {
+            continue;
+        }
+        if block[top][left] != b'+' {
+            continue;
+        }
+        let result = scan_right(top, left, &block, bottom_row, right_col);
+        let Some((bottom, right, rs, cs)) = result else {
+            continue;
+        };
+        for r in &rs {
+            rowseps.insert(*r);
+        }
+        for c in &cs {
+            colseps.insert(*c);
+        }
+        rowseps.insert(top);
+        rowseps.insert(bottom);
+        colseps.insert(left);
+        colseps.insert(right);
+        // mark_done: columns left..right consumed down to bottom-1.
+        for col in left..right {
+            done[col] = (bottom as i64) - 1;
+        }
+        cells.push((top, left, bottom, right));
+        corners.push((top, right));
+        corners.push((bottom, left));
+        corners.sort();
+    }
+
+    let rowseps_v: Vec<usize> = rowseps.into_iter().collect();
+    let colseps_v: Vec<usize> = colseps.into_iter().collect();
+    if rowseps_v.len() < 2 || colseps_v.len() < 2 {
+        return None;
+    }
+    let rowindex: std::collections::HashMap<usize, usize> =
+        rowseps_v.iter().enumerate().map(|(i, &r)| (r, i)).collect();
+    let colindex: std::collections::HashMap<usize, usize> =
+        colseps_v.iter().enumerate().map(|(i, &c)| (c, i)).collect();
+    let col_widths: Vec<usize> = (1..colseps_v.len())
+        .map(|i| colseps_v[i] - colseps_v[i - 1] - 1)
+        .collect();
+    let num_rows = rowseps_v.len() - 1;
+    let num_cols = colseps_v.len() - 1;
+    let mut grid: Vec<Vec<Option<TableCell>>> = (0..num_rows)
+        .map(|_| (0..num_cols).map(|_| None).collect())
+        .collect();
+    for (top, left, bottom, right) in cells {
+        let rownum = *rowindex.get(&top)?;
+        let colnum = *colindex.get(&left)?;
+        let rownum_b = *rowindex.get(&bottom)?;
+        let colnum_r = *colindex.get(&right)?;
+        let morerows = rownum_b - rownum - 1;
+        let morecols = colnum_r - colnum - 1;
+        // Extract cell content: rows top+1..bottom, cols left+1..right.
+        let mut cell_lines: Vec<String> = Vec::new();
+        for r in top + 1..bottom {
+            let slice = &block[r][left + 1..right];
+            let s = std::str::from_utf8(slice).unwrap_or("").trim_end().to_string();
+            cell_lines.push(s);
+        }
+        // Dedent: compute min leading spaces of non-empty lines.
+        let min_indent = cell_lines
+            .iter()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.chars().take_while(|&c| c == ' ').count())
+            .min()
+            .unwrap_or(0);
+        if min_indent > 0 {
+            for s in cell_lines.iter_mut() {
+                if s.len() >= min_indent {
+                    *s = s[min_indent..].to_string();
                 }
             }
         }
-        rows
+        // Strip leading/trailing blank lines.
+        while cell_lines.first().is_some_and(|s| s.is_empty()) {
+            cell_lines.remove(0);
+        }
+        while cell_lines.last().is_some_and(|s| s.is_empty()) {
+            cell_lines.pop();
+        }
+        grid[rownum][colnum] = Some(TableCell {
+            lines: cell_lines,
+            morecols: morecols as u32,
+            morerows: morerows as u32,
+        });
+    }
+    // Split into head/body by head_body_sep row index.
+    let (head, body) = match head_body_sep {
+        Some(hsep) => {
+            let hi = *rowindex.get(&hsep).unwrap_or(&0);
+            let mut h = grid;
+            let b = h.split_off(hi);
+            (h, b)
+        }
+        None => (Vec::new(), grid),
     };
-    let (head, body) = match head_end {
-        Some(h) => (collect_rows(start, h + 1), collect_rows(h, end)),
-        None => (Vec::new(), collect_rows(start, end)),
-    };
+
     *i_ref = end;
-    Some(TableData { cols, head, body })
+    Some(TableData {
+        cols: col_widths,
+        head,
+        body,
+    })
 }
 
 fn parse_simple_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Option<TableData> {
@@ -1737,7 +1868,7 @@ fn parse_simple_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> 
         return None;
     }
     let end_line = *sep_indices.last().unwrap();
-    let split_row = |row: &str| -> Vec<TableCell> {
+    let split_row = |row: &str| -> Vec<Option<TableCell>> {
         let mut cells = Vec::with_capacity(col_widths.len());
         for (idx, &(s, e)) in cols.iter().enumerate() {
             let cell = if idx + 1 == cols.len() {
@@ -1745,14 +1876,20 @@ fn parse_simple_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> 
             } else {
                 row.get(s..e).unwrap_or("").to_string()
             };
-            cells.push(TableCell {
-                text: cell.trim().to_string(),
+            let trimmed = cell.trim().to_string();
+            cells.push(Some(TableCell {
+                lines: if trimmed.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![trimmed]
+                },
                 morecols: 0,
-            });
+                morerows: 0,
+            }));
         }
         cells
     };
-    let (head, body): (Vec<Vec<TableCell>>, Vec<Vec<TableCell>>) = if sep_indices.len() >= 2 {
+    let (head, body): (Vec<Vec<Option<TableCell>>>, Vec<Vec<Option<TableCell>>>) = if sep_indices.len() >= 2 {
         let head_end = sep_indices[0];
         let mut head_rows = Vec::new();
         for k in start + 1..head_end {
@@ -2203,37 +2340,55 @@ fn emit_table(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, td: TableD
         let thead = tree.append(tgroup, NodeKind::Thead);
         for row in td.head {
             let r = tree.append(thead, NodeKind::Row);
-            for cell in row {
+            for slot in row {
+                let Some(cell) = slot else { continue };
                 let e = tree.append(
                     r,
                     NodeKind::Entry {
                         morecols: cell.morecols,
-                        morerows: 0,
+                        morerows: cell.morerows,
                     },
                 );
-                if !cell.text.is_empty() {
-                    let p = tree.append(e, NodeKind::Paragraph);
-                    parse_inline(tree, p, ctx, &cell.text);
-                }
+                emit_cell_content(tree, e, ctx, &cell.lines);
             }
         }
     }
     let tbody = tree.append(tgroup, NodeKind::Tbody);
     for row in td.body {
         let r = tree.append(tbody, NodeKind::Row);
-        for cell in row {
+        for slot in row {
+            let Some(cell) = slot else { continue };
             let e = tree.append(
                 r,
                 NodeKind::Entry {
                     morecols: cell.morecols,
-                    morerows: 0,
+                    morerows: cell.morerows,
                 },
             );
-            if !cell.text.is_empty() {
-                let p = tree.append(e, NodeKind::Paragraph);
-                parse_inline(tree, p, ctx, &cell.text);
-            }
+            emit_cell_content(tree, e, ctx, &cell.lines);
         }
+    }
+}
+
+fn emit_cell_content(tree: &mut Doctree, entry: NodeId, ctx: &mut ParseCtx, lines: &[String]) {
+    if lines.is_empty() {
+        return;
+    }
+    // If the cell is a single non-empty line, emit a single paragraph
+    // with inline parsing (fast path; matches docutils on simple cells).
+    let has_blank = lines.iter().any(|l| l.is_empty());
+    if !has_blank && lines.len() == 1 {
+        let p = tree.append(entry, NodeKind::Paragraph);
+        parse_inline(tree, p, ctx, &lines[0]);
+        return;
+    }
+    // Otherwise parse the cell content as a sub-block sequence so that
+    // multi-paragraph cells produce one `<paragraph>` per blank-line
+    // separated chunk.
+    let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+    let blocks = parse_blocks(&refs, 0, 0);
+    for b in blocks {
+        emit_block(tree, entry, ctx, b);
     }
 }
 

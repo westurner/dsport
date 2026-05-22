@@ -223,5 +223,9 @@ fn pygmentsrs(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_has_native_lexer, m)?)?;
     m.add_function(wrap_pyfunction!(py_native_formatters, m)?)?;
     m.add_function(wrap_pyfunction!(py_has_native_formatter, m)?)?;
+    m.add_function(wrap_pyfunction!(py_main, m)?)?;
     Ok(())
 }
+
+#[pyfunction(name = "main")]
+fn py_main() { println!("stub running"); }

@@ -13,3 +13,15 @@ license = { text = "BSD-2-Clause" }
 module-name = "docutilsrs"
 manifest-path = "Cargo.toml"
 features = ["extension-module"]
+
+[project.scripts]
+docutils-rs-py = "docutilsrs:main"
+rst2html-rs-py = "docutilsrs:rst2html"
+rst2html4-rs-py = "docutilsrs:rst2html4"
+rst2html5-rs-py = "docutilsrs:rst2html5"
+rst2latex-rs-py = "docutilsrs:rst2latex"
+rst2man-rs-py = "docutilsrs:rst2man"
+rst2odt-rs-py = "docutilsrs:rst2odt"
+rst2pseudoxml-rs-py = "docutilsrs:rst2pseudoxml"
+rst2s5-rs-py = "docutilsrs:rst2s5"
+rst2xetex-rs-py = "docutilsrs:rst2xetex"

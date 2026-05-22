@@ -18,3 +18,19 @@ pyo3 = { workspace = true, features = ["auto-initialize"] }
 
 [dev-dependencies]
 insta = { workspace = true }
+
+[[bin]]
+name = "sphinx-build-rs"
+path = "src/bin/sphinx_build.rs"
+
+[[bin]]
+name = "sphinx-quickstart-rs"
+path = "src/bin/sphinx_quickstart.rs"
+
+[[bin]]
+name = "sphinx-apidoc-rs"
+path = "src/bin/sphinx_apidoc.rs"
+
+[[bin]]
+name = "sphinx-autogen-rs"
+path = "src/bin/sphinx_autogen.rs"

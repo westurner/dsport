@@ -19,3 +19,7 @@ regex = "1.10"
 
 [dev-dependencies]
 insta = { workspace = true }
+
+[[bin]]
+name = "pygmentize-rs"
+path = "src/bin/pygmentize.rs"

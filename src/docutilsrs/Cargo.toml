@@ -21,3 +21,43 @@ pygmentsrs = { path = "../pygmentsrs" }
 
 [dev-dependencies]
 insta = { workspace = true }
+
+[[bin]]
+name = "docutils-rs"
+path = "src/bin/docutils.rs"
+
+[[bin]]
+name = "rst2html-rs"
+path = "src/bin/rst2html.rs"
+
+[[bin]]
+name = "rst2html4-rs"
+path = "src/bin/rst2html4.rs"
+
+[[bin]]
+name = "rst2html5-rs"
+path = "src/bin/rst2html5.rs"
+
+[[bin]]
+name = "rst2latex-rs"
+path = "src/bin/rst2latex.rs"
+
+[[bin]]
+name = "rst2man-rs"
+path = "src/bin/rst2man.rs"
+
+[[bin]]
+name = "rst2odt-rs"
+path = "src/bin/rst2odt.rs"
+
+[[bin]]
+name = "rst2pseudoxml-rs"
+path = "src/bin/rst2pseudoxml.rs"
+
+[[bin]]
+name = "rst2s5-rs"
+path = "src/bin/rst2s5.rs"
+
+[[bin]]
+name = "rst2xetex-rs"
+path = "src/bin/rst2xetex.rs"

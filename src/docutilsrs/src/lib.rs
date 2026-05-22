@@ -207,5 +207,36 @@ fn docutilsrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(plugins::py_clear_transforms, m)?)?;
     m.add_class::<python::PyDoctree>()?;
     m.add_class::<python::PyNode>()?;
+    m.add_function(wrap_pyfunction!(py_main, m)?)?;
+    m.add_function(wrap_pyfunction!(py_rst2html, m)?)?;
+    m.add_function(wrap_pyfunction!(py_rst2html4, m)?)?;
+    m.add_function(wrap_pyfunction!(py_rst2html5, m)?)?;
+    m.add_function(wrap_pyfunction!(py_rst2latex, m)?)?;
+    m.add_function(wrap_pyfunction!(py_rst2man, m)?)?;
+    m.add_function(wrap_pyfunction!(py_rst2odt, m)?)?;
+    m.add_function(wrap_pyfunction!(py_rst2pseudoxml, m)?)?;
+    m.add_function(wrap_pyfunction!(py_rst2s5, m)?)?;
+    m.add_function(wrap_pyfunction!(py_rst2xetex, m)?)?;
     Ok(())
 }
+
+#[pyfunction(name = "main")]
+fn py_main() { println!("stub running"); }
+#[pyfunction(name = "rst2html")]
+fn py_rst2html() { println!("stub running"); }
+#[pyfunction(name = "rst2html4")]
+fn py_rst2html4() { println!("stub running"); }
+#[pyfunction(name = "rst2html5")]
+fn py_rst2html5() { println!("stub running"); }
+#[pyfunction(name = "rst2latex")]
+fn py_rst2latex() { println!("stub running"); }
+#[pyfunction(name = "rst2man")]
+fn py_rst2man() { println!("stub running"); }
+#[pyfunction(name = "rst2odt")]
+fn py_rst2odt() { println!("stub running"); }
+#[pyfunction(name = "rst2pseudoxml")]
+fn py_rst2pseudoxml() { println!("stub running"); }
+#[pyfunction(name = "rst2s5")]
+fn py_rst2s5() { println!("stub running"); }
+#[pyfunction(name = "rst2xetex")]
+fn py_rst2xetex() { println!("stub running"); }

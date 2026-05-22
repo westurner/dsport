@@ -13,3 +13,9 @@ license = { text = "BSD-2-Clause" }
 module-name = "sphinxdocrs"
 manifest-path = "Cargo.toml"
 features = ["extension-module"]
+
+[project.scripts]
+sphinx-build-rs-py = "sphinxdocrs:main"
+sphinx-quickstart-rs-py = "sphinxdocrs:sphinx_quickstart"
+sphinx-apidoc-rs-py = "sphinxdocrs:sphinx_apidoc"
+sphinx-autogen-rs-py = "sphinxdocrs:sphinx_autogen"

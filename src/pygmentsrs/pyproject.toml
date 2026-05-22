@@ -13,3 +13,6 @@ license = { text = "BSD-2-Clause" }
 module-name = "pygmentsrs"
 manifest-path = "Cargo.toml"
 features = ["extension-module"]
+
+[project.scripts]
+pygmentize-rs-py = "pygmentsrs:main"

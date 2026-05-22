@@ -94,5 +94,18 @@ fn sphinxdocrs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         "FiletypeNotFoundError",
         py.get_type::<errors::FiletypeNotFoundError>(),
     )?;
+    m.add_function(wrap_pyfunction!(py_main, m)?)?;
+    m.add_function(wrap_pyfunction!(py_sphinx_quickstart, m)?)?;
+    m.add_function(wrap_pyfunction!(py_sphinx_apidoc, m)?)?;
+    m.add_function(wrap_pyfunction!(py_sphinx_autogen, m)?)?;
     Ok(())
 }
+
+#[pyfunction(name = "main")]
+fn py_main() { println!("stub running"); }
+#[pyfunction(name = "sphinx_quickstart")]
+fn py_sphinx_quickstart() { println!("stub running"); }
+#[pyfunction(name = "sphinx_apidoc")]
+fn py_sphinx_apidoc() { println!("stub running"); }
+#[pyfunction(name = "sphinx_autogen")]
+fn py_sphinx_autogen() { println!("stub running"); }

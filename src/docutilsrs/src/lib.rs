@@ -4,21 +4,25 @@
 //! pseudo-XML writer for parity comparison against vendored docutils.
 
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 
 pub mod doctree;
 pub mod html5_writer;
 pub mod latex_writer;
 pub mod manpage_writer;
+pub mod odt_writer;
 pub mod parser;
 pub mod plugins;
 mod python;
 pub mod transforms;
 pub mod writer;
+pub mod zip_writer;
 
 pub use doctree::{Doctree, NodeKind};
 pub use html5_writer::html5;
 pub use latex_writer::latex;
 pub use manpage_writer::manpage;
+pub use odt_writer::odt;
 pub use parser::{parse_rst, parse_rst_with_source};
 pub use writer::pseudo_xml;
 
@@ -74,6 +78,18 @@ fn py_parse_to_manpage(source: &str, source_path: &str) -> String {
     manpage(&tree)
 }
 
+/// Parse rST `source` and return a binary ODT (`.odt`) document.
+///
+/// Produces a valid OpenDocument Text container (zip with `mimetype`,
+/// `META-INF/manifest.xml`, `content.xml`, `styles.xml`). Not parity
+/// tested against `docutils.writers.odf_odt` — see `docs/compat.md`.
+#[pyfunction(name = "parse_to_odt", signature = (source, source_path = "<string>"))]
+fn py_parse_to_odt<'py>(py: Python<'py>, source: &str, source_path: &str) -> Bound<'py, PyBytes> {
+    let tree = parse_rst_with_source(source, source_path);
+    let bytes = odt(&tree);
+    PyBytes::new(py, &bytes)
+}
+
 /// List of feature flags supported by the Rust port at runtime.
 ///
 /// Used by the hybrid wrapper to decide whether to dispatch a given input
@@ -85,7 +101,10 @@ pub fn features() -> &'static [&'static str] {
         "writer:html5",
         "writer:latex",
         "writer:manpage",
+        "writer:odt",
         "parser:table_colspan",
+        "parser:table_rowspan",
+        "parser:table_multipara_cells",
         "parser:paragraphs",
         "parser:inline",
         "parser:bullet_list",
@@ -135,6 +154,7 @@ fn docutilsrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_parse_to_html5, m)?)?;
     m.add_function(wrap_pyfunction!(py_parse_to_latex, m)?)?;
     m.add_function(wrap_pyfunction!(py_parse_to_manpage, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parse_to_odt, m)?)?;
     m.add_function(wrap_pyfunction!(py_features, m)?)?;
     m.add_function(wrap_pyfunction!(py_supports, m)?)?;
     m.add_function(wrap_pyfunction!(python::py_parse_rst, m)?)?;

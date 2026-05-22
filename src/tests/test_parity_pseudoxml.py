@@ -41,6 +41,16 @@ CASES = {
     "escape_whitespace_collapses": "a \\ b",
     "escape_blocks_emphasis": "\\*not emphasis* here",
     "escape_backtick": "An escaped \\`backtick\\` here.",
+    # multi-line paragraphs
+    "two_line_paragraph": "line one\nline two",
+    "three_line_paragraph_then_para": "line one\nline two\nline three\n\nsecond para\ncontinued",
+    # references + explicit targets
+    "ref_alone": "ref_\n\n.. _ref: http://example.com",
+    "ref_inline": "See ref_ here.\n\n.. _ref: http://example.com",
+    "two_refs_two_targets": (
+        "A ref_ then more_.\n\n.. _ref: http://r\n.. _more: http://m"
+    ),
+    "ref_with_inline_around": "**bold** then ref_ here.\n\n.. _ref: http://r",
 }
 
 

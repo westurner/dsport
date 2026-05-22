@@ -11,14 +11,30 @@ pub type NodeId = usize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {
-    Document { source: String },
+    Document {
+        source: String,
+    },
     Paragraph,
     Text(String),
     Emphasis,
     Strong,
     Literal,
-    BulletList { bullet: char },
+    BulletList {
+        bullet: char,
+    },
     ListItem,
+    /// Hyperlink reference. `refuri` is empty until resolved.
+    Reference {
+        name: String,
+        refuri: String,
+    },
+    /// Explicit hyperlink target. `ids` is the normalized identifier,
+    /// `names` is the human-readable name (space-separated).
+    Target {
+        ids: String,
+        names: String,
+        refuri: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +75,11 @@ impl Doctree {
     /// constructed by callers).
     pub fn node(&self, id: NodeId) -> &Node {
         &self.nodes[id]
+    }
+
+    /// Mutably borrow a node by id.
+    pub fn node_mut(&mut self, id: NodeId) -> &mut Node {
+        &mut self.nodes[id]
     }
 
     /// Append a new node under `parent` and return its id.

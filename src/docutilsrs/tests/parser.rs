@@ -69,3 +69,21 @@ fn escape_whitespace_collapses() {
     let src = "a \\ b";
     insta::assert_snapshot!("escape_ws_collapses", pseudo_xml(&parse_rst(src)));
 }
+
+#[test]
+fn multi_line_paragraph() {
+    let src = "line one\nline two\nline three";
+    insta::assert_snapshot!("multi_line_paragraph", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn bullet_continuation_line() {
+    let src = "- one\n  continued\n- two";
+    insta::assert_snapshot!("bullet_continuation", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn reference_resolves_to_target() {
+    let src = "See ref_.\n\n.. _ref: http://example.com";
+    insta::assert_snapshot!("reference_resolved", pseudo_xml(&parse_rst(src)));
+}

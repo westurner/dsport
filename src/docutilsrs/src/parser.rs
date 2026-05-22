@@ -13,16 +13,23 @@
 //! transitions, sections, multi-line inline spans across paragraphs,
 //! list-item continuation lines, nested lists.
 
+use std::collections::HashMap;
+
 use crate::doctree::{Doctree, NodeId, NodeKind};
 
 pub fn parse_rst(source: &str) -> Doctree {
-    let mut tree = Doctree::new_document("<string>");
+    parse_rst_with_source(source, "<string>")
+}
+
+pub fn parse_rst_with_source(source: &str, source_path: &str) -> Doctree {
+    let mut tree = Doctree::new_document(source_path);
     let document = tree.root();
 
     for block in split_blocks(source) {
         emit_block(&mut tree, document, block);
     }
 
+    resolve_references(&mut tree);
     tree
 }
 
@@ -32,7 +39,15 @@ pub fn parse_rst(source: &str) -> Doctree {
 
 enum Block {
     Paragraph(String),
-    BulletList { bullet: char, items: Vec<String> },
+    BulletList {
+        bullet: char,
+        items: Vec<String>,
+    },
+    /// Explicit hyperlink target: `.. _name: refuri`.
+    Target {
+        name: String,
+        refuri: String,
+    },
 }
 
 fn split_blocks(source: &str) -> Vec<Block> {
@@ -45,8 +60,13 @@ fn split_blocks(source: &str) -> Vec<Block> {
             i += 1;
             continue;
         }
+        if let Some((name, refuri)) = explicit_target(line) {
+            blocks.push(Block::Target { name, refuri });
+            i += 1;
+            continue;
+        }
         if let Some((bullet, _)) = bullet_marker(line) {
-            let mut items = Vec::new();
+            let mut items: Vec<String> = Vec::new();
             while i < lines.len() {
                 let l = lines[i];
                 if l.trim().is_empty() {
@@ -70,6 +90,27 @@ fn split_blocks(source: &str) -> Vec<Block> {
                     }
                     items.push(rest.to_string());
                     i += 1;
+                    // Continuation lines: subsequent lines indented past the
+                    // bullet, with no new bullet marker, belong to the
+                    // current item.
+                    let indent_cols = 2usize; // "- " etc.
+                    while i < lines.len() {
+                        let cl = lines[i];
+                        if cl.trim().is_empty() {
+                            break;
+                        }
+                        if bullet_marker(cl).is_some() {
+                            break;
+                        }
+                        let stripped = match cl.strip_prefix(&" ".repeat(indent_cols)) {
+                            Some(s) => s,
+                            None => break,
+                        };
+                        let last = items.last_mut().expect("just pushed");
+                        last.push('\n');
+                        last.push_str(stripped);
+                        i += 1;
+                    }
                 } else {
                     break;
                 }
@@ -80,7 +121,7 @@ fn split_blocks(source: &str) -> Vec<Block> {
         let mut buf: Vec<&str> = Vec::new();
         while i < lines.len() {
             let l = lines[i];
-            if l.trim().is_empty() || bullet_marker(l).is_some() {
+            if l.trim().is_empty() || bullet_marker(l).is_some() || explicit_target(l).is_some() {
                 break;
             }
             buf.push(l);
@@ -127,6 +168,93 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, block: Block) {
                 parse_inline(tree, p, &item);
             }
         }
+        Block::Target { name, refuri } => {
+            let ids = normalize_id(&name);
+            tree.append(
+                parent,
+                NodeKind::Target {
+                    ids,
+                    names: name,
+                    refuri,
+                },
+            );
+        }
+    }
+}
+
+/// Parse `.. _name: refuri` into `(name, refuri)`. Returns `None` if the
+/// line is not an explicit target directive. Phrase names (with spaces or
+/// containing escaped colons) are deferred.
+fn explicit_target(line: &str) -> Option<(String, String)> {
+    let rest = line.strip_prefix(".. _")?;
+    let colon = rest.find(':')?;
+    let name = rest[..colon].trim();
+    let refuri = rest[colon + 1..].trim();
+    if name.is_empty() || refuri.is_empty() {
+        return None;
+    }
+    // Simple-name only: alnum plus internal `.-_+:` (no spaces, no backticks).
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || "._-+:".contains(c))
+    {
+        return None;
+    }
+    Some((name.to_string(), refuri.to_string()))
+}
+
+/// docutils' `nodes.fully_normalize_name` + `nodes.make_id` for simple
+/// identifiers: lowercased, non-alnum runs collapsed to single hyphens,
+/// leading/trailing hyphens stripped.
+fn normalize_id(name: &str) -> String {
+    let lower = name.to_ascii_lowercase();
+    let mut out = String::with_capacity(lower.len());
+    let mut last_dash = true;
+    for c in lower.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    out
+}
+
+/// Walk the tree and fill in `refuri` on every `Reference` whose name
+/// matches a `Target`. Unresolved references keep `refuri = ""` — currently
+/// untested (an accepted deviation; upstream emits a system_message).
+fn resolve_references(tree: &mut Doctree) {
+    let mut targets: HashMap<String, String> = HashMap::new();
+    collect_targets(tree, tree.root(), &mut targets);
+    apply_targets(tree, tree.root(), &targets);
+}
+
+fn collect_targets(tree: &Doctree, id: NodeId, out: &mut HashMap<String, String>) {
+    if let NodeKind::Target { names, refuri, .. } = &tree.node(id).kind {
+        out.insert(names.clone(), refuri.clone());
+    }
+    let children = tree.node(id).children.clone();
+    for c in children {
+        collect_targets(tree, c, out);
+    }
+}
+
+fn apply_targets(tree: &mut Doctree, id: NodeId, targets: &HashMap<String, String>) {
+    if let NodeKind::Reference { name, refuri } = &mut tree.node_mut(id).kind {
+        if refuri.is_empty() {
+            if let Some(uri) = targets.get(name) {
+                *refuri = uri.clone();
+            }
+        }
+    }
+    let children = tree.node(id).children.clone();
+    for c in children {
+        apply_targets(tree, c, targets);
     }
 }
 
@@ -222,6 +350,20 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, raw: &str) {
             push_text(tree, node, inner);
             cursor = end_after_close;
             text_start = cursor;
+        } else if let Some((name, end)) = try_match_reference(text, &pre.escaped, cursor) {
+            if cursor > text_start {
+                push_text(tree, parent, &text[text_start..cursor]);
+            }
+            let node = tree.append(
+                parent,
+                NodeKind::Reference {
+                    name: name.clone(),
+                    refuri: String::new(),
+                },
+            );
+            push_text(tree, node, &name);
+            cursor = end;
+            text_start = cursor;
         } else {
             cursor += utf8_char_len(bytes[cursor]);
         }
@@ -263,6 +405,58 @@ fn try_match_inline(text: &str, escaped: &[bool], start: usize) -> Option<(Inlin
         }
     }
     None
+}
+
+/// Try to match a simple-name hyperlink reference `name_` starting at
+/// `start`. Returns `(name, end_byte_index_after_underscore)`.
+///
+/// A simple name is `[A-Za-z0-9](?:[A-Za-z0-9]|[._+:-](?=[A-Za-z0-9]))*`.
+/// The match requires a word-boundary start, an unescaped trailing `_`,
+/// and that what follows the `_` is not alphanumeric.
+fn try_match_reference(text: &str, escaped: &[bool], start: usize) -> Option<(String, usize)> {
+    if escaped.get(start).copied().unwrap_or(false) {
+        return None;
+    }
+    if !valid_start_context(text, start) {
+        return None;
+    }
+    let bytes = text.as_bytes();
+    let first = *bytes.get(start)?;
+    if !first.is_ascii_alphanumeric() {
+        return None;
+    }
+    let mut end = start + 1;
+    while end < bytes.len() {
+        let b = bytes[end];
+        if b.is_ascii_alphanumeric() {
+            end += 1;
+            continue;
+        }
+        if matches!(b, b'.' | b'-' | b'_' | b'+' | b':') {
+            // Underscore is only an internal char if followed by alnum;
+            // otherwise it terminates the simple-name.
+            let next = bytes.get(end + 1).copied();
+            if matches!(next, Some(n) if n.is_ascii_alphanumeric()) {
+                end += 1;
+                continue;
+            }
+            break;
+        }
+        break;
+    }
+    // Must terminate with an unescaped `_`.
+    if end >= bytes.len() || bytes[end] != b'_' {
+        return None;
+    }
+    if escaped.get(end).copied().unwrap_or(false) {
+        return None;
+    }
+    let after = end + 1;
+    if after < bytes.len() && bytes[after].is_ascii_alphanumeric() {
+        return None;
+    }
+    let name = text[start..end].to_string();
+    Some((name, after))
 }
 
 fn find_close(text: &str, escaped: &[bool], from: usize, marker: &str) -> Option<usize> {

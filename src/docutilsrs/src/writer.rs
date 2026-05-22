@@ -27,11 +27,13 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
     let indent = "    ".repeat(depth);
     match &node.kind {
         NodeKind::Text(s) => {
-            // Each text node is emitted verbatim on its own line, preserving
-            // its own leading/trailing whitespace.
-            out.push_str(&indent);
-            out.push_str(s);
-            out.push('\n');
+            // Mirror docutils.nodes.Text.pformat: every source line of the
+            // text becomes its own indented line.
+            for line in s.split('\n') {
+                out.push_str(&indent);
+                out.push_str(line);
+                out.push('\n');
+            }
         }
         NodeKind::Document { source } => {
             // pseudo-XML deliberately does NOT XML-escape attribute values;
@@ -60,6 +62,18 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         NodeKind::ListItem => {
             out.push_str(&indent);
             out.push_str("<list_item>\n");
+        }
+        NodeKind::Reference { name, refuri } => {
+            let _ = writeln!(
+                out,
+                "{indent}<reference name=\"{name}\" refuri=\"{refuri}\">"
+            );
+        }
+        NodeKind::Target { ids, names, refuri } => {
+            let _ = writeln!(
+                out,
+                "{indent}<target ids=\"{ids}\" names=\"{names}\" refuri=\"{refuri}\">"
+            );
         }
     }
     for &child in &node.children {

@@ -175,7 +175,7 @@ This is the integration safety net, not a stretch goal.
 ### Phase 4 — sphinxdocrs incremental port
 
 - inventory `src/sphinx/tests/` and tag each test by subsystem (config, environment, builders, extensions, domains) — **done** (`docs/sphinx-port-inventory.md`)
-- port fast unit tests first (config, util, project); defer builder integration tests until the relevant builder is ported — **in progress** (P1: `errors`, `events`, `project` landed with mirrored parity tests; P2: `extension.Extension` + `verify_needs_extensions` landed, gated by `tests/test_sphinxdocrs_extension.py`)
+- port fast unit tests first (config, util, project); defer builder integration tests until the relevant builder is ported — **in progress** (P1: `errors`, `events`, `project` (incl. `discover`) landed with mirrored parity tests; P2: `extension.Extension` + `verify_needs_extensions` landed (`tests/test_sphinxdocrs_extension.py`); P2: `util.matching` (`compile_matchers`/`Matcher`/`get_matching_files`) landed (`tests/test_sphinxdocrs_util_matching.py`); `Project.discover` gated by `tests/test_sphinxdocrs_project_discover.py`)
 - prioritize the extension/event system early so existing Sphinx extensions keep working under the Rust core — **done for core EventManager** (`src/sphinxdocrs/src/events.rs`: priority ordering, `allowed_exceptions`, `app.pdb` short-circuit, `ExtensionError` wrapping with `__cause__`)
 - expose Python import surface mirroring phase 1's pattern — **done** (`sphinxdocrs.{EventManager,Project,SphinxError,…}` + `sphinxdocrs/python/sphinxdocrs_hybrid.py` with `event_manager` / `project` / `dispatch_plan` / `features` / `supports`)
 

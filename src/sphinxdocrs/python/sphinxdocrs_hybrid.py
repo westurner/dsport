@@ -100,6 +100,43 @@ def verify_needs_extensions(app, config, *, prefer: str = "rust") -> None:
     return _py(app, config)
 
 
+def matcher(patterns, *, prefer: str = "rust"):
+    """Return a ``Matcher`` instance, preferring the Rust port.
+
+    Mirrors ``sphinx.util.matching.Matcher``.
+    """
+    if prefer == "rust" and _HAS_RUST and supports("util:matching"):
+        return _rs.Matcher(list(patterns))
+    from sphinx.util.matching import Matcher as _PyMatcher
+    return _PyMatcher(list(patterns))
+
+
+def compile_matchers(patterns, *, prefer: str = "rust"):
+    """Mirror of ``sphinx.util.matching.compile_matchers``."""
+    if prefer == "rust" and _HAS_RUST and supports("util:matching"):
+        return _rs.compile_matchers(list(patterns))
+    from sphinx.util.matching import compile_matchers as _py
+    return _py(list(patterns))
+
+
+def get_matching_files(
+    dirname,
+    include_patterns=("**",),
+    exclude_patterns=(),
+    *,
+    prefer: str = "rust",
+):
+    """Mirror of ``sphinx.util.matching.get_matching_files``."""
+    if prefer == "rust" and _HAS_RUST and supports("util:matching"):
+        return _rs.get_matching_files(
+            dirname,
+            include_patterns=list(include_patterns),
+            exclude_patterns=list(exclude_patterns),
+        )
+    from sphinx.util.matching import get_matching_files as _py
+    return _py(dirname, list(include_patterns), list(exclude_patterns))
+
+
 def dispatch_plan(*, prefer: str = "rust") -> dict[str, str]:
     """Per-component dispatch summary, mirroring docutilsrs_hybrid."""
     if prefer == "rust" and _HAS_RUST:
@@ -108,10 +145,16 @@ def dispatch_plan(*, prefer: str = "rust") -> dict[str, str]:
             "project": "rust" if supports("project:path2doc") else "python",
             "errors": "rust" if supports("errors:sphinx_hierarchy") else "python",
             "extension": "rust" if supports("extension:wrapper") else "python",
+            "matching": "rust" if supports("util:matching") else "python",
+            "project_discover": (
+                "rust" if supports("project:discover") else "python"
+            ),
         }
     return {
         "events": "python",
         "project": "python",
         "errors": "python",
         "extension": "python",
+        "matching": "python",
+        "project_discover": "python",
     }

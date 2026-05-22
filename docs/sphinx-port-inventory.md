@@ -13,7 +13,7 @@ not yet ported — keep as parity probes only.
 | --- | --- | --- | --- |
 | `errors.py` | `sphinxdocrs::errors` | **P1** | pure exception hierarchy; `pyo3::create_exception!` |
 | `events.py` | `sphinxdocrs::events` | **P1** | `EventManager`: connect/disconnect/emit/emit_firstresult + priority sort + `allowed_exceptions` + `pdb` re-raise + `ExtensionError` wrapping |
-| `project.py` | `sphinxdocrs::project` | **P1** | `Project.path2doc` / `doc2path` first; `discover()` defers globbing logic — port after `util.matching` is available |
+| `project.py` | `sphinxdocrs::project` | **P1** | **mirrored** — `path2doc`/`doc2path`/`discover` landed in `src/sphinxdocrs/src/project.rs`; `discover()` uses Rust `util_matching` for glob exclusion (`EXCLUDE_PATHS` parity) |
 | `addnodes.py` | n/a (Python re-export) | **P1** | extends docutils.nodes — keep as Python shim that imports vendored `sphinx.addnodes` until our doctree gains Sphinx-specific node types |
 | `extension.py` | `sphinxdocrs::extension` | **P2** | **mirrored** — `Extension` wrapper + `verify_needs_extensions` landed in `src/sphinxdocrs/src/extension.rs`; gated by `tests/test_sphinxdocrs_extension.py` |
 | `registry.py` | `sphinxdocrs::registry` | **P2** | builder/parser/transform/translator registries; depends on extension + events |
@@ -23,7 +23,7 @@ not yet ported — keep as parity probes only.
 | `environment/` | `sphinxdocrs::environment` | **P3** | the build environment, large and stateful |
 | `builders/` | `sphinxdocrs::builders` | **P3** | one builder at a time (`html`, `latex`, `epub`, ...) |
 | `ext/*` | n/a (Python plugins) | **P3** | keep as Python; loaded via `Extension` registry |
-| `util/*` | `sphinxdocrs::util::*` | **P2** | port the pieces actually depended on by P1/P2 modules; do not port the whole tree |
+| `util/*` | `sphinxdocrs::util::*` | **P2** | **mirrored (matching)** — `compile_matchers` / `Matcher` / `get_matching_files` ported to `src/sphinxdocrs/src/util_matching.rs`; other `util/*` pieces ported on demand |
 | `theming.py` | n/a | **P3** | jinja2-bound; keep Python until templating story decided |
 | `search/` | n/a | **P3** | indexer + JS bridge; keep Python |
 
@@ -38,7 +38,7 @@ underlying subsystem is ported.
 | --- | --- | --- | --- |
 | `test_errors.py` | errors | P1 | mirrored — `tests/test_sphinxdocrs_errors.py` |
 | `test_events.py` | events | P1 | mirrored — `tests/test_sphinxdocrs_events.py` |
-| `test_project.py` | project | P1 | partial-mirror (`path2doc`/`doc2path`); `discover` deferred |
+| `test_project.py` | project | P1 | mirrored — `tests/test_sphinxdocrs_project.py` + `tests/test_sphinxdocrs_project_discover.py` (basic discovery, exclude patterns, multi-suffix, recorded `doc2path`, default `EXCLUDE_PATHS`) |
 | `test_addnodes.py` | addnodes | P1 | deferred (no Sphinx-specific nodes in Rust doctree yet) |
 | (no upstream test_extension.py) | extension | P2 | mirrored — `tests/test_sphinxdocrs_extension.py` (8 cases: defaults, kwargs-pop semantics, explicit-None preservation, `verify_needs_extensions` parity) |
 | `test_application.py` | application | P3 | deferred |
@@ -58,7 +58,7 @@ underlying subsystem is ported.
 | `test_search.py` | search | P3 | deferred |
 | `test_theming/` | theming | P3 | deferred |
 | `test_transforms/` | transforms | P3 | deferred (per-transform port) |
-| `test_util/` | util | P2 | deferred (port piecewise on demand) |
+| `test_util/` | util | P2 | mirrored (matching) — `tests/test_sphinxdocrs_util_matching.py` (12 cases: exact/`*`/`**`/`?`/`[..]`/`[!..]`/non-pattern, `Matcher` `**/` expansion, recursive walk + exclude). Other `test_util/*` pieces deferred. |
 | `test_versioning.py` | versioning | P2 | deferred |
 | `test_writers/` | writers | P3 | deferred (one writer at a time) |
 | `test_builders/` | builders | P3 | deferred (one builder at a time) |

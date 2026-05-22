@@ -50,6 +50,8 @@ def test_dispatch_plan_python_fallback() -> None:
         'project': 'python',
         'errors': 'python',
         'extension': 'python',
+        'matching': 'python',
+        'project_discover': 'python',
     }
 
 

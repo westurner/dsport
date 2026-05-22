@@ -1,0 +1,6 @@
+---
+source: pygmentsrs/tests/snapshot.rs
+expression: html
+---
+<div class="highlight"><pre><span></span>hello &amp; &lt;world&gt;
+</pre></div>

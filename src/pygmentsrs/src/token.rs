@@ -51,7 +51,9 @@ impl TokenType {
     pub fn split(&self) -> Vec<TokenType> {
         let mut out = Vec::with_capacity(self.path.len() + 1);
         for i in 0..=self.path.len() {
-            out.push(TokenType { path: &self.path[..i] });
+            out.push(TokenType {
+                path: &self.path[..i],
+            });
         }
         out
     }

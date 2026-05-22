@@ -18,3 +18,17 @@ fn html_formatter_text_snapshot() {
         pygmentsrs::highlight("hello & <world>\n", "text", "html").expect("text→html supported");
     insta::assert_snapshot!("html_text", html);
 }
+
+#[test]
+fn python_lexer_def_function() {
+    let toks =
+        pygmentsrs::lex("python", "def f():\n    return 1\n").expect("python lexer registered");
+    insta::assert_debug_snapshot!("python_def_function", toks);
+}
+
+#[test]
+fn python_lexer_keywords_and_string() {
+    let toks =
+        pygmentsrs::lex("python", "if True:\n    x = \"hi\"\n").expect("python lexer registered");
+    insta::assert_debug_snapshot!("python_keywords_string", toks);
+}

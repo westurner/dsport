@@ -17,7 +17,6 @@
 
 use crate::token::TokenType;
 
-#[derive(Default)]
 pub struct HtmlFormatter;
 
 impl HtmlFormatter {

@@ -1,0 +1,10 @@
+---
+source: pygmentsrs/tests/snapshot.rs
+expression: toks
+---
+[
+    (
+        "Token.Text",
+        "hello\nworld\n",
+    ),
+]

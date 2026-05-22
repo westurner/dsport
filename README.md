@@ -20,6 +20,7 @@ cargo test --workspace
 # Build extensions into the venv (re-run after Rust changes)
 (cd docutilsrs && maturin develop --release)
 (cd sphinxdocrs && maturin develop --release)
+(cd pygmentsrs && maturin develop --release)
 
 # Python gate
 pytest tests/ -q
@@ -97,8 +98,41 @@ Writers:
 Plugin bridges:
 - syntax highlighting for `code-block` (Pygments) via the Python directive plugin bridge — see `src/docutilsrs/python/docutilsrs_pygments.py`
 
-Open handoffs (next-up work, not yet started):
+Open handoffs (next-up work, **in progress** via the dedicated `pygmentsrs` workspace crate — see Phase 2.5 below):
 - **Native Pygments syntax highlighting** for `code`/`code-block`/`sourcecode` (replace the opt-in plugin-bridge stub with byte-parity emission of `<literal_block>` + token-classed `<inline>` children). Brief, target output, recommended implementation path, fixtures to add, and gate commands: [docs/handoff/pygments.md](docs/handoff/pygments.md).
+
+### Phase 2.5 — pygmentsrs (Rust port of Pygments)
+
+Spun up as a separate workspace crate at `src/pygmentsrs/` so the
+code-block handoff can land as a native Rust→Rust call rather than a
+per-block PyO3 hop. Scope: top-N lexers used in Sphinx/RST docs
+(`text`, `python`, `rust`, `c`, `cpp`, `js`/`ts`, `bash`, `json`,
+`yaml`, `toml`, `go`, `rst`, `html`, `css`, `sql`, `diff`, `make`,
+`dockerfile`). Parity strategy: byte-parity against vendored
+`pygments` `HtmlFormatter` and against
+`docutils.utils.code_analyzer.Lexer`'s token stream (which is what
+`test_parity_pseudoxml.py` compares).
+
+Status:
+
+- **Phase 0 done** — workspace member wired, `pygmentsrs.version()` /
+  `features()` exposed via PyO3, `insta` snapshot loop proven
+  (5 passing `cargo test` cases), `TextLexer` passthrough +
+  `HtmlFormatter` skeleton landed.
+- **Phase 1 in progress** — token hierarchy ported (~70 named
+  constants from `pygments.token`), `RegexLexer` engine ported
+  (state stack, `bygroups`, `default`, `#pop`/`#push`/named-state
+  transitions, adjacent-same-type merging, error/whitespace
+  fallback). Minimal `PythonLexer` covering the docutilsrs handoff
+  fixtures landed; full pygments byte-parity for arbitrary Python
+  input is incremental work tracked in `src/pygmentsrs/docs/compat.md`.
+- Phase 2 — widen lexer coverage.
+- Phase 3 — docutilsrs integration via
+  `pygmentsrs = { path = "../pygmentsrs" }`: parser's
+  `code`/`code-block`/`sourcecode` arm routes to pygmentsrs first,
+  falls back to the existing
+  `docutils.utils.code_analyzer.Lexer` Python bridge for
+  uncovered languages. Closes the README handoff.
 
 ### Phase 3 — transforms module + hybrid mode
 

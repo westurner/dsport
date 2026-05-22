@@ -75,7 +75,7 @@ pub fn highlight(code: &str, alias: &str, formatter: &str) -> Option<String> {
     let lexer = lexers::registry::get_lexer_by_name(alias)?;
     let tokens = lexer.get_tokens(code);
     match formatter {
-        "html" => Some(formatters::html::HtmlFormatter::default().format(&tokens)),
+        "html" => Some(formatters::html::HtmlFormatter.format(&tokens)),
         _ => None,
     }
 }

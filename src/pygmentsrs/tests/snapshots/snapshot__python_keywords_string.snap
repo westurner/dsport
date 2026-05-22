@@ -1,0 +1,50 @@
+---
+source: pygmentsrs/tests/snapshot.rs
+expression: toks
+---
+[
+    (
+        "Token.Keyword",
+        "if",
+    ),
+    (
+        "Token.Text.Whitespace",
+        " ",
+    ),
+    (
+        "Token.Keyword",
+        "True",
+    ),
+    (
+        "Token.Punctuation",
+        ":",
+    ),
+    (
+        "Token.Text.Whitespace",
+        "\n    ",
+    ),
+    (
+        "Token.Name",
+        "x",
+    ),
+    (
+        "Token.Text.Whitespace",
+        " ",
+    ),
+    (
+        "Token.Operator",
+        "=",
+    ),
+    (
+        "Token.Text.Whitespace",
+        " ",
+    ),
+    (
+        "Token.Literal.String.Double",
+        "\"hi\"",
+    ),
+    (
+        "Token.Text.Whitespace",
+        "\n",
+    ),
+]

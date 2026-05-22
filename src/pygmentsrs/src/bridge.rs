@@ -1,8 +1,9 @@
 //! PyO3 bridge to vendored upstream `pygments`.
 //!
 //! Used as the fallback path when pygmentsrs has no native Rust lexer
-//! for a given alias, and as the implementation of the explicit
-//! `backend="python"` request from [`crate::lex_with_backend`].
+//! or formatter for the requested name, and as the implementation of
+//! the explicit `backend="python"` request from
+//! [`crate::lex_with_backend`] / [`crate::highlight_with_backend`].
 //!
 //! Returns the same `(repr(ttype), value)` shape as the native
 //! `pygmentsrs::lex` so callers can use either interchangeably.
@@ -48,6 +49,50 @@ pub fn alias_is_known(alias: &str) -> bool {
         py.import("pygments.lexers")
             .and_then(|m| m.getattr("get_lexer_by_name"))
             .and_then(|f| f.call1((alias,)))
+            .is_ok()
+    })
+    .unwrap_or(false)
+}
+
+/// Format the `(repr(ttype), value)` token stream with the upstream
+/// formatter `pygments.formatters.get_formatter_by_name(name)`.
+///
+/// Token-type reprs (e.g. `"Token.Literal.String"`) are resolved back
+/// to live `pygments.token._TokenType` objects via `pygments.token.string_to_tokentype`
+/// so the formatter sees the same shape it would from `pygments.lex`.
+///
+/// `None` if pygments is unavailable, the formatter name is unknown, or
+/// a token-type repr fails to resolve.
+pub fn format(name: &str, tokens: &[(String, String)]) -> Option<String> {
+    Python::try_attach(|py| -> Option<String> {
+        let formatters_mod = py.import("pygments.formatters").ok()?;
+        let formatter = formatters_mod
+            .getattr("get_formatter_by_name")
+            .ok()?
+            .call1((name,))
+            .ok()?;
+        let token_mod = py.import("pygments.token").ok()?;
+        let string_to_tt = token_mod.getattr("string_to_tokentype").ok()?;
+        let py_tokens = pyo3::types::PyList::empty(py);
+        for (ttype_repr, value) in tokens {
+            let stripped = ttype_repr.strip_prefix("Token.").unwrap_or(ttype_repr);
+            let stripped = if stripped == "Token" { "" } else { stripped };
+            let ttype = string_to_tt.call1((stripped,)).ok()?;
+            let tup = pyo3::types::PyTuple::new(py, [ttype, value.into_pyobject(py).ok()?.into_any()]).ok()?;
+            py_tokens.append(tup).ok()?;
+        }
+        let pyg = py.import("pygments").ok()?;
+        let out = pyg.getattr("format").ok()?.call1((py_tokens, formatter)).ok()?;
+        out.extract::<String>().ok()
+    })?
+}
+
+/// Does upstream `pygments.formatters.get_formatter_by_name(name)` resolve?
+pub fn formatter_is_known(name: &str) -> bool {
+    Python::try_attach(|py| {
+        py.import("pygments.formatters")
+            .and_then(|m| m.getattr("get_formatter_by_name"))
+            .and_then(|f| f.call1((name,)))
             .is_ok()
     })
     .unwrap_or(false)

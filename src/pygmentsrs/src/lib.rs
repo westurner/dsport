@@ -133,10 +133,13 @@ pub fn highlight(code: &str, alias: &str, formatter: &str) -> Option<String> {
     highlight_with_backend(code, alias, formatter, Backend::Auto)
 }
 
-/// Backend-aware variant of [`highlight`]. With [`Backend::Auto`] or
-/// [`Backend::Python`], the token stream comes from upstream pygments
-/// when there's no Rust lexer; the formatter stage is always the Rust
-/// implementation.
+/// Backend-aware variant of [`highlight`]. Lexer and formatter stages
+/// dispatch independently per `backend`:
+///
+/// * `Auto`: native if registered, else fall through to the pygments
+///   bridge — applied separately to the lexer and the formatter.
+/// * `Rust`: native only for both stages; `None` if either is missing.
+/// * `Python`: bridge only for both stages.
 pub fn highlight_with_backend(
     code: &str,
     alias: &str,
@@ -144,17 +147,30 @@ pub fn highlight_with_backend(
     backend: Backend,
 ) -> Option<String> {
     let raw = lex_with_backend(alias, code, backend)?;
-    let tokens: Vec<(token::TokenType, String)> = raw
-        .into_iter()
+    match backend {
+        Backend::Python => bridge::format(formatter, &raw),
+        Backend::Rust => {
+            let tokens = to_native_tokens(raw);
+            formatters::registry::format_native(formatter, &tokens)
+        }
+        Backend::Auto => {
+            if formatters::registry::has_native(formatter) {
+                let tokens = to_native_tokens(raw);
+                formatters::registry::format_native(formatter, &tokens)
+            } else {
+                bridge::format(formatter, &raw)
+            }
+        }
+    }
+}
+
+fn to_native_tokens(raw: Vec<(String, String)>) -> Vec<(token::TokenType, String)> {
+    raw.into_iter()
         .map(|(name, v)| {
             let t = token::from_dotted(&name).unwrap_or(token::TOKEN);
             (t, v)
         })
-        .collect();
-    match formatter {
-        "html" => Some(formatters::html::HtmlFormatter.format(&tokens)),
-        _ => None,
-    }
+        .collect()
 }
 
 #[pyfunction(name = "highlight", signature = (code, alias, formatter = "html", backend = "auto"))]
@@ -184,6 +200,18 @@ fn py_has_native_lexer(alias: &str) -> bool {
     lexers::registry::get_lexer_by_name(alias).is_some()
 }
 
+/// Names of formatters with a native Rust implementation. Mirrors
+/// [`native_aliases`] for the formatter side of the pipeline.
+#[pyfunction(name = "native_formatters")]
+fn py_native_formatters() -> Vec<&'static str> {
+    formatters::registry::native_names().to_vec()
+}
+
+#[pyfunction(name = "has_native_formatter")]
+fn py_has_native_formatter(name: &str) -> bool {
+    formatters::registry::has_native(name)
+}
+
 #[pymodule]
 fn pygmentsrs(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_version, m)?)?;
@@ -193,5 +221,7 @@ fn pygmentsrs(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_highlight, m)?)?;
     m.add_function(wrap_pyfunction!(py_native_aliases, m)?)?;
     m.add_function(wrap_pyfunction!(py_has_native_lexer, m)?)?;
+    m.add_function(wrap_pyfunction!(py_native_formatters, m)?)?;
+    m.add_function(wrap_pyfunction!(py_has_native_formatter, m)?)?;
     Ok(())
 }

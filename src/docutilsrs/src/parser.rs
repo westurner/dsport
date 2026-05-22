@@ -144,6 +144,9 @@ enum Block {
         label: String,
         body: Vec<Block>,
     },
+    /// Spliced result of a Python directive plugin: emitted as if its
+    /// children were siblings of the directive site.
+    PluginResult(Vec<Block>),
     Table(TableData),
 }
 
@@ -1430,10 +1433,22 @@ fn parse_directive(
             }
         }
         _ => {
-            // Unknown directive: swallow as a comment to keep going.
+            // Unknown directive: consult the Python plugin registry. A
+            // registered plugin receives `(args, body)` and returns a
+            // replacement rST string which is re-parsed in place. If no
+            // plugin is registered (or the callable fails), fall back to
+            // the historical behaviour of swallowing as a comment.
             *i_ref += 1;
             let inner = consume_indented_text(lines, i_ref, base_indent);
-            Block::Comment(inner.join("\n"))
+            let body_text = inner.join("\n");
+            if crate::plugins::has_plugin(&name) {
+                if let Some(rst) = crate::plugins::invoke_plugin(&name, args, &body_text) {
+                    let rst_lines: Vec<&str> = rst.lines().collect();
+                    let blocks = parse_blocks(&rst_lines, 0);
+                    return Block::PluginResult(blocks);
+                }
+            }
+            Block::Comment(body_text)
         }
     }
 }
@@ -2045,6 +2060,11 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             tree.append(lbl, NodeKind::Text(label));
             for b in body {
                 emit_block(tree, c, ctx, b);
+            }
+        }
+        Block::PluginResult(blocks) => {
+            for b in blocks {
+                emit_block(tree, parent, ctx, b);
             }
         }
     }

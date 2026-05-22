@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 pub mod doctree;
 pub mod html5_writer;
 pub mod parser;
+pub mod plugins;
 mod python;
 pub mod transforms;
 pub mod writer;
@@ -85,6 +86,7 @@ pub fn features() -> &'static [&'static str] {
         "transform:resolve_references",
         "transform:promote_document_title",
         "transform:promote_docinfo",
+        "plugin:python_directives",
     ]
 }
 
@@ -106,6 +108,10 @@ fn docutilsrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_features, m)?)?;
     m.add_function(wrap_pyfunction!(py_supports, m)?)?;
     m.add_function(wrap_pyfunction!(python::py_parse_rst, m)?)?;
+    m.add_function(wrap_pyfunction!(plugins::py_register_directive, m)?)?;
+    m.add_function(wrap_pyfunction!(plugins::py_unregister_directive, m)?)?;
+    m.add_function(wrap_pyfunction!(plugins::py_registered_directives, m)?)?;
+    m.add_function(wrap_pyfunction!(plugins::py_clear_directives, m)?)?;
     m.add_class::<python::PyDoctree>()?;
     m.add_class::<python::PyNode>()?;
     Ok(())

@@ -123,6 +123,15 @@ CASES = {
     "footnote_orphan": ".. [1] orphan footnote",
     "footnote_reused": "See [1]_ and [1]_.\n\n.. [1] reused",
     "citation_simple": "See [Knuth1986]_.\n\n.. [Knuth1986] body",
+    # phase 3: nested + multi-paragraph list items
+    "nested_bullet": "- a\n\n  - b\n  - c\n- d",
+    "nested_enum": "1. a\n\n   1. inner one\n   2. inner two\n2. b",
+    "mixed_bullet_enum": "- bullet item\n\n  1. inner enum\n  2. inner two\n- next bullet",
+    "triple_nested_bullet": "- a\n\n  - b\n\n    - c\n  - d\n- e",
+    "multipara_bullet": "- one\n\n  para two\n- next",
+    "multipara_bullet_3": "- one\n\n  second paragraph\n\n  third paragraph\n- next",
+    "multipara_enum": "1. one\n\n   second paragraph\n2. two",
+    "list_with_blockquote": "- item\n\n    quoted text\n- next",
 }
 
 

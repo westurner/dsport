@@ -1,0 +1,5 @@
+---
+source: src/docutilsrs/tests/snapshot.rs
+expression: "docutilsrs::version()"
+---
+0.0.1

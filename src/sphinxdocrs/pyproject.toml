@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "sphinxdocrs"
+version = "0.0.1"
+description = "Rust port of Sphinx"
+requires-python = ">=3.9"
+license = { text = "BSD-2-Clause" }
+
+[tool.maturin]
+module-name = "sphinxdocrs"
+manifest-path = "Cargo.toml"
+features = ["extension-module"]

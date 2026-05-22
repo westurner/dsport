@@ -1,0 +1,5 @@
+---
+source: src/sphinxdocrs/tests/snapshot.rs
+expression: "sphinxdocrs::version()"
+---
+0.0.1

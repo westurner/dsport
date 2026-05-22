@@ -1,6 +1,33 @@
 
 # dsport
 
+## Dev loop
+
+All Rust commands run from `src/` (the workspace root). The Python venv lives
+at `src/.venv/` and is git-ignored.
+
+```sh
+# one-time setup
+cd src
+python3 -m venv .venv && source .venv/bin/activate
+pip install maturin pytest
+
+# Rust gates
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+
+# Build extensions into the venv (re-run after Rust changes)
+(cd docutilsrs && maturin develop --release)
+(cd sphinxdocrs && maturin develop --release)
+
+# Python gate
+pytest tests/ -q
+```
+
+Snapshot tests use `insta`. Review pending snapshots with `cargo insta review`
+(install via `cargo install cargo-insta`).
+
 ## Objectives
 - port docutils (src/docutils) to rust as `docutilsrs`
 - port sphinxdoc (src/sphinx) to rust as `sphinxdocrs`

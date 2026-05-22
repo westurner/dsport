@@ -24,7 +24,9 @@
 
 use pyo3::prelude::*;
 
+pub mod directives;
 pub mod frontmatter;
+pub mod options;
 pub mod preprocess;
 pub mod render;
 pub mod role;

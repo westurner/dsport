@@ -1,13 +1,24 @@
-//! Event-stream HTML renderer with MyST hooks.
+//! HTML renderer with MyST event-stream hooks.
 //!
-//! We rebuild a small renderer rather than using `pulldown_cmark::html::push_html`
-//! so we can intercept:
-//! * `Text` events → split into role / inline-math / plain pieces.
-//! * Fenced code blocks whose info string is `{name}` → render as
+//! We delegate the bulk of CommonMark/GFM rendering to
+//! `pulldown_cmark::html::push_html` — which gives us reference-quality output
+//! for headings, lists, tables, link-reference definitions, HTML blocks, etc.
+//! — and only rewrite the event stream for MyST-specific constructs:
+//!
+//! * Inline roles `` {name}`content` `` (either entirely inside one `Text`
+//!   event, or split across `Text("...{name}")` + `Code("content")` after the
+//!   cmark inline parser has eaten the backtick run).
+//! * Inline math `$…$` inside a `Text` event.
+//! * Fenced code blocks whose info string is `{name}` → wrap as
 //!   `<div class="myst-directive" data-name="name">…</div>`.
-//! * Fenced code blocks with info string `math` → render as `<div class="math">`.
+//! * Fenced code blocks with info string `math` → wrap as
+//!   `<div class="math">…</div>`.
+//!
+//! All other events flow through untouched.
 
-use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use std::collections::VecDeque;
+
+use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd, html};
 use pulldown_cmark_escape::{escape_html, escape_html_body_text};
 
 use crate::role::{Piece, split_text};
@@ -19,268 +30,189 @@ pub fn render(body: &str) -> String {
     opts.insert(Options::ENABLE_FOOTNOTES);
     opts.insert(Options::ENABLE_STRIKETHROUGH);
     opts.insert(Options::ENABLE_TASKLISTS);
-    opts.insert(Options::ENABLE_SMART_PUNCTUATION);
     opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
     opts.insert(Options::ENABLE_GFM);
+    // Note: ENABLE_SMART_PUNCTUATION intentionally left off — it rewrites
+    // `---`/`--`/`"` into en/em-dashes and curly quotes which breaks plain
+    // CommonMark spec parity. MyST exposes it as the `smartquotes` /
+    // `replacements` opt-in extension; we'll wire that to a config flag in a
+    // later wave.
 
     let parser = Parser::new_ext(body, opts);
+    let events = MystEvents::new(parser);
     let mut out = String::with_capacity(body.len());
-    let mut state = State::default();
-    for event in parser {
-        push_event(&mut out, &mut state, event);
-    }
+    html::push_html(&mut out, events);
     out
 }
 
-#[derive(Default)]
-struct State {
-    /// Stack of "code block kinds" we've opened so we know how to close them.
-    code_stack: Vec<CodeKind>,
-    /// True while inside a code block (we should not split text for roles).
-    in_code: bool,
-    /// If the previous Text event ended in `{name}`, the captured role name
-    /// is stashed here so the *next* `Code` event becomes a MyST role.
+/// What to emit at the matching `End(CodeBlock)` for a re-routed code block.
+enum CodeCloser {
+    /// Forward the original `End(CodeBlock)` event verbatim.
+    Forward,
+    /// Emit a raw HTML closer.
+    Html(&'static str),
+}
+
+/// Event-stream adapter that lowers MyST extensions to stock `pulldown_cmark`
+/// events (mostly raw `Html(...)` blobs the stock renderer will pass through).
+struct MystEvents<'a, I: Iterator<Item = Event<'a>>> {
+    inner: I,
+    /// Buffered events to emit before pulling the next one from `inner`.
+    queue: VecDeque<Event<'a>>,
+    /// Stack of closers, one entry per open code block.
+    closer_stack: Vec<CodeCloser>,
+    /// When the previous `Text` event ended in `{name}` (a role marker), the
+    /// captured name is stashed here so the *next* `Code` event becomes a
+    /// MyST role rather than a `<code>` element.
     pending_role: Option<String>,
+    /// True while inside a code block — text inside must stay verbatim.
+    in_code_block: bool,
 }
 
-enum CodeKind {
-    /// A normal fenced/indented code block — render as `<pre><code>`.
-    Plain,
-    /// A `{name}` MyST directive — render as `<div class="myst-directive">`.
-    Directive,
-    /// A `math` info string — render as `<div class="math">`.
-    Math,
-}
-
-fn push_event(out: &mut String, state: &mut State, event: Event<'_>) {
-    use Event::*;
-    match event {
-        Start(tag) => start_tag(out, state, tag),
-        End(tag_end) => end_tag(out, state, tag_end),
-        Text(s) => {
-            if state.in_code {
-                let mut buf = String::new();
-                let _ = escape_html_body_text(&mut buf, &s);
-                out.push_str(&buf);
-            } else {
-                render_text(out, state, &s);
-            }
-        }
-        Code(s) => {
-            if let Some(name) = state.pending_role.take() {
-                let mut nbuf = String::new();
-                let _ = escape_html(&mut nbuf, &name);
-                let mut cbuf = String::new();
-                let _ = escape_html_body_text(&mut cbuf, &s);
-                out.push_str(&format!(
-                    r#"<span class="myst-role" data-role="{nbuf}">{cbuf}</span>"#
-                ));
-            } else {
-                out.push_str("<code>");
-                let mut buf = String::new();
-                let _ = escape_html_body_text(&mut buf, &s);
-                out.push_str(&buf);
-                out.push_str("</code>");
-            }
-        }
-        Html(s) | InlineHtml(s) => out.push_str(&s),
-        SoftBreak => out.push('\n'),
-        HardBreak => out.push_str("<br />\n"),
-        Rule => out.push_str("<hr />\n"),
-        FootnoteReference(name) => {
-            out.push_str("<sup class=\"footnote-ref\"><a href=\"#fn-");
-            let mut buf = String::new();
-            let _ = escape_html(&mut buf, &name);
-            out.push_str(&buf);
-            out.push_str("\">");
-            out.push_str(&buf);
-            out.push_str("</a></sup>");
-        }
-        TaskListMarker(checked) => {
-            if checked {
-                out.push_str(r#"<input type="checkbox" checked disabled /> "#);
-            } else {
-                out.push_str(r#"<input type="checkbox" disabled /> "#);
-            }
-        }
-        DisplayMath(s) => {
-            out.push_str(r#"<div class="math">"#);
-            let mut buf = String::new();
-            let _ = escape_html_body_text(&mut buf, &s);
-            out.push_str(&buf);
-            out.push_str("</div>");
-        }
-        InlineMath(s) => {
-            out.push_str(r#"<span class="math">"#);
-            let mut buf = String::new();
-            let _ = escape_html_body_text(&mut buf, &s);
-            out.push_str(&buf);
-            out.push_str("</span>");
+impl<'a, I: Iterator<Item = Event<'a>>> MystEvents<'a, I> {
+    fn new(inner: I) -> Self {
+        Self {
+            inner,
+            queue: VecDeque::new(),
+            closer_stack: Vec::new(),
+            pending_role: None,
+            in_code_block: false,
         }
     }
-}
 
-fn start_tag(out: &mut String, state: &mut State, tag: Tag<'_>) {
-    use Tag::*;
-    match tag {
-        Paragraph => out.push_str("<p>"),
-        Heading { level, .. } => {
-            out.push_str(&format!("<{level}>"));
-        }
-        BlockQuote(_) => out.push_str("<blockquote>\n"),
-        CodeBlock(kind) => {
-            let info = match &kind {
-                CodeBlockKind::Fenced(s) => s.as_ref(),
-                CodeBlockKind::Indented => "",
-            };
-            if let Some(name) = directive_name(info) {
-                let mut buf = String::new();
-                let _ = escape_html(&mut buf, name);
-                out.push_str(&format!(
-                    r#"<div class="myst-directive" data-name="{buf}"><pre><code>"#
-                ));
-                state.code_stack.push(CodeKind::Directive);
-            } else if info == "math" {
-                out.push_str(r#"<div class="math">"#);
-                state.code_stack.push(CodeKind::Math);
-            } else {
-                if info.is_empty() {
-                    out.push_str("<pre><code>");
+    fn map_event(&mut self, event: Event<'a>) {
+        match event {
+            Event::Text(s) if !self.in_code_block => self.handle_text(s),
+            Event::Code(s) if self.pending_role.is_some() => {
+                let name = self.pending_role.take().unwrap();
+                let html = render_role(&name, &s);
+                self.queue.push_back(Event::InlineHtml(CowStr::from(html)));
+            }
+            Event::Start(Tag::CodeBlock(ref kind)) => {
+                self.in_code_block = true;
+                let info: &str = match kind {
+                    CodeBlockKind::Fenced(s) => s.as_ref(),
+                    CodeBlockKind::Indented => "",
+                };
+                if let Some(name) = directive_name(info) {
+                    let open = format!(
+                        r#"<div class="myst-directive" data-name="{}"><pre><code>"#,
+                        escape_attr(name)
+                    );
+                    self.queue.push_back(Event::Html(CowStr::from(open)));
+                    self.closer_stack
+                        .push(CodeCloser::Html("</code></pre></div>\n"));
+                } else if info == "math" {
+                    self.queue
+                        .push_back(Event::Html(CowStr::from(r#"<div class="math">"#)));
+                    self.closer_stack.push(CodeCloser::Html("</div>\n"));
                 } else {
-                    let lang = info.split_whitespace().next().unwrap_or("");
-                    let mut buf = String::new();
-                    let _ = escape_html(&mut buf, lang);
-                    out.push_str(&format!(r#"<pre><code class="language-{buf}">"#));
+                    self.queue.push_back(event);
+                    self.closer_stack.push(CodeCloser::Forward);
                 }
-                state.code_stack.push(CodeKind::Plain);
             }
-            state.in_code = true;
-        }
-        List(Some(start)) if start != 1 => out.push_str(&format!("<ol start=\"{start}\">\n")),
-        List(Some(_)) => out.push_str("<ol>\n"),
-        List(None) => out.push_str("<ul>\n"),
-        Item => out.push_str("<li>"),
-        Emphasis => out.push_str("<em>"),
-        Strong => out.push_str("<strong>"),
-        Strikethrough => out.push_str("<del>"),
-        Link { dest_url, title, .. } => {
-            out.push_str("<a href=\"");
-            let mut buf = String::new();
-            let _ = escape_html(&mut buf, &dest_url);
-            out.push_str(&buf);
-            if !title.is_empty() {
-                out.push_str("\" title=\"");
-                let mut tbuf = String::new();
-                let _ = escape_html(&mut tbuf, &title);
-                out.push_str(&tbuf);
+            Event::End(TagEnd::CodeBlock) => {
+                self.in_code_block = false;
+                match self.closer_stack.pop() {
+                    Some(CodeCloser::Html(s)) => {
+                        self.queue.push_back(Event::Html(CowStr::from(s)));
+                    }
+                    _ => self.queue.push_back(event),
+                }
             }
-            out.push_str("\">");
+            other => self.queue.push_back(other),
         }
-        Image { dest_url, title, .. } => {
-            out.push_str("<img src=\"");
-            let mut buf = String::new();
-            let _ = escape_html(&mut buf, &dest_url);
-            out.push_str(&buf);
-            out.push_str("\" alt=\"");
-            if !title.is_empty() {
-                out.push_str("\" title=\"");
-                let mut tbuf = String::new();
-                let _ = escape_html(&mut tbuf, &title);
-                out.push_str(&tbuf);
+    }
+
+    fn handle_text(&mut self, text: CowStr<'a>) {
+        let (head_owned, trailing_role) = {
+            let s: &str = text.as_ref();
+            let (head, trailing) = strip_trailing_role_marker(s);
+            (head.to_string(), trailing.map(str::to_string))
+        };
+
+        let head: &str = &head_owned;
+        if has_inline_markers(head) {
+            for piece in split_text(head) {
+                match piece {
+                    Piece::Text(t) if !t.is_empty() => {
+                        self.queue
+                            .push_back(Event::Text(CowStr::from(t.to_string())));
+                    }
+                    Piece::Text(_) => {}
+                    Piece::Role { name, content } => {
+                        self.queue.push_back(Event::InlineHtml(CowStr::from(
+                            render_role(name, content),
+                        )));
+                    }
+                    Piece::InlineMath(content) => {
+                        self.queue.push_back(Event::InlineHtml(CowStr::from(
+                            render_inline_math(content),
+                        )));
+                    }
+                }
             }
-            out.push_str("\" />");
+        } else if !head.is_empty() {
+            if head.len() == text.len() {
+                self.queue.push_back(Event::Text(text));
+            } else {
+                self.queue.push_back(Event::Text(CowStr::from(head_owned)));
+            }
         }
-        Table(_) => out.push_str("<table>\n"),
-        TableHead => out.push_str("<thead><tr>"),
-        TableRow => out.push_str("<tr>"),
-        TableCell => out.push_str("<td>"),
-        FootnoteDefinition(name) => {
-            out.push_str("<div class=\"footnote-def\" id=\"fn-");
-            let mut buf = String::new();
-            let _ = escape_html(&mut buf, &name);
-            out.push_str(&buf);
-            out.push_str("\">");
-        }
-        // MyST-specific shapes pulldown-cmark doesn't currently produce — keep
-        // as catch-all rather than panicking.
-        other => {
-            let _ = other;
+
+        if let Some(name) = trailing_role {
+            self.pending_role = Some(name);
         }
     }
 }
 
-fn end_tag(out: &mut String, state: &mut State, tag_end: TagEnd) {
-    use TagEnd::*;
-    match tag_end {
-        Paragraph => out.push_str("</p>\n"),
-        Heading(level) => out.push_str(&format!("</{level}>\n")),
-        BlockQuote(_) => out.push_str("</blockquote>\n"),
-        CodeBlock => {
-            state.in_code = false;
-            match state.code_stack.pop().unwrap_or(CodeKind::Plain) {
-                CodeKind::Plain => out.push_str("</code></pre>\n"),
-                CodeKind::Directive => out.push_str("</code></pre></div>\n"),
-                CodeKind::Math => out.push_str("</div>\n"),
+impl<'a, I: Iterator<Item = Event<'a>>> Iterator for MystEvents<'a, I> {
+    type Item = Event<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(e) = self.queue.pop_front() {
+                return Some(e);
             }
+            let event = self.inner.next()?;
+            self.map_event(event);
         }
-        List(true) => out.push_str("</ol>\n"),
-        List(false) => out.push_str("</ul>\n"),
-        Item => out.push_str("</li>\n"),
-        Emphasis => out.push_str("</em>"),
-        Strong => out.push_str("</strong>"),
-        Strikethrough => out.push_str("</del>"),
-        Link => out.push_str("</a>"),
-        Image => {}
-        Table => out.push_str("</table>\n"),
-        TableHead => out.push_str("</tr></thead>\n"),
-        TableRow => out.push_str("</tr>\n"),
-        TableCell => out.push_str("</td>"),
-        FootnoteDefinition => out.push_str("</div>\n"),
-        _ => {}
     }
+}
+
+fn render_role(name: &str, content: &str) -> String {
+    let mut cbuf = String::new();
+    let _ = escape_html_body_text(&mut cbuf, content);
+    format!(
+        r#"<span class="myst-role" data-role="{}">{}</span>"#,
+        escape_attr(name),
+        cbuf
+    )
+}
+
+fn render_inline_math(content: &str) -> String {
+    let mut cbuf = String::new();
+    let _ = escape_html_body_text(&mut cbuf, content);
+    format!(r#"<span class="math">{cbuf}</span>"#)
+}
+
+fn escape_attr(s: &str) -> String {
+    let mut buf = String::new();
+    let _ = escape_html(&mut buf, s);
+    buf
 }
 
 /// If `info` is `{name}` (optionally followed by args), return the name.
 fn directive_name(info: &str) -> Option<&str> {
     let first = info.split_whitespace().next().unwrap_or("");
     let inner = first.strip_prefix('{')?.strip_suffix('}')?;
-    if inner.is_empty() {
-        None
-    } else {
-        Some(inner)
-    }
+    if inner.is_empty() { None } else { Some(inner) }
 }
 
-fn render_text(out: &mut String, state: &mut State, text: &str) {
-    // Detect a trailing role marker `{name}` so the following `Code` event
-    // (cmark sees the backtick run as inline code) can be rewritten.
-    let (head, trailing_role) = strip_trailing_role_marker(text);
-    for piece in split_text(head) {
-        match piece {
-            Piece::Text(s) => {
-                let mut buf = String::new();
-                let _ = escape_html_body_text(&mut buf, s);
-                out.push_str(&buf);
-            }
-            Piece::Role { name, content } => {
-                let mut nbuf = String::new();
-                let _ = escape_html(&mut nbuf, name);
-                let mut cbuf = String::new();
-                let _ = escape_html_body_text(&mut cbuf, content);
-                out.push_str(&format!(
-                    r#"<span class="myst-role" data-role="{nbuf}">{cbuf}</span>"#
-                ));
-            }
-            Piece::InlineMath(content) => {
-                let mut cbuf = String::new();
-                let _ = escape_html_body_text(&mut cbuf, content);
-                out.push_str(&format!(r#"<span class="math">{cbuf}</span>"#));
-            }
-        }
-    }
-    if let Some(name) = trailing_role {
-        state.pending_role = Some(name.to_string());
-    }
+/// Quick check so we only allocate split-vectors for runs that actually
+/// contain a `{` or `$`.
+fn has_inline_markers(text: &str) -> bool {
+    text.contains('{') || text.contains('$')
 }
 
 /// If `text` ends with a bare `{name}` role marker (immediately before what
@@ -291,7 +223,6 @@ fn strip_trailing_role_marker(text: &str) -> (&str, Option<&str>) {
     if !bytes.last().is_some_and(|b| *b == b'}') {
         return (text, None);
     }
-    // Find the matching `{`.
     let p = bytes.len() - 1; // at `}`
     if p == 0 {
         return (text, None);

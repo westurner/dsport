@@ -2,7 +2,6 @@
 source: myst-md-rs/tests/snapshot.rs
 expression: "myst_md_rs::render_html(src)"
 ---
-<table>
-<thead><tr><td>a</td><td>b</td></tr></thead>
+<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody>
 <tr><td>1</td><td>2</td></tr>
-</table>
+</tbody></table>

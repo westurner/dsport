@@ -193,6 +193,7 @@ dependencies = [
  "pulldown-cmark-escape",
  "pyo3",
  "serde",
+ "serde_json",
  "serde_yaml",
 ]
 

@@ -215,16 +215,10 @@ fn apply_transition(ns: &NewState, stack: &mut Vec<&'static str>) {
     }
 }
 
-/// Pygments merges adjacent tokens of the same type *implicitly* via
-/// the consumer (`get_tokens` collapses them). Doing it here keeps
-/// our output identical to `list(pygments.lex(...))`.
+/// Append a token to the output stream. Pygments'
+/// `get_tokens_unprocessed` emits one record per regex match / bygroup
+/// without merging adjacent same-type entries, so neither do we.
 fn push_merged(out: &mut Vec<(TokenType, String)>, t: TokenType, v: &str) {
-    if let Some(last) = out.last_mut()
-        && last.0 == t
-    {
-        last.1.push_str(v);
-        return;
-    }
     out.push((t, v.to_string()));
 }
 

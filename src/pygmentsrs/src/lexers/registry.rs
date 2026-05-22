@@ -7,6 +7,8 @@
 //! a PyO3 hop).
 
 use crate::lexer::Lexer;
+use crate::lexers::diff::DiffLexer;
+use crate::lexers::json::JsonLexer;
 use crate::lexers::python::PythonLexer;
 use crate::lexers::text::TextLexer;
 
@@ -14,6 +16,8 @@ pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
     match alias {
         "text" | "plain" | "" => Some(Box::new(TextLexer)),
         "python" | "py" | "python3" | "py3" => Some(Box::new(PythonLexer)),
+        "json" | "json-object" => Some(Box::new(JsonLexer)),
+        "diff" | "udiff" => Some(Box::new(DiffLexer)),
         _ => None,
     }
 }
@@ -24,5 +28,7 @@ pub fn native_aliases() -> &'static [&'static str] {
     &[
         "text", "plain", "",
         "python", "py", "python3", "py3",
+        "json", "json-object",
+        "diff", "udiff",
     ]
 }

@@ -24,7 +24,7 @@ impl HtmlFormatter {
         let mut out = String::from("<div class=\"highlight\"><pre><span></span>");
         for (ttype, value) in tokens {
             let short = ttype.short_name();
-            if short.is_empty() || short == "t" {
+            if short.is_empty() {
                 out.push_str(&escape(value));
             } else {
                 out.push_str("<span class=\"");

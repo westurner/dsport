@@ -1,9 +1,17 @@
 //! docutilsrs — Rust port of docutils.
 //!
-//! M1 surface: a `version()` function exported to Python via PyO3,
-//! sufficient to validate the build, packaging, and import loop.
+//! Phase 1 surface: a paragraph + inline-markup parser slice, with a
+//! pseudo-XML writer for parity comparison against vendored docutils.
 
 use pyo3::prelude::*;
+
+pub mod doctree;
+pub mod parser;
+pub mod writer;
+
+pub use doctree::{Doctree, NodeKind};
+pub use parser::parse_rst;
+pub use writer::pseudo_xml;
 
 /// Crate version string. Mirrors `Cargo.toml` `[package].version`.
 pub fn version() -> &'static str {
@@ -15,8 +23,19 @@ fn py_version() -> &'static str {
     version()
 }
 
+/// Parse rST `source` and return its pseudo-XML representation.
+///
+/// Only the phase 1 grammar slice is supported (paragraphs + inline
+/// emphasis/strong/literal). See `docs/compat.md`.
+#[pyfunction(name = "parse_to_pseudoxml")]
+fn py_parse_to_pseudoxml(source: &str) -> String {
+    let tree = parse_rst(source);
+    pseudo_xml(&tree)
+}
+
 #[pymodule]
 fn docutilsrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_version, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parse_to_pseudoxml, m)?)?;
     Ok(())
 }

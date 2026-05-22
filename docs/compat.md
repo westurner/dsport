@@ -20,8 +20,13 @@ Columns:
 | Subsystem | Upstream module | Rust location | Status | Notes |
 |-----------|-----------------|---------------|--------|-------|
 | crate scaffold | — | `src/docutilsrs/src/lib.rs` | exact-parity | M1: `version()` only |
-| doctree | `docutils.nodes` | — | pending | phase 1 |
-| rST parser | `docutils.parsers.rst` | — | pending | phase 1 (slice), phase 2 (full) |
+| doctree (minimal) | `docutils.nodes` | `src/docutilsrs/src/doctree.rs` | accepted-deviation | phase 1 slice: Document, Paragraph, Text, Emphasis, Strong, Literal only |
+| pseudo-XML writer | `docutils.writers.pseudoxml` | `src/docutilsrs/src/writer.rs` | exact-parity | byte-for-byte on the phase 1 slice (see `tests/test_parity_pseudoxml.py`) |
+| rST parser — paragraphs | `docutils.parsers.rst` | `src/docutilsrs/src/parser.rs` | exact-parity | blank-line splitting only |
+| rST parser — inline (emphasis/strong/literal) | `docutils.parsers.rst.states` | `src/docutilsrs/src/parser.rs` | exact-parity | flat (non-nesting) per rST spec, on tested cases |
+| rST parser — references | `docutils.parsers.rst.states` | — | pending | requires `<target>` sibling + transforms |
+| rST parser — lists/tables/directives/roles | `docutils.parsers.rst` | — | pending | phase 2 |
+| escape sequences in inline | — | — | pending | phase 2 |
 | transforms | `docutils.transforms` | — | pending | phase 2 |
 | HTML5 writer | `docutils.writers.html5_polyglot` | — | pending | phase 2 |
 

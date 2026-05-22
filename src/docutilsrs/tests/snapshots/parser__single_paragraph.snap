@@ -1,0 +1,7 @@
+---
+source: docutilsrs/tests/parser.rs
+expression: "pseudo_xml(&parse_rst(\"Hello world.\"))"
+---
+<document source="<string>">
+    <paragraph>
+        Hello world.

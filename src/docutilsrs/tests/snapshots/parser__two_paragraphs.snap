@@ -1,0 +1,9 @@
+---
+source: docutilsrs/tests/parser.rs
+expression: "pseudo_xml(&parse_rst(\"First.\\n\\nSecond.\"))"
+---
+<document source="<string>">
+    <paragraph>
+        First.
+    <paragraph>
+        Second.

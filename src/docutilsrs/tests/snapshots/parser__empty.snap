@@ -1,0 +1,5 @@
+---
+source: docutilsrs/tests/parser.rs
+expression: pseudo_xml(&tree)
+---
+<document source="<string>">

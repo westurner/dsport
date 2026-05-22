@@ -104,10 +104,10 @@ Open handoffs (next-up work, not yet started):
 
 This is the integration safety net, not a stretch goal.
 
-- factor the inlined Phase-2 transforms (title promotion, docinfo, reference resolution, substitution resolution) into a `docutilsrs::transforms` module mirroring `docutils.transforms.*`, each pass independently testable
-- Python-side `docutilsrs` package routes calls to Rust when implemented, falls back to vendored Python otherwise, on a per-component basis (parser, transform, writer)
-- Rust-side: ability to invoke a Python `Transform` or `Writer` against a Rust-owned doctree (via converter)
-- end-to-end test: a document whose parsing is Rust, one transform is Python, and writer is Rust, produces byte-identical output to pure-Python docutils
+- factor the inlined Phase-2 transforms (title promotion, docinfo, reference resolution, substitution resolution) into a `docutilsrs::transforms` module mirroring `docutils.transforms.*`, each pass independently testable — **done** (`src/docutilsrs/src/transforms.rs`, `Transform` trait + `Pipeline`)
+- Python-side `docutilsrs` package routes calls to Rust when implemented, falls back to vendored Python otherwise, on a per-component basis (parser, transform, writer) — **done** (`src/docutilsrs/python/docutilsrs_hybrid.py`: `publish_string(prefer=...)` + `dispatch_plan(writer, prefer, has_python_transforms)` reporting `{parser, transforms, writer}`)
+- Rust-side: ability to invoke a Python `Transform` or `Writer` against a Rust-owned doctree (via converter) — **done** (`docutilsrs.register_transform(name, callable)`: callable receives a read-only `PyDoctree` view and returns `[(node_id, new_text), ...]` edits applied to the arena after the default pipeline; see `src/docutilsrs/src/plugins.rs::apply_transforms`)
+- end-to-end test: a document whose parsing is Rust, one transform is Python, and writer is Rust, produces byte-identical output to pure-Python docutils — **done** (`tests/test_phase3_hybrid_e2e.py`, parametrized over 4 docs, uppercases all text via the bridge and compares to pure-Python with the equivalent `docutils.transforms.Transform`)
 
 ### Phase 4 — sphinxdocrs incremental port
 

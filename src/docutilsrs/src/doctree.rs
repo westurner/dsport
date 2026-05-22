@@ -233,6 +233,11 @@ impl Doctree {
         &mut self.nodes[id]
     }
 
+    /// Total number of nodes in the arena (max valid id + 1).
+    pub fn nodes_len(&self) -> usize {
+        self.nodes.len()
+    }
+
     /// Append a new node under `parent` and return its id.
     pub fn append(&mut self, parent: NodeId, kind: NodeKind) -> NodeId {
         let id = self.push(kind, Some(parent));

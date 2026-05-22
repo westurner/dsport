@@ -49,6 +49,7 @@ pub fn parse_rst_with_source(source: &str, source_path: &str) -> Doctree {
     promote_document_title(&mut tree);
     promote_docinfo(&mut tree);
     emit_unresolved_system_messages(&mut tree, &ctx);
+    crate::plugins::apply_transforms(&mut tree);
     tree
 }
 

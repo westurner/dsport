@@ -9,9 +9,24 @@ use crate::doctree::{Doctree, NodeId, NodeKind};
 use crate::parser::parse_rst_with_source;
 use crate::writer::pseudo_xml;
 
-#[pyclass(name = "Doctree", module = "docutilsrs", frozen)]
+#[pyclass(name = "Doctree", module = "docutilsrs")]
 pub struct PyDoctree {
     pub(crate) inner: Doctree,
+}
+
+impl PyDoctree {
+    /// Wrap an owned [`Doctree`] for exposure to Python. Used by the
+    /// transform-plugin bridge to hand a snapshot to a Python callable.
+    pub fn new(inner: Doctree) -> Self {
+        Self { inner }
+    }
+
+    /// Move the inner [`Doctree`] out, replacing it with an empty
+    /// placeholder. Used by the transform bridge after a Python callable
+    /// returns so the parser can resume ownership.
+    pub fn take_inner(&mut self) -> Doctree {
+        std::mem::replace(&mut self.inner, Doctree::new_document("<empty>"))
+    }
 }
 
 #[pymethods]
@@ -46,6 +61,11 @@ pub struct PyNode {
 
 #[pymethods]
 impl PyNode {
+    #[getter]
+    fn id(&self) -> usize {
+        self.id
+    }
+
     #[getter]
     fn tag(&self, py: Python<'_>) -> String {
         match &self.tree.borrow(py).inner.node(self.id).kind {

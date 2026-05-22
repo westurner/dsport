@@ -69,3 +69,26 @@ def test_compare_unsupported_writer():
     assert cmp.rust is None
     assert cmp.identical is False
     assert cmp.python  # non-empty
+
+
+def test_dispatch_plan_rust_default():
+    plan = hybrid.dispatch_plan("pseudoxml")
+    assert plan == {"parser": "rust", "transforms": "rust", "writer": "rust"}
+
+
+def test_dispatch_plan_rust_with_python_transforms():
+    plan = hybrid.dispatch_plan("pseudoxml", has_python_transforms=True)
+    assert plan["transforms"] == "rust+python"
+    assert plan["parser"] == "rust"
+    assert plan["writer"] == "rust"
+
+
+def test_dispatch_plan_falls_back_to_python():
+    plan = hybrid.dispatch_plan("xml")
+    assert plan == {"parser": "python", "transforms": "python", "writer": "python"}
+
+
+def test_dispatch_plan_force_python():
+    plan = hybrid.dispatch_plan("pseudoxml", prefer="python")
+    assert plan["parser"] == "python"
+    assert plan["writer"] == "python"

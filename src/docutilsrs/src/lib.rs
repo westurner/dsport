@@ -171,6 +171,7 @@ pub fn features() -> &'static [&'static str] {
         "transform:promote_document_title",
         "transform:promote_docinfo",
         "plugin:python_directives",
+        "plugin:python_transforms",
     ]
 }
 
@@ -199,6 +200,10 @@ fn docutilsrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(plugins::py_unregister_directive, m)?)?;
     m.add_function(wrap_pyfunction!(plugins::py_registered_directives, m)?)?;
     m.add_function(wrap_pyfunction!(plugins::py_clear_directives, m)?)?;
+    m.add_function(wrap_pyfunction!(plugins::py_register_transform, m)?)?;
+    m.add_function(wrap_pyfunction!(plugins::py_unregister_transform, m)?)?;
+    m.add_function(wrap_pyfunction!(plugins::py_registered_transforms, m)?)?;
+    m.add_function(wrap_pyfunction!(plugins::py_clear_transforms, m)?)?;
     m.add_class::<python::PyDoctree>()?;
     m.add_class::<python::PyNode>()?;
     Ok(())

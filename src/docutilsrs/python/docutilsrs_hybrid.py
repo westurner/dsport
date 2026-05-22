@@ -104,3 +104,33 @@ def compare(
 def features() -> list[str]:
     """Return the Rust port's advertised feature list."""
     return list(docutilsrs.features())
+
+
+# ---------------------------------------------------------------------------
+# Per-component dispatch (Phase 3, item 2)
+# ---------------------------------------------------------------------------
+
+
+def dispatch_plan(
+    writer: str = "pseudoxml",
+    *,
+    prefer: str = "rust",
+    has_python_transforms: bool = False,
+) -> dict[str, str]:
+    """Describe which backend will run each pipeline component.
+
+    Returned dict has keys ``parser``, ``transforms``, ``writer`` whose
+    values are ``"rust"`` or ``"python"``. The Rust pipeline always runs
+    parser+default-transforms+writer as a single unit; when
+    ``has_python_transforms`` is true and the Rust writer is selected,
+    the registered Python transforms run between Rust's default
+    transforms and the Rust writer (via the
+    ``docutilsrs.register_transform`` bridge).
+    """
+    if prefer == "rust" and rust_supports_writer(writer):
+        return {
+            "parser": "rust",
+            "transforms": "rust+python" if has_python_transforms else "rust",
+            "writer": "rust",
+        }
+    return {"parser": "python", "transforms": "python", "writer": "python"}

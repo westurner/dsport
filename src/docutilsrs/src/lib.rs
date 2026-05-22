@@ -80,14 +80,50 @@ fn py_parse_to_manpage(source: &str, source_path: &str) -> String {
 
 /// Parse rST `source` and return a binary ODT (`.odt`) document.
 ///
-/// Produces a valid OpenDocument Text container (zip with `mimetype`,
-/// `META-INF/manifest.xml`, `content.xml`, `styles.xml`). Not parity
-/// tested against `docutils.writers.odf_odt` — see `docs/compat.md`.
-#[pyfunction(name = "parse_to_odt", signature = (source, source_path = "<string>"))]
-fn py_parse_to_odt<'py>(py: Python<'py>, source: &str, source_path: &str) -> Bound<'py, PyBytes> {
+/// By default this uses the native Rust writer
+/// (`docutilsrs::odt_writer`), which produces a valid `.odt` ZIP
+/// container with a minimal style set. It is structurally correct but
+/// *not* byte-for-byte identical to the vendored Python writer.
+///
+/// Pass `compat=True` to delegate to the vendored
+/// `docutils.writers.odf_odt` writer instead. In compat mode the output
+/// is byte-for-byte identical to upstream (gated by
+/// `tests/test_writer_odt_parity.py`, which mirrors upstream's
+/// `content.xml`-after-`ET.tostring` normalization).
+#[pyfunction(name = "parse_to_odt", signature = (source, source_path = "<string>", *, compat = false, settings_overrides = None))]
+fn py_parse_to_odt<'py>(
+    py: Python<'py>,
+    source: &str,
+    source_path: &str,
+    compat: bool,
+    settings_overrides: Option<Bound<'py, pyo3::types::PyDict>>,
+) -> PyResult<Bound<'py, PyBytes>> {
+    if compat {
+        let core = py.import("docutils.core")?;
+        let odf = py.import("docutils.writers.odf_odt")?;
+        let writer = odf.getattr("Writer")?.call0()?;
+        let overrides = pyo3::types::PyDict::new(py);
+        overrides.set_item("_disable_config", true)?;
+        overrides.set_item("language_code", "en-US")?;
+        if let Some(user) = settings_overrides {
+            for (k, v) in user.iter() {
+                overrides.set_item(k, v)?;
+            }
+        }
+        let kwargs = pyo3::types::PyDict::new(py);
+        kwargs.set_item("source", source.as_bytes())?;
+        kwargs.set_item("source_path", source_path)?;
+        kwargs.set_item("writer", writer)?;
+        kwargs.set_item("settings_overrides", overrides)?;
+        let result = core
+            .getattr("publish_string")?
+            .call((), Some(&kwargs))?
+            .extract::<Vec<u8>>()?;
+        return Ok(PyBytes::new(py, &result));
+    }
     let tree = parse_rst_with_source(source, source_path);
     let bytes = odt(&tree);
-    PyBytes::new(py, &bytes)
+    Ok(PyBytes::new(py, &bytes))
 }
 
 /// List of feature flags supported by the Rust port at runtime.
@@ -102,6 +138,7 @@ pub fn features() -> &'static [&'static str] {
         "writer:latex",
         "writer:manpage",
         "writer:odt",
+        "writer:odt_compat",
         "parser:table_colspan",
         "parser:table_rowspan",
         "parser:table_multipara_cells",

@@ -210,9 +210,8 @@ impl EventManager {
                         .repr()
                         .map(|s| s.to_string())
                         .unwrap_or_else(|_| "<handler>".into());
-                    let msg = format!(
-                        "Handler {handler_repr} for event '{name}' threw an exception"
-                    );
+                    let msg =
+                        format!("Handler {handler_repr} for event '{name}' threw an exception");
                     let _ = modname;
                     let new = ExtensionError::new_err(msg);
                     new.set_cause(py, Some(err));
@@ -265,11 +264,7 @@ impl EventManager {
     }
 }
 
-fn is_instance_of_any(
-    py: Python<'_>,
-    err: &PyErr,
-    types: &Bound<'_, PyTuple>,
-) -> PyResult<bool> {
+fn is_instance_of_any(py: Python<'_>, err: &PyErr, types: &Bound<'_, PyTuple>) -> PyResult<bool> {
     let inst = err.value(py);
     for ty in types.iter() {
         let ty: Bound<'_, PyType> = ty.cast_into()?;
@@ -279,5 +274,3 @@ fn is_instance_of_any(
     }
     Ok(false)
 }
-
-

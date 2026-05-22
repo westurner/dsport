@@ -15,7 +15,7 @@ not yet ported — keep as parity probes only.
 | `events.py` | `sphinxdocrs::events` | **P1** | `EventManager`: connect/disconnect/emit/emit_firstresult + priority sort + `allowed_exceptions` + `pdb` re-raise + `ExtensionError` wrapping |
 | `project.py` | `sphinxdocrs::project` | **P1** | `Project.path2doc` / `doc2path` first; `discover()` defers globbing logic — port after `util.matching` is available |
 | `addnodes.py` | n/a (Python re-export) | **P1** | extends docutils.nodes — keep as Python shim that imports vendored `sphinx.addnodes` until our doctree gains Sphinx-specific node types |
-| `extension.py` | `sphinxdocrs::extension` | **P2** | `Extension` wrapper class + version metadata; depends on event/registry |
+| `extension.py` | `sphinxdocrs::extension` | **P2** | **mirrored** — `Extension` wrapper + `verify_needs_extensions` landed in `src/sphinxdocrs/src/extension.rs`; gated by `tests/test_sphinxdocrs_extension.py` |
 | `registry.py` | `sphinxdocrs::registry` | **P2** | builder/parser/transform/translator registries; depends on extension + events |
 | `config.py` | `sphinxdocrs::config` | **P2** | depends on `util.typing`, complex value coercion; port `Config` after util |
 | `roles.py` / `directives/` | `sphinxdocrs::roles` etc | **P3** | needs the doctree converter (already in `docutilsrs::python`) and the directive/role registry |
@@ -40,6 +40,7 @@ underlying subsystem is ported.
 | `test_events.py` | events | P1 | mirrored — `tests/test_sphinxdocrs_events.py` |
 | `test_project.py` | project | P1 | partial-mirror (`path2doc`/`doc2path`); `discover` deferred |
 | `test_addnodes.py` | addnodes | P1 | deferred (no Sphinx-specific nodes in Rust doctree yet) |
+| (no upstream test_extension.py) | extension | P2 | mirrored — `tests/test_sphinxdocrs_extension.py` (8 cases: defaults, kwargs-pop semantics, explicit-None preservation, `verify_needs_extensions` parity) |
 | `test_application.py` | application | P3 | deferred |
 | `test_command_line.py`, `test__cli/` | cli | P3 | deferred |
 | `test_config/` | config | P2 | deferred |

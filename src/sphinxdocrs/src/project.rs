@@ -80,11 +80,7 @@ impl Project {
     /// ``docname + first_source_suffix`` (matching upstream behavior).
     #[pyo3(signature = (docname, absolute))]
     fn doc2path(&self, docname: &str, absolute: bool) -> String {
-        let first = self
-            .source_suffix
-            .first()
-            .map(|s| s.as_str())
-            .unwrap_or("");
+        let first = self.source_suffix.first().map(|s| s.as_str()).unwrap_or("");
         let rel = format!("{docname}{first}");
         if absolute {
             let joined = self.srcdir.join(&rel);

@@ -77,6 +77,29 @@ def project(srcdir, source_suffix, *, prefer: str = "rust"):
     return _PyProject(srcdir, source_suffix)
 
 
+def extension(name, module, *, prefer: str = "rust", **kwargs):
+    """Return an Extension wrapper, preferring the Rust port.
+
+    Mirrors ``sphinx.extension.Extension(name, module, **metadata)``.
+    """
+    if prefer == "rust" and _HAS_RUST and supports("extension:wrapper"):
+        return _rs.Extension(name, module, **kwargs)
+    from sphinx.extension import Extension as _PyExtension
+    return _PyExtension(name, module, **kwargs)
+
+
+def verify_needs_extensions(app, config, *, prefer: str = "rust") -> None:
+    """Mirror of ``sphinx.extension.verify_needs_extensions``."""
+    if (
+        prefer == "rust"
+        and _HAS_RUST
+        and supports("extension:verify_needs_extensions")
+    ):
+        return _rs.verify_needs_extensions(app, config)
+    from sphinx.extension import verify_needs_extensions as _py
+    return _py(app, config)
+
+
 def dispatch_plan(*, prefer: str = "rust") -> dict[str, str]:
     """Per-component dispatch summary, mirroring docutilsrs_hybrid."""
     if prefer == "rust" and _HAS_RUST:
@@ -84,5 +107,11 @@ def dispatch_plan(*, prefer: str = "rust") -> dict[str, str]:
             "events": "rust" if supports("events:event_manager") else "python",
             "project": "rust" if supports("project:path2doc") else "python",
             "errors": "rust" if supports("errors:sphinx_hierarchy") else "python",
+            "extension": "rust" if supports("extension:wrapper") else "python",
         }
-    return {"events": "python", "project": "python", "errors": "python"}
+    return {
+        "events": "python",
+        "project": "python",
+        "errors": "python",
+        "extension": "python",
+    }

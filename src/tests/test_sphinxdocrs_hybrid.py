@@ -45,7 +45,12 @@ def test_dispatch_plan_rust() -> None:
 
 def test_dispatch_plan_python_fallback() -> None:
     plan = hybrid.dispatch_plan(prefer='python')
-    assert plan == {'events': 'python', 'project': 'python', 'errors': 'python'}
+    assert plan == {
+        'events': 'python',
+        'project': 'python',
+        'errors': 'python',
+        'extension': 'python',
+    }
 
 
 def test_project_prefers_rust(tmp_path) -> None:

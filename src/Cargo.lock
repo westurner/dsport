@@ -399,6 +399,7 @@ version = "0.0.1"
 dependencies = [
  "insta",
  "pyo3",
+ "regex",
 ]
 
 [[package]]

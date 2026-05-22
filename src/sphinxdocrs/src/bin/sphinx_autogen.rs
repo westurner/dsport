@@ -7,7 +7,10 @@ fn main() {
         "sphinxautogen" => "sphinx.ext.autosummary.generate",
         _ => "sphinx.cmd.build",
     };
-    let py_code = format!("import sys; from {} import main; sys.exit(main())", mod_path);
+    let py_code = format!(
+        "import sys; from {} import main; sys.exit(main())",
+        mod_path
+    );
     let status = std::process::Command::new("python")
         .arg("-c")
         .arg(&py_code)

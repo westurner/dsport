@@ -19,6 +19,7 @@ pub mod errors;
 pub mod events;
 pub mod extension;
 pub mod project;
+pub mod util_matching;
 
 /// Crate version string. Mirrors `Cargo.toml` `[package].version`.
 pub fn version() -> &'static str {
@@ -40,8 +41,10 @@ pub fn features() -> &'static [&'static str] {
         "events:emit_firstresult",
         "project:path2doc",
         "project:doc2path",
+        "project:discover",
         "extension:wrapper",
         "extension:verify_needs_extensions",
+        "util:matching",
     ]
 }
 
@@ -64,6 +67,7 @@ fn sphinxdocrs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<project::Project>()?;
     m.add_class::<extension::Extension>()?;
     m.add_function(wrap_pyfunction!(extension::py_verify_needs_extensions, m)?)?;
+    util_matching::register(m)?;
 
     // Exception types
     m.add("SphinxError", py.get_type::<errors::SphinxError>())?;
@@ -102,10 +106,18 @@ fn sphinxdocrs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 #[pyfunction(name = "main")]
-fn py_main() { println!("stub running"); }
+fn py_main() {
+    println!("stub running");
+}
 #[pyfunction(name = "sphinx_quickstart")]
-fn py_sphinx_quickstart() { println!("stub running"); }
+fn py_sphinx_quickstart() {
+    println!("stub running");
+}
 #[pyfunction(name = "sphinx_apidoc")]
-fn py_sphinx_apidoc() { println!("stub running"); }
+fn py_sphinx_apidoc() {
+    println!("stub running");
+}
 #[pyfunction(name = "sphinx_autogen")]
-fn py_sphinx_autogen() { println!("stub running"); }
+fn py_sphinx_autogen() {
+    println!("stub running");
+}

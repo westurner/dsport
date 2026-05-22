@@ -11,8 +11,8 @@ license = "BSD-2-Clause"
 rust-version = "1.75"
 
 [workspace.dependencies]
-pyo3 = "0.28"
-insta = { version = "1.39", features = ["yaml"] }
+pyo3 = "0.28.3"
+insta = { version = "1.47", features = ["yaml"] }
 
 [profile.release]
 lto = "thin"

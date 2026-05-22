@@ -209,8 +209,12 @@ skips**; **102** of those pytest are byte-parity cases in
 `test_parity_pseudoxml.py`. The new fixtures must keep that count
 monotonically increasing; no parity regressions.
 
-> **Post-landing**: pytest is now at **235 passed, zero skips**; the
-> byte-parity count is at **104**. Pygments-related cargo unit tests
+> **Post-landing**: pytest is now at **244 passed, zero skips**; the
+> byte-parity count is at **113** (102 → 113, with 9 `code_block_python_*`
+> fixtures byte-parity against vendored docutils after the PythonLexer
+> reached parity for `def`/`class`/`import`/`from MOD import NAME`/
+> `True`/`False`/`None` keyword-constants and the
+> `\n`/horizontal-whitespace bifurcation. Pygments-related cargo unit tests
 > (4 in `code_block.rs` + 3 token + 5 pygmentsrs snapshot) sit
 > alongside the existing docutilsrs suite.
 

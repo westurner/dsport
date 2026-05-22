@@ -87,7 +87,7 @@ Transforms:
 - factored into a standalone `docutilsrs::transforms` module mirroring `docutils.transforms.*` with a composable `Transform`/`Pipeline` API
 
 Writers:
-- pseudo-XML — byte-parity-gated against vendored `docutils.publish_string(..., writer="pseudoxml")` (`tests/test_parity_pseudoxml.py`, **104 cases**)
+- pseudo-XML — byte-parity-gated against vendored `docutils.publish_string(..., writer="pseudoxml")` (`tests/test_parity_pseudoxml.py`, **113 cases**)
 - HTML5 (`docutilsrs.parse_to_html5`) — minimal semantic fragment; accepted-deviation, structurally gated
 - LaTeX (`docutilsrs.parse_to_latex`) — minimal, accepted-deviation, structurally gated
 - manpage/troff (`docutilsrs.parse_to_manpage`) — minimal, accepted-deviation, structurally gated

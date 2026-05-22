@@ -17,7 +17,7 @@ Status legend: ✅ byte-parity · 🟡 partial · 🔲 accepted-deviation · —
 | name     | aliases                       | tokens | html | notes                                                                                    |
 | -------- | ----------------------------- | :----: | :--: | ---------------------------------------------------------------------------------------- |
 | `text`   | `text`, `plain`, `""`         |   ✅   |  ✅  | Trivial passthrough.                                                                     |
-| `python` | `python`, `py`, `python3`     |   🟡   |  🟡  | Phase 1 starter: keywords / `def`/`class`-name / simple strings (no escapes, no triples) / integers / `#` comments / punctuation / operators. f-strings, decorators, raw/byte strings, numeric variants (hex/bin/oct/float), formatted-string state machine: not yet. |
+| `python` | `python`, `py`, `python3`     |   ✅   |  🟡  | Byte-parity against vendored `pygments.lex(...)` token stream for the 9 fixtures gated through `docutils.utils.code_analyzer.Lexer` in `src/tests/test_parity_pseudoxml.py` (`code_block_python_*`): `def`/`class` declarations, `import`/`from MOD import NAME`, `True`/`False`/`None` as `Keyword.Constant`, simple strings, `#` comments, integers, operators, function calls. Whitespace is correctly bifurcated (`\n` → `Token.Text.Whitespace`, horizontal → `Token.Text`). Gaps remain for f-strings, triple-quoted strings, decorators, escape sequences, numeric variants (hex/oct/bin/float), and the full state machine — not yet exercised by parity fixtures. |
 
 ## Formatters
 

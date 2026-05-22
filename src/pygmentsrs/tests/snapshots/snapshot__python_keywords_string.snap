@@ -1,5 +1,6 @@
 ---
 source: pygmentsrs/tests/snapshot.rs
+assertion_line: 33
 expression: toks
 ---
 [
@@ -8,11 +9,11 @@ expression: toks
         "if",
     ),
     (
-        "Token.Text.Whitespace",
+        "Token.Text",
         " ",
     ),
     (
-        "Token.Keyword",
+        "Token.Keyword.Constant",
         "True",
     ),
     (
@@ -21,14 +22,18 @@ expression: toks
     ),
     (
         "Token.Text.Whitespace",
-        "\n    ",
+        "\n",
+    ),
+    (
+        "Token.Text",
+        "    ",
     ),
     (
         "Token.Name",
         "x",
     ),
     (
-        "Token.Text.Whitespace",
+        "Token.Text",
         " ",
     ),
     (
@@ -36,7 +41,7 @@ expression: toks
         "=",
     ),
     (
-        "Token.Text.Whitespace",
+        "Token.Text",
         " ",
     ),
     (

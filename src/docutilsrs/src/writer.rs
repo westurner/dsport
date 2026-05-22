@@ -26,7 +26,15 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
     let indent = "    ".repeat(depth);
     match &node.kind {
         NodeKind::Text(s) => {
-            for line in s.split('\n') {
+            // Match Python `str.splitlines()` semantics (used by
+            // upstream `docutils.nodes.Text.pformat`): "\n" yields
+            // one empty line, not two. Without this, a trailing `\n`
+            // in a text node produces a spurious blank line.
+            if s.is_empty() {
+                return;
+            }
+            let body = s.strip_suffix('\n').unwrap_or(s);
+            for line in body.split('\n') {
                 out.push_str(&indent);
                 out.push_str(line);
                 out.push('\n');

@@ -119,7 +119,14 @@ pub enum NodeKind {
     Thead,
     Tbody,
     Row,
-    Entry,
+    /// Table cell. `morecols` is the extra number of columns this entry
+    /// spans (0 for a regular single-column cell); colspan support is
+    /// limited to grid tables. `morerows` (rowspan) is currently always
+    /// 0 — see `docs/compat.md`.
+    Entry {
+        morecols: u32,
+        morerows: u32,
+    },
     // ── phase 2 deferrals ───────────────────────────────────────────────
     /// Attribution line within a block_quote (`-- Author`).
     Attribution,

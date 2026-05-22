@@ -29,7 +29,7 @@ pub fn parse_rst_with_source(source: &str, source_path: &str) -> Doctree {
     let lines: Vec<&str> = source.lines().collect();
     collect_substitutions(&lines, &mut subs);
 
-    let blocks = parse_blocks(&lines, 0);
+    let blocks = parse_blocks(&lines, 0, 1);
     let mut ctx = ParseCtx {
         subs,
         anon_target_count: 0,
@@ -38,6 +38,8 @@ pub fn parse_rst_with_source(source: &str, source_path: &str) -> Doctree {
         citation_count: 0,
         footnote_ref_count: 0,
         citation_ref_count: 0,
+        current_line: 0,
+        inline_ref_sites: Vec::new(),
     };
     for block in blocks {
         emit_block(&mut tree, document, &mut ctx, block);
@@ -46,6 +48,7 @@ pub fn parse_rst_with_source(source: &str, source_path: &str) -> Doctree {
     resolve_references(&mut tree, &ctx);
     promote_document_title(&mut tree);
     promote_docinfo(&mut tree);
+    emit_unresolved_system_messages(&mut tree, &ctx);
     tree
 }
 
@@ -61,6 +64,15 @@ pub struct ParseCtx {
     pub(crate) citation_count: u32,
     pub(crate) footnote_ref_count: u32,
     pub(crate) citation_ref_count: u32,
+    /// Source line of the paragraph currently being emitted, or 0 when
+    /// unknown. Used to stamp `line=` on system messages for unresolved
+    /// references discovered during inline parsing.
+    pub(crate) current_line: u32,
+    /// `(reference_node_id, source_line, name)` for every inline
+    /// `Reference` produced; consulted post-resolution to emit
+    /// `<problematic>` placeholders and a `system-messages` section for
+    /// unresolved targets.
+    pub(crate) inline_ref_sites: Vec<(NodeId, u32, String)>,
 }
 
 impl ParseCtx {
@@ -75,7 +87,10 @@ impl ParseCtx {
 // ────────────────────────────────────────────────────────────────────────────
 
 enum Block {
-    Paragraph(String),
+    /// `line` is the 1-based source line the paragraph starts on,
+    /// or 0 when unknown (e.g. for content re-parsed from a nested
+    /// context).
+    Paragraph { text: String, line: u32 },
     BulletList {
         bullet: char,
         items: Vec<Vec<Block>>,
@@ -165,16 +180,21 @@ struct FieldItem {
 struct TableData {
     /// Column widths in characters.
     cols: Vec<usize>,
-    /// Optional header row(s): each cell is its own paragraph-string.
-    head: Vec<Vec<String>>,
-    body: Vec<Vec<String>>,
+    /// Optional header row(s).
+    head: Vec<Vec<TableCell>>,
+    body: Vec<Vec<TableCell>>,
+}
+
+struct TableCell {
+    text: String,
+    morecols: u32,
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // Block-level parser
 // ────────────────────────────────────────────────────────────────────────────
 
-fn parse_blocks(lines: &[&str], base_indent: usize) -> Vec<Block> {
+fn parse_blocks(lines: &[&str], base_indent: usize, base_line: u32) -> Vec<Block> {
     let mut blocks = Vec::new();
     let mut i = 0;
     // Section detection: track underline level → integer.
@@ -209,7 +229,7 @@ fn parse_blocks(lines: &[&str], base_indent: usize) -> Vec<Block> {
                 }
                 end += 1;
             }
-            let body = parse_blocks(&lines[body_start..end], 0);
+            let body = parse_blocks(&lines[body_start..end], 0, 0);
             blocks.push(Block::Section {
                 title,
                 level,
@@ -300,7 +320,7 @@ fn parse_blocks(lines: &[&str], base_indent: usize) -> Vec<Block> {
                         item_lines.pop();
                     }
                     let refs: Vec<&str> = item_lines.iter().map(|s| s.as_str()).collect();
-                    items.push(parse_blocks(&refs, item_indent));
+                    items.push(parse_blocks(&refs, item_indent, 0));
                 } else {
                     break;
                 }
@@ -370,7 +390,7 @@ fn parse_blocks(lines: &[&str], base_indent: usize) -> Vec<Block> {
                     item_lines.pop();
                 }
                 let refs: Vec<&str> = item_lines.iter().map(|s| s.as_str()).collect();
-                items.push(parse_blocks(&refs, item_indent));
+                items.push(parse_blocks(&refs, item_indent, 0));
             }
             blocks.push(Block::EnumeratedList {
                 enumtype,
@@ -414,12 +434,13 @@ fn parse_blocks(lines: &[&str], base_indent: usize) -> Vec<Block> {
             while quote_lines.last().map(|s| s.is_empty()).unwrap_or(false) {
                 quote_lines.pop();
             }
-            let children = parse_blocks(&quote_lines, qb_indent);
+            let children = parse_blocks(&quote_lines, qb_indent, 0);
             blocks.push(Block::BlockQuote(children));
             continue;
         }
 
         // Paragraph (with possible trailing `::` literal block).
+        let para_start = i;
         let mut buf: Vec<&str> = Vec::new();
         while i < lines.len() {
             let l = lines[i];
@@ -469,7 +490,12 @@ fn parse_blocks(lines: &[&str], base_indent: usize) -> Vec<Block> {
             }
         }
         if !text.is_empty() {
-            blocks.push(Block::Paragraph(text));
+            let line = if base_line == 0 {
+                0
+            } else {
+                base_line + para_start as u32
+            };
+            blocks.push(Block::Paragraph { text, line });
         }
         if want_literal {
             // Skip blank lines, then consume indented block as literal.
@@ -913,7 +939,7 @@ fn parse_field_list(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Op
             body_lines.pop();
         }
         let refs: Vec<&str> = body_lines.iter().map(|s| s.as_str()).collect();
-        let body_blocks = parse_blocks(&refs, body_indent);
+        let body_blocks = parse_blocks(&refs, body_indent, 0);
         let body_text = body_lines
             .iter()
             .map(|s| s.trim_start().to_string())
@@ -1030,7 +1056,7 @@ fn parse_def_list(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Opti
             def_lines.pop();
         }
         let refs: Vec<&str> = def_lines.iter().map(|s| s.as_str()).collect();
-        let definition = parse_blocks(&refs, def_indent);
+        let definition = parse_blocks(&refs, def_indent, 0);
         items.push(DefItem {
             term,
             classifier,
@@ -1125,7 +1151,7 @@ fn parse_explicit(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Opti
             body_lines.pop();
         }
         let body_refs: Vec<&str> = body_lines.iter().map(|s| s.as_str()).collect();
-        let body = parse_blocks(&body_refs, 0);
+        let body = parse_blocks(&body_refs, 0, 0);
         return Some(if is_citation_label(&label) {
             Block::Citation { label, body }
         } else {
@@ -1293,7 +1319,7 @@ fn parse_directive(
             };
             let mut child_blocks: Vec<Block> = Vec::new();
             if !args.is_empty() {
-                child_blocks.push(Block::Paragraph(args.to_string()));
+                child_blocks.push(Block::Paragraph { text: args.to_string(), line: 0 });
             }
             *i_ref += 1;
             // Skip blank lines, then collect indented content.
@@ -1301,7 +1327,7 @@ fn parse_directive(
             if let Some(ci) = content_indent {
                 let inner = consume_indented_lines(lines, i_ref, ci);
                 let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                let mut more = parse_blocks(&refs, ci);
+                let mut more = parse_blocks(&refs, ci, 0);
                 child_blocks.append(&mut more);
             }
             Block::Admonition {
@@ -1385,11 +1411,11 @@ fn parse_directive(
                         }
                         k += 1;
                     }
-                    let inner = parse_blocks(&lines[start..k], ind);
+                    let inner = parse_blocks(&lines[start..k], ind, 0);
                     *i_ref = k;
                     let mut iter = inner.into_iter();
                     if let Some(first) = iter.next() {
-                        if let Block::Paragraph(text) = first {
+                        if let Block::Paragraph { text, .. } = first {
                             caption = Some(text);
                         } else {
                             legend.push(first);
@@ -1444,7 +1470,7 @@ fn parse_directive(
             if crate::plugins::has_plugin(&name) {
                 if let Some(rst) = crate::plugins::invoke_plugin(&name, args, &body_text) {
                     let rst_lines: Vec<&str> = rst.lines().collect();
-                    let blocks = parse_blocks(&rst_lines, 0);
+                    let blocks = parse_blocks(&rst_lines, 0, 0);
                     return Block::PluginResult(blocks);
                 }
             }
@@ -1556,13 +1582,15 @@ fn parse_grid_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Op
         return None;
     }
     let top = &lines[start][base_indent..];
-    // Column widths from top border: `+---+---+`
+    // Column borders (byte positions of `+` chars in the top border).
+    let mut col_borders: Vec<usize> = Vec::new();
     let mut cols: Vec<usize> = Vec::new();
     let bytes = top.as_bytes();
     let mut col_start: Option<usize> = None;
     for (idx, &b) in bytes.iter().enumerate() {
         match b {
             b'+' => {
+                col_borders.push(idx);
                 if let Some(s) = col_start {
                     cols.push(idx - s - 1);
                 }
@@ -1585,20 +1613,29 @@ fn parse_grid_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Op
         }
     }
     // Collect rows: each text row is between two `+---+` separators.
-    let collect_rows = |from: usize, to: usize| -> Vec<Vec<String>> {
-        let mut rows: Vec<Vec<String>> = Vec::new();
-        let mut buf: Vec<Vec<String>> = vec![Vec::new(); cols.len()];
+    // We also detect column spans (`morecols`) by mapping the byte
+    // positions of `|` characters to the original column borders
+    // captured from the top border. Multi-paragraph cells and row
+    // spans are not yet supported (see `docs/compat.md`).
+    let collect_rows = |from: usize, to: usize| -> Vec<Vec<TableCell>> {
+        let mut rows: Vec<Vec<TableCell>> = Vec::new();
+        // For each pending cell, we track (col_idx_left, col_idx_right,
+        // lines). Reset on each separator.
+        let mut pending: Vec<(usize, usize, Vec<String>)> = Vec::new();
         let mut have_buf = false;
         for k in from..to {
             let l = &lines[k][base_indent..];
             if l.starts_with('+') {
                 if have_buf {
-                    let cells: Vec<String> = buf
+                    let cells: Vec<TableCell> = pending
                         .iter()
-                        .map(|cl| cl.join("\n").trim().to_string())
+                        .map(|(li, ri, lines)| TableCell {
+                            text: lines.join("\n").trim().to_string(),
+                            morecols: (ri - li).saturating_sub(1) as u32,
+                        })
                         .collect();
                     rows.push(cells);
-                    buf = vec![Vec::new(); cols.len()];
+                    pending.clear();
                     have_buf = false;
                 }
                 continue;
@@ -1606,15 +1643,45 @@ fn parse_grid_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Op
             if !l.starts_with('|') {
                 continue;
             }
-            // Split by `|` and take cols.len() fields.
-            let parts: Vec<&str> = l.split('|').collect();
-            if parts.len() < cols.len() + 2 {
+            // Find positions of `|` chars; map each to a column border.
+            let pipe_positions: Vec<usize> = l
+                .char_indices()
+                .filter(|&(_, c)| c == '|')
+                .map(|(i, _)| i)
+                .collect();
+            if pipe_positions.len() < 2 {
                 continue;
             }
-            for (ci, part) in parts[1..=cols.len()].iter().enumerate() {
-                buf[ci].push(part.to_string());
+            // Each pair of consecutive `|` defines a cell. Determine
+            // its column-span by counting column borders strictly
+            // between the pipes.
+            let cell_count = pipe_positions.len() - 1;
+            if !have_buf {
+                for w in 0..cell_count {
+                    let lp = pipe_positions[w];
+                    let rp = pipe_positions[w + 1];
+                    let li = col_borders.iter().position(|&p| p == lp).unwrap_or(w);
+                    let ri = col_borders.iter().position(|&p| p == rp).unwrap_or(li + 1);
+                    let text = l.get(lp + 1..rp).unwrap_or("").to_string();
+                    pending.push((li, ri, vec![text]));
+                }
+                have_buf = true;
+            } else if pending.len() == cell_count {
+                for (w, slot) in pending.iter_mut().enumerate() {
+                    let lp = pipe_positions[w];
+                    let rp = pipe_positions[w + 1];
+                    slot.2.push(l.get(lp + 1..rp).unwrap_or("").to_string());
+                }
+            } else {
+                // Mismatched continuation (e.g. spans differ between
+                // text lines of the same cell-strip). Fall back to a
+                // best-effort append on the first column.
+                if let Some(first) = pending.first_mut() {
+                    let lp = pipe_positions[0];
+                    let rp = *pipe_positions.last().unwrap();
+                    first.2.push(l.get(lp + 1..rp).unwrap_or("").to_string());
+                }
             }
-            have_buf = true;
         }
         rows
     };
@@ -1670,7 +1737,7 @@ fn parse_simple_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> 
         return None;
     }
     let end_line = *sep_indices.last().unwrap();
-    let split_row = |row: &str| -> Vec<String> {
+    let split_row = |row: &str| -> Vec<TableCell> {
         let mut cells = Vec::with_capacity(col_widths.len());
         for (idx, &(s, e)) in cols.iter().enumerate() {
             let cell = if idx + 1 == cols.len() {
@@ -1678,11 +1745,14 @@ fn parse_simple_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> 
             } else {
                 row.get(s..e).unwrap_or("").to_string()
             };
-            cells.push(cell.trim().to_string());
+            cells.push(TableCell {
+                text: cell.trim().to_string(),
+                morecols: 0,
+            });
         }
         cells
     };
-    let (head, body): (Vec<Vec<String>>, Vec<Vec<String>>) = if sep_indices.len() >= 2 {
+    let (head, body): (Vec<Vec<TableCell>>, Vec<Vec<TableCell>>) = if sep_indices.len() >= 2 {
         let head_end = sep_indices[0];
         let mut head_rows = Vec::new();
         for k in start + 1..head_end {
@@ -1775,9 +1845,12 @@ fn collect_substitutions(lines: &[&str], out: &mut HashMap<String, String>) {
 
 fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Block) {
     match block {
-        Block::Paragraph(text) => {
+        Block::Paragraph { text, line } => {
+            let prev_line = ctx.current_line;
+            ctx.current_line = line;
             let p = tree.append(parent, NodeKind::Paragraph);
             parse_inline(tree, p, ctx, &text);
+            ctx.current_line = prev_line;
         }
         Block::BulletList { bullet, items } => {
             let list = tree.append(parent, NodeKind::BulletList { bullet });
@@ -1870,7 +1943,7 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             // text begins with `-- ` or `--- `, split it off as
             // <attribution>. Indentation/whitespace are stripped.
             let attribution_text = match children.last() {
-                Some(Block::Paragraph(text)) => {
+                Some(Block::Paragraph { text, .. }) => {
                     let t = text.trim_start();
                     if let Some(rest) = t.strip_prefix("--- ").or_else(|| t.strip_prefix("-- ")) {
                         Some(rest.to_string())
@@ -2131,10 +2204,16 @@ fn emit_table(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, td: TableD
         for row in td.head {
             let r = tree.append(thead, NodeKind::Row);
             for cell in row {
-                let e = tree.append(r, NodeKind::Entry);
-                if !cell.is_empty() {
+                let e = tree.append(
+                    r,
+                    NodeKind::Entry {
+                        morecols: cell.morecols,
+                        morerows: 0,
+                    },
+                );
+                if !cell.text.is_empty() {
                     let p = tree.append(e, NodeKind::Paragraph);
-                    parse_inline(tree, p, ctx, &cell);
+                    parse_inline(tree, p, ctx, &cell.text);
                 }
             }
         }
@@ -2143,10 +2222,16 @@ fn emit_table(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, td: TableD
     for row in td.body {
         let r = tree.append(tbody, NodeKind::Row);
         for cell in row {
-            let e = tree.append(r, NodeKind::Entry);
-            if !cell.is_empty() {
+            let e = tree.append(
+                r,
+                NodeKind::Entry {
+                    morecols: cell.morecols,
+                    morerows: 0,
+                },
+            );
+            if !cell.text.is_empty() {
                 let p = tree.append(e, NodeKind::Paragraph);
-                parse_inline(tree, p, ctx, &cell);
+                parse_inline(tree, p, ctx, &cell.text);
             }
         }
     }
@@ -2199,6 +2284,80 @@ pub(crate) fn resolve_references(tree: &mut Doctree, ctx: &ParseCtx) {
     let mut anon_iter = ctx.anon_target_uris.iter().cloned();
     apply_targets(tree, tree.root(), &targets, &mut anon_iter);
     resolve_footnotes(tree);
+}
+
+/// Walk `ctx.inline_ref_sites` for `Reference` nodes that remained
+/// unresolved (empty `refuri`, non-anonymous), convert each into a
+/// `<problematic>` placeholder, and append a `<section
+/// classes="system-messages">` at the end of the document containing
+/// one `<system_message>` per unresolved target.
+pub(crate) fn emit_unresolved_system_messages(tree: &mut Doctree, ctx: &ParseCtx) {
+    let mut unresolved: Vec<(NodeId, u32, String)> = Vec::new();
+    for (id, line, name) in &ctx.inline_ref_sites {
+        if let NodeKind::Reference {
+            refuri, anonymous, ..
+        } = &tree.node(*id).kind
+        {
+            if refuri.is_empty() && !anonymous && !name.is_empty() {
+                unresolved.push((*id, *line, name.clone()));
+            }
+        }
+    }
+    if unresolved.is_empty() {
+        return;
+    }
+
+    for (idx, (ref_id, _line, _name)) in unresolved.iter().enumerate() {
+        let n = idx + 1;
+        let ids = format!("problematic-{n}");
+        let refid = format!("system-message-{n}");
+        tree.set_kind(*ref_id, NodeKind::Problematic { ids, refid });
+        // Append trailing underscore to the existing reference text so
+        // the problematic renders as `name_`.
+        let kids = tree.node(*ref_id).children.clone();
+        if let Some(&first) = kids.first() {
+            if let NodeKind::Text(t) = &tree.node(first).kind {
+                let new_text = format!("{t}_");
+                tree.set_kind(first, NodeKind::Text(new_text));
+            }
+        }
+    }
+
+    let root = tree.root();
+    let sec = tree.append(
+        root,
+        NodeKind::Section {
+            ids: String::new(),
+            names: String::new(),
+            classes: "system-messages".to_string(),
+        },
+    );
+    let title = tree.append(sec, NodeKind::Title);
+    tree.append(
+        title,
+        NodeKind::Text("Docutils System Messages".to_string()),
+    );
+    for (idx, (_ref_id, line, name)) in unresolved.iter().enumerate() {
+        let n = idx + 1;
+        let sm = tree.append(
+            sec,
+            NodeKind::SystemMessage {
+                level: 3,
+                line: if *line > 0 { Some(*line) } else { None },
+                ty: "ERROR",
+                ids: format!("system-message-{n}"),
+                backrefs: format!("problematic-{n}"),
+            },
+        );
+        let p = tree.append(sm, NodeKind::Paragraph);
+        tree.append(
+            p,
+            NodeKind::Text(format!(
+                "Unknown target name: \"{}\".",
+                name.to_lowercase()
+            )),
+        );
+    }
 }
 
 /// Map footnote labels → ids, then resolve `FootnoteReference.refid` and
@@ -2918,6 +3077,9 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
                     anonymous,
                 },
             );
+            if embedded_uri.is_none() && !anonymous {
+                ctx.inline_ref_sites.push((node, ctx.current_line, name.clone()));
+            }
             push_text(tree, node, &name);
             // For embedded URIs (non-anonymous), docutils also emits an
             // implicit Target sibling within the same paragraph.
@@ -2957,6 +3119,9 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
                     anonymous,
                 },
             );
+            if !anonymous {
+                ctx.inline_ref_sites.push((node, ctx.current_line, name.clone()));
+            }
             push_text(tree, node, &name);
             cursor = end;
             text_start = cursor;

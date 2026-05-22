@@ -175,7 +175,21 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
         NodeKind::Thead => wrap(tree, &node.children, "thead", out),
         NodeKind::Tbody => wrap(tree, &node.children, "tbody", out),
         NodeKind::Row => wrap(tree, &node.children, "tr", out),
-        NodeKind::Entry => wrap(tree, &node.children, "td", out),
+        NodeKind::Entry { morecols, morerows } => {
+            let mut tag = String::from("<td");
+            if *morecols > 0 {
+                let _ = write!(tag, " colspan=\"{}\"", morecols + 1);
+            }
+            if *morerows > 0 {
+                let _ = write!(tag, " rowspan=\"{}\"", morerows + 1);
+            }
+            tag.push('>');
+            out.push_str(&tag);
+            for &c in &node.children {
+                emit(tree, c, out);
+            }
+            out.push_str("</td>");
+        }
         NodeKind::Attribution => {
             out.push_str("<p class=\"attribution\">— ");
             for &c in &node.children {

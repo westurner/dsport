@@ -7,6 +7,8 @@ use pyo3::prelude::*;
 
 pub mod doctree;
 pub mod html5_writer;
+pub mod latex_writer;
+pub mod manpage_writer;
 pub mod parser;
 pub mod plugins;
 mod python;
@@ -15,6 +17,8 @@ pub mod writer;
 
 pub use doctree::{Doctree, NodeKind};
 pub use html5_writer::html5;
+pub use latex_writer::latex;
+pub use manpage_writer::manpage;
 pub use parser::{parse_rst, parse_rst_with_source};
 pub use writer::pseudo_xml;
 
@@ -49,6 +53,27 @@ fn py_parse_to_html5(source: &str, source_path: &str) -> String {
     html5(&tree)
 }
 
+/// Parse rST `source` and return a minimal LaTeX document.
+///
+/// Not parity-tested against `docutils.writers.latex2e`; produces a
+/// small, predictable subset suitable for downstream rendering. See
+/// `docs/compat.md`.
+#[pyfunction(name = "parse_to_latex", signature = (source, source_path = "<string>"))]
+fn py_parse_to_latex(source: &str, source_path: &str) -> String {
+    let tree = parse_rst_with_source(source, source_path);
+    latex(&tree)
+}
+
+/// Parse rST `source` and return a minimal manpage (troff) document.
+///
+/// Not parity-tested against `docutils.writers.manpage`. See
+/// `docs/compat.md`.
+#[pyfunction(name = "parse_to_manpage", signature = (source, source_path = "<string>"))]
+fn py_parse_to_manpage(source: &str, source_path: &str) -> String {
+    let tree = parse_rst_with_source(source, source_path);
+    manpage(&tree)
+}
+
 /// List of feature flags supported by the Rust port at runtime.
 ///
 /// Used by the hybrid wrapper to decide whether to dispatch a given input
@@ -58,6 +83,9 @@ pub fn features() -> &'static [&'static str] {
     &[
         "writer:pseudoxml",
         "writer:html5",
+        "writer:latex",
+        "writer:manpage",
+        "parser:table_colspan",
         "parser:paragraphs",
         "parser:inline",
         "parser:bullet_list",
@@ -105,6 +133,8 @@ fn docutilsrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_version, m)?)?;
     m.add_function(wrap_pyfunction!(py_parse_to_pseudoxml, m)?)?;
     m.add_function(wrap_pyfunction!(py_parse_to_html5, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parse_to_latex, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parse_to_manpage, m)?)?;
     m.add_function(wrap_pyfunction!(py_features, m)?)?;
     m.add_function(wrap_pyfunction!(py_supports, m)?)?;
     m.add_function(wrap_pyfunction!(python::py_parse_rst, m)?)?;

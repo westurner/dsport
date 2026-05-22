@@ -91,7 +91,7 @@ impl PyNode {
             NodeKind::Thead => "thead".into(),
             NodeKind::Tbody => "tbody".into(),
             NodeKind::Row => "row".into(),
-            NodeKind::Entry => "entry".into(),
+            NodeKind::Entry { .. } => "entry".into(),
             NodeKind::Attribution => "attribution".into(),
             NodeKind::Figure => "figure".into(),
             NodeKind::Caption => "caption".into(),

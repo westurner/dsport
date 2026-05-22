@@ -260,8 +260,17 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         NodeKind::Row => {
             let _ = writeln!(out, "{indent}<row>");
         }
-        NodeKind::Entry => {
-            let _ = writeln!(out, "{indent}<entry>");
+        NodeKind::Entry { morecols, morerows } => {
+            let mut s = format!("{indent}<entry");
+            if *morecols > 0 {
+                let _ = write!(s, " morecols=\"{morecols}\"");
+            }
+            if *morerows > 0 {
+                let _ = write!(s, " morerows=\"{morerows}\"");
+            }
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
         }
         NodeKind::Attribution => {
             let _ = writeln!(out, "{indent}<attribution>");

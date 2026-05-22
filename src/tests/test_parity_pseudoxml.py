@@ -143,6 +143,18 @@ CASES = {
     "footnote_manual_plus_auto": (
         "See [5]_ then [#]_.\n\n.. [5] five\n.. [#] auto"
     ),
+    "unresolved_simple": "See nowhere_.\n",
+    "unresolved_in_p2": "first para\n\nsecond uses missing_ ref.\n",
+    "unresolved_multi": "See NoWhere_ and missing_.\n",
+    "grid_table_colspan": (
+        "+----+----+\n"
+        "| a  | b  |\n"
+        "+----+----+\n"
+        "| c       |\n"
+        "+----+----+\n"
+        "| e  | f  |\n"
+        "+----+----+\n"
+    ),
 }
 
 

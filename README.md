@@ -84,12 +84,14 @@ Deferred to later phases (tracked as `accepted-deviation` in `docs/compat.md`):
 - overlined sections, block-quote attributions (landed)
 - nested lists + multi-paragraph list items (landed; covered by `nested_*`/`multipara_*` parity cases)
 - phrase refs with embedded URIs, anonymous refs, footnotes (numeric + autonumber + autosymbol), citations (landed)
-- unresolved-reference system messages (still deferred — needs source-line plumbing through the block/inline parser)
-- table row/column spans and multi-paragraph cells
+- unresolved-reference system messages (landed: `<problematic>` + trailing `system-messages` section; line tracking for top-level paragraphs only — nested paragraphs report no line)
+- table column spans (landed for grid tables); row spans (`morerows`) and multi-paragraph cells still deferred
 - figure captions/legends (landed)
 - syntax highlighting for `code-block` (Pygments) — available via the Python directive plugin bridge; see `src/docutilsrs/python/docutilsrs_pygments.py`
 - transforms factored into a standalone module mirroring `docutils.transforms.*` (landed as `docutilsrs::transforms` with a composable `Transform`/`Pipeline` API)
-- LaTeX / ODT / manpage writers
+- LaTeX writer (landed as `docutilsrs.parse_to_latex` — minimal, accepted-deviation, not parity-gated)
+- manpage (troff) writer (landed as `docutilsrs.parse_to_manpage` — minimal, accepted-deviation, not parity-gated)
+- ODT writer (still deferred — requires a zip container with `content.xml`/`styles.xml`/`META-INF/manifest.xml`/`mimetype`)
 
 ### Phase 3 — transforms module + hybrid mode
 

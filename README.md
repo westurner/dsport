@@ -74,24 +74,28 @@ Goal: one full input → doctree → output path working end-to-end on a tiny su
 
 Status: **done**. Per-feature status tracked in `docs/compat.md`.
 
-Landed:
-- parser widened across: sections + transitions, block quotes, literal blocks, definition lists, field lists + docinfo, comments, admonitions, image/figure, code/code-block/sourcecode, raw, inline roles, substitutions (replace), simple + grid tables, phrase references
-- transforms applied inline in the parser pipeline (title promotion, docinfo, reference resolution, substitution resolution)
-- minimal HTML5 writer (`docutilsrs.parse_to_html5`) producing a semantic fragment; not parity-gated
-- pseudo-XML parity gate at 82 cases, byte-for-byte vs vendored `docutils.publish_string(..., writer="pseudoxml")`
+Parser:
+- sections + transitions (including overlined sections), block quotes (with attributions), literal blocks, definition lists (with classifiers), field lists + docinfo, comments, admonitions, image/figure (with captions + legends), code/code-block/sourcecode, raw, inline roles, substitutions (replace), simple + grid tables, phrase references
+- nested lists + multi-paragraph list items (covered by `nested_*`/`multipara_*` parity cases)
+- phrase refs with embedded URIs, anonymous refs, footnotes (numeric + autonumber + autosymbol), citations
+- unresolved-reference system messages (`<problematic>` + trailing `system-messages` section; line tracking for top-level paragraphs only — nested paragraphs report no line)
+- grid tables: column spans, row spans, and multi-paragraph cells (covered by `grid_table_colspan`/`grid_table_rowspan`/`grid_table_rowspan_colspan`/`grid_table_multipara_cell` parity cases)
 
-Deferred to later phases (tracked as `accepted-deviation` in `docs/compat.md`):
-- overlined sections, block-quote attributions (landed)
-- nested lists + multi-paragraph list items (landed; covered by `nested_*`/`multipara_*` parity cases)
-- phrase refs with embedded URIs, anonymous refs, footnotes (numeric + autonumber + autosymbol), citations (landed)
-- unresolved-reference system messages (landed: `<problematic>` + trailing `system-messages` section; line tracking for top-level paragraphs only — nested paragraphs report no line)
-- table column spans, row spans, and multi-paragraph cells (all landed for grid tables; covered by `grid_table_colspan`/`grid_table_rowspan`/`grid_table_rowspan_colspan`/`grid_table_multipara_cell` parity cases)
-- figure captions/legends (landed)
-- syntax highlighting for `code-block` (Pygments) — available via the Python directive plugin bridge; see `src/docutilsrs/python/docutilsrs_pygments.py`
-- transforms factored into a standalone module mirroring `docutils.transforms.*` (landed as `docutilsrs::transforms` with a composable `Transform`/`Pipeline` API)
-- LaTeX writer (landed as `docutilsrs.parse_to_latex` — minimal, accepted-deviation, not parity-gated)
-- manpage (troff) writer (landed as `docutilsrs.parse_to_manpage` — minimal, accepted-deviation, not parity-gated)
-- ODT writer (landed as `docutilsrs.parse_to_odt` — produces a valid `.odt` ZIP container (`mimetype` + `META-INF/manifest.xml` + `content.xml` + `styles.xml`); minimal, accepted-deviation, not byte-parity-gated against `docutils.writers.odf_odt`)
+Transforms:
+- applied inline in the parser pipeline (title promotion, docinfo, reference resolution, substitution resolution)
+- factored into a standalone `docutilsrs::transforms` module mirroring `docutils.transforms.*` with a composable `Transform`/`Pipeline` API
+
+Writers:
+- pseudo-XML — byte-parity-gated against vendored `docutils.publish_string(..., writer="pseudoxml")` (`tests/test_parity_pseudoxml.py`, **102 cases**)
+- HTML5 (`docutilsrs.parse_to_html5`) — minimal semantic fragment; accepted-deviation, structurally gated
+- LaTeX (`docutilsrs.parse_to_latex`) — minimal, accepted-deviation, structurally gated
+- manpage/troff (`docutilsrs.parse_to_manpage`) — minimal, accepted-deviation, structurally gated
+- ODT (`docutilsrs.parse_to_odt`):
+  - native Rust path (default): valid `.odt` ZIP container (`mimetype` + `META-INF/manifest.xml` + `content.xml` + `styles.xml`); accepted-deviation, structurally gated by `tests/test_writer_odt.py`
+  - `compat=True` (with optional `settings_overrides=...`): delegates via PyO3 to vendored `docutils.writers.odf_odt`; **byte-parity-gated** against all 13 upstream `.odt` fixtures (`tests/test_writer_odt_parity.py`) using the same `content.xml`-after-`ET.tostring` normalization upstream's own `test_odt.py` uses
+
+Plugin bridges:
+- syntax highlighting for `code-block` (Pygments) via the Python directive plugin bridge — see `src/docutilsrs/python/docutilsrs_pygments.py`
 
 ### Phase 3 — transforms module + hybrid mode
 

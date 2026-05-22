@@ -1,0 +1,5 @@
+---
+source: myst-md-rs/tests/snapshot.rs
+expression: "myst_md_rs::render_html(src)"
+---
+<p>let <span class="math">a + b = c</span> then</p>

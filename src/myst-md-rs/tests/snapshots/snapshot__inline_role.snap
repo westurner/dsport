@@ -1,0 +1,5 @@
+---
+source: myst-md-rs/tests/snapshot.rs
+expression: "myst_md_rs::render_html(src)"
+---
+<p>see <span class="myst-role" data-role="ref">my-label</span> for details</p>

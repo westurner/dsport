@@ -1,0 +1,5 @@
+---
+source: myst-md-rs/tests/snapshot.rs
+expression: "myst_md_rs::version()"
+---
+0.0.1

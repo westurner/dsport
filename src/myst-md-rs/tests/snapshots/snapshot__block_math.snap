@@ -1,0 +1,6 @@
+---
+source: myst-md-rs/tests/snapshot.rs
+expression: "myst_md_rs::render_html(src)"
+---
+<div class="math">E = mc^2
+</div>

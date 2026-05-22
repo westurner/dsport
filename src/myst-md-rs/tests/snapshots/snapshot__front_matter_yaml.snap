@@ -1,0 +1,8 @@
+---
+source: myst-md-rs/tests/snapshot.rs
+expression: "r.front_matter_yaml.expect(\"yaml should parse\")"
+---
+title: hi
+tags:
+- a
+- b

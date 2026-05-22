@@ -1,0 +1,6 @@
+---
+source: myst-md-rs/tests/snapshot.rs
+expression: "myst_md_rs::render_html(src)"
+---
+<h1>hi</h1>
+<p>hello <em>world</em></p>

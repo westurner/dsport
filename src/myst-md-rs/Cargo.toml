@@ -1,0 +1,26 @@
+[package]
+name = "myst-md-rs"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Rust port of MyST-Parser built on pulldown-cmark"
+
+[lib]
+name = "myst_md_rs"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Enabled by maturin when building the Python extension module.
+# Left off for `cargo test` / `cargo build` so the test binary can link against libpython.
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+pyo3 = { workspace = true, features = ["auto-initialize"] }
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+pulldown-cmark-escape = "0.11"
+serde_yaml = "0.9"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+insta = { workspace = true }

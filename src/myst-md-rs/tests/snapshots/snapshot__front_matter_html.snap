@@ -1,0 +1,5 @@
+---
+source: myst-md-rs/tests/snapshot.rs
+expression: r.html
+---
+<h1>body</h1>

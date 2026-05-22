@@ -1,0 +1,14 @@
+---
+source: myst-md-rs/tests/snapshot.rs
+expression: "myst_md_rs::features()"
+---
+[
+    "core:commonmark",
+    "core:gfm",
+    "myst:front_matter",
+    "myst:colon_fence",
+    "myst:roles_inline",
+    "myst:dollarmath_inline",
+    "myst:dollarmath_block",
+    "render:html",
+]

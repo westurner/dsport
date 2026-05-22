@@ -1,0 +1,6 @@
+---
+source: myst-md-rs/tests/snapshot.rs
+expression: "myst_md_rs::render_html(src)"
+---
+<div class="myst-directive" data-name="warning"><pre><code>beware
+</code></pre></div>

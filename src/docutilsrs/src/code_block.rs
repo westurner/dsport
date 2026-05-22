@@ -53,7 +53,11 @@ pub fn tokenize(lang: &str, code: &str) -> Option<Vec<Span>> {
 }
 
 fn tokenize_native(lang: &str, code: &str) -> Option<Vec<Span>> {
-    let raw = pygmentsrs::lex(lang, code)?;
+    // `Backend::Auto` already does pygmentsrs-native-first then upstream
+    // `pygments.lex(...)` via PyO3; the secondary `tokenize_bridge`
+    // below is kept as a last-resort path to `docutils.utils.code_analyzer`
+    // (which respects user-disabled syntax highlighting).
+    let raw = pygmentsrs::lex_with_backend(lang, code, pygmentsrs::Backend::Auto)?;
     Some(normalize_long(raw))
 }
 

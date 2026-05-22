@@ -17,7 +17,7 @@ Status legend: ✅ byte-parity · 🟡 partial · 🔲 accepted-deviation · —
 | name     | aliases                       | tokens | html | notes                                                                                    |
 | -------- | ----------------------------- | :----: | :--: | ---------------------------------------------------------------------------------------- |
 | `text`   | `text`, `plain`, `""`         |   ✅   |  ✅  | Trivial passthrough.                                                                     |
-| `python` | `python`, `py`, `python3`     |   ✅   |  🟡  | Byte-parity against vendored `pygments.lex(...)` token stream for the 9 fixtures gated through `docutils.utils.code_analyzer.Lexer` in `src/tests/test_parity_pseudoxml.py` (`code_block_python_*`): `def`/`class` declarations, `import`/`from MOD import NAME`, `True`/`False`/`None` as `Keyword.Constant`, simple strings, `#` comments, integers, operators, function calls. Whitespace is correctly bifurcated (`\n` → `Token.Text.Whitespace`, horizontal → `Token.Text`). Gaps remain for f-strings, triple-quoted strings, decorators, escape sequences, numeric variants (hex/oct/bin/float), and the full state machine — not yet exercised by parity fixtures. |
+| `python` | `python`, `py`, `python3`     |   ✅   |  🟡  | Byte-parity for 33 fixtures in `src/tests/test_parity_pseudoxml.py` (`code_block_python_*`). Constructs covered: `def NAME` / `def __dunder__` → `Name.Function` / `Name.Function.Magic`; `class NAME` → `Name.Class`; `from MOD import NAME` via `fromimport_state` → `fromimport_plain` (module → `Name.Namespace`, imported names → `Name`); `import MOD, MOD2 as alias` via `import_state` (names → `Name.Namespace`, comma → `Operator`); relative imports (`from . import X`); parenthesised imports (`from X import (a, b)`); `True`/`False`/`None` → `Keyword.Constant`; walrus `:=` → `Operator`; line-continuation `\\\n`/`\\` → `Text`; `@deco` → `Name.Decorator`, bare `@` → `Operator` (matrix-mul fallback); escape sequences (`\n`, `\xhh`, `\uhhhh`, etc. → `String.Escape`); raw strings (`r"…"` — no escape tokenization); triple-quoted strings (`"""…"""`, `'''…'''` → `String.Double`/`String.Single`); prefixed strings (`b"…"`, `rb"…"`); f-strings with `{expr}`, format specs, conversion flags, literal braces, triple f-strings, **nested string literals inside `{…}`**; `Name.Builtin` (69 builtins: `print`, `len`, etc.); `Name.Builtin.Pseudo` (`self`, `cls`, `Ellipsis`, `NotImplemented`); `Name.Exception` (all stdlib exception classes); `Name.Variable.Magic` (`__name__`, `__file__`, etc.); `#` comments; integers, hex/oct/bin/float numbers; operators; `in`/`is`/`and`/`or`/`not` → `Operator.Word` inside f-string `{…}` expressions. Whitespace bifurcated (`\n` → `Token.Text.Whitespace`, horizontal → `Token.Text`; all whitespace → `Token.Text.Whitespace` inside f-string expressions). **Accepted deviations**: standalone triple-string docstrings emit `String.Double` instead of `String.Doc`; `match`/`case` soft keywords emit `Name` (Rust `regex` crate lacks lookaheads; deferred); complex-number `j` suffix is `Name` (matches actual upstream behavior). |
 
 ## Formatters
 
@@ -25,7 +25,21 @@ Status legend: ✅ byte-parity · 🟡 partial · 🔲 accepted-deviation · —
 | ------ | --------------- | :--: | --------------------------------------------------------------------------- |
 | `html` | any             |  🟡  | Default-options shape only. Uses placeholder short-name mapping until the full `STANDARD_TYPES` table lands (will be needed for byte-parity vs `pygments.formatters.html.HtmlFormatter`). |
 
-## Engine coverage (`pygmentsrs::lexer::engine`)
+## Fallback bridge (`pygmentsrs::bridge`)
+
+When `pygmentsrs` has no native Rust lexer for an alias, the
+`Backend::Auto` (default) dispatch path calls upstream `pygments` via
+PyO3:
+
+- ✅ `pygmentsrs.lex(alias, code)` / `pygmentsrs.lex(alias, code, backend="auto")` —
+  Rust-native first, Python fallback on `None`
+- ✅ `backend="rust"` — native-only, returns `None` if not implemented
+- ✅ `backend="python"` — skip native, call upstream directly
+- ✅ `pygmentsrs.has_native_lexer(alias)` — query without allocating
+- ✅ `pygmentsrs.native_aliases()` — list all native aliases
+- ✅ `pygmentsrs.highlight(code, alias)` also accepts `backend=` kwarg
+
+
 
 Ported from `pygments.lexer.RegexLexer.get_tokens_unprocessed`:
 

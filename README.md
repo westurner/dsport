@@ -70,17 +70,30 @@ Goal: one full input → doctree → output path working end-to-end on a tiny su
 - port one trivial writer (pseudo-XML or a stripped HTML5) to exercise the full pipeline
 - expose `parse_rst(source: str) -> Doctree` to Python; validate parity by comparing pseudo-XML output against vendored docutils on the same inputs
 
-### Phase 2 — docutilsrs widening
+### Phase 2 — docutilsrs widening (landed)
 
-- expand parser slice by block construct: lists → tables → directives → roles → substitutions
-- port transforms in dependency order (frontmatter, references, universal); each lands with its ported test module
-- add the HTML5 writer next, then LaTeX; defer ODT/manpage until plugin story is settled
-- maintain a compatibility matrix (`docs/compat.md`): per-feature status (exact parity / accepted deviation / pending), regenerated from test annotations
+Status: **done**. Per-feature status tracked in `docs/compat.md`.
 
-### Phase 3 — hybrid mode (runs in parallel with phase 2)
+Landed:
+- parser widened across: sections + transitions, block quotes, literal blocks, definition lists, field lists + docinfo, comments, admonitions, image/figure, code/code-block/sourcecode, raw, inline roles, substitutions (replace), simple + grid tables, phrase references
+- transforms applied inline in the parser pipeline (title promotion, docinfo, reference resolution, substitution resolution)
+- minimal HTML5 writer (`docutilsrs.parse_to_html5`) producing a semantic fragment; not parity-gated
+- pseudo-XML parity gate at 82 cases, byte-for-byte vs vendored `docutils.publish_string(..., writer="pseudoxml")`
+
+Deferred to later phases (tracked as `accepted-deviation` in `docs/compat.md`):
+- overlined sections, nested lists, multi-paragraph list items, block-quote attributions
+- phrase refs with embedded URIs, anonymous refs, footnotes, citations, unresolved-reference system messages
+- table row/column spans and multi-paragraph cells
+- figure captions/legends
+- syntax highlighting for `code-block` (Pygments)
+- transforms factored into a standalone module mirroring `docutils.transforms.*` (currently inlined)
+- LaTeX / ODT / manpage writers
+
+### Phase 3 — transforms module + hybrid mode
 
 This is the integration safety net, not a stretch goal.
 
+- factor the inlined Phase-2 transforms (title promotion, docinfo, reference resolution, substitution resolution) into a `docutilsrs::transforms` module mirroring `docutils.transforms.*`, each pass independently testable
 - Python-side `docutilsrs` package routes calls to Rust when implemented, falls back to vendored Python otherwise, on a per-component basis (parser, transform, writer)
 - Rust-side: ability to invoke a Python `Transform` or `Writer` against a Rust-owned doctree (via converter)
 - end-to-end test: a document whose parsing is Rust, one transform is Python, and writer is Rust, produces byte-identical output to pure-Python docutils

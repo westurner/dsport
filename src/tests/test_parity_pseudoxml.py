@@ -132,6 +132,17 @@ CASES = {
     "multipara_bullet_3": "- one\n\n  second paragraph\n\n  third paragraph\n- next",
     "multipara_enum": "1. one\n\n   second paragraph\n2. two",
     "list_with_blockquote": "- item\n\n    quoted text\n- next",
+    "footnote_anon_auto": "See [#]_.\n\n.. [#] First auto.",
+    "footnote_named_auto": (
+        "See [#one]_ and [#two]_.\n\n.. [#one] First.\n\n.. [#two] Second."
+    ),
+    "footnote_symbol_auto": "See [*]_.\n\n.. [*] Symbol.",
+    "footnote_mixed_auto": (
+        "A [#a]_ B [#]_ C [#b]_.\n\n.. [#a] A\n.. [#] X\n.. [#b] B"
+    ),
+    "footnote_manual_plus_auto": (
+        "See [5]_ then [#]_.\n\n.. [5] five\n.. [#] auto"
+    ),
 }
 
 

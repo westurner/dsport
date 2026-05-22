@@ -2026,20 +2026,60 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             emit_table(tree, parent, ctx, td);
         }
         Block::Footnote { label, body } => {
-            ctx.footnote_count += 1;
-            let ids = format!("footnote-{}", ctx.footnote_count);
-            let names = label.to_ascii_lowercase();
+            // Classify autonumber / autosymbol vs manual. Auto footnotes
+            // get an `auto` marker plus placeholder ids/names that the
+            // post-pass in resolve_footnotes rewrites once the document
+            // order is known.
+            let (ids, names, auto, label_text) = if label == "#" {
+                ctx.footnote_count += 1;
+                (
+                    format!("footnote-{}", ctx.footnote_count),
+                    String::new(),
+                    Some("1"),
+                    "#".to_string(),
+                )
+            } else if let Some(name) = label.strip_prefix('#') {
+                if !name.is_empty() {
+                    let n = name.to_ascii_lowercase();
+                    (n.clone(), n, Some("1"), label.clone())
+                } else {
+                    ctx.footnote_count += 1;
+                    (
+                        format!("footnote-{}", ctx.footnote_count),
+                        label.to_ascii_lowercase(),
+                        None,
+                        label.clone(),
+                    )
+                }
+            } else if label == "*" {
+                ctx.footnote_count += 1;
+                (
+                    format!("footnote-{}", ctx.footnote_count),
+                    String::new(),
+                    Some("*"),
+                    "*".to_string(),
+                )
+            } else {
+                ctx.footnote_count += 1;
+                (
+                    format!("footnote-{}", ctx.footnote_count),
+                    label.to_ascii_lowercase(),
+                    None,
+                    label.clone(),
+                )
+            };
             let f = tree.append(
                 parent,
                 NodeKind::Footnote {
                     ids,
                     names,
                     backrefs: String::new(),
-                    auto: None,
+                    auto,
                 },
             );
             let lbl = tree.append(f, NodeKind::Label);
-            tree.append(lbl, NodeKind::Text(label));
+            tree.append(lbl, NodeKind::Text(label_text));
+            let _ = label;
             for b in body {
                 emit_block(tree, f, ctx, b);
             }
@@ -2169,8 +2209,230 @@ fn resolve_footnotes(tree: &mut Doctree) {
     // id → list of reference ids targeting it
     let mut backrefs: HashMap<String, Vec<String>> = HashMap::new();
     collect_footnote_labels(tree, tree.root(), &mut label_to_id);
+    // Auto pass first: rewrites Footnote.names + Label text and turns
+    // auto FootnoteReference sentinels into real refids + display text.
+    // Manual references that target an auto-named footnote (e.g.,
+    // `[a]_` pointing at `.. [#a]`) are resolved via `label_to_id`
+    // updated in place.
+    resolve_auto_footnotes(tree, &mut label_to_id, &mut backrefs);
     apply_footnote_refs(tree, tree.root(), &label_to_id, &mut backrefs);
     apply_footnote_backrefs(tree, tree.root(), &backrefs);
+}
+
+const AUTOSYMBOL_CHARS: &[&str] = &[
+    "*", "\u{2020}", "\u{2021}", "\u{a7}", "\u{b6}", "#", "\u{2660}", "\u{2665}", "\u{2666}",
+    "\u{2663}",
+];
+
+fn autosymbol_label(n: usize) -> String {
+    // 1-based n: positions 1..=10 use single chars, 11..=20 doubled, etc.
+    let idx = (n - 1) % AUTOSYMBOL_CHARS.len();
+    let reps = (n - 1) / AUTOSYMBOL_CHARS.len() + 1;
+    AUTOSYMBOL_CHARS[idx].repeat(reps)
+}
+
+#[derive(Clone, Copy)]
+enum AutoKind {
+    Anon,
+    Named,
+    Sym,
+}
+
+fn resolve_auto_footnotes(
+    tree: &mut Doctree,
+    label_to_id: &mut HashMap<String, String>,
+    backrefs: &mut HashMap<String, Vec<String>>,
+) {
+    // Collect in document order.
+    let mut auto_defs: Vec<(NodeId, AutoKind)> = Vec::new();
+    let mut auto_refs: Vec<(NodeId, AutoKind, Option<String>)> = Vec::new();
+    let mut used_numbers: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+    collect_auto_footnotes(
+        tree,
+        tree.root(),
+        &mut auto_defs,
+        &mut auto_refs,
+        &mut used_numbers,
+    );
+    // Assign numeric labels to anon / named autos (skipping used numbers).
+    let mut next_num: u32 = 1;
+    let next_unused = |start: &mut u32, used: &std::collections::BTreeSet<u32>| -> u32 {
+        while used.contains(start) {
+            *start += 1;
+        }
+        let n = *start;
+        *start += 1;
+        n
+    };
+    // Per-kind ordered lists of (def_node, assigned_label_string).
+    let mut anon_defs: Vec<(NodeId, String)> = Vec::new();
+    let mut named_defs: Vec<(NodeId, String)> = Vec::new();
+    let mut sym_defs: Vec<(NodeId, String)> = Vec::new();
+    let mut sym_counter: usize = 0;
+    for (nid, kind) in &auto_defs {
+        match kind {
+            AutoKind::Anon => {
+                let n = next_unused(&mut next_num, &used_numbers);
+                let s = n.to_string();
+                anon_defs.push((*nid, s.clone()));
+                // Update Footnote.names to assigned numeric string.
+                if let NodeKind::Footnote { names, .. } = &mut tree.node_mut(*nid).kind {
+                    *names = s.clone();
+                }
+                // names lookup for manual `[N]_` style refs (rare overlap).
+                let ids = footnote_ids(tree, *nid);
+                label_to_id.insert(s.clone(), ids);
+                update_label_text(tree, *nid, &s);
+            }
+            AutoKind::Named => {
+                let n = next_unused(&mut next_num, &used_numbers);
+                let s = n.to_string();
+                named_defs.push((*nid, s.clone()));
+                update_label_text(tree, *nid, &s);
+            }
+            AutoKind::Sym => {
+                sym_counter += 1;
+                let s = autosymbol_label(sym_counter);
+                sym_defs.push((*nid, s.clone()));
+                update_label_text(tree, *nid, &s);
+            }
+        }
+    }
+    // Resolve references.
+    let mut anon_iter = 0usize;
+    let mut sym_iter = 0usize;
+    // Build a map for named auto by lowercased name (= ids).
+    let mut named_map: HashMap<String, (NodeId, String)> = HashMap::new();
+    for (nid, label) in &named_defs {
+        if let NodeKind::Footnote { ids, .. } = &tree.node(*nid).kind {
+            named_map.insert(ids.clone(), (*nid, label.clone()));
+        }
+    }
+    for (ref_nid, kind, name) in auto_refs {
+        let (target_def, display) = match kind {
+            AutoKind::Anon => {
+                if anon_iter >= anon_defs.len() {
+                    (None, String::new())
+                } else {
+                    let (nid, lbl) = &anon_defs[anon_iter];
+                    anon_iter += 1;
+                    (Some(*nid), lbl.clone())
+                }
+            }
+            AutoKind::Sym => {
+                if sym_iter >= sym_defs.len() {
+                    (None, String::new())
+                } else {
+                    let (nid, lbl) = &sym_defs[sym_iter];
+                    sym_iter += 1;
+                    (Some(*nid), lbl.clone())
+                }
+            }
+            AutoKind::Named => {
+                if let Some(key) = name.as_ref() {
+                    if let Some((nid, lbl)) = named_map.get(key) {
+                        (Some(*nid), lbl.clone())
+                    } else {
+                        (None, String::new())
+                    }
+                } else {
+                    (None, String::new())
+                }
+            }
+        };
+        let ref_ids = if let NodeKind::FootnoteReference { ids, .. } = &tree.node(ref_nid).kind {
+            ids.clone()
+        } else {
+            continue;
+        };
+        if let Some(def_nid) = target_def {
+            let def_ids = footnote_ids(tree, def_nid);
+            if let NodeKind::FootnoteReference { refid, .. } = &mut tree.node_mut(ref_nid).kind {
+                *refid = def_ids.clone();
+            }
+            backrefs.entry(def_ids).or_default().push(ref_ids);
+            // Rewrite displayed Text child to the assigned label.
+            let children = tree.node(ref_nid).children.clone();
+            if let Some(text_id) = children.first() {
+                if let NodeKind::Text(t) = &mut tree.node_mut(*text_id).kind {
+                    *t = display;
+                }
+            }
+        } else if let NodeKind::FootnoteReference { refid, .. } =
+            &mut tree.node_mut(ref_nid).kind
+        {
+            refid.clear();
+        }
+    }
+}
+
+fn footnote_ids(tree: &Doctree, id: NodeId) -> String {
+    if let NodeKind::Footnote { ids, .. } = &tree.node(id).kind {
+        ids.clone()
+    } else {
+        String::new()
+    }
+}
+
+fn update_label_text(tree: &mut Doctree, footnote: NodeId, new_text: &str) {
+    let children = tree.node(footnote).children.clone();
+    for c in children {
+        if matches!(tree.node(c).kind, NodeKind::Label) {
+            let label_children = tree.node(c).children.clone();
+            if let Some(tid) = label_children.first() {
+                if let NodeKind::Text(t) = &mut tree.node_mut(*tid).kind {
+                    *t = new_text.to_string();
+                }
+            }
+            break;
+        }
+    }
+}
+
+fn collect_auto_footnotes(
+    tree: &Doctree,
+    id: NodeId,
+    defs: &mut Vec<(NodeId, AutoKind)>,
+    refs: &mut Vec<(NodeId, AutoKind, Option<String>)>,
+    used_numbers: &mut std::collections::BTreeSet<u32>,
+) {
+    match &tree.node(id).kind {
+        NodeKind::Footnote { auto, names, ids, .. } => match auto {
+            Some("*") => defs.push((id, AutoKind::Sym)),
+            Some("1") => {
+                // Anon auto has empty names at this point; named auto has
+                // a non-empty alphabetic ids.
+                if names.is_empty() {
+                    defs.push((id, AutoKind::Anon));
+                } else {
+                    defs.push((id, AutoKind::Named));
+                }
+            }
+            _ => {
+                // Manual numeric → mark its label number as used.
+                if let Ok(n) = names.parse::<u32>() {
+                    used_numbers.insert(n);
+                }
+                let _ = ids;
+            }
+        },
+        NodeKind::FootnoteReference { auto, refid, .. } => match auto {
+            Some("*") => refs.push((id, AutoKind::Sym, None)),
+            Some("1") => {
+                if let Some(name) = refid.strip_prefix("__fnauto_named:") {
+                    refs.push((id, AutoKind::Named, Some(name.to_string())));
+                } else {
+                    refs.push((id, AutoKind::Anon, None));
+                }
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+    let children = tree.node(id).children.clone();
+    for c in children {
+        collect_auto_footnotes(tree, c, defs, refs, used_numbers);
+    }
 }
 
 fn collect_footnote_labels(tree: &Doctree, id: NodeId, out: &mut HashMap<String, String>) {
@@ -2600,15 +2862,29 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
             } else {
                 ctx.footnote_ref_count += 1;
                 let ids = format!("footnote-reference-{}", ctx.footnote_ref_count);
-                // refid will be resolved by post-pass; encode the label
-                // with a sentinel prefix for now.
-                let refid = format!("__fnlabel:{}", label);
+                // Classify autonumber / autosymbol vs manual numeric. Auto
+                // refs get a sentinel refid + the matching `auto` marker;
+                // the post-pass in resolve_footnotes assigns the real id
+                // and rewrites the displayed label.
+                let (refid, auto) = if label == "#" {
+                    ("__fnauto_anon:".to_string(), Some("1"))
+                } else if let Some(name) = label.strip_prefix('#') {
+                    if !name.is_empty() {
+                        (format!("__fnauto_named:{}", name.to_ascii_lowercase()), Some("1"))
+                    } else {
+                        (format!("__fnlabel:{}", label), None)
+                    }
+                } else if label == "*" {
+                    ("__fnauto_sym:".to_string(), Some("*"))
+                } else {
+                    (format!("__fnlabel:{}", label), None)
+                };
                 let n = tree.append(
                     parent,
                     NodeKind::FootnoteReference {
                         ids,
                         refid,
-                        auto: None,
+                        auto,
                     },
                 );
                 push_text(tree, n, &label);

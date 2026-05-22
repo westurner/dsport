@@ -81,12 +81,14 @@ Landed:
 - pseudo-XML parity gate at 82 cases, byte-for-byte vs vendored `docutils.publish_string(..., writer="pseudoxml")`
 
 Deferred to later phases (tracked as `accepted-deviation` in `docs/compat.md`):
-- overlined sections, nested lists, multi-paragraph list items, block-quote attributions
-- phrase refs with embedded URIs, anonymous refs, footnotes, citations, unresolved-reference system messages
+- overlined sections, block-quote attributions (landed)
+- nested lists + multi-paragraph list items (landed; covered by `nested_*`/`multipara_*` parity cases)
+- phrase refs with embedded URIs, anonymous refs, footnotes (numeric + autonumber + autosymbol), citations (landed)
+- unresolved-reference system messages (still deferred — needs source-line plumbing through the block/inline parser)
 - table row/column spans and multi-paragraph cells
-- figure captions/legends
-- syntax highlighting for `code-block` (Pygments)
-- transforms factored into a standalone module mirroring `docutils.transforms.*` (currently inlined)
+- figure captions/legends (landed)
+- syntax highlighting for `code-block` (Pygments) — available via the Python directive plugin bridge; see `src/docutilsrs/python/docutilsrs_pygments.py`
+- transforms factored into a standalone module mirroring `docutils.transforms.*` (landed as `docutilsrs::transforms` with a composable `Transform`/`Pipeline` API)
 - LaTeX / ODT / manpage writers
 
 ### Phase 3 — transforms module + hybrid mode

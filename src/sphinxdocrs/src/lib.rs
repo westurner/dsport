@@ -19,6 +19,7 @@ pub mod errors;
 pub mod events;
 pub mod extension;
 pub mod project;
+pub mod util_console;
 pub mod util_matching;
 
 /// Crate version string. Mirrors `Cargo.toml` `[package].version`.
@@ -45,6 +46,7 @@ pub fn features() -> &'static [&'static str] {
         "extension:wrapper",
         "extension:verify_needs_extensions",
         "util:matching",
+        "util:console",
     ]
 }
 
@@ -68,6 +70,7 @@ fn sphinxdocrs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<extension::Extension>()?;
     m.add_function(wrap_pyfunction!(extension::py_verify_needs_extensions, m)?)?;
     util_matching::register(m)?;
+    util_console::register(m)?;
 
     // Exception types
     m.add("SphinxError", py.get_type::<errors::SphinxError>())?;

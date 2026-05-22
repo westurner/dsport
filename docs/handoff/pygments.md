@@ -4,9 +4,15 @@
 backend lives at [src/docutilsrs/src/code_block.rs](../../src/docutilsrs/src/code_block.rs)
 and dispatches: in-workspace `pygmentsrs` crate first (Rust→Rust, no
 GIL hop) → PyO3 bridge to `docutils.utils.code_analyzer.Lexer` for
-languages pygmentsrs hasn't ported yet → `None` (raw text). Remaining
-work is widening pygmentsrs lexer coverage and tightening byte-parity
-for the python lexer; see [src/pygmentsrs/docs/compat.md](../../src/pygmentsrs/docs/compat.md).
+languages pygmentsrs hasn't ported yet → `None` (raw text). Native
+lexers shipped so far: **`text`**, **`python`** (33 fixtures),
+**`json`** (10 fixtures, hand-written state machine), **`diff`**
+(6 fixtures, RegexLexer-engine port). `HtmlFormatter` now ships the
+full `STANDARD_TYPES` short-name table so its default-options output
+is byte-compatible with `pygments.formatters.html.HtmlFormatter` for
+every native lexer. Remaining work is widening pygmentsrs lexer
+coverage to the rest of the Sphinx top-N list; see
+[src/pygmentsrs/docs/compat.md](../../src/pygmentsrs/docs/compat.md).
 
 The original handoff brief is preserved below for context.
 

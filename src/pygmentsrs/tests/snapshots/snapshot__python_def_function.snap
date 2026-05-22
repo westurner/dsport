@@ -1,6 +1,5 @@
 ---
 source: pygmentsrs/tests/snapshot.rs
-assertion_line: 26
 expression: toks
 ---
 [
@@ -18,7 +17,15 @@ expression: toks
     ),
     (
         "Token.Punctuation",
-        "():",
+        "(",
+    ),
+    (
+        "Token.Punctuation",
+        ")",
+    ),
+    (
+        "Token.Punctuation",
+        ":",
     ),
     (
         "Token.Text.Whitespace",

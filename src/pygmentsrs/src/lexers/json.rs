@@ -3,6 +3,12 @@
 //! Upstream is a hand-written character-stream state machine (not a
 //! [`RegexLexer`][crate::lexer::engine]) so we do the same. The
 //! algorithm and behaviour are mirrored line-for-line from
+#![allow(
+    clippy::needless_range_loop,
+    clippy::if_same_then_else,
+    clippy::manual_is_ascii_check
+)]
+
 //! `src/pygments/pygments/lexers/data.py::JsonLexer.get_tokens_unprocessed`.
 //!
 //! Notable features preserved for byte-parity:
@@ -143,7 +149,11 @@ impl Lexer for JsonLexer {
                     in_float = true;
                     continue;
                 }
-                let t = if in_float { NUMBER_FLOAT } else { NUMBER_INTEGER };
+                let t = if in_float {
+                    NUMBER_FLOAT
+                } else {
+                    NUMBER_INTEGER
+                };
                 out.push((t, text[start..stop].to_string()));
                 in_number = false;
                 in_float = false;
@@ -281,10 +291,7 @@ mod tests {
     #[test]
     fn constants_and_string_value() {
         let toks = lex("[true, false, null, \"x\"]");
-        assert!(toks.contains(&(
-            "Token.Keyword.Constant".to_string(),
-            "true".to_string()
-        )));
+        assert!(toks.contains(&("Token.Keyword.Constant".to_string(), "true".to_string())));
         assert!(toks.contains(&(
             "Token.Literal.String.Double".to_string(),
             "\"x\"".to_string()

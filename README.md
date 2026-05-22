@@ -142,7 +142,15 @@ Status:
   transparently falls back to upstream `pygments` via PyO3 for any
   alias without a Rust implementation, so the workspace gets full
   upstream coverage today and incremental Rust speedups as lexers
-  land.
+  land. **Native lexers landed**: `text`, `python`, `json`
+  (`src/pygmentsrs/src/lexers/json.rs`, hand-written state machine,
+  10 byte-parity fixtures in `tests/test_pygments_json_lexer.py`),
+  `diff` (`src/pygmentsrs/src/lexers/diff.rs`, RegexLexer-engine
+  port, 6 byte-parity fixtures in `tests/test_pygments_diff_lexer.py`).
+  **`HtmlFormatter`** now ships the full `STANDARD_TYPES` short-name
+  table (`src/pygmentsrs/src/token.rs`), so its default-options
+  output is byte-compatible with `pygments.formatters.html.HtmlFormatter`
+  for every native lexer above.
 - **Phase 3 done** — docutilsrs integration wired
   (`pygmentsrs = { path = "../pygmentsrs" }`): the parser's
   `code`/`code-block`/`sourcecode` arm calls `pygmentsrs::tokenize`
@@ -158,10 +166,11 @@ Status:
   code-block cases** (text alias, sourcecode alias, and the full
   `code_block_python_*` family).
 
-Remaining followups: widen the lexer registry beyond `text` /
-`python` (next priorities are `rust`, `c`/`cpp`, `bash`, `json`,
-`yaml`, `rst`), and complete `HtmlFormatter` byte-parity by landing
-the full `STANDARD_TYPES` short-name table.
+Remaining followups: continue widening the lexer registry (next
+priorities are `rust`, `c`/`cpp`, `yaml`, `rst`, `toml`, `make`).
+`bash` is blocked on Rust `regex` lacking backreference support
+(upstream's heredoc rule uses `\2`); will require either swapping
+in `fancy-regex` for that one rule or accepting it as a deviation.
 
 ### Phase 3 — transforms module + hybrid mode
 
@@ -175,7 +184,7 @@ This is the integration safety net, not a stretch goal.
 ### Phase 4 — sphinxdocrs incremental port
 
 - inventory `src/sphinx/tests/` and tag each test by subsystem (config, environment, builders, extensions, domains) — **done** (`docs/sphinx-port-inventory.md`)
-- port fast unit tests first (config, util, project); defer builder integration tests until the relevant builder is ported — **in progress** (P1: `errors`, `events`, `project` (incl. `discover`) landed with mirrored parity tests; P2: `extension.Extension` + `verify_needs_extensions` landed (`tests/test_sphinxdocrs_extension.py`); P2: `util.matching` (`compile_matchers`/`Matcher`/`get_matching_files`) landed (`tests/test_sphinxdocrs_util_matching.py`); `Project.discover` gated by `tests/test_sphinxdocrs_project_discover.py`)
+- port fast unit tests first (config, util, project); defer builder integration tests until the relevant builder is ported — **in progress** (P1: `errors`, `events`, `project` (incl. `discover`) landed with mirrored parity tests; P2: `extension.Extension` + `verify_needs_extensions` landed (`tests/test_sphinxdocrs_extension.py`); P2: `util.matching` (`compile_matchers`/`Matcher`/`get_matching_files`) landed (`tests/test_sphinxdocrs_util_matching.py`); P2: `util.console` (port of `sphinx.util.console` + `sphinx._cli.util.colour` + `sphinx._cli.util.errors`: `colourise`, `disable_colour`/`enable_colour`, `strip_escape_sequences`, `terminal_safe`, 22 named colour escape codes) landed (`tests/test_sphinxdocrs_util_console.py`, 40 byte-parity tests); `Project.discover` gated by `tests/test_sphinxdocrs_project_discover.py`)
 - prioritize the extension/event system early so existing Sphinx extensions keep working under the Rust core — **done for core EventManager** (`src/sphinxdocrs/src/events.rs`: priority ordering, `allowed_exceptions`, `app.pdb` short-circuit, `ExtensionError` wrapping with `__cause__`)
 - expose Python import surface mirroring phase 1's pattern — **done** (`sphinxdocrs.{EventManager,Project,SphinxError,…}` + `sphinxdocrs/python/sphinxdocrs_hybrid.py` with `event_manager` / `project` / `dispatch_plan` / `features` / `supports`)
 

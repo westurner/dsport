@@ -364,8 +364,7 @@ mod tests {
         // `Name.Variable.Magic` IS in STANDARD_TYPES (`vm`) but a
         // hypothetical `Name.Variable.Magic.Extra` would fall back
         // to its nearest known ancestor.
-        let extra =
-            TokenType::new(&["Name", "Variable", "Magic", "Extra"]);
+        let extra = TokenType::new(&["Name", "Variable", "Magic", "Extra"]);
         assert_eq!(extra.short_name(), "vm");
         let totally_unknown = TokenType::new(&["NotAToken"]);
         assert_eq!(totally_unknown.short_name(), "");

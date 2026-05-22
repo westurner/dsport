@@ -228,4 +228,6 @@ fn pygmentsrs(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 #[pyfunction(name = "main")]
-fn py_main() { println!("stub running"); }
+fn py_main() {
+    println!("stub running");
+}

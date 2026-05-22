@@ -116,7 +116,10 @@ fn fstring_expr_core() -> Vec<Rule> {
             token::NUMBER_FLOAT,
         ),
         Rule::token(r"\b[0-9]+\b", token::NUMBER_INTEGER),
-        Rule::token(r"==|!=|<=|>=|:=|->|\*\*|//|<<|>>|[+\-*/%<>=&|^~]", token::OPERATOR),
+        Rule::token(
+            r"==|!=|<=|>=|:=|->|\*\*|//|<<|>>|[+\-*/%<>=&|^~]",
+            token::OPERATOR,
+        ),
         Rule::token(r"[()\[\]{},;.]", token::PUNCTUATION),
         // nested string literals inside f-string expressions
         Rule::bygroups_to(
@@ -138,7 +141,10 @@ fn fstring_expr_core() -> Vec<Rule> {
             r"__(?:annotations|bases|class|closure|code|defaults|dict|doc|file|func|globals|kwdefaults|module|mro|name|objclass|qualname|self|slots|weakref)__\b",
             token::NAME_VARIABLE_MAGIC,
         ),
-        Rule::token(r"\b(?:self|cls|Ellipsis|NotImplemented)\b", token::NAME_BUILTIN_PSEUDO),
+        Rule::token(
+            r"\b(?:self|cls|Ellipsis|NotImplemented)\b",
+            token::NAME_BUILTIN_PSEUDO,
+        ),
         Rule::token(
             r"\b(?:__import__|abs|aiter|all|any|bin|bool|bytearray|breakpoint|bytes|callable|chr|classmethod|compile|complex|delattr|dict|dir|divmod|enumerate|eval|filter|float|format|frozenset|getattr|globals|hasattr|hash|hex|id|input|int|isinstance|issubclass|iter|len|list|locals|map|max|memoryview|min|next|object|oct|open|ord|pow|print|property|range|repr|reversed|round|set|setattr|slice|sorted|staticmethod|str|sum|super|tuple|type|vars|zip)\b",
             token::NAME_BUILTIN,
@@ -545,15 +551,27 @@ fn rules_import_state() -> &'static [Rule] {
         vec![
             Rule::bygroups(
                 r"([ \t]+)(as)([ \t]+)",
-                vec![Some(token::WHITESPACE), Some(token::KEYWORD), Some(token::WHITESPACE)],
+                vec![
+                    Some(token::WHITESPACE),
+                    Some(token::KEYWORD),
+                    Some(token::WHITESPACE),
+                ],
             ),
             Rule::token(r"\.", token::NAME_NAMESPACE),
             Rule::token(r"[A-Za-z_][A-Za-z0-9_]*", token::NAME_NAMESPACE),
             Rule::bygroups(
                 r"([ \t]*)(,)([ \t]*)",
-                vec![Some(token::WHITESPACE), Some(token::OPERATOR), Some(token::WHITESPACE)],
+                vec![
+                    Some(token::WHITESPACE),
+                    Some(token::OPERATOR),
+                    Some(token::WHITESPACE),
+                ],
             ),
-            Rule::token_to(r"\(", token::PUNCTUATION, NewState::Push(vec!["import_paren"])),
+            Rule::token_to(
+                r"\(",
+                token::PUNCTUATION,
+                NewState::Push(vec!["import_paren"]),
+            ),
             Rule::default(NewState::Pop(1)),
         ]
     })
@@ -568,13 +586,21 @@ fn rules_import_paren() -> &'static [Rule] {
             Rule::token(r"[ \t\n]+", token::WHITESPACE),
             Rule::bygroups(
                 r"([ \t]*)(as)([ \t]*)",
-                vec![Some(token::WHITESPACE), Some(token::KEYWORD), Some(token::WHITESPACE)],
+                vec![
+                    Some(token::WHITESPACE),
+                    Some(token::KEYWORD),
+                    Some(token::WHITESPACE),
+                ],
             ),
             Rule::token(r"\.", token::NAME_NAMESPACE),
             Rule::token(r"[A-Za-z_][A-Za-z0-9_]*", token::NAME_NAMESPACE),
             Rule::bygroups(
                 r"([ \t]*)(,)([ \t]*)",
-                vec![Some(token::WHITESPACE), Some(token::OPERATOR), Some(token::WHITESPACE)],
+                vec![
+                    Some(token::WHITESPACE),
+                    Some(token::OPERATOR),
+                    Some(token::WHITESPACE),
+                ],
             ),
             Rule::token_to(r"\)", token::PUNCTUATION, NewState::Pop(2)),
         ]
@@ -615,15 +641,27 @@ fn rules_fromimport_plain() -> &'static [Rule] {
             Rule::token(r"[ \t]+", token::TEXT),
             Rule::bygroups(
                 r"([ \t]+)(as)([ \t]+)",
-                vec![Some(token::WHITESPACE), Some(token::KEYWORD), Some(token::WHITESPACE)],
+                vec![
+                    Some(token::WHITESPACE),
+                    Some(token::KEYWORD),
+                    Some(token::WHITESPACE),
+                ],
             ),
             Rule::token(r"\.", token::NAME_NAMESPACE),
             Rule::token(r"[A-Za-z_][A-Za-z0-9_]*", token::NAME),
             Rule::bygroups(
                 r"([ \t]*)(,)([ \t]*)",
-                vec![Some(token::WHITESPACE), Some(token::OPERATOR), Some(token::WHITESPACE)],
+                vec![
+                    Some(token::WHITESPACE),
+                    Some(token::OPERATOR),
+                    Some(token::WHITESPACE),
+                ],
             ),
-            Rule::token_to(r"\(", token::PUNCTUATION, NewState::Push(vec!["fromimport_paren"])),
+            Rule::token_to(
+                r"\(",
+                token::PUNCTUATION,
+                NewState::Push(vec!["fromimport_paren"]),
+            ),
             Rule::default(NewState::Pop(1)),
         ]
     })
@@ -637,13 +675,21 @@ fn rules_fromimport_paren() -> &'static [Rule] {
             Rule::token(r"[ \t\n]+", token::WHITESPACE),
             Rule::bygroups(
                 r"([ \t]*)(as)([ \t]*)",
-                vec![Some(token::WHITESPACE), Some(token::KEYWORD), Some(token::WHITESPACE)],
+                vec![
+                    Some(token::WHITESPACE),
+                    Some(token::KEYWORD),
+                    Some(token::WHITESPACE),
+                ],
             ),
             Rule::token(r"\.", token::NAME_NAMESPACE),
             Rule::token(r"[A-Za-z_][A-Za-z0-9_]*", token::NAME),
             Rule::bygroups(
                 r"([ \t]*)(,)([ \t]*)",
-                vec![Some(token::WHITESPACE), Some(token::OPERATOR), Some(token::WHITESPACE)],
+                vec![
+                    Some(token::WHITESPACE),
+                    Some(token::OPERATOR),
+                    Some(token::WHITESPACE),
+                ],
             ),
             Rule::token_to(r"\)", token::PUNCTUATION, NewState::Pop(2)),
         ]

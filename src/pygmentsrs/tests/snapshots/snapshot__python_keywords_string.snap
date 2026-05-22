@@ -1,6 +1,5 @@
 ---
 source: pygmentsrs/tests/snapshot.rs
-assertion_line: 33
 expression: toks
 ---
 [
@@ -46,7 +45,15 @@ expression: toks
     ),
     (
         "Token.Literal.String.Double",
-        "\"hi\"",
+        "\"",
+    ),
+    (
+        "Token.Literal.String.Double",
+        "hi",
+    ),
+    (
+        "Token.Literal.String.Double",
+        "\"",
     ),
     (
         "Token.Text.Whitespace",

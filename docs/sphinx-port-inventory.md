@@ -23,7 +23,7 @@ not yet ported — keep as parity probes only.
 | `environment/` | `sphinxdocrs::environment` | **P3** | the build environment, large and stateful |
 | `builders/` | `sphinxdocrs::builders` | **P3** | one builder at a time (`html`, `latex`, `epub`, ...) |
 | `ext/*` | n/a (Python plugins) | **P3** | keep as Python; loaded via `Extension` registry |
-| `util/*` | `sphinxdocrs::util::*` | **P2** | **mirrored (matching)** — `compile_matchers` / `Matcher` / `get_matching_files` ported to `src/sphinxdocrs/src/util_matching.rs`; other `util/*` pieces ported on demand |
+| `util/*` | `sphinxdocrs::util::*` | **P2** | **mirrored (matching + console)** — `compile_matchers` / `Matcher` / `get_matching_files` ported to `src/sphinxdocrs/src/util_matching.rs`; `sphinx.util.console` + `sphinx._cli.util.colour` + `sphinx._cli.util.errors` colour/escape surface (`colourise`, `disable_colour`/`enable_colour`, `strip_escape_sequences`, `terminal_safe`, 22 colour escape codes) ported to `src/sphinxdocrs/src/util_console.rs`; other `util/*` pieces ported on demand |
 | `theming.py` | n/a | **P3** | jinja2-bound; keep Python until templating story decided |
 | `search/` | n/a | **P3** | indexer + JS bridge; keep Python |
 
@@ -58,7 +58,7 @@ underlying subsystem is ported.
 | `test_search.py` | search | P3 | deferred |
 | `test_theming/` | theming | P3 | deferred |
 | `test_transforms/` | transforms | P3 | deferred (per-transform port) |
-| `test_util/` | util | P2 | mirrored (matching) — `tests/test_sphinxdocrs_util_matching.py` (12 cases: exact/`*`/`**`/`?`/`[..]`/`[!..]`/non-pattern, `Matcher` `**/` expansion, recursive walk + exclude). Other `test_util/*` pieces deferred. |
+| `test_util/` | util | P2 | mirrored (matching + console) — `tests/test_sphinxdocrs_util_matching.py` (12 cases) and `tests/test_sphinxdocrs_util_console.py` (40 byte-parity cases over `colourise` for all 22 colours, `disable_colour`/`enable_colour` round-trip, 8 `strip_escape_sequences` fixtures including SGR + EL, 6 `terminal_safe` fixtures including non-ASCII + emoji + tabs/newlines, and the `util:console` capability flag). Other `test_util/*` pieces deferred. |
 | `test_versioning.py` | versioning | P2 | deferred |
 | `test_writers/` | writers | P3 | deferred (one writer at a time) |
 | `test_builders/` | builders | P3 | deferred (one builder at a time) |

@@ -78,11 +78,17 @@ pub fn format(name: &str, tokens: &[(String, String)]) -> Option<String> {
             let stripped = ttype_repr.strip_prefix("Token.").unwrap_or(ttype_repr);
             let stripped = if stripped == "Token" { "" } else { stripped };
             let ttype = string_to_tt.call1((stripped,)).ok()?;
-            let tup = pyo3::types::PyTuple::new(py, [ttype, value.into_pyobject(py).ok()?.into_any()]).ok()?;
+            let tup =
+                pyo3::types::PyTuple::new(py, [ttype, value.into_pyobject(py).ok()?.into_any()])
+                    .ok()?;
             py_tokens.append(tup).ok()?;
         }
         let pyg = py.import("pygments").ok()?;
-        let out = pyg.getattr("format").ok()?.call1((py_tokens, formatter)).ok()?;
+        let out = pyg
+            .getattr("format")
+            .ok()?
+            .call1((py_tokens, formatter))
+            .ok()?;
         out.extract::<String>().ok()
     })?
 }

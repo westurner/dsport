@@ -26,9 +26,16 @@ pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
 /// name first so the list is stable for snapshotting.
 pub fn native_aliases() -> &'static [&'static str] {
     &[
-        "text", "plain", "",
-        "python", "py", "python3", "py3",
-        "json", "json-object",
-        "diff", "udiff",
+        "text",
+        "plain",
+        "",
+        "python",
+        "py",
+        "python3",
+        "py3",
+        "json",
+        "json-object",
+        "diff",
+        "udiff",
     ]
 }

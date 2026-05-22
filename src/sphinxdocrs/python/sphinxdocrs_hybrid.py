@@ -46,9 +46,25 @@ def event_manager(app: Any, *, prefer: str = "rust"):
     The returned object exposes the same ``connect`` / ``disconnect`` /
     ``emit`` / ``emit_firstresult`` surface as
     ``sphinx.events.EventManager``.
+
+    When the Phase 5 resolver has a registered equivalent for
+    ``sphinx.events:EventManager``, that takes precedence over the
+    built-in capability probe.
     """
-    if prefer == "rust" and _HAS_RUST and supports("events:event_manager"):
-        return _rs.EventManager(app)
+    if prefer == "rust":
+        try:
+            import docutilsrs_plugins as _resolver
+        except Exception:
+            _resolver = None
+        if _resolver is not None:
+            eq = _resolver.discover().get("sphinx.events:EventManager")
+            if eq is not None and _resolver.upstream_compatible(eq):
+                try:
+                    return eq.factory()(app)
+                except Exception:
+                    pass
+        if _HAS_RUST and supports("events:event_manager"):
+            return _rs.EventManager(app)
     from sphinx.events import EventManager as _PyEventManager
     return _PyEventManager(app)
 

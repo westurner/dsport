@@ -118,10 +118,10 @@ This is the integration safety net, not a stretch goal.
 
 ### Phase 5 — plugin interoperability
 
-- implement the entry-point–based resolver decided above; resolution order: declared Rust equivalent → Python implementation
-- version guard: Rust equivalent declares a compatible upstream version range; mismatch falls back to Python with a warning
-- bidirectional calls: Rust → Python plugins via PyO3; Python → Rust crates via the published extension modules
-- end-to-end tests covering: pure-Python plugin, pure-Rust equivalent, fallback on version mismatch, mixed pipeline
+- implement the entry-point–based resolver decided above; resolution order: declared Rust equivalent → Python implementation — **done** (`src/docutilsrs/python/docutilsrs_plugins.py`: entry-point group `docutilsrs.equivalents` + in-memory `register()` for tests; `resolve(target, prefer=...) -> Resolution(impl, source, reason)`)
+- version guard: Rust equivalent declares a compatible upstream version range; mismatch falls back to Python with a warning — **done** (`Equivalent.upstream_requires` PEP 440 spec; mismatch emits `UserWarning` and falls through to `_load_python`)
+- bidirectional calls: Rust → Python plugins via PyO3; Python → Rust crates via the published extension modules — **done** (Python→Rust via `dispatch()` returning Rust classes such as `sphinxdocrs.EventManager`; Rust→Python via the existing `docutilsrs.register_transform` bridge from Phase 3)
+- end-to-end tests covering: pure-Python plugin, pure-Rust equivalent, fallback on version mismatch, mixed pipeline — **done** (`tests/test_phase5_resolver.py`, 9 tests including an e2e route of `sphinx.events:EventManager` through the resolver into `sphinxdocrs.EventManager`)
 
 ## Quality gates
 

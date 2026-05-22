@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "pygmentsrs"
+version = "0.0.1"
+description = "Rust port of Pygments"
+requires-python = ">=3.9"
+license = { text = "BSD-2-Clause" }
+
+[tool.maturin]
+module-name = "pygmentsrs"
+manifest-path = "Cargo.toml"
+features = ["extension-module"]

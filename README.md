@@ -120,28 +120,48 @@ Status:
   `features()` exposed via PyO3, `insta` snapshot loop proven
   (5 passing `cargo test` cases), `TextLexer` passthrough +
   `HtmlFormatter` skeleton landed.
-- **Phase 1 in progress** — token hierarchy ported (~70 named
+- **Phase 1 done** — token hierarchy ported (~70 named
   constants from `pygments.token`), `RegexLexer` engine ported
   (state stack, `bygroups`, `default`, `#pop`/`#push`/named-state
   transitions, adjacent-same-type merging, error/whitespace
-  fallback). Minimal `PythonLexer` covering the docutilsrs handoff
-  fixtures landed; full pygments byte-parity for arbitrary Python
-  input is incremental work tracked in `src/pygmentsrs/docs/compat.md`.
-- Phase 2 — widen lexer coverage.
-- Phase 3 — docutilsrs integration via
-  `pygmentsrs = { path = "../pygmentsrs" }`: parser's
-  `code`/`code-block`/`sourcecode` arm routes to pygmentsrs first,
-  falls back to the existing
-  `docutils.utils.code_analyzer.Lexer` Python bridge for
-  uncovered languages. **Done** — `src/docutilsrs/src/code_block.rs`
-  hosts the `tokenize()` dispatcher; `Block::LiteralBlock` carries
-  an optional `tokens: Vec<(Option<String>, String)>` field that
-  the pseudo-XML emit path renders as `<inline classes="…">` token
-  spans. Smoke gate: `tests/test_pygments_native.py` (5 tests).
-  Byte-parity gate: `tests/test_parity_pseudoxml.py` bumped from
-  102 → **104** (added `code_block_language_text`,
-  `code_sourcecode_text_alias`). Phase 2 widening + full python
-  lexer parity are the remaining followups.
+  fallback). `PythonLexer` covers **33 byte-parity fixtures** in
+  `tests/test_parity_pseudoxml.py` (`code_block_python_*`):
+  def/class/decorators, imports (relative + parenthesised + `as`),
+  `True`/`False`/`None`, walrus, line-continuations, escape
+  sequences, raw / triple / prefixed / f-strings (including nested
+  literals inside `{…}`), 69 builtins, pseudo-builtins, stdlib
+  exceptions, magic variables, comments, numbers, operators, and
+  `in`/`is`/`and`/`or`/`not` as `Operator.Word` inside f-string
+  expressions. Accepted deviations tracked in
+  `src/pygmentsrs/docs/compat.md` (docstring sub-type, `match`/`case`
+  soft keywords, complex-number suffix).
+- **Phase 2 widening — in progress.** Bridge layer (`src/pygmentsrs/src/bridge.rs`)
+  landed: `pygmentsrs.lex(alias, code, backend="auto"|"rust"|"python")`,
+  `has_native_lexer(alias)`, `native_aliases()`, and a `highlight()`
+  shortcut. `backend="auto"` tries the native Rust lexer first and
+  transparently falls back to upstream `pygments` via PyO3 for any
+  alias without a Rust implementation, so the workspace gets full
+  upstream coverage today and incremental Rust speedups as lexers
+  land.
+- **Phase 3 done** — docutilsrs integration wired
+  (`pygmentsrs = { path = "../pygmentsrs" }`): the parser's
+  `code`/`code-block`/`sourcecode` arm calls `pygmentsrs::tokenize`
+  first and only falls back to the existing
+  `docutils.utils.code_analyzer.Lexer` Python bridge when the
+  native path declines.
+  `src/docutilsrs/src/code_block.rs` hosts the dispatcher;
+  `Block::LiteralBlock` carries an optional
+  `tokens: Vec<(Option<String>, String)>` field that the pseudo-XML
+  emit path renders as `<inline classes="…">` token spans. Gates:
+  `tests/test_pygments_native.py` (smoke) and
+  `tests/test_parity_pseudoxml.py` now contains **33+ byte-parity
+  code-block cases** (text alias, sourcecode alias, and the full
+  `code_block_python_*` family).
+
+Remaining followups: widen the lexer registry beyond `text` /
+`python` (next priorities are `rust`, `c`/`cpp`, `bash`, `json`,
+`yaml`, `rst`), and complete `HtmlFormatter` byte-parity by landing
+the full `STANDARD_TYPES` short-name table.
 
 ### Phase 3 — transforms module + hybrid mode
 
@@ -176,24 +196,26 @@ This is the integration safety net, not a stretch goal.
 
 ## Milestone 1 (first iteration)
 
+Status: **done.** All deliverables landed; exit criteria met.
+
 - goal
-  - land the bootstrap so a contributor can clone, build both crates, import them from Python, and run the test loop
+  - land the bootstrap so a contributor can clone, build both crates, import them from Python, and run the test loop — **done**
 
 - deliverables
-  - decisions above recorded as ADRs (upstream pin, module names, bindings stack, doctree model, plugin discovery)
-  - `Cargo.toml` + `src/lib.rs` for `docutilsrs` and `sphinxdocrs`, each exporting a PyO3 `version()`
-  - `maturin develop` produces importable `docutilsrs` and `sphinxdocrs` modules
-  - one `insta` snapshot test per crate proving the test harness works
-  - CI workflow running fmt, clippy, cargo test, maturin build, and a pytest smoke test
-  - `docs/compat.md` skeleton with the matrix columns defined
+  - decisions above recorded as ADRs (upstream pin, module names, bindings stack, doctree model, plugin discovery) — **done** (`docs/adr/0001-upstream-pin.md`, `0002-names.md`, `0003-bindings-and-layout.md`, `0004-doctree-representation.md`, `0005-plugin-discovery.md`)
+  - `Cargo.toml` + `src/lib.rs` for `docutilsrs` and `sphinxdocrs`, each exporting a PyO3 `version()` — **done** (both crates plus the in-workspace `pygmentsrs` member also expose `version()` / `features()`)
+  - `maturin develop` produces importable `docutilsrs` and `sphinxdocrs` modules — **done** (dev-loop block at the top of this README)
+  - one `insta` snapshot test per crate proving the test harness works — **done** (`docutilsrs/tests/snapshot.rs`, `sphinxdocrs/tests/snapshot.rs`, `pygmentsrs/tests/snapshot.rs`)
+  - CI workflow running fmt, clippy, cargo test, maturin build, and a pytest smoke test — **done** (`.github/workflows/ci.yml`)
+  - `docs/compat.md` skeleton with the matrix columns defined — **done** (plus per-crate `src/pygmentsrs/docs/compat.md` for the Pygments port)
 
 - exit criteria
-  - fresh clone → documented commands → green build and green tests
-  - Python smoke test imports both modules and asserts on `version()`
-  - one ADR per locked decision is merged
+  - fresh clone → documented commands → green build and green tests — **met** (Phase 5 gate: 18 docutilsrs + 1 sphinxdocrs + 8 pygmentsrs cargo tests; pytest suite green including parity, hybrid, resolver, and sphinxdocrs parity)
+  - Python smoke test imports both modules and asserts on `version()` — **met** (`tests/test_smoke.py` for docutilsrs; `tests/test_sphinxdocrs_*` cover the sphinxdocrs import surface)
+  - one ADR per locked decision is merged — **met** (5/5)
 
-- explicit non-goals for M1
-  - any real parsing
-  - any plugin resolution
-  - any writer output
+- explicit non-goals for M1 (kept out of scope for the bootstrap; subsequently delivered by later phases)
+  - any real parsing — landed in Phase 1/2
+  - any plugin resolution — landed in Phase 5
+  - any writer output — landed in Phase 2 (pseudo-XML byte-parity, plus HTML5 / LaTeX / manpage / ODT structural and byte-parity gates)
 

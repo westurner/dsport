@@ -1,0 +1,39 @@
+{
+	"name": "dsport (fedora-toolbox:44)",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"args": {
+			"USERNAME": "vscode",
+			"USER_UID": "1000",
+			"USER_GID": "1000"
+		}
+	},
+	"workspaceFolder": "/workspaces/dsport",
+	"workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/dsport,type=bind,consistency=cached",
+	"overrideCommand": true,
+	"runArgs": [
+		"--security-opt=label=disable"
+	],
+	"remoteUser": "vscode",
+	"containerEnv": {
+		"CARGO_HOME": "/home/vscode/.cargo",
+		"RUSTUP_HOME": "/home/vscode/.rustup",
+		"PATH": "/home/vscode/.cargo/bin:/home/vscode/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"rust-lang.rust-analyzer",
+				"tamasfe.even-better-toml",
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"vadimcn.vscode-lldb",
+				"lextudio.restructuredtext"
+			],
+			"settings": {
+				"terminal.integrated.defaultProfile.linux": "bash",
+				"rust-analyzer.cargo.features": "all"
+			}
+		}
+	}
+}

@@ -1,8 +1,6 @@
 //! PyO3 bindings for the doctree.
-//!
-//! Exposes a `Doctree` and `Node` class so Python tests can walk the tree
-//! and assert structure, in addition to the `parse_to_pseudoxml` string
-//! shortcut.
+
+#![allow(clippy::collapsible_match)]
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -18,13 +16,10 @@ pub struct PyDoctree {
 
 #[pymethods]
 impl PyDoctree {
-    /// Pseudo-XML pformat of the full tree (byte-for-byte compatible with
-    /// `docutils.writers.pseudoxml`).
     fn pformat(&self) -> String {
         pseudo_xml(&self.inner)
     }
 
-    /// Root `<document>` node.
     #[getter]
     fn root(slf: Py<Self>, py: Python<'_>) -> PyNode {
         let root_id = slf.borrow(py).inner.root();
@@ -51,26 +46,55 @@ pub struct PyNode {
 
 #[pymethods]
 impl PyNode {
-    /// Element name, matching docutils' node tag (`document`, `paragraph`,
-    /// `bullet_list`, …). `#text` for text nodes.
     #[getter]
-    fn tag(&self, py: Python<'_>) -> &'static str {
+    fn tag(&self, py: Python<'_>) -> String {
         match &self.tree.borrow(py).inner.node(self.id).kind {
-            NodeKind::Document { .. } => "document",
-            NodeKind::Paragraph => "paragraph",
-            NodeKind::Text(_) => "#text",
-            NodeKind::Emphasis => "emphasis",
-            NodeKind::Strong => "strong",
-            NodeKind::Literal => "literal",
-            NodeKind::BulletList { .. } => "bullet_list",
-            NodeKind::EnumeratedList { .. } => "enumerated_list",
-            NodeKind::ListItem => "list_item",
-            NodeKind::Reference { .. } => "reference",
-            NodeKind::Target { .. } => "target",
+            NodeKind::Document { .. } => "document".into(),
+            NodeKind::Section { .. } => "section".into(),
+            NodeKind::Title => "title".into(),
+            NodeKind::Subtitle { .. } => "subtitle".into(),
+            NodeKind::Transition => "transition".into(),
+            NodeKind::Paragraph => "paragraph".into(),
+            NodeKind::Text(_) => "#text".into(),
+            NodeKind::Emphasis => "emphasis".into(),
+            NodeKind::Strong => "strong".into(),
+            NodeKind::Literal => "literal".into(),
+            NodeKind::TitleReference => "title_reference".into(),
+            NodeKind::Inline { .. } => "inline".into(),
+            NodeKind::LiteralBlock { .. } => "literal_block".into(),
+            NodeKind::BulletList { .. } => "bullet_list".into(),
+            NodeKind::EnumeratedList { .. } => "enumerated_list".into(),
+            NodeKind::ListItem => "list_item".into(),
+            NodeKind::DefinitionList => "definition_list".into(),
+            NodeKind::DefinitionListItem => "definition_list_item".into(),
+            NodeKind::Term => "term".into(),
+            NodeKind::Classifier => "classifier".into(),
+            NodeKind::Definition => "definition".into(),
+            NodeKind::FieldList => "field_list".into(),
+            NodeKind::Field => "field".into(),
+            NodeKind::FieldName => "field_name".into(),
+            NodeKind::FieldBody => "field_body".into(),
+            NodeKind::Docinfo => "docinfo".into(),
+            NodeKind::Bibliographic { tag } => (*tag).into(),
+            NodeKind::BlockQuote => "block_quote".into(),
+            NodeKind::Admonition { kind } => (*kind).into(),
+            NodeKind::Image { .. } => "image".into(),
+            NodeKind::Raw { .. } => "raw".into(),
+            NodeKind::Comment => "comment".into(),
+            NodeKind::Reference { .. } => "reference".into(),
+            NodeKind::Target { .. } => "target".into(),
+            NodeKind::SubstitutionDefinition { .. } => "substitution_definition".into(),
+            NodeKind::SubstitutionReference { .. } => "substitution_reference".into(),
+            NodeKind::Table => "table".into(),
+            NodeKind::Tgroup { .. } => "tgroup".into(),
+            NodeKind::Colspec { .. } => "colspec".into(),
+            NodeKind::Thead => "thead".into(),
+            NodeKind::Tbody => "tbody".into(),
+            NodeKind::Row => "row".into(),
+            NodeKind::Entry => "entry".into(),
         }
     }
 
-    /// String value for text nodes; `None` for element nodes.
     #[getter]
     fn text(&self, py: Python<'_>) -> Option<String> {
         match &self.tree.borrow(py).inner.node(self.id).kind {
@@ -79,13 +103,26 @@ impl PyNode {
         }
     }
 
-    /// Attribute dict in docutils' attribute naming.
     #[getter]
     fn attributes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
         match &self.tree.borrow(py).inner.node(self.id).kind {
-            NodeKind::Document { source } => {
+            NodeKind::Document {
+                source,
+                ids,
+                names,
+                title,
+            } => {
                 dict.set_item("source", source)?;
+                if !title.is_empty() {
+                    dict.set_item("ids", ids)?;
+                    dict.set_item("names", names)?;
+                    dict.set_item("title", title)?;
+                }
+            }
+            NodeKind::Section { ids, names } | NodeKind::Subtitle { ids, names } => {
+                dict.set_item("ids", ids)?;
+                dict.set_item("names", names)?;
             }
             NodeKind::BulletList { bullet } => {
                 dict.set_item("bullet", bullet.to_string())?;
@@ -103,6 +140,38 @@ impl PyNode {
                     dict.set_item("start", *s)?;
                 }
             }
+            NodeKind::Inline { classes } => {
+                if !classes.is_empty() {
+                    dict.set_item("classes", classes)?;
+                }
+            }
+            NodeKind::LiteralBlock { classes } => {
+                if !classes.is_empty() {
+                    dict.set_item("classes", classes)?;
+                }
+                dict.set_item("xml:space", "preserve")?;
+            }
+            NodeKind::Image {
+                uri,
+                alt,
+                width,
+                height,
+            } => {
+                dict.set_item("uri", uri)?;
+                if let Some(v) = alt {
+                    dict.set_item("alt", v)?;
+                }
+                if let Some(v) = width {
+                    dict.set_item("width", v)?;
+                }
+                if let Some(v) = height {
+                    dict.set_item("height", v)?;
+                }
+            }
+            NodeKind::Raw { format } => {
+                dict.set_item("format", format)?;
+                dict.set_item("xml:space", "preserve")?;
+            }
             NodeKind::Reference { name, refuri } => {
                 dict.set_item("name", name)?;
                 dict.set_item("refuri", refuri)?;
@@ -112,12 +181,26 @@ impl PyNode {
                 dict.set_item("names", names)?;
                 dict.set_item("refuri", refuri)?;
             }
+            NodeKind::SubstitutionDefinition { names } => {
+                dict.set_item("names", names)?;
+            }
+            NodeKind::SubstitutionReference { refname } => {
+                dict.set_item("refname", refname)?;
+            }
+            NodeKind::Tgroup { cols } => {
+                dict.set_item("cols", *cols)?;
+            }
+            NodeKind::Colspec { colwidth } => {
+                dict.set_item("colwidth", *colwidth)?;
+            }
+            NodeKind::Comment => {
+                dict.set_item("xml:space", "preserve")?;
+            }
             _ => {}
         }
         Ok(dict)
     }
 
-    /// Child nodes in document order.
     #[getter]
     fn children(&self, py: Python<'_>) -> Vec<PyNode> {
         let ids: Vec<NodeId> = self.tree.borrow(py).inner.node(self.id).children.clone();
@@ -134,7 +217,6 @@ impl PyNode {
     }
 }
 
-/// Parse rST `source` and return a `Doctree`.
 #[pyfunction(name = "parse_rst", signature = (source, source_path = "<string>"))]
 pub fn py_parse_rst(source: &str, source_path: &str) -> PyDoctree {
     PyDoctree {

@@ -1,15 +1,14 @@
 //! Pseudo-XML writer.
 //!
-//! Output format matches `docutils.writers.pseudoxml` on the node kinds
-//! supported in the phase 1 slice. Parity is asserted by
-//! `tests/parity_pseudoxml.rs`.
+//! Output format matches `docutils.writers.pseudoxml` on the supported
+//! node kinds. Parity is asserted from
+//! `src/tests/test_parity_pseudoxml.py`.
 //!
-//! Format rules (derived from upstream output, see compat notes):
+//! Format rules (derived from upstream output):
 //! - 4-space indent per depth level.
 //! - Each node emits one line: `<indent><tag[ attr="val" ...]>`.
 //! - No closing tags.
-//! - Text nodes emit `<indent><raw text>` with the text content unescaped
-//!   except for the standard XML entities.
+//! - Text nodes emit one line per source line.
 //! - Attributes are written in alphabetical order.
 //! - Output ends with a single trailing newline.
 
@@ -27,34 +26,70 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
     let indent = "    ".repeat(depth);
     match &node.kind {
         NodeKind::Text(s) => {
-            // Mirror docutils.nodes.Text.pformat: every source line of the
-            // text becomes its own indented line.
             for line in s.split('\n') {
                 out.push_str(&indent);
                 out.push_str(line);
                 out.push('\n');
             }
         }
-        NodeKind::Document { source } => {
-            // pseudo-XML deliberately does NOT XML-escape attribute values;
-            // it mirrors `Node.pformat()` from docutils, which formats raw.
-            let _ = writeln!(out, "{indent}<document source=\"{source}\">");
+        NodeKind::Document {
+            source,
+            ids,
+            names,
+            title,
+        } => {
+            if title.is_empty() {
+                let _ = writeln!(out, "{indent}<document source=\"{source}\">");
+            } else {
+                let _ = writeln!(
+                    out,
+                    "{indent}<document ids=\"{ids}\" names=\"{names}\" source=\"{source}\" title=\"{title}\">"
+                );
+            }
+        }
+        NodeKind::Section { ids, names } => {
+            let _ = writeln!(out, "{indent}<section ids=\"{ids}\" names=\"{names}\">");
+        }
+        NodeKind::Title => {
+            let _ = writeln!(out, "{indent}<title>");
+        }
+        NodeKind::Subtitle { ids, names } => {
+            let _ = writeln!(out, "{indent}<subtitle ids=\"{ids}\" names=\"{names}\">");
+        }
+        NodeKind::Transition => {
+            let _ = writeln!(out, "{indent}<transition>");
         }
         NodeKind::Paragraph => {
-            out.push_str(&indent);
-            out.push_str("<paragraph>\n");
+            let _ = writeln!(out, "{indent}<paragraph>");
         }
         NodeKind::Emphasis => {
-            out.push_str(&indent);
-            out.push_str("<emphasis>\n");
+            let _ = writeln!(out, "{indent}<emphasis>");
         }
         NodeKind::Strong => {
-            out.push_str(&indent);
-            out.push_str("<strong>\n");
+            let _ = writeln!(out, "{indent}<strong>");
         }
         NodeKind::Literal => {
-            out.push_str(&indent);
-            out.push_str("<literal>\n");
+            let _ = writeln!(out, "{indent}<literal>");
+        }
+        NodeKind::TitleReference => {
+            let _ = writeln!(out, "{indent}<title_reference>");
+        }
+        NodeKind::Inline { classes } => {
+            if classes.is_empty() {
+                let _ = writeln!(out, "{indent}<inline>");
+            } else {
+                let _ = writeln!(out, "{indent}<inline classes=\"{classes}\">");
+            }
+        }
+        NodeKind::LiteralBlock { classes } => {
+            if classes.is_empty() {
+                let _ = writeln!(out, "{indent}<literal_block xml:space=\"preserve\">");
+            } else {
+                let _ = writeln!(
+                    out,
+                    "{indent}<literal_block classes=\"{classes}\" xml:space=\"preserve\">"
+                );
+            }
         }
         NodeKind::BulletList { bullet } => {
             let _ = writeln!(out, "{indent}<bullet_list bullet=\"{bullet}\">");
@@ -78,8 +113,76 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             }
         }
         NodeKind::ListItem => {
-            out.push_str(&indent);
-            out.push_str("<list_item>\n");
+            let _ = writeln!(out, "{indent}<list_item>");
+        }
+        NodeKind::DefinitionList => {
+            let _ = writeln!(out, "{indent}<definition_list>");
+        }
+        NodeKind::DefinitionListItem => {
+            let _ = writeln!(out, "{indent}<definition_list_item>");
+        }
+        NodeKind::Term => {
+            let _ = writeln!(out, "{indent}<term>");
+        }
+        NodeKind::Classifier => {
+            let _ = writeln!(out, "{indent}<classifier>");
+        }
+        NodeKind::Definition => {
+            let _ = writeln!(out, "{indent}<definition>");
+        }
+        NodeKind::FieldList => {
+            let _ = writeln!(out, "{indent}<field_list>");
+        }
+        NodeKind::Field => {
+            let _ = writeln!(out, "{indent}<field>");
+        }
+        NodeKind::FieldName => {
+            let _ = writeln!(out, "{indent}<field_name>");
+        }
+        NodeKind::FieldBody => {
+            let _ = writeln!(out, "{indent}<field_body>");
+        }
+        NodeKind::Docinfo => {
+            let _ = writeln!(out, "{indent}<docinfo>");
+        }
+        NodeKind::Bibliographic { tag } => {
+            let _ = writeln!(out, "{indent}<{tag}>");
+        }
+        NodeKind::BlockQuote => {
+            let _ = writeln!(out, "{indent}<block_quote>");
+        }
+        NodeKind::Admonition { kind } => {
+            let _ = writeln!(out, "{indent}<{kind}>");
+        }
+        NodeKind::Image {
+            uri,
+            alt,
+            width,
+            height,
+        } => {
+            let mut s = format!("{indent}<image");
+            if let Some(v) = alt {
+                let _ = write!(s, " alt=\"{v}\"");
+            }
+            if let Some(v) = height {
+                let _ = write!(s, " height=\"{v}\"");
+            }
+            let _ = write!(s, " uri=\"{uri}\"");
+            if let Some(v) = width {
+                let _ = write!(s, " width=\"{v}\"");
+            }
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
+        NodeKind::Raw { format } => {
+            let _ = writeln!(
+                out,
+                "{indent}<raw format=\"{format}\" xml:space=\"preserve\">"
+            );
+        }
+        NodeKind::Comment => {
+            let _ = writeln!(out, "{indent}<comment xml:space=\"preserve\">");
         }
         NodeKind::Reference { name, refuri } => {
             let _ = writeln!(
@@ -92,6 +195,36 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
                 out,
                 "{indent}<target ids=\"{ids}\" names=\"{names}\" refuri=\"{refuri}\">"
             );
+        }
+        NodeKind::SubstitutionDefinition { names } => {
+            let _ = writeln!(out, "{indent}<substitution_definition names=\"{names}\">");
+        }
+        NodeKind::SubstitutionReference { refname } => {
+            let _ = writeln!(
+                out,
+                "{indent}<substitution_reference refname=\"{refname}\">"
+            );
+        }
+        NodeKind::Table => {
+            let _ = writeln!(out, "{indent}<table>");
+        }
+        NodeKind::Tgroup { cols } => {
+            let _ = writeln!(out, "{indent}<tgroup cols=\"{cols}\">");
+        }
+        NodeKind::Colspec { colwidth } => {
+            let _ = writeln!(out, "{indent}<colspec colwidth=\"{colwidth}\">");
+        }
+        NodeKind::Thead => {
+            let _ = writeln!(out, "{indent}<thead>");
+        }
+        NodeKind::Tbody => {
+            let _ = writeln!(out, "{indent}<tbody>");
+        }
+        NodeKind::Row => {
+            let _ = writeln!(out, "{indent}<row>");
+        }
+        NodeKind::Entry => {
+            let _ = writeln!(out, "{indent}<entry>");
         }
     }
     for &child in &node.children {

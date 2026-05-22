@@ -1,7 +1,6 @@
 //! Minimal owned doctree.
 //!
-//! Phase 1 slice: only the node kinds reachable from
-//! paragraphs + inline emphasis/strong/literal. Extended in phase 2.
+//! Phase 1 + phase 2 slice. Extended incrementally; see `docs/compat.md`.
 //!
 //! Layout: an arena of [`Node`]s indexed by [`NodeId`]. Parent and child
 //! pointers are `NodeId`s, never references, so the tree is cheap to mutate
@@ -13,12 +12,36 @@ pub type NodeId = usize;
 pub enum NodeKind {
     Document {
         source: String,
+        /// Promoted title (if first block is a lone section). Empty otherwise.
+        ids: String,
+        names: String,
+        title: String,
     },
+    Section {
+        ids: String,
+        names: String,
+    },
+    Title,
+    Subtitle {
+        ids: String,
+        names: String,
+    },
+    Transition,
     Paragraph,
     Text(String),
     Emphasis,
     Strong,
     Literal,
+    /// `<title_reference>` element (role `:title:` / `:t:`).
+    TitleReference,
+    /// `<inline classes="...">` element used by some roles/directives.
+    Inline {
+        classes: String,
+    },
+    /// Pre-formatted block. `classes` is space-separated (e.g. "code python").
+    LiteralBlock {
+        classes: String,
+    },
     BulletList {
         bullet: char,
     },
@@ -32,6 +55,39 @@ pub enum NodeKind {
         start: Option<u32>,
     },
     ListItem,
+    DefinitionList,
+    DefinitionListItem,
+    Term,
+    Classifier,
+    Definition,
+    FieldList,
+    Field,
+    FieldName,
+    FieldBody,
+    /// Bibliographic info container (field list at the top of a document
+    /// containing recognized bibliographic fields).
+    Docinfo,
+    /// A recognized bibliographic field (e.g. `<author>`, `<date>`). `tag`
+    /// is the docutils element name (lower-case).
+    Bibliographic {
+        tag: &'static str,
+    },
+    BlockQuote,
+    /// Admonition with a fixed kind (`note`, `warning`, `tip`, etc.).
+    Admonition {
+        kind: &'static str,
+    },
+    Image {
+        uri: String,
+        alt: Option<String>,
+        width: Option<String>,
+        height: Option<String>,
+    },
+    /// Raw passthrough (`.. raw:: format`).
+    Raw {
+        format: String,
+    },
+    Comment,
     /// Hyperlink reference. `refuri` is empty until resolved.
     Reference {
         name: String,
@@ -44,6 +100,23 @@ pub enum NodeKind {
         names: String,
         refuri: String,
     },
+    SubstitutionDefinition {
+        names: String,
+    },
+    SubstitutionReference {
+        refname: String,
+    },
+    Table,
+    Tgroup {
+        cols: u32,
+    },
+    Colspec {
+        colwidth: u32,
+    },
+    Thead,
+    Tbody,
+    Row,
+    Entry,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +142,9 @@ impl Doctree {
         tree.root = tree.push(
             NodeKind::Document {
                 source: source.into(),
+                ids: String::new(),
+                names: String::new(),
+                title: String::new(),
             },
             None,
         );
@@ -96,6 +172,19 @@ impl Doctree {
         let id = self.push(kind, Some(parent));
         self.nodes[parent].children.push(id);
         id
+    }
+
+    /// Replace the kind of an existing node.
+    pub fn set_kind(&mut self, id: NodeId, kind: NodeKind) {
+        self.nodes[id].kind = kind;
+    }
+
+    /// Detach `id` from its parent (does not remove the node from the arena).
+    pub fn detach(&mut self, id: NodeId) {
+        if let Some(parent) = self.nodes[id].parent {
+            self.nodes[parent].children.retain(|&c| c != id);
+            self.nodes[id].parent = None;
+        }
     }
 
     fn push(&mut self, kind: NodeKind, parent: Option<NodeId>) -> NodeId {

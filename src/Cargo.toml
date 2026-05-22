@@ -6,9 +6,9 @@ members = [
 ]
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 license = "BSD-2-Clause"
-rust-version = "1.75"
+rust-version = "1.85"
 
 [workspace.dependencies]
 pyo3 = "0.28.3"

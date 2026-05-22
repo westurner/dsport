@@ -6,11 +6,13 @@
 use pyo3::prelude::*;
 
 pub mod doctree;
+pub mod html5_writer;
 pub mod parser;
 mod python;
 pub mod writer;
 
 pub use doctree::{Doctree, NodeKind};
+pub use html5_writer::html5;
 pub use parser::{parse_rst, parse_rst_with_source};
 pub use writer::pseudo_xml;
 
@@ -34,10 +36,22 @@ fn py_parse_to_pseudoxml(source: &str, source_path: &str) -> String {
     pseudo_xml(&tree)
 }
 
+/// Parse rST `source` and return a minimal HTML5 fragment.
+///
+/// This output is not parity-tested against docutils; it is a small,
+/// predictable subset suitable for downstream rendering. See
+/// `docs/compat.md`.
+#[pyfunction(name = "parse_to_html5", signature = (source, source_path = "<string>"))]
+fn py_parse_to_html5(source: &str, source_path: &str) -> String {
+    let tree = parse_rst_with_source(source, source_path);
+    html5(&tree)
+}
+
 #[pymodule]
 fn docutilsrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_version, m)?)?;
     m.add_function(wrap_pyfunction!(py_parse_to_pseudoxml, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parse_to_html5, m)?)?;
     m.add_function(wrap_pyfunction!(python::py_parse_rst, m)?)?;
     m.add_class::<python::PyDoctree>()?;
     m.add_class::<python::PyNode>()?;

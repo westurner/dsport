@@ -29,10 +29,22 @@ Columns:
 | rST parser — backslash escapes | `docutils.parsers.rst.states` | `src/docutilsrs/src/parser.rs` | exact-parity | `\X` → `X`, `\<ws>` consumed |
 | rST parser — simple references + explicit targets | `docutils.parsers.rst` + `docutils.transforms.references` | `src/docutilsrs/src/parser.rs` | accepted-deviation | `name_` + `.. _name: uri` only; phrase refs and unresolved-target system messages deferred |
 | rST parser — enumerated lists | `docutils.parsers.rst` | `src/docutilsrs/src/parser.rs` | accepted-deviation | arabic / lower-/upperalpha / lower-/upperroman / auto-`#`; bare, `N.`, `N)`, `(N)`; `start` attribute; continuation lines; roman-vs-alpha disambiguation by peek-ahead; no nested lists, no multi-paragraph items |
-| rST parser — definition/field lists | `docutils.parsers.rst` | — | pending | phase 2 |
-| rST parser — tables/directives/roles/substitutions | `docutils.parsers.rst` | — | pending | phase 2 |
-| transforms (full) | `docutils.transforms` | — | pending | phase 2 |
-| HTML5 writer | `docutils.writers.html5_polyglot` | — | pending | phase 2 |
+| rST parser — sections + transitions | `docutils.parsers.rst` | `src/docutilsrs/src/parser.rs` | accepted-deviation | underlined title sections (no overlines); arbitrary section punctuation; document title + subtitle promotion |
+| rST parser — block quotes | `docutils.parsers.rst` | `src/docutilsrs/src/parser.rs` | accepted-deviation | indented blocks; no attribution-line splitting |
+| rST parser — literal blocks (`::`) | `docutils.parsers.rst` | `src/docutilsrs/src/parser.rs` | exact-parity | expanded (`Intro::`), partially-expanded (`Intro ::`), and quoted (`::`) forms |
+| rST parser — definition lists | `docutils.parsers.rst` | `src/docutilsrs/src/parser.rs` | accepted-deviation | term / `term : classifier` / definition; single-paragraph definitions |
+| rST parser — field lists + docinfo | `docutils.parsers.rst` + `docutils.transforms.frontmatter` | `src/docutilsrs/src/parser.rs` | accepted-deviation | `:name: value` lists; `<docinfo>` promotion of recognized bibliographic fields after document title |
+| rST parser — comments | `docutils.parsers.rst` | `src/docutilsrs/src/parser.rs` | exact-parity | `..` block form |
+| rST parser — admonitions | `docutils.parsers.rst.directives.admonitions` | `src/docutilsrs/src/parser.rs` | accepted-deviation | note/warning/tip/hint/important/attention/caution/danger/error |
+| rST parser — image / figure | `docutils.parsers.rst.directives.images` | `src/docutilsrs/src/parser.rs` | accepted-deviation | `:alt:` / `:width:` / `:height:` options only; figure rendered as image |
+| rST parser — code / code-block / sourcecode | `docutils.parsers.rst.directives.body` | `src/docutilsrs/src/parser.rs` | accepted-deviation | emitted as `<literal_block classes="code [lang]">`; no syntax highlighting (Pygments tokens not produced) |
+| rST parser — raw directive | `docutils.parsers.rst.directives.misc` | `src/docutilsrs/src/parser.rs` | exact-parity | `format` argument, indented body |
+| rST parser — inline roles | `docutils.parsers.rst.roles` | `src/docutilsrs/src/parser.rs` | accepted-deviation | `:emphasis:` / `:strong:` / `:literal:` / `:code:` / `:title:` (== `:title-reference:`); unknown roles → `<inline classes="…">` |
+| rST parser — substitutions | `docutils.parsers.rst` + `docutils.transforms.references` | `src/docutilsrs/src/parser.rs` | accepted-deviation | `replace::` directive resolved inline; other substitution directives dropped |
+| rST parser — tables (simple + grid) | `docutils.parsers.rst.tableparser` | `src/docutilsrs/src/parser.rs` | accepted-deviation | head + body rows; no row/col spans; no multi-paragraph cells |
+| rST parser — phrase references | `docutils.parsers.rst` + `docutils.transforms.references` | `src/docutilsrs/src/parser.rs` | accepted-deviation | `` `Phrase Name`_ `` resolved against `.. _Phrase Name: uri` (case-insensitive); embedded URIs deferred |
+| transforms (full) | `docutils.transforms` | — | pending | phase 3 |
+| HTML5 writer (minimal) | `docutils.writers.html5_polyglot` | `src/docutilsrs/src/html5_writer.rs` | accepted-deviation | fragment output; semantic subset (`<p>`/`<em>`/`<strong>`/`<code>`/`<ul>`/`<ol>`/`<dl>`/`<table>`/`<section>`/headings/`<blockquote>`/`<aside>` etc.); not parity-gated against upstream |
 
 ## sphinxdocrs
 

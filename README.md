@@ -97,6 +97,9 @@ Writers:
 Plugin bridges:
 - syntax highlighting for `code-block` (Pygments) via the Python directive plugin bridge — see `src/docutilsrs/python/docutilsrs_pygments.py`
 
+Open handoffs (next-up work, not yet started):
+- **Native Pygments syntax highlighting** for `code`/`code-block`/`sourcecode` (replace the opt-in plugin-bridge stub with byte-parity emission of `<literal_block>` + token-classed `<inline>` children). Brief, target output, recommended implementation path, fixtures to add, and gate commands: [docs/handoff/pygments.md](docs/handoff/pygments.md).
+
 ### Phase 3 — transforms module + hybrid mode
 
 This is the integration safety net, not a stretch goal.

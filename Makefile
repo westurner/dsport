@@ -92,18 +92,35 @@ DOCUTILS_REPO ?= $(CLONE_MY_REPOS_PREFIX)/docutils
 PYGMENTS_REPO ?= $(CLONE_MY_REPOS_PREFIX)/pygments
 SPHINX_REPO ?= $(CLONE_MY_REPOS_PREFIX)/sphinx
 RATEX_REPO ?= $(CLONE_MY_REPOS_PREFIX)/RaTeX
+MYST_PARSER_REPO ?= $(CLONE_MY_REPOS_PREFIX)/MyST-Parser
+MARKDOWN_IT_REPO ?= $(CLONE_MY_REPOS_PREFIX)/markdown-it-py
+MINIJINJA_REPO ?= $(CLONE_MY_REPOS_PREFIX)/minijinja
+JINJA2_REPO ?= $(CLONE_MY_REPOS_PREFIX)/jinja2
 else
 DOCUTILS_REPO ?= https://github.com/docutils/docutils
 PYGMENTS_REPO ?= https://github.com/pygments/pygments
 SPHINX_REPO ?= https://github.com/sphinx-doc/sphinx
 RATEX_REPO ?= https://github.com/erweixin/RaTeX
+MYST_PARSER_REPO ?= https://github.com/executablebooks/MyST-Parser
+MARKDOWN_IT_REPO ?= https://github.com/executablebooks/markdown-it-py
+MINIJINJA_REPO ?= https://github.com/mitsuhiko/minijinja
+JINJA2_REPO ?= https://github.com/pallets/jinja2
 endif
-# DOCUTILS_REPO ?= https://github.com/westurner/docutils
-# PYGMENTS_REPO ?= https://github.com/westurner/pygments
-# SPHINX_REPO ?= https://github.com/westurner/sphinx
-# RATEX_REPO ?= https://github.com/westurner/RaTeX
 
-clone-upstream: clone-docutils clone-pygments clone-sphinx clone-ratex
+# DOCUTILS_REPO ?=    https://github.com/westurner/docutils
+# PYGMENTS_REPO ?=    https://github.com/westurner/pygments
+# SPHINX_REPO ?=      https://github.com/westurner/sphinx
+# RATEX_REPO ?=       https://github.com/westurner/RaTeX
+# MYST_PARSER_REPO ?= https://github.com/westurner/MyST-Parser
+# MARKDOWN_IT_REPO ?= https://github.com/westurner/markdown-it-py
+# MINIJINJA_REPO ?=   https://github.com/westurner/minijinja
+# JINJA2_REPO ?=      https://github.com/westurner/jinja2
+
+clone-upstream: clone-docutils clone-pygments clone-sphinx clone-ratex \
+	clone-myst-parser \
+	clone-markdown-it-py \
+	clone-minijinja \
+	clone-jinja2
 
 clone-docutils:
 	@if [ ! -d "src/docutils" ]; then \
@@ -126,9 +143,46 @@ clone-sphinx:
 		echo "src/sphinx already exists."; \
 	fi
 
+RATEX_PATH ?= src/RaTeX
 clone-ratex:
-	@if [ ! -d "src/RaTeX" ]; then \
-		git clone $(RATEX_REPO) src/RaTeX; \
+	@if [ ! -d "$(RATEX_PATH)" ]; then \
+		git clone $(RATEX_REPO) $(RATEX_PATH); \
 	else \
-		echo "src/RaTeX already exists."; \
+		echo "$(RATEX_PATH) already exists."; \
+	fi
+
+
+MYST_PARSER_PATH ?= src/MyST-Parser
+clone-myst-parser:
+	@if [ ! -d "$(MYST_PARSER_PATH)" ]; then \
+		git clone $(MYST_PARSER_REPO) $(MYST_PARSER_PATH); \
+	else \
+		echo "$(MYST_PARSER_PATH) already exists."; \
+	fi
+
+
+MARKDOWN_IT_PATH ?= src/markdown-it-py
+clone-markdown-it-py:
+	@if [ ! -d "$(MARKDOWN_IT_PATH)" ]; then \
+		git clone $(MARKDOWN_IT_REPO) $(MARKDOWN_IT_PATH); \
+	else \
+		echo "$(MARKDOWN_IT_PATH) already exists."; \
+	fi
+
+
+MINIJINJA_PATH ?= src/minijinja
+clone-minijinja:
+	@if [ ! -d "$(MINIJINJA_PATH)" ]; then \
+		git clone $(MINIJINJA_REPO) $(MINIJINJA_PATH); \
+	else \
+		echo "$(MINIJINJA_PATH) already exists."; \
+	fi
+
+
+JINJA2_PATH ?= src/jinja2
+clone-jinja2:
+	@if [ ! -d "$(JINJA2_PATH)" ]; then \
+		git clone $(JINJA2_REPO) $(JINJA2_PATH); \
+	else \
+		echo "$(JINJA2_PATH) already exists."; \
 	fi

@@ -2,19 +2,16 @@
 //!
 //! Supports:
 //! - blank-line-separated paragraphs
+//! - bullet lists with markers `-`, `*`, `+` (one item per line; no
+//!   continuation lines, no nested lists)
 //! - inline emphasis `*x*`, strong `**x**`, inline literal `` ``x`` ``
+//! - backslash escapes (`\X` emits literal `X`; `\<ws>` is removed)
 //!
 //! Out of scope for the slice (tracked in `docs/compat.md`):
-//! lists, tables, directives, roles, references, substitutions, line blocks,
-//! block quotes, transitions, sections, multi-line inline spans across
-//! paragraphs, escape sequences, character-level start/end-string rules.
-//!
-//! The inline rules follow the spirit of the docutils inline markup
-//! recognition rules: a start marker must be preceded by whitespace, line
-//! start, or open-punctuation, and must not be immediately followed by
-//! whitespace; the matching end marker must not be immediately preceded by
-//! whitespace and must be followed by whitespace, line end, or
-//! close-punctuation.
+//! enumerated lists, definition lists, field lists, tables, directives,
+//! roles, references, substitutions, line blocks, block quotes,
+//! transitions, sections, multi-line inline spans across paragraphs,
+//! list-item continuation lines, nested lists.
 
 use crate::doctree::{Doctree, NodeId, NodeKind};
 
@@ -22,34 +19,120 @@ pub fn parse_rst(source: &str) -> Doctree {
     let mut tree = Doctree::new_document("<string>");
     let document = tree.root();
 
-    for block in split_paragraphs(source) {
-        let paragraph = tree.append(document, NodeKind::Paragraph);
-        parse_inline(&mut tree, paragraph, &block);
+    for block in split_blocks(source) {
+        emit_block(&mut tree, document, block);
     }
 
     tree
 }
 
-fn split_paragraphs(source: &str) -> Vec<String> {
-    let mut paragraphs = Vec::new();
-    let mut current: Vec<&str> = Vec::new();
+// ────────────────────────────────────────────────────────────────────────────
+// Block-level
+// ────────────────────────────────────────────────────────────────────────────
 
-    for line in source.lines() {
+enum Block {
+    Paragraph(String),
+    BulletList { bullet: char, items: Vec<String> },
+}
+
+fn split_blocks(source: &str) -> Vec<Block> {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut blocks = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
         if line.trim().is_empty() {
-            if !current.is_empty() {
-                paragraphs.push(current.join("\n"));
-                current.clear();
+            i += 1;
+            continue;
+        }
+        if let Some((bullet, _)) = bullet_marker(line) {
+            let mut items = Vec::new();
+            while i < lines.len() {
+                let l = lines[i];
+                if l.trim().is_empty() {
+                    // Peek past blank lines: still part of the list only if
+                    // the next non-blank line uses the same bullet.
+                    let mut j = i + 1;
+                    while j < lines.len() && lines[j].trim().is_empty() {
+                        j += 1;
+                    }
+                    let cont =
+                        j < lines.len() && bullet_marker(lines[j]).map(|(b, _)| b) == Some(bullet);
+                    if cont {
+                        i = j;
+                        continue;
+                    }
+                    break;
+                }
+                if let Some((b, rest)) = bullet_marker(l) {
+                    if b != bullet {
+                        break;
+                    }
+                    items.push(rest.to_string());
+                    i += 1;
+                } else {
+                    break;
+                }
             }
-        } else {
-            current.push(line);
+            blocks.push(Block::BulletList { bullet, items });
+            continue;
+        }
+        let mut buf: Vec<&str> = Vec::new();
+        while i < lines.len() {
+            let l = lines[i];
+            if l.trim().is_empty() || bullet_marker(l).is_some() {
+                break;
+            }
+            buf.push(l);
+            i += 1;
+        }
+        if !buf.is_empty() {
+            blocks.push(Block::Paragraph(buf.join("\n")));
         }
     }
-    if !current.is_empty() {
-        paragraphs.push(current.join("\n"));
-    }
-
-    paragraphs
+    blocks
 }
+
+/// `(bullet_char, rest_of_line)` if `line` starts with `-`, `*`, or `+`
+/// followed by a space and at least one non-space character.
+fn bullet_marker(line: &str) -> Option<(char, &str)> {
+    let first = line.chars().next()?;
+    if !matches!(first, '-' | '*' | '+') {
+        return None;
+    }
+    let after = &line[first.len_utf8()..];
+    let mut chars = after.chars();
+    let second = chars.next()?;
+    if second != ' ' {
+        return None;
+    }
+    let rest = chars.as_str();
+    if rest.trim().is_empty() {
+        return None;
+    }
+    Some((first, rest))
+}
+
+fn emit_block(tree: &mut Doctree, parent: NodeId, block: Block) {
+    match block {
+        Block::Paragraph(text) => {
+            let p = tree.append(parent, NodeKind::Paragraph);
+            parse_inline(tree, p, &text);
+        }
+        Block::BulletList { bullet, items } => {
+            let list = tree.append(parent, NodeKind::BulletList { bullet });
+            for item in items {
+                let li = tree.append(list, NodeKind::ListItem);
+                let p = tree.append(li, NodeKind::Paragraph);
+                parse_inline(tree, p, &item);
+            }
+        }
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Inline
+// ────────────────────────────────────────────────────────────────────────────
 
 /// Inline markup kind, in priority order. `**` must be tried before `*`.
 #[derive(Clone, Copy)]
@@ -75,12 +158,6 @@ impl InlineKind {
             InlineKind::Emphasis => NodeKind::Emphasis,
         }
     }
-
-    /// rST inline markup does not nest within itself in the phase 1 slice.
-    /// All inline spans contain a single text node.
-    fn allows_nesting(self) -> bool {
-        false
-    }
 }
 
 const ORDER: [InlineKind; 3] = [
@@ -89,30 +166,60 @@ const ORDER: [InlineKind; 3] = [
     InlineKind::Emphasis,
 ];
 
-fn parse_inline(tree: &mut Doctree, parent: NodeId, text: &str) {
+/// Result of escape preprocessing.
+struct Escaped {
+    /// Text with escapes resolved: `\X` → `X`, `\<ws>` → "".
+    text: String,
+    /// One entry per byte of `text`. `true` means that byte originated from
+    /// an escaped character and must never be treated as inline-markup
+    /// syntax.
+    escaped: Vec<bool>,
+}
+
+fn preprocess_escapes(input: &str) -> Escaped {
+    let mut text = String::with_capacity(input.len());
+    let mut escaped: Vec<bool> = Vec::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek().copied() {
+                Some(nc) if nc.is_whitespace() => {
+                    chars.next();
+                }
+                Some(nc) => {
+                    chars.next();
+                    text.push(nc);
+                    escaped.resize(text.len(), true);
+                }
+                None => {
+                    text.push('\\');
+                    escaped.resize(text.len(), false);
+                }
+            }
+            continue;
+        }
+        text.push(c);
+        escaped.resize(text.len(), false);
+    }
+    Escaped { text, escaped }
+}
+
+fn parse_inline(tree: &mut Doctree, parent: NodeId, raw: &str) {
+    let pre = preprocess_escapes(raw);
+    let text = &pre.text;
     let bytes = text.as_bytes();
     let mut cursor = 0;
     let mut text_start = 0;
 
     while cursor < bytes.len() {
-        if let Some((kind, end_after_close)) = try_match_inline(text, cursor) {
-            // Flush pending plain text.
+        if let Some((kind, end_after_close)) = try_match_inline(text, &pre.escaped, cursor) {
             if cursor > text_start {
                 push_text(tree, parent, &text[text_start..cursor]);
             }
-
             let marker_len = kind.marker().len();
-            let inner_start = cursor + marker_len;
-            let inner_end = end_after_close - marker_len;
-            let inner = &text[inner_start..inner_end];
-
+            let inner = &text[cursor + marker_len..end_after_close - marker_len];
             let node = tree.append(parent, kind.node());
-            if kind.allows_nesting() {
-                parse_inline(tree, node, inner);
-            } else {
-                push_text(tree, node, inner);
-            }
-
+            push_text(tree, node, inner);
             cursor = end_after_close;
             text_start = cursor;
         } else {
@@ -131,12 +238,13 @@ fn push_text(tree: &mut Doctree, parent: NodeId, s: &str) {
     }
 }
 
-/// Try to start an inline span at `start`. Returns `(kind, end)` where `end`
-/// is the byte index just past the closing marker.
-fn try_match_inline(text: &str, start: usize) -> Option<(InlineKind, usize)> {
+fn try_match_inline(text: &str, escaped: &[bool], start: usize) -> Option<(InlineKind, usize)> {
     for &kind in &ORDER {
         let marker = kind.marker();
         if !text[start..].starts_with(marker) {
+            continue;
+        }
+        if escaped[start..start + marker.len()].iter().any(|&e| e) {
             continue;
         }
         if !valid_start_context(text, start) {
@@ -146,31 +254,30 @@ fn try_match_inline(text: &str, start: usize) -> Option<(InlineKind, usize)> {
         if content_start >= text.len() {
             continue;
         }
-        // No whitespace immediately after the opening marker.
         let first = text[content_start..].chars().next()?;
         if first.is_whitespace() {
             continue;
         }
-        if let Some(end_of_marker) = find_close(text, content_start, marker) {
+        if let Some(end_of_marker) = find_close(text, escaped, content_start, marker) {
             return Some((kind, end_of_marker));
         }
     }
     None
 }
 
-/// Search for a valid closing marker starting from `from`. Returns the byte
-/// index just past the closing marker.
-fn find_close(text: &str, from: usize, marker: &str) -> Option<usize> {
+fn find_close(text: &str, escaped: &[bool], from: usize, marker: &str) -> Option<usize> {
     let mut search = from;
     while let Some(rel) = text[search..].find(marker) {
         let abs = search + rel;
-        // Must not be preceded by whitespace.
+        if escaped[abs..abs + marker.len()].iter().any(|&e| e) {
+            search = abs + 1;
+            continue;
+        }
         let prev_char = text[..abs].chars().next_back()?;
         if prev_char.is_whitespace() {
             search = abs + marker.len();
             continue;
         }
-        // For "*", reject if it's actually part of "**".
         if marker == "*" && text[abs..].starts_with("**") {
             search = abs + 1;
             continue;
@@ -221,7 +328,7 @@ fn is_close_punct(c: char) -> bool {
 fn utf8_char_len(first_byte: u8) -> usize {
     match first_byte {
         b if b < 0x80 => 1,
-        b if b < 0xC0 => 1, // continuation byte; shouldn't be a cursor position
+        b if b < 0xC0 => 1,
         b if b < 0xE0 => 2,
         b if b < 0xF0 => 3,
         _ => 4,

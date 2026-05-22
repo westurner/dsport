@@ -44,3 +44,28 @@ fn literal_does_not_nest() {
     let src = "``*not emphasis*``";
     insta::assert_snapshot!("literal_no_nest", pseudo_xml(&parse_rst(src)));
 }
+
+#[test]
+fn bullet_list_hyphen() {
+    let src = "- one\n- two\n- three";
+    insta::assert_snapshot!("bullet_list_hyphen", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn paragraph_surrounding_bullet_list() {
+    let src = "Before.\n\n- a\n- b\n\nAfter.";
+    insta::assert_snapshot!("around_bullet_list", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn escape_blocks_emphasis() {
+    let src = "\\*not emphasis* here";
+    insta::assert_snapshot!("escape_blocks_emphasis", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn escape_whitespace_collapses() {
+    // `\ ` is consumed entirely.
+    let src = "a \\ b";
+    insta::assert_snapshot!("escape_ws_collapses", pseudo_xml(&parse_rst(src)));
+}

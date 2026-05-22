@@ -15,11 +15,13 @@ from docutils.core import publish_string
 
 
 CASES = {
+    # paragraphs
     "single_paragraph": "Hello world.",
     "two_paragraphs": "First.\n\nSecond.",
     "three_paragraphs": "One.\n\nTwo.\n\nThree.",
     "leading_blank_lines": "\n\nText.",
     "trailing_blank_lines": "Text.\n\n",
+    # inline markup
     "emphasis_only": "An *italic* word.",
     "strong_only": "A **bold** word.",
     "literal_only": "A ``literal`` word.",
@@ -27,6 +29,18 @@ CASES = {
     "strong_then_emphasis": "**bold** and *italic*",
     "nested_emphasis_in_strong": "**bold and *italic* inside**",
     "literal_protects_markup": "``*not emphasis*``",
+    # bullet lists
+    "bullet_hyphen": "- one\n- two\n- three",
+    "bullet_asterisk": "* alpha\n* beta",
+    "bullet_plus": "+ x\n+ y",
+    "bullet_then_paragraph": "- one\n- two\n\nNext paragraph.",
+    "paragraph_then_bullet_then_paragraph": "Before.\n\n- a\n- b\n\nAfter.",
+    "bullet_with_inline": "- single item with *emphasis*",
+    # escapes
+    "escape_star": "A \\*literal star\\* here.",
+    "escape_whitespace_collapses": "a \\ b",
+    "escape_blocks_emphasis": "\\*not emphasis* here",
+    "escape_backtick": "An escaped \\`backtick\\` here.",
 }
 
 

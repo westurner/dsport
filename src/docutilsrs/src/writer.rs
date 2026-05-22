@@ -54,6 +54,13 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             out.push_str(&indent);
             out.push_str("<literal>\n");
         }
+        NodeKind::BulletList { bullet } => {
+            let _ = writeln!(out, "{indent}<bullet_list bullet=\"{bullet}\">");
+        }
+        NodeKind::ListItem => {
+            out.push_str(&indent);
+            out.push_str("<list_item>\n");
+        }
     }
     for &child in &node.children {
         write_node(tree, child, depth + 1, out);

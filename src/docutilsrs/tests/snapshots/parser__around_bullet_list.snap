@@ -1,0 +1,16 @@
+---
+source: docutilsrs/tests/parser.rs
+expression: pseudo_xml(&parse_rst(src))
+---
+<document source="<string>">
+    <paragraph>
+        Before.
+    <bullet_list bullet="-">
+        <list_item>
+            <paragraph>
+                a
+        <list_item>
+            <paragraph>
+                b
+    <paragraph>
+        After.

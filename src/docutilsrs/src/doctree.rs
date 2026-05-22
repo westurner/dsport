@@ -17,6 +17,8 @@ pub enum NodeKind {
     Emphasis,
     Strong,
     Literal,
+    BulletList { bullet: char },
+    ListItem,
 }
 
 #[derive(Debug, Clone)]

@@ -47,8 +47,24 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
                 );
             }
         }
-        NodeKind::Section { ids, names } => {
-            let _ = writeln!(out, "{indent}<section ids=\"{ids}\" names=\"{names}\">");
+        NodeKind::Section {
+            ids,
+            names,
+            classes,
+        } => {
+            let mut s = format!("{indent}<section");
+            if !classes.is_empty() {
+                let _ = write!(s, " classes=\"{classes}\"");
+            }
+            if !ids.is_empty() {
+                let _ = write!(s, " ids=\"{ids}\"");
+            }
+            if !names.is_empty() {
+                let _ = write!(s, " names=\"{names}\"");
+            }
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
         }
         NodeKind::Title => {
             let _ = writeln!(out, "{indent}<title>");
@@ -184,17 +200,38 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         NodeKind::Comment => {
             let _ = writeln!(out, "{indent}<comment xml:space=\"preserve\">");
         }
-        NodeKind::Reference { name, refuri } => {
-            let _ = writeln!(
-                out,
-                "{indent}<reference name=\"{name}\" refuri=\"{refuri}\">"
-            );
+        NodeKind::Reference {
+            name,
+            refuri,
+            anonymous,
+        } => {
+            let mut s = format!("{indent}<reference");
+            if *anonymous {
+                let _ = write!(s, " anonymous=\"1\"");
+            }
+            let _ = write!(s, " name=\"{name}\" refuri=\"{refuri}\"");
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
         }
-        NodeKind::Target { ids, names, refuri } => {
-            let _ = writeln!(
-                out,
-                "{indent}<target ids=\"{ids}\" names=\"{names}\" refuri=\"{refuri}\">"
-            );
+        NodeKind::Target {
+            ids,
+            names,
+            refuri,
+            anonymous,
+        } => {
+            let mut s = format!("{indent}<target");
+            if *anonymous {
+                let _ = write!(s, " anonymous=\"1\"");
+            }
+            let _ = write!(s, " ids=\"{ids}\"");
+            if !names.is_empty() {
+                let _ = write!(s, " names=\"{names}\"");
+            }
+            let _ = write!(s, " refuri=\"{refuri}\"");
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
         }
         NodeKind::SubstitutionDefinition { names } => {
             let _ = writeln!(out, "{indent}<substitution_definition names=\"{names}\">");
@@ -225,6 +262,106 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         }
         NodeKind::Entry => {
             let _ = writeln!(out, "{indent}<entry>");
+        }
+        NodeKind::Attribution => {
+            let _ = writeln!(out, "{indent}<attribution>");
+        }
+        NodeKind::Figure => {
+            let _ = writeln!(out, "{indent}<figure>");
+        }
+        NodeKind::Caption => {
+            let _ = writeln!(out, "{indent}<caption>");
+        }
+        NodeKind::Legend => {
+            let _ = writeln!(out, "{indent}<legend>");
+        }
+        NodeKind::Label => {
+            let _ = writeln!(out, "{indent}<label>");
+        }
+        NodeKind::Footnote {
+            ids,
+            names,
+            backrefs,
+            auto,
+        } => {
+            // Attribute order (alphabetical): auto, backrefs, ids, names.
+            let mut s = format!("{indent}<footnote");
+            if let Some(a) = auto {
+                let _ = write!(s, " auto=\"{a}\"");
+            }
+            if !backrefs.is_empty() {
+                let _ = write!(s, " backrefs=\"{backrefs}\"");
+            }
+            let _ = write!(s, " ids=\"{ids}\"");
+            // Autosymbol footnotes have no `names` attribute (label is `*`).
+            if !names.is_empty() && !matches!(*auto, Some("*")) {
+                let _ = write!(s, " names=\"{names}\"");
+            }
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
+        NodeKind::FootnoteReference { ids, refid, auto } => {
+            let mut s = format!("{indent}<footnote_reference");
+            if let Some(a) = auto {
+                let _ = write!(s, " auto=\"{a}\"");
+            }
+            let _ = write!(s, " ids=\"{ids}\" refid=\"{refid}\"");
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
+        NodeKind::Citation {
+            ids,
+            names,
+            backrefs,
+        } => {
+            let mut s = format!("{indent}<citation");
+            if !backrefs.is_empty() {
+                let _ = write!(s, " backrefs=\"{backrefs}\"");
+            }
+            let _ = write!(s, " ids=\"{ids}\" names=\"{names}\"");
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
+        NodeKind::CitationReference { ids, refid } => {
+            let _ = writeln!(
+                out,
+                "{indent}<citation_reference ids=\"{ids}\" refid=\"{refid}\">"
+            );
+        }
+        NodeKind::Problematic { ids, refid } => {
+            let _ = writeln!(
+                out,
+                "{indent}<problematic ids=\"{ids}\" refid=\"{refid}\">"
+            );
+        }
+        NodeKind::SystemMessage {
+            level,
+            line,
+            ty,
+            ids,
+            backrefs,
+        } => {
+            let mut s = format!("{indent}<system_message");
+            if !backrefs.is_empty() {
+                let _ = write!(s, " backrefs=\"{backrefs}\"");
+            }
+            if !ids.is_empty() {
+                let _ = write!(s, " ids=\"{ids}\"");
+            }
+            let _ = write!(s, " level=\"{level}\"");
+            if let Some(l) = line {
+                let _ = write!(s, " line=\"{l}\"");
+            }
+            // SystemMessage always carries source="..." in upstream output;
+            // we omit it because we don't track per-message source paths.
+            let _ = write!(s, " source=\"<string>\"");
+            let _ = write!(s, " type=\"{ty}\"");
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
         }
     }
     for &child in &node.children {

@@ -30,12 +30,20 @@ pub fn parse_rst_with_source(source: &str, source_path: &str) -> Doctree {
     collect_substitutions(&lines, &mut subs);
 
     let blocks = parse_blocks(&lines, 0);
-    let ctx = ParseCtx { subs };
+    let mut ctx = ParseCtx {
+        subs,
+        anon_target_count: 0,
+        anon_target_uris: Vec::new(),
+        footnote_count: 0,
+        citation_count: 0,
+        footnote_ref_count: 0,
+        citation_ref_count: 0,
+    };
     for block in blocks {
-        emit_block(&mut tree, document, &ctx, block);
+        emit_block(&mut tree, document, &mut ctx, block);
     }
 
-    resolve_references(&mut tree);
+    resolve_references(&mut tree, &ctx);
     promote_document_title(&mut tree);
     promote_docinfo(&mut tree);
     tree
@@ -45,8 +53,21 @@ pub fn parse_rst_with_source(source: &str, source_path: &str) -> Doctree {
 // Parser context shared across emit_block calls.
 // ────────────────────────────────────────────────────────────────────────────
 
-struct ParseCtx {
-    subs: HashMap<String, String>,
+pub struct ParseCtx {
+    pub(crate) subs: HashMap<String, String>,
+    pub(crate) anon_target_count: u32,
+    pub(crate) anon_target_uris: Vec<String>,
+    pub(crate) footnote_count: u32,
+    pub(crate) citation_count: u32,
+    pub(crate) footnote_ref_count: u32,
+    pub(crate) citation_ref_count: u32,
+}
+
+impl ParseCtx {
+    fn next_anon_target(&mut self) -> u32 {
+        self.anon_target_count += 1;
+        self.anon_target_count
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -86,6 +107,7 @@ enum Block {
     Target {
         name: String,
         refuri: String,
+        anonymous: bool,
     },
     SubstitutionDefinition {
         name: String,
@@ -102,9 +124,25 @@ enum Block {
         width: Option<String>,
         height: Option<String>,
     },
+    Figure {
+        uri: String,
+        alt: Option<String>,
+        width: Option<String>,
+        height: Option<String>,
+        caption: Option<String>,
+        legend: Vec<Block>,
+    },
     Raw {
         format: String,
         text: String,
+    },
+    Footnote {
+        label: String,
+        body: Vec<Block>,
+    },
+    Citation {
+        label: String,
+        body: Vec<Block>,
     },
     Table(TableData),
 }
@@ -151,19 +189,9 @@ fn parse_blocks(lines: &[&str], base_indent: usize) -> Vec<Block> {
         }
         let stripped = &line[base_indent..];
 
-        // Transition: 4+ identical punctuation chars on a line, surrounded by
-        // blank lines. Cheap detection: at column 0, line is all one of
-        // -=~`#"^*+<>:_'.
-        if base_indent == 0 && is_transition(stripped) {
-            blocks.push(Block::Transition);
-            i += 1;
-            continue;
-        }
-
-        // Section: title line followed by underline of matching length using
-        // one of the section punctuation characters. Only at column 0.
+        // Section (incl. overlined variant). Must be checked BEFORE the
+        // transition rule, because an overline looks like a transition.
         if base_indent == 0
-            && i + 1 < lines.len()
             && let Some((level, title, consumed)) = section_at(lines, i, &mut section_chars)
         {
             let body_start = i + consumed;
@@ -178,14 +206,22 @@ fn parse_blocks(lines: &[&str], base_indent: usize) -> Vec<Block> {
                 }
                 end += 1;
             }
-            let inner_lines: Vec<&str> = lines[body_start..end].to_vec();
-            let children = parse_blocks(&inner_lines, 0);
+            let body = parse_blocks(&lines[body_start..end], 0);
             blocks.push(Block::Section {
                 title,
                 level,
-                children,
+                children: body,
             });
             i = end;
+            continue;
+        }
+
+        // Transition: 4+ identical punctuation chars on a line, surrounded by
+        // blank lines. Cheap detection: at column 0, line is all one of
+        // -=~`#"^*+<>:_'.
+        if base_indent == 0 && is_transition(stripped) {
+            blocks.push(Block::Transition);
+            i += 1;
             continue;
         }
 
@@ -513,6 +549,35 @@ fn section_at(
 ) -> Option<(usize, String, usize)> {
     if i + 1 >= lines.len() {
         return None;
+    }
+    // ── overlined variant: `over` + title + `under` (same char) ─────
+    if i + 2 < lines.len() {
+        let over = lines[i];
+        let title_o = lines[i + 1];
+        let under_o = lines[i + 2];
+        if !over.is_empty() && !title_o.trim().is_empty() && !under_o.is_empty() {
+            let first = over.chars().next().unwrap();
+            if is_section_char(first) {
+                let over_trim = over.trim_end();
+                let under_trim_o = under_o.trim_end();
+                if over_trim.chars().all(|c| c == first)
+                    && under_trim_o == over_trim
+                    && over_trim.chars().count() >= title_o.trim_end().chars().count()
+                {
+                    // Overlined sections always get level 0 in docutils when
+                    // they appear as the document title; nested overlines
+                    // get their own level keyed on the char.
+                    let level = match section_chars.iter().position(|&c| c == first) {
+                        Some(idx) => idx,
+                        None => {
+                            section_chars.push(first);
+                            section_chars.len() - 1
+                        }
+                    };
+                    return Some((level, title_o.trim().to_string(), 3));
+                }
+            }
+        }
     }
     let title = lines[i];
     let under = lines[i + 1];
@@ -983,7 +1048,7 @@ fn parse_def_list(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Opti
 // ────────────────────────────────────────────────────────────────────────────
 
 fn is_explicit_start(line: &str) -> bool {
-    line.starts_with(".. ") || line == ".."
+    line.starts_with(".. ") || line == ".." || line.starts_with("__ ")
 }
 
 fn parse_explicit(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Option<Block> {
@@ -996,14 +1061,72 @@ fn parse_explicit(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Opti
     if !is_explicit_start(after) {
         return None;
     }
-    let rest = after.strip_prefix(".. ").unwrap_or("");
+    // Anonymous-target shorthand: a line beginning with `__ ` is treated as
+    // `.. __ ...`.
+    let rest = if let Some(r) = after.strip_prefix("__ ") {
+        // Re-add the leading `__` since parse_target_inline expects it.
+        // Use a leaked-ish approach: just build it here.
+        let owned = format!("__ {r}");
+        if let Some((name, refuri, anonymous)) = parse_target_inline(&owned) {
+            *i_ref = i + 1;
+            return Some(Block::Target {
+                name,
+                refuri,
+                anonymous,
+            });
+        }
+        // If parse_target_inline failed, fall through to comment.
+        owned
+    } else {
+        after.strip_prefix(".. ").unwrap_or("").to_string()
+    };
+    let rest = rest.as_str();
 
-    // Hyperlink target: `.. _name: refuri`.
-    if let Some(t) = parse_target_inline(rest) {
+    // Hyperlink target: `.. _name: refuri` or anonymous `.. __ refuri`.
+    if let Some((name, refuri, anonymous)) = parse_target_inline(rest) {
         *i_ref = i + 1;
         return Some(Block::Target {
-            name: t.0,
-            refuri: t.1,
+            name,
+            refuri,
+            anonymous,
+        });
+    }
+
+    // Footnote / citation: `.. [label] body`.
+    if let Some((label, first_line)) = parse_footnote_head(rest) {
+        // Body: first line (after label) joined with subsequent indented
+        // lines, then re-parsed as blocks.
+        *i_ref = i + 1;
+        let mut body_lines: Vec<String> = Vec::new();
+        if !first_line.is_empty() {
+            body_lines.push(first_line.to_string());
+        }
+        // Collect continuation lines indented past the explicit-markup
+        // prefix (column `base_indent + 3`).
+        let cont_indent = base_indent + 3;
+        while *i_ref < lines.len() {
+            let l = lines[*i_ref];
+            if l.trim().is_empty() {
+                body_lines.push(String::new());
+                *i_ref += 1;
+                continue;
+            }
+            if leading_spaces(l).unwrap_or(0) < cont_indent {
+                break;
+            }
+            body_lines.push(l[cont_indent..].to_string());
+            *i_ref += 1;
+        }
+        // Drop trailing blanks.
+        while body_lines.last().map(|s| s.is_empty()).unwrap_or(false) {
+            body_lines.pop();
+        }
+        let body_refs: Vec<&str> = body_lines.iter().map(|s| s.as_str()).collect();
+        let body = parse_blocks(&body_refs, 0);
+        return Some(if is_citation_label(&label) {
+            Block::Citation { label, body }
+        } else {
+            Block::Footnote { label, body }
         });
     }
 
@@ -1045,7 +1168,45 @@ fn parse_explicit(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Opti
     Some(Block::Comment(text_lines.join("\n")))
 }
 
-fn parse_target_inline(rest: &str) -> Option<(String, String)> {
+/// `.. [label] body` → `(label, first_line_after_label)`.
+fn parse_footnote_head(rest: &str) -> Option<(String, &str)> {
+    let after = rest.strip_prefix('[')?;
+    let close = after.find(']')?;
+    let label = after[..close].to_string();
+    if label.is_empty() {
+        return None;
+    }
+    let tail = &after[close + 1..];
+    // Must be followed by whitespace or end-of-line.
+    if !tail.is_empty() && !tail.starts_with(' ') {
+        return None;
+    }
+    Some((label, tail.trim_start()))
+}
+
+fn is_citation_label(label: &str) -> bool {
+    // Numeric labels are footnotes; `#` autonumber / `*` autosymbol are
+    // footnotes; everything else (e.g. `Knuth1986`) is a citation.
+    if label.is_empty() {
+        return false;
+    }
+    if label == "#" || label == "*" || label.starts_with("#") {
+        return false;
+    }
+    !label.chars().all(|c| c.is_ascii_digit())
+}
+
+fn parse_target_inline(rest: &str) -> Option<(String, String, bool)> {
+    // Anonymous target: `__ refuri` (no name, no colon).
+    if let Some(after) = rest.strip_prefix("__") {
+        let uri = after.trim();
+        if uri.is_empty() {
+            return None;
+        }
+        // Strip optional leading colon (rare form `.. __: uri`).
+        let uri = uri.strip_prefix(':').map(str::trim_start).unwrap_or(uri);
+        return Some((String::new(), uri.to_string(), true));
+    }
     let after = rest.strip_prefix('_')?;
     let colon = after.find(':')?;
     let name = after[..colon].trim();
@@ -1066,7 +1227,7 @@ fn parse_target_inline(rest: &str) -> Option<(String, String)> {
         }
         name.to_string()
     };
-    Some((name, refuri.to_string()))
+    Some((name, refuri.to_string(), false))
 }
 
 fn parse_substitution_head(rest: &str) -> Option<(String, &str)> {
@@ -1146,6 +1307,7 @@ fn parse_directive(
             }
         }
         "image" | "figure" => {
+            let is_figure = name == "figure";
             let uri = args.trim().to_string();
             *i_ref += 1;
             // Consume option lines `:opt: val`.
@@ -1157,10 +1319,12 @@ fn parse_directive(
             while j < lines.len() && lines[j].trim().is_empty() {
                 j += 1;
             }
+            let mut body_indent = None;
             if j < lines.len() {
                 if let Some(ind) = leading_spaces(lines[j])
                     && ind > base_indent
                 {
+                    body_indent = Some(ind);
                     while j < lines.len() {
                         let l = lines[j];
                         if l.trim().is_empty() {
@@ -1185,11 +1349,61 @@ fn parse_directive(
                     *i_ref = j;
                 }
             }
-            Block::Image {
+            if !is_figure {
+                return Block::Image {
+                    uri,
+                    alt,
+                    width,
+                    height,
+                };
+            }
+            // Figure body: skip blanks; if indented at `body_indent`,
+            // collect lines until dedent and parse them as blocks. The
+            // first block becomes the caption, the rest become the legend.
+            let mut caption = None;
+            let mut legend = Vec::new();
+            let mut k = *i_ref;
+            while k < lines.len() && lines[k].trim().is_empty() {
+                k += 1;
+            }
+            if k < lines.len() {
+                let ind = body_indent
+                    .or_else(|| leading_spaces(lines[k]).filter(|n| *n > base_indent));
+                if let Some(ind) = ind {
+                    let start = k;
+                    while k < lines.len() {
+                        let l = lines[k];
+                        if l.trim().is_empty() {
+                            k += 1;
+                            continue;
+                        }
+                        if leading_spaces(l).unwrap_or(0) < ind {
+                            break;
+                        }
+                        k += 1;
+                    }
+                    let inner = parse_blocks(&lines[start..k], ind);
+                    *i_ref = k;
+                    let mut iter = inner.into_iter();
+                    if let Some(first) = iter.next() {
+                        if let Block::Paragraph(text) = first {
+                            caption = Some(text);
+                        } else {
+                            legend.push(first);
+                        }
+                    }
+                    for b in iter {
+                        legend.push(b);
+                    }
+                }
+            }
+            Block::Figure {
                 uri,
                 alt,
                 width,
                 height,
+                caption,
+                legend,
             }
         }
         "code" | "code-block" | "sourcecode" => {
@@ -1544,7 +1758,7 @@ fn collect_substitutions(lines: &[&str], out: &mut HashMap<String, String>) {
 // Emit
 // ────────────────────────────────────────────────────────────────────────────
 
-fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, block: Block) {
+fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Block) {
     match block {
         Block::Paragraph(text) => {
             let p = tree.append(parent, NodeKind::Paragraph);
@@ -1636,10 +1850,32 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, block: Block) 
                 }
             }
         }
-        Block::BlockQuote(children) => {
+        Block::BlockQuote(mut children) => {
+            // Attribution: if the last child is a single Paragraph whose
+            // text begins with `-- ` or `--- `, split it off as
+            // <attribution>. Indentation/whitespace are stripped.
+            let attribution_text = match children.last() {
+                Some(Block::Paragraph(text)) => {
+                    let t = text.trim_start();
+                    if let Some(rest) = t.strip_prefix("--- ").or_else(|| t.strip_prefix("-- ")) {
+                        Some(rest.to_string())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            let attr = attribution_text.map(|t| {
+                children.pop();
+                t
+            });
             let q = tree.append(parent, NodeKind::BlockQuote);
             for b in children {
                 emit_block(tree, q, ctx, b);
+            }
+            if let Some(text) = attr {
+                let a = tree.append(q, NodeKind::Attribution);
+                parse_inline(tree, a, ctx, &text);
             }
         }
         Block::LiteralBlock { text, classes } => {
@@ -1657,6 +1893,7 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, block: Block) 
                 NodeKind::Section {
                     ids: ids.clone(),
                     names: title.to_ascii_lowercase(),
+                    classes: String::new(),
                 },
             );
             let t = tree.append(sec, NodeKind::Title);
@@ -1668,7 +1905,26 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, block: Block) 
         Block::Transition => {
             tree.append(parent, NodeKind::Transition);
         }
-        Block::Target { name, refuri } => {
+        Block::Target {
+            name,
+            refuri,
+            anonymous,
+        } => {
+            if anonymous {
+                let n = ctx.next_anon_target();
+                let ids = format!("target-{n}");
+                tree.append(
+                    parent,
+                    NodeKind::Target {
+                        ids,
+                        names: String::new(),
+                        refuri: refuri.clone(),
+                        anonymous: true,
+                    },
+                );
+                ctx.anon_target_uris.push(refuri);
+                return;
+            }
             let ids = normalize_id(&name);
             let names = if name.contains(' ') {
                 name.split(' ')
@@ -1678,7 +1934,15 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, block: Block) 
             } else {
                 name.to_ascii_lowercase()
             };
-            tree.append(parent, NodeKind::Target { ids, names, refuri });
+            tree.append(
+                parent,
+                NodeKind::Target {
+                    ids,
+                    names,
+                    refuri,
+                    anonymous: false,
+                },
+            );
         }
         Block::SubstitutionDefinition { name, text } => {
             let sd = tree.append(parent, NodeKind::SubstitutionDefinition { names: name });
@@ -1710,6 +1974,35 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, block: Block) 
                 },
             );
         }
+        Block::Figure {
+            uri,
+            alt,
+            width,
+            height,
+            caption,
+            legend,
+        } => {
+            let fig = tree.append(parent, NodeKind::Figure);
+            tree.append(
+                fig,
+                NodeKind::Image {
+                    uri,
+                    alt,
+                    width,
+                    height,
+                },
+            );
+            if let Some(text) = caption {
+                let cap = tree.append(fig, NodeKind::Caption);
+                parse_inline(tree, cap, ctx, &text);
+            }
+            if !legend.is_empty() {
+                let leg = tree.append(fig, NodeKind::Legend);
+                for b in legend {
+                    emit_block(tree, leg, ctx, b);
+                }
+            }
+        }
         Block::Raw { format, text } => {
             let r = tree.append(parent, NodeKind::Raw { format });
             tree.append(r, NodeKind::Text(text));
@@ -1717,10 +2010,47 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, block: Block) 
         Block::Table(td) => {
             emit_table(tree, parent, ctx, td);
         }
+        Block::Footnote { label, body } => {
+            ctx.footnote_count += 1;
+            let ids = format!("footnote-{}", ctx.footnote_count);
+            let names = label.to_ascii_lowercase();
+            let f = tree.append(
+                parent,
+                NodeKind::Footnote {
+                    ids,
+                    names,
+                    backrefs: String::new(),
+                    auto: None,
+                },
+            );
+            let lbl = tree.append(f, NodeKind::Label);
+            tree.append(lbl, NodeKind::Text(label));
+            for b in body {
+                emit_block(tree, f, ctx, b);
+            }
+        }
+        Block::Citation { label, body } => {
+            ctx.citation_count += 1;
+            let ids = label.to_ascii_lowercase();
+            let names = ids.clone();
+            let c = tree.append(
+                parent,
+                NodeKind::Citation {
+                    ids,
+                    names,
+                    backrefs: String::new(),
+                },
+            );
+            let lbl = tree.append(c, NodeKind::Label);
+            tree.append(lbl, NodeKind::Text(label));
+            for b in body {
+                emit_block(tree, c, ctx, b);
+            }
+        }
     }
 }
 
-fn emit_table(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, td: TableData) {
+fn emit_table(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, td: TableData) {
     let tbl = tree.append(parent, NodeKind::Table);
     let tgroup = tree.append(
         tbl,
@@ -1803,19 +2133,107 @@ fn normalize_id(name: &str) -> String {
 // Post-processing
 // ────────────────────────────────────────────────────────────────────────────
 
-fn resolve_references(tree: &mut Doctree) {
+pub(crate) fn resolve_references(tree: &mut Doctree, ctx: &ParseCtx) {
     let mut targets: HashMap<String, String> = HashMap::new();
     collect_targets(tree, tree.root(), &mut targets);
-    apply_targets(tree, tree.root(), &targets);
+    let mut anon_iter = ctx.anon_target_uris.iter().cloned();
+    apply_targets(tree, tree.root(), &targets, &mut anon_iter);
+    resolve_footnotes(tree);
+}
+
+/// Map footnote labels → ids, then resolve `FootnoteReference.refid` and
+/// append back-references into the corresponding footnote's `backrefs`.
+fn resolve_footnotes(tree: &mut Doctree) {
+    // label (name) → footnote id
+    let mut label_to_id: HashMap<String, String> = HashMap::new();
+    // id → list of reference ids targeting it
+    let mut backrefs: HashMap<String, Vec<String>> = HashMap::new();
+    collect_footnote_labels(tree, tree.root(), &mut label_to_id);
+    apply_footnote_refs(tree, tree.root(), &label_to_id, &mut backrefs);
+    apply_footnote_backrefs(tree, tree.root(), &backrefs);
+}
+
+fn collect_footnote_labels(tree: &Doctree, id: NodeId, out: &mut HashMap<String, String>) {
+    if let NodeKind::Footnote { ids, names, .. } = &tree.node(id).kind {
+        out.insert(names.clone(), ids.clone());
+    }
+    let children = tree.node(id).children.clone();
+    for c in children {
+        collect_footnote_labels(tree, c, out);
+    }
+}
+
+fn apply_footnote_refs(
+    tree: &mut Doctree,
+    id: NodeId,
+    labels: &HashMap<String, String>,
+    backrefs: &mut HashMap<String, Vec<String>>,
+) {
+    if let NodeKind::FootnoteReference { ids, refid, .. } = &mut tree.node_mut(id).kind {
+        if let Some(label) = refid.strip_prefix("__fnlabel:") {
+            let key = label.to_ascii_lowercase();
+            if let Some(target) = labels.get(&key) {
+                *refid = target.clone();
+                backrefs
+                    .entry(target.clone())
+                    .or_default()
+                    .push(ids.clone());
+            } else {
+                // No matching footnote; leave refid empty so an unresolved
+                // pass (future work) can flag it.
+                refid.clear();
+            }
+        }
+    }
+    if let NodeKind::CitationReference { ids, refid } = &tree.node(id).kind {
+        // Citation refs already carry the lowercased label as refid; just
+        // record the backref so the citation can list us.
+        backrefs
+            .entry(refid.clone())
+            .or_default()
+            .push(ids.clone());
+    }
+    let children = tree.node(id).children.clone();
+    for c in children {
+        apply_footnote_refs(tree, c, labels, backrefs);
+    }
+}
+
+fn apply_footnote_backrefs(
+    tree: &mut Doctree,
+    id: NodeId,
+    backrefs: &HashMap<String, Vec<String>>,
+) {
+    if let NodeKind::Footnote { ids, backrefs: br, .. } = &mut tree.node_mut(id).kind {
+        if let Some(list) = backrefs.get(ids) {
+            *br = list.join(" ");
+        }
+    }
+    if let NodeKind::Citation { ids, backrefs: br, .. } = &mut tree.node_mut(id).kind {
+        if let Some(list) = backrefs.get(ids) {
+            *br = list.join(" ");
+        }
+    }
+    let children = tree.node(id).children.clone();
+    for c in children {
+        apply_footnote_backrefs(tree, c, backrefs);
+    }
 }
 
 fn collect_targets(tree: &Doctree, id: NodeId, out: &mut HashMap<String, String>) {
-    if let NodeKind::Target { names, refuri, .. } = &tree.node(id).kind {
-        // `names` is the docutils-normalized form; the source name (with
-        // backslash-escapes) is what references use. Convert by removing
-        // `\ ` sequences.
-        let key = names.replace("\\ ", " ");
-        out.insert(key, refuri.clone());
+    if let NodeKind::Target {
+        names,
+        refuri,
+        anonymous,
+        ..
+    } = &tree.node(id).kind
+    {
+        // Anonymous targets carry no names; they're resolved by FIFO order
+        // against anonymous references instead.
+        if !*anonymous {
+            let key = names.replace("\\ ", " ");
+            out.insert(key, refuri.clone());
+        }
     }
     let children = tree.node(id).children.clone();
     for c in children {
@@ -1823,24 +2241,40 @@ fn collect_targets(tree: &Doctree, id: NodeId, out: &mut HashMap<String, String>
     }
 }
 
-fn apply_targets(tree: &mut Doctree, id: NodeId, targets: &HashMap<String, String>) {
-    if let NodeKind::Reference { name, refuri } = &mut tree.node_mut(id).kind {
+fn apply_targets<I: Iterator<Item = String>>(
+    tree: &mut Doctree,
+    id: NodeId,
+    targets: &HashMap<String, String>,
+    anon_iter: &mut I,
+) {
+    if let NodeKind::Reference {
+        name,
+        refuri,
+        anonymous,
+    } = &mut tree.node_mut(id).kind
+    {
         if refuri.is_empty() {
-            let key = name.to_ascii_lowercase();
-            if let Some(uri) = targets.get(&key) {
-                *refuri = uri.clone();
+            if *anonymous {
+                if let Some(uri) = anon_iter.next() {
+                    *refuri = uri;
+                }
+            } else {
+                let key = name.to_ascii_lowercase();
+                if let Some(uri) = targets.get(&key) {
+                    *refuri = uri.clone();
+                }
             }
         }
     }
     let children = tree.node(id).children.clone();
     for c in children {
-        apply_targets(tree, c, targets);
+        apply_targets(tree, c, targets, anon_iter);
     }
 }
 
 /// Promote a leading section to document title (and optionally a second one
 /// to subtitle), matching docutils' DocTitle transform.
-fn promote_document_title(tree: &mut Doctree) {
+pub(crate) fn promote_document_title(tree: &mut Doctree) {
     let root = tree.root();
     let children = tree.node(root).children.clone();
     let mut sec_idx = None;
@@ -1864,7 +2298,7 @@ fn promote_document_title(tree: &mut Doctree) {
     }
     let sec_id = children[0];
     let (sec_ids, sec_names) = match &tree.node(sec_id).kind {
-        NodeKind::Section { ids, names } => (ids.clone(), names.clone()),
+        NodeKind::Section { ids, names, .. } => (ids.clone(), names.clone()),
         _ => return,
     };
     // Section children: first should be Title.
@@ -1909,7 +2343,7 @@ fn promote_document_title(tree: &mut Doctree) {
     if promoted_to_subtitle {
         let sub_id = sec_children[1];
         let (sids, snames) = match &tree.node(sub_id).kind {
-            NodeKind::Section { ids, names } => (ids.clone(), names.clone()),
+            NodeKind::Section { ids, names, .. } => (ids.clone(), names.clone()),
             _ => unreachable!(),
         };
         let sub_children = tree.node(sub_id).children.clone();
@@ -1963,7 +2397,7 @@ fn walk_text(tree: &Doctree, id: NodeId, out: &mut String) {
 /// After title promotion, convert a leading `<field_list>` of all
 /// bibliographic fields into a `<docinfo>` block. Mirrors the docutils
 /// DocInfo transform on a hoisted document.
-fn promote_docinfo(tree: &mut Doctree) {
+pub(crate) fn promote_docinfo(tree: &mut Doctree) {
     let root = tree.root();
     let children = tree.node(root).children.clone();
     // Find the first FieldList that follows only Title/Subtitle siblings.
@@ -2092,7 +2526,7 @@ fn preprocess_escapes(input: &str) -> Escaped {
     Escaped { text, escaped }
 }
 
-fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, raw: &str) {
+fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &str) {
     let pre = preprocess_escapes(raw);
     let text = &pre.text;
     let bytes = text.as_bytes();
@@ -2126,6 +2560,43 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, raw: &str) {
             text_start = cursor;
             continue;
         }
+        // Footnote / citation reference: `[label]_`.
+        if let Some((label, end)) = try_match_footnote_reference(text, &pre.escaped, cursor) {
+            if cursor > text_start {
+                push_text(tree, parent, &text[text_start..cursor]);
+            }
+            if is_citation_label(&label) {
+                ctx.citation_ref_count += 1;
+                let ids = format!("citation-reference-{}", ctx.citation_ref_count);
+                let refid = label.to_ascii_lowercase();
+                let n = tree.append(
+                    parent,
+                    NodeKind::CitationReference {
+                        ids,
+                        refid,
+                    },
+                );
+                push_text(tree, n, &label);
+            } else {
+                ctx.footnote_ref_count += 1;
+                let ids = format!("footnote-reference-{}", ctx.footnote_ref_count);
+                // refid will be resolved by post-pass; encode the label
+                // with a sentinel prefix for now.
+                let refid = format!("__fnlabel:{}", label);
+                let n = tree.append(
+                    parent,
+                    NodeKind::FootnoteReference {
+                        ids,
+                        refid,
+                        auto: None,
+                    },
+                );
+                push_text(tree, n, &label);
+            }
+            cursor = end;
+            text_start = cursor;
+            continue;
+        }
         if let Some((kind, end_after_close)) = try_match_inline(text, &pre.escaped, cursor) {
             if cursor > text_start {
                 push_text(tree, parent, &text[text_start..cursor]);
@@ -2136,21 +2607,49 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, raw: &str) {
             push_text(tree, node, inner);
             cursor = end_after_close;
             text_start = cursor;
-        } else if let Some((name, end)) = try_match_phrase_reference(text, &pre.escaped, cursor) {
+        } else if let Some((name, embedded_uri, end, anonymous)) =
+            try_match_phrase_reference(text, &pre.escaped, cursor)
+        {
             if cursor > text_start {
                 push_text(tree, parent, &text[text_start..cursor]);
             }
+            let refuri = embedded_uri.clone().unwrap_or_default();
             let node = tree.append(
                 parent,
                 NodeKind::Reference {
                     name: name.clone(),
-                    refuri: String::new(),
+                    refuri: refuri.clone(),
+                    anonymous,
                 },
             );
             push_text(tree, node, &name);
+            // For embedded URIs (non-anonymous), docutils also emits an
+            // implicit Target sibling within the same paragraph.
+            if !anonymous && embedded_uri.is_some() {
+                let ids = normalize_id(&name);
+                let names = if name.contains(' ') {
+                    name.split(' ')
+                        .map(|w| w.to_ascii_lowercase())
+                        .collect::<Vec<_>>()
+                        .join("\\ ")
+                } else {
+                    name.to_ascii_lowercase()
+                };
+                tree.append(
+                    parent,
+                    NodeKind::Target {
+                        ids,
+                        names,
+                        refuri,
+                        anonymous: false,
+                    },
+                );
+            }
             cursor = end;
             text_start = cursor;
-        } else if let Some((name, end)) = try_match_reference(text, &pre.escaped, cursor) {
+        } else if let Some((name, end, anonymous)) =
+            try_match_reference(text, &pre.escaped, cursor)
+        {
             if cursor > text_start {
                 push_text(tree, parent, &text[text_start..cursor]);
             }
@@ -2159,6 +2658,7 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &ParseCtx, raw: &str) {
                 NodeKind::Reference {
                     name: name.clone(),
                     refuri: String::new(),
+                    anonymous,
                 },
             );
             push_text(tree, node, &name);
@@ -2237,6 +2737,39 @@ fn try_match_inline(text: &str, escaped: &[bool], start: usize) -> Option<(Inlin
     None
 }
 
+fn try_match_footnote_reference(
+    text: &str,
+    escaped: &[bool],
+    start: usize,
+) -> Option<(String, usize)> {
+    if escaped.get(start).copied().unwrap_or(false) {
+        return None;
+    }
+    if text.as_bytes().get(start)? != &b'[' {
+        return None;
+    }
+    if !valid_start_context(text, start) {
+        return None;
+    }
+    let after = &text[start + 1..];
+    let close_rel = after.find(']')?;
+    let abs_close = start + 1 + close_rel;
+    if escaped[abs_close] {
+        return None;
+    }
+    let label = &text[start + 1..abs_close];
+    if label.is_empty() || label.contains('\n') {
+        return None;
+    }
+    if text.as_bytes().get(abs_close + 1) != Some(&b'_') {
+        return None;
+    }
+    if escaped[abs_close + 1] {
+        return None;
+    }
+    Some((label.to_string(), abs_close + 2))
+}
+
 fn try_match_substitution(text: &str, escaped: &[bool], start: usize) -> Option<(String, usize)> {
     if escaped.get(start).copied().unwrap_or(false) {
         return None;
@@ -2295,11 +2828,13 @@ fn try_match_role(text: &str, escaped: &[bool], start: usize) -> Option<(String,
     ))
 }
 
+/// Returns `(name, embedded_uri, end, anonymous)`. `embedded_uri` is the
+/// `<uri>` part inside the backticks, if present.
 fn try_match_phrase_reference(
     text: &str,
     escaped: &[bool],
     start: usize,
-) -> Option<(String, usize)> {
+) -> Option<(String, Option<String>, usize, bool)> {
     if escaped.get(start).copied().unwrap_or(false) {
         return None;
     }
@@ -2316,18 +2851,37 @@ fn try_match_phrase_reference(
     if !after_close.starts_with('_') {
         return None;
     }
-    let abs_underscore = abs_close + 1;
-    let after_under = abs_underscore + 1;
-    if let Some(b) = text.as_bytes().get(after_under)
+    let mut abs_under_end = abs_close + 2; // past the first `_`
+    let mut anonymous = false;
+    if text.as_bytes().get(abs_under_end) == Some(&b'_') {
+        anonymous = true;
+        abs_under_end += 1;
+    }
+    if let Some(b) = text.as_bytes().get(abs_under_end)
         && b.is_ascii_alphanumeric()
     {
         return None;
     }
-    let name = text[start + 1..abs_close].to_string();
-    Some((name, after_under))
+    let inner = &text[start + 1..abs_close];
+    // Embedded URI: `text <uri>` where the URI must be at the end and
+    // preceded by whitespace.
+    let (name, uri) = if let Some(lt) = inner.rfind(" <")
+        && inner.ends_with('>')
+    {
+        let name = inner[..lt].trim().to_string();
+        let uri = inner[lt + 2..inner.len() - 1].trim().to_string();
+        (name, Some(uri))
+    } else {
+        (inner.to_string(), None)
+    };
+    Some((name, uri, abs_under_end, anonymous))
 }
 
-fn try_match_reference(text: &str, escaped: &[bool], start: usize) -> Option<(String, usize)> {
+fn try_match_reference(
+    text: &str,
+    escaped: &[bool],
+    start: usize,
+) -> Option<(String, usize, bool)> {
     if escaped.get(start).copied().unwrap_or(false) {
         return None;
     }
@@ -2362,12 +2916,17 @@ fn try_match_reference(text: &str, escaped: &[bool], start: usize) -> Option<(St
     if escaped.get(end).copied().unwrap_or(false) {
         return None;
     }
-    let after = end + 1;
+    let mut after = end + 1;
+    let mut anonymous = false;
+    if bytes.get(after) == Some(&b'_') {
+        anonymous = true;
+        after += 1;
+    }
     if after < bytes.len() && bytes[after].is_ascii_alphanumeric() {
         return None;
     }
     let name = text[start..end].to_string();
-    Some((name, after))
+    Some((name, after, anonymous))
 }
 
 fn find_close(text: &str, escaped: &[bool], from: usize, marker: &str) -> Option<usize> {

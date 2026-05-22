@@ -92,6 +92,17 @@ impl PyNode {
             NodeKind::Tbody => "tbody".into(),
             NodeKind::Row => "row".into(),
             NodeKind::Entry => "entry".into(),
+            NodeKind::Attribution => "attribution".into(),
+            NodeKind::Figure => "figure".into(),
+            NodeKind::Caption => "caption".into(),
+            NodeKind::Legend => "legend".into(),
+            NodeKind::Label => "label".into(),
+            NodeKind::Footnote { .. } => "footnote".into(),
+            NodeKind::FootnoteReference { .. } => "footnote_reference".into(),
+            NodeKind::Citation { .. } => "citation".into(),
+            NodeKind::CitationReference { .. } => "citation_reference".into(),
+            NodeKind::Problematic { .. } => "problematic".into(),
+            NodeKind::SystemMessage { .. } => "system_message".into(),
         }
     }
 
@@ -120,7 +131,18 @@ impl PyNode {
                     dict.set_item("title", title)?;
                 }
             }
-            NodeKind::Section { ids, names } | NodeKind::Subtitle { ids, names } => {
+            NodeKind::Section {
+                ids,
+                names,
+                classes,
+            } => {
+                if !classes.is_empty() {
+                    dict.set_item("classes", classes)?;
+                }
+                dict.set_item("ids", ids)?;
+                dict.set_item("names", names)?;
+            }
+            NodeKind::Subtitle { ids, names } => {
                 dict.set_item("ids", ids)?;
                 dict.set_item("names", names)?;
             }
@@ -172,13 +194,30 @@ impl PyNode {
                 dict.set_item("format", format)?;
                 dict.set_item("xml:space", "preserve")?;
             }
-            NodeKind::Reference { name, refuri } => {
+            NodeKind::Reference {
+                name,
+                refuri,
+                anonymous,
+            } => {
+                if *anonymous {
+                    dict.set_item("anonymous", "1")?;
+                }
                 dict.set_item("name", name)?;
                 dict.set_item("refuri", refuri)?;
             }
-            NodeKind::Target { ids, names, refuri } => {
+            NodeKind::Target {
+                ids,
+                names,
+                refuri,
+                anonymous,
+            } => {
+                if *anonymous {
+                    dict.set_item("anonymous", "1")?;
+                }
                 dict.set_item("ids", ids)?;
-                dict.set_item("names", names)?;
+                if !names.is_empty() {
+                    dict.set_item("names", names)?;
+                }
                 dict.set_item("refuri", refuri)?;
             }
             NodeKind::SubstitutionDefinition { names } => {
@@ -195,6 +234,69 @@ impl PyNode {
             }
             NodeKind::Comment => {
                 dict.set_item("xml:space", "preserve")?;
+            }
+            NodeKind::Footnote {
+                ids,
+                names,
+                backrefs,
+                auto,
+            } => {
+                if let Some(a) = auto {
+                    dict.set_item("auto", *a)?;
+                }
+                if !backrefs.is_empty() {
+                    dict.set_item("backrefs", backrefs)?;
+                }
+                dict.set_item("ids", ids)?;
+                if !names.is_empty() && !matches!(*auto, Some("*")) {
+                    dict.set_item("names", names)?;
+                }
+            }
+            NodeKind::FootnoteReference { ids, refid, auto } => {
+                if let Some(a) = auto {
+                    dict.set_item("auto", *a)?;
+                }
+                dict.set_item("ids", ids)?;
+                dict.set_item("refid", refid)?;
+            }
+            NodeKind::Citation {
+                ids,
+                names,
+                backrefs,
+            } => {
+                if !backrefs.is_empty() {
+                    dict.set_item("backrefs", backrefs)?;
+                }
+                dict.set_item("ids", ids)?;
+                dict.set_item("names", names)?;
+            }
+            NodeKind::CitationReference { ids, refid } => {
+                dict.set_item("ids", ids)?;
+                dict.set_item("refid", refid)?;
+            }
+            NodeKind::Problematic { ids, refid } => {
+                dict.set_item("ids", ids)?;
+                dict.set_item("refid", refid)?;
+            }
+            NodeKind::SystemMessage {
+                level,
+                line,
+                ty,
+                ids,
+                backrefs,
+            } => {
+                if !backrefs.is_empty() {
+                    dict.set_item("backrefs", backrefs)?;
+                }
+                if !ids.is_empty() {
+                    dict.set_item("ids", ids)?;
+                }
+                dict.set_item("level", *level)?;
+                if let Some(l) = line {
+                    dict.set_item("line", *l)?;
+                }
+                dict.set_item("source", "<string>")?;
+                dict.set_item("type", *ty)?;
             }
             _ => {}
         }

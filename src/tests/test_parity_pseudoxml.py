@@ -101,6 +101,28 @@ CASES = {
     "grid_table": "+---+---+\n| A | B |\n+===+===+\n| 1 | 2 |\n+---+---+\n",
     # phase 2: phrase references
     "phrase_ref": "See `Some Title`_.\n\n.. _Some Title: http://example.com",
+    # phase 2 deferrals: nested + multi-paragraph lists
+    "nested_bullet": "- outer\n\n  - inner1\n  - inner2\n- next outer",
+    "multipara_item": "- first para\n\n  second para of item\n- next item",
+    # phase 2 deferrals: overlined sections
+    "overlined_section": "=====\nTitle\n=====\n\nBody paragraph.",
+    # phase 2 deferrals: block-quote attribution
+    "block_quote_attribution": "   This is a quote.\n\n   -- Author",
+    "block_quote_multi_attribution": "   First paragraph.\n\n   Second paragraph.\n\n   -- Bob",
+    # phase 2 deferrals: embedded URIs + anonymous refs
+    "embedded_uri": "See `example <http://example.com>`_.",
+    "anonymous_ref": "See foo__.\n\n__ http://example.com",
+    "anonymous_phrase_ref": "See `some thing`__.\n\n__ http://example.com",
+    "anonymous_multi": "See foo__ and bar__.\n\n__ http://a.com\n__ http://b.com",
+    # phase 2 deferrals: figure directive
+    "figure_caption": ".. figure:: pic.png\n   :alt: thing\n\n   This is the caption.",
+    "figure_caption_legend": ".. figure:: pic.png\n\n   Caption.\n\n   Legend.",
+    "figure_no_body": ".. figure:: pic.png",
+    # phase 2 deferrals: footnotes & citations
+    "footnote_simple": "See [1]_.\n\n.. [1] body",
+    "footnote_orphan": ".. [1] orphan footnote",
+    "footnote_reused": "See [1]_ and [1]_.\n\n.. [1] reused",
+    "citation_simple": "See [Knuth1986]_.\n\n.. [Knuth1986] body",
 }
 
 

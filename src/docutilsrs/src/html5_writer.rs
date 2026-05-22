@@ -176,6 +176,77 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
         NodeKind::Tbody => wrap(tree, &node.children, "tbody", out),
         NodeKind::Row => wrap(tree, &node.children, "tr", out),
         NodeKind::Entry => wrap(tree, &node.children, "td", out),
+        NodeKind::Attribution => {
+            out.push_str("<p class=\"attribution\">— ");
+            for &c in &node.children {
+                emit(tree, c, out);
+            }
+            out.push_str("</p>");
+        }
+        NodeKind::Figure => wrap(tree, &node.children, "figure", out),
+        NodeKind::Caption => wrap(tree, &node.children, "figcaption", out),
+        NodeKind::Legend => {
+            out.push_str("<div class=\"legend\">");
+            for &c in &node.children {
+                emit(tree, c, out);
+            }
+            out.push_str("</div>");
+        }
+        NodeKind::Label => {
+            out.push_str("<span class=\"label\">");
+            for &c in &node.children {
+                emit(tree, c, out);
+            }
+            out.push_str("</span>");
+        }
+        NodeKind::Footnote { ids, .. } => {
+            let _ = write!(out, "<aside class=\"footnote\" id=\"{ids}\">");
+            for &c in &node.children {
+                emit(tree, c, out);
+            }
+            out.push_str("</aside>");
+        }
+        NodeKind::FootnoteReference { refid, .. } => {
+            let _ = write!(out, "<a class=\"footnote-reference\" href=\"#{refid}\">");
+            for &c in &node.children {
+                emit(tree, c, out);
+            }
+            out.push_str("</a>");
+        }
+        NodeKind::Citation { ids, .. } => {
+            let _ = write!(out, "<aside class=\"citation\" id=\"{ids}\">");
+            for &c in &node.children {
+                emit(tree, c, out);
+            }
+            out.push_str("</aside>");
+        }
+        NodeKind::CitationReference { refid, .. } => {
+            let _ = write!(out, "<a class=\"citation-reference\" href=\"#{refid}\">");
+            for &c in &node.children {
+                emit(tree, c, out);
+            }
+            out.push_str("</a>");
+        }
+        NodeKind::Problematic { refid, ids } => {
+            let _ = write!(
+                out,
+                "<a class=\"problematic\" id=\"{ids}\" href=\"#{refid}\">"
+            );
+            for &c in &node.children {
+                emit(tree, c, out);
+            }
+            out.push_str("</a>");
+        }
+        NodeKind::SystemMessage { level, ty, .. } => {
+            let _ = write!(
+                out,
+                "<aside class=\"system-message level-{level} type-{ty}\">"
+            );
+            for &c in &node.children {
+                emit(tree, c, out);
+            }
+            out.push_str("</aside>");
+        }
     }
 }
 

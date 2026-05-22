@@ -20,6 +20,7 @@ pub enum NodeKind {
     Section {
         ids: String,
         names: String,
+        classes: String,
     },
     Title,
     Subtitle {
@@ -92,6 +93,7 @@ pub enum NodeKind {
     Reference {
         name: String,
         refuri: String,
+        anonymous: bool,
     },
     /// Explicit hyperlink target. `ids` is the normalized identifier,
     /// `names` is the human-readable name (space-separated).
@@ -99,6 +101,7 @@ pub enum NodeKind {
         ids: String,
         names: String,
         refuri: String,
+        anonymous: bool,
     },
     SubstitutionDefinition {
         names: String,
@@ -117,6 +120,62 @@ pub enum NodeKind {
     Tbody,
     Row,
     Entry,
+    // ── phase 2 deferrals ───────────────────────────────────────────────
+    /// Attribution line within a block_quote (`-- Author`).
+    Attribution,
+    /// Container for an image + optional caption + legend.
+    Figure,
+    /// First paragraph of a figure body.
+    Caption,
+    /// Remaining content of a figure body, after the caption.
+    Legend,
+    /// `<footnote>` element. `ids` is the auto-assigned identifier,
+    /// `names` is the visible label (digit or `*`/`#`), `backrefs` is the
+    /// space-separated list of inline-reference ids that resolve here, and
+    /// `auto` carries an autonumber/autosymbol marker when applicable
+    /// (`"1"` for autonumber, `"*"` for autosymbol).
+    Footnote {
+        ids: String,
+        names: String,
+        backrefs: String,
+        auto: Option<&'static str>,
+    },
+    /// `<footnote_reference>` element. `ids` is the inline-reference id,
+    /// `refid` points to the matching footnote, `auto` mirrors the
+    /// footnote's autonumber/autosymbol marker.
+    FootnoteReference {
+        ids: String,
+        refid: String,
+        auto: Option<&'static str>,
+    },
+    /// `<citation>` element. Mirrors `Footnote` but for citations (no `auto`).
+    Citation {
+        ids: String,
+        names: String,
+        backrefs: String,
+    },
+    /// `<citation_reference>` element.
+    CitationReference {
+        ids: String,
+        refid: String,
+    },
+    /// `<label>` element used inside footnote/citation.
+    Label,
+    /// `<problematic>` element. Produced as a placeholder for unresolved
+    /// references; `refid` points to the matching `<system_message>`.
+    Problematic {
+        ids: String,
+        refid: String,
+    },
+    /// `<system_message>` element produced by the parser for error and
+    /// warning conditions (e.g. unresolved references).
+    SystemMessage {
+        level: u32,
+        line: Option<u32>,
+        ty: &'static str,
+        ids: String,
+        backrefs: String,
+    },
 }
 
 #[derive(Debug, Clone)]

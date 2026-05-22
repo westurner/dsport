@@ -9,6 +9,7 @@ pub mod doctree;
 pub mod html5_writer;
 pub mod parser;
 mod python;
+pub mod transforms;
 pub mod writer;
 
 pub use doctree::{Doctree, NodeKind};

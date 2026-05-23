@@ -1,2 +1,4 @@
 
 build/tests
+src/sphinxdocrs/build/tests/
+#math-demo/sphinxdocrs/imgmath.txt

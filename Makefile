@@ -203,8 +203,24 @@ demo-math-sphinx:
 		"imgmath_latex = '/usr/bin/latex'" \
 		> "$(MATH_DEMO_SPHINX)"/imgmath/conf.py
 	printf '%s\n' \
+		"import sys, os" \
+		"sys.path.insert(0, os.path.abspath('.'))" \
 		"extensions = ['dsport.ext.ratex']" \
 		> "$(MATH_DEMO_SPHINX)"/ratex/conf.py
+	mkdir -p "$(MATH_DEMO_SPHINX)"/ratex/dsport/ext
+	touch "$(MATH_DEMO_SPHINX)"/ratex/dsport/__init__.py "$(MATH_DEMO_SPHINX)"/ratex/dsport/ext/__init__.py
+	echo "def setup(app): pass" > "$(MATH_DEMO_SPHINX)"/ratex/dsport/ext/ratex.py
+	printf '%s\n' \
+		'Math demo' \
+		'=========' \
+		'' \
+		'Inline: :math:`E = mc^2` in a paragraph.' \
+		'' \
+		'.. math::' \
+		'' \
+		'   \int_0^1 x^2 \, dx = \frac{1}{3}' \
+		'' \
+		> "$(MATH_DEMO_SPHINX)"/ratex/index.rst
 	cd src && cargo run -q --example read_conf -p sphinxdocrs -- \
 		-o "$(MATH_DEMO_SPHINX)" \
 		"$(MATH_DEMO_SPHINX)"/mathjax/conf.py \
@@ -213,7 +229,10 @@ demo-math-sphinx:
 	@grep -q "effective_math_renderer=mathjax" "$(MATH_DEMO_SPHINX)"/report.txt
 	@grep -q "effective_math_renderer=imgmath" "$(MATH_DEMO_SPHINX)"/report.txt
 	@grep -q "effective_math_renderer=ratex"   "$(MATH_DEMO_SPHINX)"/report.txt
+	cd src/sphinxdocrs && cargo run -q -p sphinxdocrs --bin \
+		sphinx-build-rs -- "$(MATH_DEMO_SPHINX)"/ratex "$(MATH_DEMO_SPHINX)"/html
 	@echo "  -> $(MATH_DEMO_SPHINX)/report.txt"
+	@echo "  -> $(MATH_DEMO_SPHINX)/html"
 
 # --- sphinxdocrs: fetch+cache MathJax bundle & compute SRI integrity -
 # Uses Python stdlib (urllib.request + hashlib + base64) under the hood

@@ -42,8 +42,8 @@ const ALLOWLIST: &[u32] = &[
     // pulldown-cmark does not escape `"` in body text to `&quot;`.
     // (cmark-the-spec says yes, cmark-the-impl matches, pulldown-cmark differs
     // on purpose — see https://github.com/raphlinus/pulldown-cmark/issues/640.)
-    178, 179, 180, 298, 300, 313, 327, 343, 352, 358, 362, 379, 384, 394, 504,
-    586, 615, 616, 620, 623, 629,
+    178, 179, 180, 298, 300, 313, 327, 343, 352, 358, 362, 379, 384, 394, 504, 586, 615, 616, 620,
+    623, 629,
 ];
 
 #[test]

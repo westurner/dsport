@@ -361,10 +361,7 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             );
         }
         NodeKind::Problematic { ids, refid } => {
-            let _ = writeln!(
-                out,
-                "{indent}<problematic ids=\"{ids}\" refid=\"{refid}\">"
-            );
+            let _ = writeln!(out, "{indent}<problematic ids=\"{ids}\" refid=\"{refid}\">");
         }
         NodeKind::SystemMessage {
             level,

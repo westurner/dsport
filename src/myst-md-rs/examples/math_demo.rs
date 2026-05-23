@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 
-use myst_md_rs::{render_html_with, MathBackend};
+use myst_md_rs::{MathBackend, render_html_with};
 
 /// Wrap a body fragment in a minimal standalone HTML page. For the
 /// MathJax backend we emit a `<script defer>` tag in the `<head>` so
@@ -70,8 +70,7 @@ fn usage() -> ! {
 fn main() {
     let mut outdir: Option<PathBuf> = None;
     let mut input: Option<PathBuf> = None;
-    let mut mathjax_src =
-        "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js".to_string();
+    let mut mathjax_src = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js".to_string();
     let mut integrity: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -92,19 +91,21 @@ fn main() {
     }
     let input = input.unwrap_or_else(|| usage());
     let outdir = outdir.unwrap_or_else(|| usage());
-    std::fs::create_dir_all(&outdir)
-        .unwrap_or_else(|e| panic!("mkdir {}: {e}", outdir.display()));
+    std::fs::create_dir_all(&outdir).unwrap_or_else(|e| panic!("mkdir {}: {e}", outdir.display()));
 
-    let src = std::fs::read_to_string(&input)
-        .unwrap_or_else(|e| panic!("read {}: {e}", input.display()));
+    let src =
+        std::fs::read_to_string(&input).unwrap_or_else(|e| panic!("read {}: {e}", input.display()));
 
-    for backend in [MathBackend::Ratex, MathBackend::MathJax, MathBackend::ImgMath] {
+    for backend in [
+        MathBackend::Ratex,
+        MathBackend::MathJax,
+        MathBackend::ImgMath,
+    ] {
         let body = render_html_with(&src, backend);
         let title = format!("myst-md-rs math demo ({})", backend.name());
         let html = wrap_page(&title, backend, &body, &mathjax_src, integrity.as_deref());
         let path = outdir.join(format!("{}.html", backend.name()));
-        std::fs::write(&path, html)
-            .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+        std::fs::write(&path, html).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
         println!("wrote {}", path.display());
     }
 }

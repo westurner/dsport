@@ -77,9 +77,7 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
         NodeKind::Emphasis => wrap_cmd(tree, &node.children, "\\emph", section_depth, out),
         NodeKind::Strong => wrap_cmd(tree, &node.children, "\\textbf", section_depth, out),
         NodeKind::Literal => wrap_cmd(tree, &node.children, "\\texttt", section_depth, out),
-        NodeKind::TitleReference => {
-            wrap_cmd(tree, &node.children, "\\textit", section_depth, out)
-        }
+        NodeKind::TitleReference => wrap_cmd(tree, &node.children, "\\textit", section_depth, out),
         NodeKind::Inline { .. } => {
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
@@ -285,9 +283,7 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 emit(tree, c, section_depth, out);
             }
         }
-        NodeKind::Label
-        | NodeKind::Footnote { .. }
-        | NodeKind::Citation { .. } => {
+        NodeKind::Label | NodeKind::Footnote { .. } | NodeKind::Citation { .. } => {
             // Rendered inline by their references; suppress definitions.
         }
         NodeKind::FootnoteReference { .. } | NodeKind::CitationReference { .. } => {

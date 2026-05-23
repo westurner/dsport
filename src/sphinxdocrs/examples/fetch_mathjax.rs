@@ -25,7 +25,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use sphinxdocrs::assets::{fetch_and_cache, sri_hash_file, DEFAULT_SRI_ALGO};
+use sphinxdocrs::assets::{DEFAULT_SRI_ALGO, fetch_and_cache, sri_hash_file};
 use sphinxdocrs::config::Config;
 
 fn usage() -> ! {
@@ -100,14 +100,12 @@ fn main() -> ExitCode {
             DEFAULT_SRI_ALGO.name(),
             integrity,
         );
-        std::fs::write(out.join(format!("{stem}.mathjax.json")), &json)
-            .expect("write json record");
+        std::fs::write(out.join(format!("{stem}.mathjax.json")), &json).expect("write json record");
         let snippet = format!(
             "<script defer src=\"{}\" integrity=\"{}\" crossorigin=\"anonymous\"></script>\n",
             url, integrity,
         );
-        std::fs::write(out.join(format!("{stem}.mathjax.html")), &snippet)
-            .expect("write snippet");
+        std::fs::write(out.join(format!("{stem}.mathjax.html")), &snippet).expect("write snippet");
         println!("{stem}: {} -> {}", url, path.display());
         println!("{stem}: integrity = {integrity}");
     }

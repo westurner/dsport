@@ -17,6 +17,8 @@ extension-module = ["pyo3/extension-module"]
 
 [dependencies]
 pyo3 = { workspace = true, features = ["auto-initialize"] }
+clap = { workspace = true }
+clap_complete = { workspace = true }
 pygmentsrs = { path = "../pygmentsrs" }
 mathrenderrs = { path = "../mathrenderrs" }
 

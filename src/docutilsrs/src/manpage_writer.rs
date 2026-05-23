@@ -278,9 +278,7 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 emit(tree, c, section_depth, out);
             }
         }
-        NodeKind::Label
-        | NodeKind::Footnote { .. }
-        | NodeKind::Citation { .. } => {}
+        NodeKind::Label | NodeKind::Footnote { .. } | NodeKind::Citation { .. } => {}
         NodeKind::FootnoteReference { .. } | NodeKind::CitationReference { .. } => {
             out.push_str("[*]");
         }

@@ -6,7 +6,7 @@
 
 use std::io::Write;
 
-use sphinxdocrs::config::{Config, MathRenderer, DEFAULT_MATHJAX_PATH};
+use sphinxdocrs::config::{Config, DEFAULT_MATHJAX_PATH, MathRenderer};
 
 fn write_conf(name: &str, body: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join("sphinxdocrs-config-tests");
@@ -83,7 +83,10 @@ mathjax_options = {'async': 'async', 'integrity': 'sha384-xxx'}
     let path = write_conf("mathjax_opts", body);
     let cfg = Config::from_conf_py(&path).unwrap();
     assert_eq!(cfg.mathjax_path, "https://example.com/mathjax.js");
-    assert_eq!(cfg.mathjax_options.get("async").map(String::as_str), Some("async"));
+    assert_eq!(
+        cfg.mathjax_options.get("async").map(String::as_str),
+        Some("async")
+    );
     assert_eq!(
         cfg.mathjax_options.get("integrity").map(String::as_str),
         Some("sha384-xxx")

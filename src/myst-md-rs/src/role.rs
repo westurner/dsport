@@ -9,7 +9,10 @@
 pub enum Piece<'a> {
     Text(&'a str),
     /// `` {name}`content` `` — content is raw, unescaped.
-    Role { name: &'a str, content: &'a str },
+    Role {
+        name: &'a str,
+        content: &'a str,
+    },
     /// `$content$` inline math.
     InlineMath(&'a str),
 }

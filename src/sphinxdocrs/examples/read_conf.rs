@@ -62,14 +62,12 @@ fn main() {
 
     let mut combined = String::new();
     for p in &paths {
-        let cfg = Config::from_conf_py(Path::new(p))
-            .unwrap_or_else(|e| panic!("read {p}: {e}"));
+        let cfg = Config::from_conf_py(Path::new(p)).unwrap_or_else(|e| panic!("read {p}: {e}"));
         let block = format_conf(p, &cfg);
         combined.push_str(&block);
 
         if let Some(dir) = &outdir {
-            std::fs::create_dir_all(dir)
-                .unwrap_or_else(|e| panic!("mkdir {}: {e}", dir.display()));
+            std::fs::create_dir_all(dir).unwrap_or_else(|e| panic!("mkdir {}: {e}", dir.display()));
             // Per-conf filename derived from the parent directory
             // (e.g. `mathjax/conf.py` -> `mathjax.txt`), mirroring how
             // sphinx-build derives output names from source layout.

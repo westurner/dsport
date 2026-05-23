@@ -83,7 +83,10 @@ pub fn parse_to_html_with(source: &str, math_backend: MathBackend) -> ParseResul
     let split = frontmatter::split(source);
     let preprocessed = preprocess::preprocess(split.body);
     let html = render::render_with(&preprocessed, math_backend);
-    let fm = split.front_matter.as_ref().and_then(|v| serde_yaml::to_string(v).ok());
+    let fm = split
+        .front_matter
+        .as_ref()
+        .and_then(|v| serde_yaml::to_string(v).ok());
     ParseResult {
         html,
         front_matter_yaml: fm,

@@ -52,7 +52,10 @@ pub fn apply_transforms(tree: &mut Doctree) {
         // Clone callables out under the lock so the Python call below
         // does not hold the registry mutex.
         let callables: Vec<(String, Py<PyAny>)> = match transform_registry().lock() {
-            Ok(g) => g.iter().map(|(n, c)| (n.clone(), c.clone_ref(py))).collect(),
+            Ok(g) => g
+                .iter()
+                .map(|(n, c)| (n.clone(), c.clone_ref(py)))
+                .collect(),
             Err(_) => return edits,
         };
         // Build a single shared PyDoctree view by moving the current

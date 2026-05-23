@@ -91,7 +91,10 @@ enum Block {
     /// `line` is the 1-based source line the paragraph starts on,
     /// or 0 when unknown (e.g. for content re-parsed from a nested
     /// context).
-    Paragraph { text: String, line: u32 },
+    Paragraph {
+        text: String,
+        line: u32,
+    },
     BulletList {
         bullet: char,
         items: Vec<Vec<Block>>,
@@ -1330,7 +1333,10 @@ fn parse_directive(
             };
             let mut child_blocks: Vec<Block> = Vec::new();
             if !args.is_empty() {
-                child_blocks.push(Block::Paragraph { text: args.to_string(), line: 0 });
+                child_blocks.push(Block::Paragraph {
+                    text: args.to_string(),
+                    line: 0,
+                });
             }
             *i_ref += 1;
             // Skip blank lines, then collect indented content.
@@ -1407,8 +1413,8 @@ fn parse_directive(
                 k += 1;
             }
             if k < lines.len() {
-                let ind = body_indent
-                    .or_else(|| leading_spaces(lines[k]).filter(|n| *n > base_indent));
+                let ind =
+                    body_indent.or_else(|| leading_spaces(lines[k]).filter(|n| *n > base_indent));
                 if let Some(ind) = ind {
                     let start = k;
                     while k < lines.len() {
@@ -1673,20 +1679,26 @@ fn parse_grid_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Op
     let mut cells: Vec<(usize, usize, usize, usize)> = Vec::new();
     let mut done: Vec<i64> = vec![-1; width];
 
-    let scan_up = |top: usize, left: usize, bottom: usize, block: &Vec<Vec<u8>>| -> Option<Vec<usize>> {
-        let mut rs = Vec::new();
-        let mut i = bottom;
-        while i > top + 1 {
-            i -= 1;
-            match block[i][left] {
-                b'+' => rs.push(i),
-                b'|' => {}
-                _ => return None,
+    let scan_up =
+        |top: usize, left: usize, bottom: usize, block: &Vec<Vec<u8>>| -> Option<Vec<usize>> {
+            let mut rs = Vec::new();
+            let mut i = bottom;
+            while i > top + 1 {
+                i -= 1;
+                match block[i][left] {
+                    b'+' => rs.push(i),
+                    b'|' => {}
+                    _ => return None,
+                }
             }
-        }
-        Some(rs)
-    };
-    let scan_left = |top: usize, left: usize, bottom: usize, right: usize, block: &Vec<Vec<u8>>| -> Option<(Vec<usize>, Vec<usize>)> {
+            Some(rs)
+        };
+    let scan_left = |top: usize,
+                     left: usize,
+                     bottom: usize,
+                     right: usize,
+                     block: &Vec<Vec<u8>>|
+     -> Option<(Vec<usize>, Vec<usize>)> {
         let mut cs = Vec::new();
         let line = &block[bottom];
         let mut found_sep_eq = false;
@@ -1694,7 +1706,9 @@ fn parse_grid_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Op
             match line[i] {
                 b'+' => cs.push(i),
                 b'-' => {}
-                b'=' => { found_sep_eq = true; }
+                b'=' => {
+                    found_sep_eq = true;
+                }
                 _ => return None,
             }
         }
@@ -1705,7 +1719,12 @@ fn parse_grid_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Op
         let _ = found_sep_eq;
         Some((rs, cs))
     };
-    let scan_down = |top: usize, left: usize, right: usize, block: &Vec<Vec<u8>>, bottom_row: usize| -> Option<(usize, Vec<usize>, Vec<usize>)> {
+    let scan_down = |top: usize,
+                     left: usize,
+                     right: usize,
+                     block: &Vec<Vec<u8>>,
+                     bottom_row: usize|
+     -> Option<(usize, Vec<usize>, Vec<usize>)> {
         let mut rs = Vec::new();
         for i in top + 1..=bottom_row {
             match block[i][right] {
@@ -1722,7 +1741,12 @@ fn parse_grid_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Op
         }
         None
     };
-    let scan_right = |top: usize, left: usize, block: &Vec<Vec<u8>>, bottom_row: usize, right_col: usize| -> Option<(usize, usize, Vec<usize>, Vec<usize>)> {
+    let scan_right = |top: usize,
+                      left: usize,
+                      block: &Vec<Vec<u8>>,
+                      bottom_row: usize,
+                      right_col: usize|
+     -> Option<(usize, usize, Vec<usize>, Vec<usize>)> {
         let mut cs = Vec::new();
         let line = &block[top];
         for i in left + 1..=right_col {
@@ -1802,7 +1826,10 @@ fn parse_grid_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Op
         let mut cell_lines: Vec<String> = Vec::new();
         for r in top + 1..bottom {
             let slice = &block[r][left + 1..right];
-            let s = std::str::from_utf8(slice).unwrap_or("").trim_end().to_string();
+            let s = std::str::from_utf8(slice)
+                .unwrap_or("")
+                .trim_end()
+                .to_string();
             cell_lines.push(s);
         }
         // Dedent: compute min leading spaces of non-empty lines.
@@ -1916,36 +1943,37 @@ fn parse_simple_table(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> 
         }
         cells
     };
-    let (head, body): (Vec<Vec<Option<TableCell>>>, Vec<Vec<Option<TableCell>>>) = if sep_indices.len() >= 2 {
-        let head_end = sep_indices[0];
-        let mut head_rows = Vec::new();
-        for k in start + 1..head_end {
-            let l = lines[k];
-            if l.trim().is_empty() {
-                continue;
+    let (head, body): (Vec<Vec<Option<TableCell>>>, Vec<Vec<Option<TableCell>>>) =
+        if sep_indices.len() >= 2 {
+            let head_end = sep_indices[0];
+            let mut head_rows = Vec::new();
+            for k in start + 1..head_end {
+                let l = lines[k];
+                if l.trim().is_empty() {
+                    continue;
+                }
+                head_rows.push(split_row(&l[base_indent..]));
             }
-            head_rows.push(split_row(&l[base_indent..]));
-        }
-        let mut body_rows = Vec::new();
-        for k in head_end + 1..end_line {
-            let l = lines[k];
-            if l.trim().is_empty() {
-                continue;
+            let mut body_rows = Vec::new();
+            for k in head_end + 1..end_line {
+                let l = lines[k];
+                if l.trim().is_empty() {
+                    continue;
+                }
+                body_rows.push(split_row(&l[base_indent..]));
             }
-            body_rows.push(split_row(&l[base_indent..]));
-        }
-        (head_rows, body_rows)
-    } else {
-        let mut body_rows = Vec::new();
-        for k in start + 1..end_line {
-            let l = lines[k];
-            if l.trim().is_empty() {
-                continue;
+            (head_rows, body_rows)
+        } else {
+            let mut body_rows = Vec::new();
+            for k in start + 1..end_line {
+                let l = lines[k];
+                if l.trim().is_empty() {
+                    continue;
+                }
+                body_rows.push(split_row(&l[base_indent..]));
             }
-            body_rows.push(split_row(&l[base_indent..]));
-        }
-        (Vec::new(), body_rows)
-    };
+            (Vec::new(), body_rows)
+        };
     *i_ref = end_line + 1;
     Some(TableData {
         cols: col_widths,
@@ -2558,10 +2586,7 @@ pub(crate) fn emit_unresolved_system_messages(tree: &mut Doctree, ctx: &ParseCtx
         let p = tree.append(sm, NodeKind::Paragraph);
         tree.append(
             p,
-            NodeKind::Text(format!(
-                "Unknown target name: \"{}\".",
-                name.to_lowercase()
-            )),
+            NodeKind::Text(format!("Unknown target name: \"{}\".", name.to_lowercase())),
         );
     }
 }
@@ -2723,9 +2748,7 @@ fn resolve_auto_footnotes(
                     *t = display;
                 }
             }
-        } else if let NodeKind::FootnoteReference { refid, .. } =
-            &mut tree.node_mut(ref_nid).kind
-        {
+        } else if let NodeKind::FootnoteReference { refid, .. } = &mut tree.node_mut(ref_nid).kind {
             refid.clear();
         }
     }
@@ -2762,7 +2785,9 @@ fn collect_auto_footnotes(
     used_numbers: &mut std::collections::BTreeSet<u32>,
 ) {
     match &tree.node(id).kind {
-        NodeKind::Footnote { auto, names, ids, .. } => match auto {
+        NodeKind::Footnote {
+            auto, names, ids, ..
+        } => match auto {
             Some("*") => defs.push((id, AutoKind::Sym)),
             Some("1") => {
                 // Anon auto has empty names at this point; named auto has
@@ -2835,10 +2860,7 @@ fn apply_footnote_refs(
     if let NodeKind::CitationReference { ids, refid } = &tree.node(id).kind {
         // Citation refs already carry the lowercased label as refid; just
         // record the backref so the citation can list us.
-        backrefs
-            .entry(refid.clone())
-            .or_default()
-            .push(ids.clone());
+        backrefs.entry(refid.clone()).or_default().push(ids.clone());
     }
     let children = tree.node(id).children.clone();
     for c in children {
@@ -2851,12 +2873,18 @@ fn apply_footnote_backrefs(
     id: NodeId,
     backrefs: &HashMap<String, Vec<String>>,
 ) {
-    if let NodeKind::Footnote { ids, backrefs: br, .. } = &mut tree.node_mut(id).kind {
+    if let NodeKind::Footnote {
+        ids, backrefs: br, ..
+    } = &mut tree.node_mut(id).kind
+    {
         if let Some(list) = backrefs.get(ids) {
             *br = list.join(" ");
         }
     }
-    if let NodeKind::Citation { ids, backrefs: br, .. } = &mut tree.node_mut(id).kind {
+    if let NodeKind::Citation {
+        ids, backrefs: br, ..
+    } = &mut tree.node_mut(id).kind
+    {
         if let Some(list) = backrefs.get(ids) {
             *br = list.join(" ");
         }
@@ -3216,13 +3244,7 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
                 ctx.citation_ref_count += 1;
                 let ids = format!("citation-reference-{}", ctx.citation_ref_count);
                 let refid = label.to_ascii_lowercase();
-                let n = tree.append(
-                    parent,
-                    NodeKind::CitationReference {
-                        ids,
-                        refid,
-                    },
-                );
+                let n = tree.append(parent, NodeKind::CitationReference { ids, refid });
                 push_text(tree, n, &label);
             } else {
                 ctx.footnote_ref_count += 1;
@@ -3235,7 +3257,10 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
                     ("__fnauto_anon:".to_string(), Some("1"))
                 } else if let Some(name) = label.strip_prefix('#') {
                     if !name.is_empty() {
-                        (format!("__fnauto_named:{}", name.to_ascii_lowercase()), Some("1"))
+                        (
+                            format!("__fnauto_named:{}", name.to_ascii_lowercase()),
+                            Some("1"),
+                        )
                     } else {
                         (format!("__fnlabel:{}", label), None)
                     }
@@ -3244,14 +3269,7 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
                 } else {
                     (format!("__fnlabel:{}", label), None)
                 };
-                let n = tree.append(
-                    parent,
-                    NodeKind::FootnoteReference {
-                        ids,
-                        refid,
-                        auto,
-                    },
-                );
+                let n = tree.append(parent, NodeKind::FootnoteReference { ids, refid, auto });
                 push_text(tree, n, &label);
             }
             cursor = end;
@@ -3284,7 +3302,8 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
                 },
             );
             if embedded_uri.is_none() && !anonymous {
-                ctx.inline_ref_sites.push((node, ctx.current_line, name.clone()));
+                ctx.inline_ref_sites
+                    .push((node, ctx.current_line, name.clone()));
             }
             push_text(tree, node, &name);
             // For embedded URIs (non-anonymous), docutils also emits an
@@ -3311,8 +3330,7 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
             }
             cursor = end;
             text_start = cursor;
-        } else if let Some((name, end, anonymous)) =
-            try_match_reference(text, &pre.escaped, cursor)
+        } else if let Some((name, end, anonymous)) = try_match_reference(text, &pre.escaped, cursor)
         {
             if cursor > text_start {
                 push_text(tree, parent, &text[text_start..cursor]);
@@ -3326,7 +3344,8 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
                 },
             );
             if !anonymous {
-                ctx.inline_ref_sites.push((node, ctx.current_line, name.clone()));
+                ctx.inline_ref_sites
+                    .push((node, ctx.current_line, name.clone()));
             }
             push_text(tree, node, &name);
             cursor = end;

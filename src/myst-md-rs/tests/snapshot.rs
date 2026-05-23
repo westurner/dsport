@@ -79,8 +79,7 @@ fn block_math_imgmath_backend_emits_data_url() {
     let src = "$$\nE = mc^2\n$$\n";
     let out = myst_md_rs::render_html_with(src, myst_md_rs::MathBackend::ImgMath);
     assert!(
-        out.contains("data:image/svg+xml;base64,")
-            && out.contains(r#"data-renderer="imgmath""#),
+        out.contains("data:image/svg+xml;base64,") && out.contains(r#"data-renderer="imgmath""#),
         "expected imgmath backend to emit a data: URL; got:\n{out}"
     );
 }

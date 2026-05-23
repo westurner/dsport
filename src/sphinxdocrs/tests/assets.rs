@@ -7,7 +7,7 @@
 use std::io::Write;
 
 use sphinxdocrs::assets::{
-    cache_path_for, fetch_and_cache, sri_hash, sri_hash_file, SriAlgo, DEFAULT_SRI_ALGO,
+    DEFAULT_SRI_ALGO, SriAlgo, cache_path_for, fetch_and_cache, sri_hash, sri_hash_file,
 };
 
 fn tmp(name: &str) -> std::path::PathBuf {

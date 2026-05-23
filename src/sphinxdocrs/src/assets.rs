@@ -77,7 +77,11 @@ pub fn cache_path_for(cache_dir: &Path, url: &str) -> PyResult<PathBuf> {
     let basename = url.rsplit('/').next().unwrap_or("asset");
     let basename = basename.split('?').next().unwrap_or(basename);
     let basename = basename.split('#').next().unwrap_or(basename);
-    let basename = if basename.is_empty() { "asset" } else { basename };
+    let basename = if basename.is_empty() {
+        "asset"
+    } else {
+        basename
+    };
     Ok(cache_dir.join(&digest[..16]).join(basename))
 }
 

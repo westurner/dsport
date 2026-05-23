@@ -58,9 +58,8 @@ pub fn parse_directive_text(
         if spec.required_arguments + spec.optional_arguments == 0 {
             // Argument present where none is allowed → fold into body
             // (upstream just records a warning; do the same).
-            out.warnings.push(format!(
-                "directive takes no arguments; got {first_line:?}"
-            ));
+            out.warnings
+                .push(format!("directive takes no arguments; got {first_line:?}"));
         } else if spec.final_argument_whitespace
             || (spec.required_arguments + spec.optional_arguments) == 1
         {

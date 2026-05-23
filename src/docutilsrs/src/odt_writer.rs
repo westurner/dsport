@@ -362,7 +362,11 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 escape_attr(uri)
             );
             if let Some(a) = alt {
-                let _ = write!(out, "<svg:desc xmlns:svg=\"urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0\">{}</svg:desc>", escape(a));
+                let _ = write!(
+                    out,
+                    "<svg:desc xmlns:svg=\"urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0\">{}</svg:desc>",
+                    escape(a)
+                );
             }
             out.push_str("</draw:frame></text:p>\n");
         }
@@ -372,7 +376,9 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
             }
         }
         NodeKind::Caption => {
-            out.push_str("<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Emphasis\">");
+            out.push_str(
+                "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Emphasis\">",
+            );
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
             }
@@ -384,9 +390,7 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
             }
         }
         NodeKind::Attribution => {
-            out.push_str(
-                "<text:p text:style-name=\"Standard\"><text:tab/>\u{2014} ",
-            );
+            out.push_str("<text:p text:style-name=\"Standard\"><text:tab/>\u{2014} ");
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
             }
@@ -447,18 +451,10 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
         NodeKind::Entry { morecols, morerows } => {
             out.push_str("<table:table-cell");
             if *morecols > 0 {
-                let _ = write!(
-                    out,
-                    " table:number-columns-spanned=\"{}\"",
-                    morecols + 1
-                );
+                let _ = write!(out, " table:number-columns-spanned=\"{}\"", morecols + 1);
             }
             if *morerows > 0 {
-                let _ = write!(
-                    out,
-                    " table:number-rows-spanned=\"{}\"",
-                    morerows + 1
-                );
+                let _ = write!(out, " table:number-rows-spanned=\"{}\"", morerows + 1);
             }
             out.push_str(">\n");
             for &c in &node.children {

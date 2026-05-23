@@ -84,22 +84,24 @@ pub enum MathDisplay {
 pub fn render(backend: MathBackend, display: MathDisplay, latex: &str) -> String {
     match backend {
         MathBackend::MathJax => render_mathjax(display, latex),
-        MathBackend::Ratex => render_ratex(display, latex)
-            .unwrap_or_else(|| render_fallback(display, latex)),
-        MathBackend::ImgMath => render_imgmath(display, latex)
-            .unwrap_or_else(|| render_fallback(display, latex)),
+        MathBackend::Ratex => {
+            render_ratex(display, latex).unwrap_or_else(|| render_fallback(display, latex))
+        }
+        MathBackend::ImgMath => {
+            render_imgmath(display, latex).unwrap_or_else(|| render_fallback(display, latex))
+        }
     }
 }
 
 fn render_mathjax(display: MathDisplay, latex: &str) -> String {
     let escaped = html_escape_text(latex);
     match display {
-        MathDisplay::Inline => format!(
-            r#"<span class="math notranslate nohighlight">\({escaped}\)</span>"#
-        ),
-        MathDisplay::Block => format!(
-            r#"<div class="math notranslate nohighlight">\[{escaped}\]</div>"#
-        ),
+        MathDisplay::Inline => {
+            format!(r#"<span class="math notranslate nohighlight">\({escaped}\)</span>"#)
+        }
+        MathDisplay::Block => {
+            format!(r#"<div class="math notranslate nohighlight">\[{escaped}\]</div>"#)
+        }
     }
 }
 
@@ -209,8 +211,7 @@ fn html_escape_attr(s: &str) -> String {
 /// groups). Used only by the imgmath backend.
 #[cfg(feature = "ratex")]
 mod base64_alt {
-    const TABLE: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     pub fn encode(input: &[u8]) -> String {
         let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
@@ -273,7 +274,11 @@ mod tests {
 
     #[test]
     fn backend_from_name_round_trip() {
-        for &b in &[MathBackend::Ratex, MathBackend::MathJax, MathBackend::ImgMath] {
+        for &b in &[
+            MathBackend::Ratex,
+            MathBackend::MathJax,
+            MathBackend::ImgMath,
+        ] {
             assert_eq!(MathBackend::from_name(b.name()), Some(b));
         }
         // Accept the upstream sphinx ext.* aliases.

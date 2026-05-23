@@ -147,11 +147,7 @@ impl<'a, I: Iterator<Item = Event<'a>>> MystEvents<'a, I> {
                         // appends to the last text event of a fenced block,
                         // so RaTeX doesn't see stray whitespace.
                         let trimmed = body.strip_suffix('\n').unwrap_or(&body);
-                        let html = render_math(
-                            self.math_backend,
-                            MathDisplay::Block,
-                            trimmed,
-                        );
+                        let html = render_math(self.math_backend, MathDisplay::Block, trimmed);
                         let mut html = html;
                         html.push('\n');
                         self.queue.push_back(Event::Html(CowStr::from(html)));
@@ -180,18 +176,16 @@ impl<'a, I: Iterator<Item = Event<'a>>> MystEvents<'a, I> {
                     }
                     Piece::Text(_) => {}
                     Piece::Role { name, content } => {
-                        self.queue.push_back(Event::InlineHtml(CowStr::from(
-                            render_role(name, content),
-                        )));
+                        self.queue
+                            .push_back(Event::InlineHtml(CowStr::from(render_role(name, content))));
                     }
                     Piece::InlineMath(content) => {
-                        self.queue.push_back(Event::InlineHtml(CowStr::from(
-                            render_math(
+                        self.queue
+                            .push_back(Event::InlineHtml(CowStr::from(render_math(
                                 self.math_backend,
                                 MathDisplay::Inline,
                                 content,
-                            ),
-                        )));
+                            ))));
                     }
                 }
             }

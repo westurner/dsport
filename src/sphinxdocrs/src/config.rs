@@ -131,8 +131,12 @@ impl Config {
     /// Read a `conf.py` from an in-memory source string.
     pub fn from_source(py: Python<'_>, source: &str) -> PyResult<Self> {
         let globals = PyDict::new(py);
-        py.run(&std::ffi::CString::new(source).unwrap(), Some(&globals), None)
-            .map_err(|e| ConfigError::new_err(format!("conf.py failed: {e}")))?;
+        py.run(
+            &std::ffi::CString::new(source).unwrap(),
+            Some(&globals),
+            None,
+        )
+        .map_err(|e| ConfigError::new_err(format!("conf.py failed: {e}")))?;
 
         let mut cfg = Self::defaults();
 

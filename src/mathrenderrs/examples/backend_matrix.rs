@@ -12,7 +12,7 @@
 
 use std::path::PathBuf;
 
-use mathrenderrs::{render, MathBackend, MathDisplay};
+use mathrenderrs::{MathBackend, MathDisplay, render};
 
 fn build_html() -> String {
     use std::fmt::Write;
@@ -23,7 +23,11 @@ fn build_html() -> String {
         s,
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>mathrenderrs backends</title></head><body>"
     );
-    for backend in [MathBackend::Ratex, MathBackend::MathJax, MathBackend::ImgMath] {
+    for backend in [
+        MathBackend::Ratex,
+        MathBackend::MathJax,
+        MathBackend::ImgMath,
+    ] {
         let _ = writeln!(s, "<h2>backend = {}</h2>", backend.name());
         let _ = writeln!(
             s,
@@ -65,8 +69,7 @@ fn main() {
             std::fs::create_dir_all(&dir)
                 .unwrap_or_else(|e| panic!("mkdir {}: {e}", dir.display()));
             let path = dir.join("backends.html");
-            std::fs::write(&path, html)
-                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+            std::fs::write(&path, html).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
             println!("wrote {}", path.display());
         }
         None => print!("{html}"),

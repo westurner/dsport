@@ -15,7 +15,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// Run a single fixture set and return `(passed, allowed, failed,
 /// total)`. `case_runner` returns `Ok(true)` on pass, `Ok(false)` on
 /// allowed deviation, and `Err(detail)` on unexpected failure.
-fn run_fixture<F>(label: &str, cases: &[common::ParamCase], mut case_runner: F) -> (usize, usize, usize)
+fn run_fixture<F>(
+    label: &str,
+    cases: &[common::ParamCase],
+    mut case_runner: F,
+) -> (usize, usize, usize)
 where
     F: FnMut(&common::ParamCase) -> Result<bool, String>,
 {
@@ -42,7 +46,9 @@ fn aggregate_parity() {
 
     // W1: CommonMark spec. The dedicated `commonmark.rs` integration
     // test already enforces parity; here we just surface the count.
-    eprintln!("[parity] commonmark: see `cargo test -p myst-md-rs --test commonmark` (623/646 + 23 allowed + 3 skipped of 649)");
+    eprintln!(
+        "[parity] commonmark: see `cargo test -p myst-md-rs --test commonmark` (623/646 + 23 allowed + 3 skipped of 649)"
+    );
 
     // W3a: option block parsing.
     {

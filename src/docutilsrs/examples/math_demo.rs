@@ -35,11 +35,10 @@ fn main() {
     }
     let input = input.unwrap_or_else(|| usage());
     let outdir = outdir.unwrap_or_else(|| usage());
-    std::fs::create_dir_all(&outdir)
-        .unwrap_or_else(|e| panic!("mkdir {}: {e}", outdir.display()));
+    std::fs::create_dir_all(&outdir).unwrap_or_else(|e| panic!("mkdir {}: {e}", outdir.display()));
 
-    let src = std::fs::read_to_string(&input)
-        .unwrap_or_else(|e| panic!("read {}: {e}", input.display()));
+    let src =
+        std::fs::read_to_string(&input).unwrap_or_else(|e| panic!("read {}: {e}", input.display()));
     let tree = parse_rst(&src);
 
     let html_path = outdir.join("output.html");

@@ -145,20 +145,17 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String, options: &crate::cli::Html
             }
         }
         NodeKind::Math { latex } => {
-            // `:math:`…`` role — render through `mathrenderrs` using
-            // the default backend (RaTeX → inline SVG).
+            let backend = get_math_backend(options);
             out.push_str(&mathrenderrs::render(
-                mathrenderrs::MathBackend::default(),
+                backend,
                 mathrenderrs::MathDisplay::Inline,
                 latex,
             ));
         }
         NodeKind::MathBlock { latex } => {
-            // `.. math::` directive — render through `mathrenderrs`
-            // using the default backend (RaTeX → SVG inside a block
-            // wrapper).
+            let backend = get_math_backend(options);
             out.push_str(&mathrenderrs::render(
-                mathrenderrs::MathBackend::default(),
+                backend,
                 mathrenderrs::MathDisplay::Block,
                 latex,
             ));
@@ -173,9 +170,27 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String, options: &crate::cli::Html
             out.push_str(" -->");
         }
         NodeKind::Reference { refuri, .. } => {
-            let _ = write!(out, "<a href=\"{}\">", escape(refuri));
-            for &c in &node.children {
-                emit(tree, c, out, options, common);
+            let is_mailto = refuri.starts_with("mailto:");
+            let should_cloak = is_mailto && options.cloak_email_addresses.is_some();
+            let mut uri = escape(refuri);
+            if should_cloak {
+                uri = uri.replace("@", "&#37;&#52;&#48;").replace(".", "&#46;");
+            }
+            let _ = write!(out, "<a href=\"{}\">", uri);
+            if should_cloak {
+                for &c in &node.children {
+                    if let NodeKind::Text(s) = &tree.node(c).kind {
+                        let mut cloaked = escape(s);
+                        cloaked = cloaked.replace("@", "&#64;").replace(".", "&#46;");
+                        out.push_str(&cloaked);
+                    } else {
+                        emit(tree, c, out, options, common);
+                    }
+                }
+            } else {
+                for &c in &node.children {
+                    emit(tree, c, out, options, common);
+                }
             }
             out.push_str("</a>");
         }
@@ -184,7 +199,21 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String, options: &crate::cli::Html
         NodeKind::SubstitutionReference { refname } => {
             let _ = write!(out, "{}", escape(refname));
         }
-        NodeKind::Table => wrap(tree, &node.children, "table", out, options, common),
+        NodeKind::Table => {
+            let mut classes = vec![];
+            if let Some(style) = &options.table_style {
+                classes.extend(style.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()));
+            }
+            if classes.is_empty() {
+                wrap(tree, &node.children, "table", out, options, common)
+            } else {
+                let _ = write!(out, "<table class=\"{}\">", classes.join(" "));
+                for &c in &node.children {
+                    emit(tree, c, out, options, common);
+                }
+                out.push_str("</table>");
+            }
+        }
         NodeKind::Tgroup { .. } => {
             for &c in &node.children {
                 emit(tree, c, out, options, common);
@@ -313,4 +342,17 @@ fn escape(s: &str) -> String {
         }
     }
     out
+}
+
+fn get_math_backend(options: &crate::cli::Html5Options) -> mathrenderrs::MathBackend {
+    if let Some(format) = &options.math_output {
+        let fmt = format.split_whitespace().next().unwrap_or("").to_lowercase();
+        match fmt.as_str() {
+            "mathjax" => mathrenderrs::MathBackend::MathJax,
+            "html" | "mathml" => mathrenderrs::MathBackend::Ratex, // Fallback since MathML isn't natively MathML here in our backend yet.
+            _ => mathrenderrs::MathBackend::default(),
+        }
+    } else {
+        mathrenderrs::MathBackend::default()
+    }
 }

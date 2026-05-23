@@ -90,7 +90,7 @@ fn main() {
 
     let source = fs::read_to_string(&source_path).expect("Failed to read input file");
     let tree = parse_rst_with_source(&source, &source_path);
-    let output = html5(&tree);
+    let output = html5(&tree, &cli.html5, &cli.common);
 
     let wrapped = format!(
         "<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\" lang=\"en\">\n<head>\n<meta charset=\"utf-8\" />\n<title>Docutils HTML5</title>\n</head>\n<body>\n<main>\n{}\n</main>\n</body>\n</html>\n",

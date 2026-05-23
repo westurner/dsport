@@ -90,7 +90,7 @@ fn main() {
 
     let source = fs::read_to_string(&source_path).expect("Failed to read input file");
     let tree = parse_rst_with_source(&source, &source_path);
-    let output = manpage(&tree);
+    let output = manpage(&tree, &cli.specific, &cli.common);
 
     fs::write(&dest_path, output).expect("Failed to write output file");
 }

@@ -1,6 +1,6 @@
 use clap::Args;
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct CommonOptions {
     #[arg(long = "character-level-inline-markup", num_args = 0..=1)]
     pub character_level_inline_markup: Option<String>,
@@ -222,7 +222,7 @@ pub struct CommonOptions {
     pub t: Option<String>,
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct LatexOptions {
     #[arg(long = "attribution", num_args = 0..=1)]
     pub attribution: Option<String>,
@@ -342,7 +342,7 @@ pub struct LatexOptions {
     pub use_part_section: Option<String>,
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct ManOptions {
     #[arg(long = "macro-references", num_args = 0..=1)]
     pub macro_references: Option<String>,
@@ -351,7 +351,7 @@ pub struct ManOptions {
     pub text_references: Option<String>,
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct Html5Options {
     #[arg(long = "attribution", num_args = 0..=1)]
     pub attribution: Option<String>,
@@ -417,13 +417,13 @@ pub struct Html5Options {
     pub xml_declaration: Option<String>,
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct PseudoXmlOptions {
     #[arg(long = "detailed", num_args = 0..=1)]
     pub detailed: Option<String>,
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct OdtOptions {
     #[arg(long = "add-syntax-highlighting", num_args = 0..=1)]
     pub add_syntax_highlighting: Option<String>,

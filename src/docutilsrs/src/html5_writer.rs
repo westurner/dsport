@@ -10,28 +10,28 @@
 use crate::doctree::{Doctree, NodeId, NodeKind};
 use std::fmt::Write as _;
 
-pub fn html5(tree: &Doctree) -> String {
+pub fn html5(tree: &Doctree, options: &crate::cli::Html5Options, common: &crate::cli::CommonOptions) -> String {
     let mut out = String::new();
     let root = tree.root();
     for &c in &tree.node(root).children {
-        emit(tree, c, &mut out);
+        emit(tree, c, &mut out, options, common);
     }
     out
 }
 
-fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
+fn emit(tree: &Doctree, id: NodeId, out: &mut String, options: &crate::cli::Html5Options, common: &crate::cli::CommonOptions) {
     let node = tree.node(id);
     match &node.kind {
         NodeKind::Text(s) => out.push_str(&escape(s)),
         NodeKind::Document { .. } => {
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
         }
         NodeKind::Section { ids, .. } => {
             let _ = write!(out, "<section id=\"{ids}\">");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</section>");
         }
@@ -40,26 +40,26 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
             // approximate as `<h1>` and rely on CSS for visual depth.
             out.push_str("<h1>");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</h1>");
         }
         NodeKind::Subtitle { .. } => {
             out.push_str("<p class=\"subtitle\">");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</p>");
         }
         NodeKind::Transition => out.push_str("<hr/>"),
-        NodeKind::Paragraph => wrap(tree, &node.children, "p", out),
-        NodeKind::Emphasis => wrap(tree, &node.children, "em", out),
-        NodeKind::Strong => wrap(tree, &node.children, "strong", out),
-        NodeKind::Literal => wrap(tree, &node.children, "code", out),
+        NodeKind::Paragraph => wrap(tree, &node.children, "p", out, options, common),
+        NodeKind::Emphasis => wrap(tree, &node.children, "em", out, options, common),
+        NodeKind::Strong => wrap(tree, &node.children, "strong", out, options, common),
+        NodeKind::Literal => wrap(tree, &node.children, "code", out, options, common),
         NodeKind::TitleReference => {
             out.push_str("<cite>");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</cite>");
         }
@@ -70,7 +70,7 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
                 let _ = write!(out, "<span class=\"{classes}\">");
             }
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</span>");
         }
@@ -81,49 +81,49 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
                 let _ = write!(out, "<pre class=\"{classes}\">");
             }
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</pre>");
         }
-        NodeKind::BulletList { .. } => wrap(tree, &node.children, "ul", out),
-        NodeKind::EnumeratedList { .. } => wrap(tree, &node.children, "ol", out),
-        NodeKind::ListItem => wrap(tree, &node.children, "li", out),
-        NodeKind::DefinitionList => wrap(tree, &node.children, "dl", out),
+        NodeKind::BulletList { .. } => wrap(tree, &node.children, "ul", out, options, common),
+        NodeKind::EnumeratedList { .. } => wrap(tree, &node.children, "ol", out, options, common),
+        NodeKind::ListItem => wrap(tree, &node.children, "li", out, options, common),
+        NodeKind::DefinitionList => wrap(tree, &node.children, "dl", out, options, common),
         NodeKind::DefinitionListItem => {
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
         }
-        NodeKind::Term => wrap(tree, &node.children, "dt", out),
+        NodeKind::Term => wrap(tree, &node.children, "dt", out, options, common),
         NodeKind::Classifier => {
             out.push_str("<span class=\"classifier\">");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</span>");
         }
-        NodeKind::Definition => wrap(tree, &node.children, "dd", out),
-        NodeKind::FieldList => wrap(tree, &node.children, "dl", out),
+        NodeKind::Definition => wrap(tree, &node.children, "dd", out, options, common),
+        NodeKind::FieldList => wrap(tree, &node.children, "dl", out, options, common),
         NodeKind::Field => {
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
         }
-        NodeKind::FieldName => wrap(tree, &node.children, "dt", out),
-        NodeKind::FieldBody => wrap(tree, &node.children, "dd", out),
-        NodeKind::Docinfo => wrap(tree, &node.children, "dl", out),
+        NodeKind::FieldName => wrap(tree, &node.children, "dt", out, options, common),
+        NodeKind::FieldBody => wrap(tree, &node.children, "dd", out, options, common),
+        NodeKind::Docinfo => wrap(tree, &node.children, "dl", out, options, common),
         NodeKind::Bibliographic { tag } => {
             let _ = write!(out, "<dt>{tag}</dt><dd>");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</dd>");
         }
-        NodeKind::BlockQuote => wrap(tree, &node.children, "blockquote", out),
+        NodeKind::BlockQuote => wrap(tree, &node.children, "blockquote", out, options, common),
         NodeKind::Admonition { kind } => {
             let _ = write!(out, "<aside class=\"{kind}\">");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</aside>");
         }
@@ -175,7 +175,7 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
         NodeKind::Reference { refuri, .. } => {
             let _ = write!(out, "<a href=\"{}\">", escape(refuri));
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</a>");
         }
@@ -184,16 +184,16 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
         NodeKind::SubstitutionReference { refname } => {
             let _ = write!(out, "{}", escape(refname));
         }
-        NodeKind::Table => wrap(tree, &node.children, "table", out),
+        NodeKind::Table => wrap(tree, &node.children, "table", out, options, common),
         NodeKind::Tgroup { .. } => {
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
         }
         NodeKind::Colspec { .. } => {}
-        NodeKind::Thead => wrap(tree, &node.children, "thead", out),
-        NodeKind::Tbody => wrap(tree, &node.children, "tbody", out),
-        NodeKind::Row => wrap(tree, &node.children, "tr", out),
+        NodeKind::Thead => wrap(tree, &node.children, "thead", out, options, common),
+        NodeKind::Tbody => wrap(tree, &node.children, "tbody", out, options, common),
+        NodeKind::Row => wrap(tree, &node.children, "tr", out, options, common),
         NodeKind::Entry { morecols, morerows } => {
             let mut tag = String::from("<td");
             if *morecols > 0 {
@@ -205,58 +205,68 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
             tag.push('>');
             out.push_str(&tag);
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</td>");
         }
         NodeKind::Attribution => {
             out.push_str("<p class=\"attribution\">— ");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</p>");
         }
-        NodeKind::Figure => wrap(tree, &node.children, "figure", out),
-        NodeKind::Caption => wrap(tree, &node.children, "figcaption", out),
+        NodeKind::Figure => wrap(tree, &node.children, "figure", out, options, common),
+        NodeKind::Caption => wrap(tree, &node.children, "figcaption", out, options, common),
         NodeKind::Legend => {
             out.push_str("<div class=\"legend\">");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</div>");
         }
         NodeKind::Label => {
             out.push_str("<span class=\"label\">");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</span>");
         }
         NodeKind::Footnote { ids, .. } => {
             let _ = write!(out, "<aside class=\"footnote\" id=\"{ids}\">");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</aside>");
         }
         NodeKind::FootnoteReference { refid, .. } => {
-            let _ = write!(out, "<a class=\"footnote-reference\" href=\"#{refid}\">");
-            for &c in &node.children {
-                emit(tree, c, out);
+            let style = options.footnote_references.as_deref().unwrap_or("brackets");
+            if style == "brackets" {
+                let _ = write!(out, "<a class=\"{style}\" href=\"#{refid}\" id=\"footnote-reference-1\" role=\"doc-noteref\">");
+                out.push_str("<span class=\"fn-bracket\">[</span>");
+                for &c in &node.children {
+                    emit(tree, c, out, options, common);
+                }
+                out.push_str("<span class=\"fn-bracket\">]</span></a>");
+            } else {
+                let _ = write!(out, "<a class=\"{style}\" href=\"#{refid}\" id=\"footnote-reference-1\" role=\"doc-noteref\">");
+                for &c in &node.children {
+                    emit(tree, c, out, options, common);
+                }
+                out.push_str("</a>");
             }
-            out.push_str("</a>");
         }
         NodeKind::Citation { ids, .. } => {
             let _ = write!(out, "<aside class=\"citation\" id=\"{ids}\">");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</aside>");
         }
         NodeKind::CitationReference { refid, .. } => {
             let _ = write!(out, "<a class=\"citation-reference\" href=\"#{refid}\">");
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</a>");
         }
@@ -266,7 +276,7 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
                 "<a class=\"problematic\" id=\"{ids}\" href=\"#{refid}\">"
             );
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</a>");
         }
@@ -276,17 +286,17 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
                 "<aside class=\"system-message level-{level} type-{ty}\">"
             );
             for &c in &node.children {
-                emit(tree, c, out);
+                emit(tree, c, out, options, common);
             }
             out.push_str("</aside>");
         }
     }
 }
 
-fn wrap(tree: &Doctree, children: &[NodeId], tag: &str, out: &mut String) {
+fn wrap(tree: &Doctree, children: &[NodeId], tag: &str, out: &mut String, options: &crate::cli::Html5Options, common: &crate::cli::CommonOptions) {
     let _ = write!(out, "<{tag}>");
     for &c in children {
-        emit(tree, c, out);
+        emit(tree, c, out, options, common);
     }
     let _ = write!(out, "</{tag}>");
 }

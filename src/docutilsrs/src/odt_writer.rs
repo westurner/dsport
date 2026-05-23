@@ -12,7 +12,7 @@ use crate::zip_writer::ZipBuilder;
 use std::fmt::Write as _;
 
 /// Render `tree` as a binary ODT (`.odt`) document.
-pub fn odt(tree: &Doctree) -> Vec<u8> {
+pub fn odt(tree: &Doctree, options: &crate::cli::OdtOptions, common: &crate::cli::CommonOptions) -> Vec<u8> {
     let content = build_content_xml(tree);
     let styles = build_styles_xml();
     let manifest = build_manifest_xml();
@@ -511,7 +511,7 @@ mod tests {
     #[test]
     fn odt_basic_zip_structure() {
         let tree = parse_rst_with_source("Hello *world*.\n", "<string>");
-        let bytes = odt(&tree);
+        let bytes = odt(&tree, &crate::cli::OdtOptions::default(), &crate::cli::CommonOptions::default());
         // Mimetype string appears uncompressed near the beginning.
         let mimetype = b"application/vnd.oasis.opendocument.text";
         assert!(bytes.windows(mimetype.len()).any(|w| w == mimetype));

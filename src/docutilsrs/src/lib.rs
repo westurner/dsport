@@ -55,7 +55,7 @@ fn py_parse_to_pseudoxml(source: &str, source_path: &str) -> String {
 #[pyfunction(name = "parse_to_html5", signature = (source, source_path = "<string>"))]
 fn py_parse_to_html5(source: &str, source_path: &str) -> String {
     let tree = parse_rst_with_source(source, source_path);
-    html5(&tree)
+    html5(&tree, &crate::cli::Html5Options::default(), &crate::cli::CommonOptions::default())
 }
 
 /// Parse rST `source` and return a minimal LaTeX document.
@@ -66,7 +66,7 @@ fn py_parse_to_html5(source: &str, source_path: &str) -> String {
 #[pyfunction(name = "parse_to_latex", signature = (source, source_path = "<string>"))]
 fn py_parse_to_latex(source: &str, source_path: &str) -> String {
     let tree = parse_rst_with_source(source, source_path);
-    latex(&tree)
+    latex(&tree, &crate::cli::LatexOptions::default(), &crate::cli::CommonOptions::default())
 }
 
 /// Parse rST `source` and return a minimal manpage (troff) document.
@@ -76,7 +76,7 @@ fn py_parse_to_latex(source: &str, source_path: &str) -> String {
 #[pyfunction(name = "parse_to_manpage", signature = (source, source_path = "<string>"))]
 fn py_parse_to_manpage(source: &str, source_path: &str) -> String {
     let tree = parse_rst_with_source(source, source_path);
-    manpage(&tree)
+    manpage(&tree, &crate::cli::ManOptions::default(), &crate::cli::CommonOptions::default())
 }
 
 /// Parse rST `source` and return a binary ODT (`.odt`) document.
@@ -123,7 +123,7 @@ fn py_parse_to_odt<'py>(
         return Ok(PyBytes::new(py, &result));
     }
     let tree = parse_rst_with_source(source, source_path);
-    let bytes = odt(&tree);
+    let bytes = odt(&tree, &crate::cli::OdtOptions::default(), &crate::cli::CommonOptions::default());
     Ok(PyBytes::new(py, &bytes))
 }
 

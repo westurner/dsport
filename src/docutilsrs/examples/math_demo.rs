@@ -42,7 +42,7 @@ fn main() {
     let tree = parse_rst(&src);
 
     let html_path = outdir.join("output.html");
-    std::fs::write(&html_path, html5(&tree))
+    std::fs::write(&html_path, html5(&tree, &docutilsrs::cli::Html5Options::default(), &docutilsrs::cli::CommonOptions::default()))
         .unwrap_or_else(|e| panic!("write {}: {e}", html_path.display()));
     println!("wrote {}", html_path.display());
 

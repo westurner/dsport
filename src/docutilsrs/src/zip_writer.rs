@@ -16,6 +16,12 @@ struct Entry {
     offset: u32,
 }
 
+impl Default for ZipBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ZipBuilder {
     pub fn new() -> Self {
         Self {

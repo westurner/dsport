@@ -12,7 +12,7 @@ use crate::zip_writer::ZipBuilder;
 use std::fmt::Write as _;
 
 /// Render `tree` as a binary ODT (`.odt`) document.
-pub fn odt(tree: &Doctree, options: &crate::cli::OdtOptions, common: &crate::cli::CommonOptions) -> Vec<u8> {
+pub fn odt(tree: &Doctree, _options: &crate::cli::OdtOptions, _common: &crate::cli::CommonOptions) -> Vec<u8> {
     let content = build_content_xml(tree);
     let styles = build_styles_xml();
     let manifest = build_manifest_xml();
@@ -119,9 +119,9 @@ fn build_content_xml(tree: &Doctree) -> String {
     let root = tree.root();
     if let NodeKind::Document { title, .. } = &tree.node(root).kind {
         if !title.is_empty() {
-            let _ = write!(
+            let _ = writeln!(
                 out,
-                "<text:p text:style-name=\"Title\">{}</text:p>\n",
+                "<text:p text:style-name=\"Title\">{}</text:p>",
                 escape(title)
             );
         }
@@ -346,9 +346,9 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
             out.push_str("</text:p>\n");
         }
         NodeKind::Admonition { kind } => {
-            let _ = write!(
+            let _ = writeln!(
                 out,
-                "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">{}:</text:span></text:p>\n",
+                "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">{}:</text:span></text:p>",
                 kind.to_uppercase()
             );
             for &c in &node.children {

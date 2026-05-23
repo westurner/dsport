@@ -168,10 +168,12 @@ fn ratex_svg_for(display: MathDisplay, latex: &str) -> Option<String> {
     use ratex_types::MathStyle;
 
     let nodes = parse(latex).ok()?;
-    let mut opts = LayoutOptions::default();
-    opts.style = match display {
-        MathDisplay::Inline => MathStyle::Text,
-        MathDisplay::Block => MathStyle::Display,
+    let opts = LayoutOptions {
+        style: match display {
+            MathDisplay::Inline => MathStyle::Text,
+            MathDisplay::Block => MathStyle::Display,
+        },
+        ..Default::default()
     };
     let layout = layout(&nodes, &opts);
     let list = to_display_list(&layout);
@@ -214,7 +216,7 @@ mod base64_alt {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     pub fn encode(input: &[u8]) -> String {
-        let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+        let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
         let mut i = 0;
         while i + 3 <= input.len() {
             let b0 = input[i];

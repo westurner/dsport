@@ -2137,17 +2137,12 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             let attribution_text = match children.last() {
                 Some(Block::Paragraph { text, .. }) => {
                     let t = text.trim_start();
-                    if let Some(rest) = t.strip_prefix("--- ").or_else(|| t.strip_prefix("-- ")) {
-                        Some(rest.to_string())
-                    } else {
-                        None
-                    }
+                    t.strip_prefix("--- ").or_else(|| t.strip_prefix("-- ")).map(|rest| rest.to_string())
                 }
                 _ => None,
             };
-            let attr = attribution_text.map(|t| {
+            let attr = attribution_text.inspect(|_t| {
                 children.pop();
-                t
             });
             let q = tree.append(parent, NodeKind::BlockQuote);
             for b in children {

@@ -251,7 +251,7 @@ fn has_inline_markers(text: &str) -> bool {
 /// name. Otherwise return `(text, None)`.
 fn strip_trailing_role_marker(text: &str) -> (&str, Option<&str>) {
     let bytes = text.as_bytes();
-    if !bytes.last().is_some_and(|b| *b == b'}') {
+    if bytes.last().is_none_or(|b| *b != b'}') {
         return (text, None);
     }
     let p = bytes.len() - 1; // at `}`

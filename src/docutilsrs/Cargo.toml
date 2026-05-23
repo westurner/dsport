@@ -21,6 +21,7 @@ clap = { workspace = true }
 clap_complete = { workspace = true }
 pygmentsrs = { path = "../pygmentsrs" }
 mathrenderrs = { path = "../mathrenderrs" }
+chrono = "0.4.44"
 
 [dev-dependencies]
 insta = { workspace = true }

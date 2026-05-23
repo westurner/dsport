@@ -7,7 +7,7 @@
 use crate::doctree::{Doctree, NodeId, NodeKind};
 use std::fmt::Write as _;
 
-pub fn manpage(tree: &Doctree, options: &crate::cli::ManOptions, common: &crate::cli::CommonOptions) -> String {
+pub fn manpage(tree: &Doctree, _options: &crate::cli::ManOptions, _common: &crate::cli::CommonOptions) -> String {
     let mut out = String::new();
     let root = tree.root();
     let title = if let NodeKind::Document { title, .. } = &tree.node(root).kind {
@@ -237,7 +237,7 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
             let kids = &node.children;
             for (i, &c) in kids.iter().enumerate() {
                 if i > 0 {
-                    out.push_str("\t");
+                    out.push('\t');
                 }
                 emit(tree, c, section_depth, out);
             }

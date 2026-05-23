@@ -16,7 +16,7 @@ const SECTION_CMDS: &[&str] = &[
     "\\subparagraph",
 ];
 
-pub fn latex(tree: &Doctree, options: &crate::cli::LatexOptions, common: &crate::cli::CommonOptions) -> String {
+pub fn latex(tree: &Doctree, _options: &crate::cli::LatexOptions, _common: &crate::cli::CommonOptions) -> String {
     let mut out = String::new();
     out.push_str("\\documentclass{article}\n");
     out.push_str("\\usepackage[utf8]{inputenc}\n");
@@ -223,7 +223,7 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
             if cols == 0 {
                 return;
             }
-            let spec: String = std::iter::repeat('l').take(cols).collect();
+            let spec: String = std::iter::repeat_n('l', cols).collect();
             let _ = writeln!(out, "\\begin{{tabular}}{{{}}}", spec);
             for &c in &node.children {
                 emit(tree, c, section_depth, out);

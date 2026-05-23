@@ -361,3 +361,20 @@ clone-jinja2:
 	else \
 		echo "$(JINJA2_PATH) already exists."; \
 	fi
+# ========== COVERAGE ==========
+cov: cov-docutilsrs cov-pygmentsrs cov-sphinxdocrs cov-mathrenderrs cov-myst-md-rs
+
+cov-docutilsrs:
+	cd src/docutilsrs && cargo llvm-cov --show-missing-lines
+
+cov-pygmentsrs:
+	cd src/pygmentsrs && cargo llvm-cov --show-missing-lines
+
+cov-sphinxdocrs:
+	cd src/sphinxdocrs && cargo llvm-cov --show-missing-lines
+
+cov-mathrenderrs:
+	cd src/mathrenderrs && cargo llvm-cov --show-missing-lines
+
+cov-myst-md-rs:
+	cd src/myst-md-rs && cargo llvm-cov --show-missing-lines

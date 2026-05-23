@@ -31,19 +31,22 @@ fn extract_options(help_text: &str) -> HashSet<String> {
             if trimmed.chars().all(|c| c == '-') {
                 continue;
             }
-            
+
             for part in trimmed.split_whitespace() {
                 if !part.starts_with("-") {
                     break;
                 }
-                
+
                 let clean = part.trim_matches(',');
                 let clean = clean.split('=').next().unwrap();
                 let clean = clean.trim_end_matches('.');
                 let clean = clean.trim_matches('"');
                 let clean = clean.trim_matches('\'');
-                
-                if clean.starts_with("-") && clean.len() >= 2 && !clean.chars().skip(1).all(|c| c == '-') {
+
+                if clean.starts_with("-")
+                    && clean.len() >= 2
+                    && !clean.chars().skip(1).all(|c| c == '-')
+                {
                     options.insert(clean.to_string());
                 }
             }
@@ -71,7 +74,10 @@ macro_rules! generate_parity_test {
 
             missing.sort();
             if !missing.is_empty() {
-                panic!("{} is missing the following options present in {}:\n{:#?}", $bin_name, $py_name, missing);
+                panic!(
+                    "{} is missing the following options present in {}:\n{:#?}",
+                    $bin_name, $py_name, missing
+                );
             }
         }
     };
@@ -81,4 +87,8 @@ generate_parity_test!(test_rst2html5_cli_parity, "rst2html5-rs", "rst2html5");
 generate_parity_test!(test_rst2latex_cli_parity, "rst2latex-rs", "rst2latex");
 generate_parity_test!(test_rst2man_cli_parity, "rst2man-rs", "rst2man");
 generate_parity_test!(test_rst2odt_cli_parity, "rst2odt-rs", "rst2odt");
-generate_parity_test!(test_rst2pseudoxml_cli_parity, "rst2pseudoxml-rs", "rst2pseudoxml");
+generate_parity_test!(
+    test_rst2pseudoxml_cli_parity,
+    "rst2pseudoxml-rs",
+    "rst2pseudoxml"
+);

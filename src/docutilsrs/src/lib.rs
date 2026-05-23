@@ -260,3 +260,4 @@ fn py_rst2s5() {
 fn py_rst2xetex() {
     println!("stub running");
 }
+pub mod cli;

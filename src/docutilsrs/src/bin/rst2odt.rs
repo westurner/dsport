@@ -1,6 +1,6 @@
-use docutilsrs::{odt, parse_rst_with_source};
 use clap::{CommandFactory, Parser};
 use clap_complete::Shell;
+use docutilsrs::{odt, parse_rst_with_source};
 use std::fs;
 
 #[derive(Parser, Debug)]
@@ -28,6 +28,12 @@ struct Cli {
 
     #[arg(long, hide = true, value_enum)]
     generate_completion: Option<Shell>,
+
+    #[command(flatten)]
+    common: docutilsrs::cli::CommonOptions,
+
+    #[command(flatten)]
+    specific: docutilsrs::cli::OdtOptions,
 }
 
 fn main() {
@@ -40,8 +46,8 @@ fn main() {
     while i < args.len() {
         if args[i] == "--py" {
             py_passed = true;
-            if i + 1 < args.len() && !args[i+1].starts_with('-') {
-                python_bin = args[i+1].clone();
+            if i + 1 < args.len() && !args[i + 1].starts_with('-') {
+                python_bin = args[i + 1].clone();
                 i += 2;
             } else {
                 i += 1;
@@ -75,8 +81,12 @@ fn main() {
         return;
     }
 
-    let source_path = cli.source.unwrap_or_else(|| panic!("<source> is currently required in this early drop-in"));
-    let dest_path = cli.destination.unwrap_or_else(|| panic!("<destination> is currently required in this early drop-in"));
+    let source_path = cli
+        .source
+        .unwrap_or_else(|| panic!("<source> is currently required in this early drop-in"));
+    let dest_path = cli
+        .destination
+        .unwrap_or_else(|| panic!("<destination> is currently required in this early drop-in"));
 
     let source = fs::read_to_string(&source_path).expect("Failed to read input file");
     let tree = parse_rst_with_source(&source, &source_path);

@@ -1,19 +1,20 @@
+use docutilsrs::{parse_rst_with_source, pseudo_xml};
+use std::env;
+use std::fs;
+
 fn main() {
-    let args: Vec<_> = std::env::args().skip(1).collect();
-    let status = if "rst2pseudoxml" == "docutils" {
-        std::process::Command::new("python")
-            .arg("-m")
-            .arg("docutils.__main__")
-            .args(&args)
-            .status()
-            .expect("Failed to execute python")
-    } else {
-        std::process::Command::new("python")
-            .arg("-c")
-            .arg(format!("import docutils.core; import sys; sys.argv[0] = '{}'; sys.exit(docutils.core.{}())", "rst2pseudoxml", "rst2pseudoxml"))
-            .args(&args)
-            .status()
-            .expect("Failed to execute python")
-    };
-    std::process::exit(status.code().unwrap_or(1));
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 3 {
+        eprintln!("Usage: {} <input.rst> <output.xml>", args[0]);
+        std::process::exit(1);
+    }
+    
+    let input_path = &args[1];
+    let output_path = &args[2];
+    
+    let source = fs::read_to_string(input_path).expect("Failed to read input file");
+    let tree = parse_rst_with_source(&source, input_path);
+    let xml = pseudo_xml(&tree);
+    
+    fs::write(output_path, xml).expect("Failed to write output file");
 }

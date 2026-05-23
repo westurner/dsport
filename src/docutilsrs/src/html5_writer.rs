@@ -144,6 +144,25 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String) {
                 }
             }
         }
+        NodeKind::Math { latex } => {
+            // `:math:`…`` role — render through `mathrenderrs` using
+            // the default backend (RaTeX → inline SVG).
+            out.push_str(&mathrenderrs::render(
+                mathrenderrs::MathBackend::default(),
+                mathrenderrs::MathDisplay::Inline,
+                latex,
+            ));
+        }
+        NodeKind::MathBlock { latex } => {
+            // `.. math::` directive — render through `mathrenderrs`
+            // using the default backend (RaTeX → SVG inside a block
+            // wrapper).
+            out.push_str(&mathrenderrs::render(
+                mathrenderrs::MathBackend::default(),
+                mathrenderrs::MathDisplay::Block,
+                latex,
+            ));
+        }
         NodeKind::Comment => {
             out.push_str("<!-- ");
             for &c in &node.children {

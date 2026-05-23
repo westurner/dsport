@@ -2,9 +2,26 @@
 resolver = "2"
 members = [
     "docutilsrs",
+    "mathrenderrs",
     "myst-md-rs",
     "pygmentsrs",
     "sphinxdocrs",
+]
+# RaTeX is a vendored sibling workspace (per AGENTS.md, do not modify).
+# Excluding it lets our member crates depend on its packages via path
+# without cargo trying to fold the RaTeX workspace into ours and
+# clobbering its `[workspace.package]` inheritance (edition 2021,
+# version 0.1.9, MIT license).
+exclude = [
+    "RaTeX",
+    "docutils",
+    "sphinx",
+    "jinja2",
+    "markdown-it-py",
+    "minijinja",
+    "MyST-Parser",
+    "pygments",
+    "tests",
 ]
 
 [workspace.package]

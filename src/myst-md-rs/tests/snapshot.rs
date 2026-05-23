@@ -35,14 +35,54 @@ fn inline_role() {
 
 #[test]
 fn inline_math() {
+    // Pick the MathJax backend for snapshot stability — the default
+    // RaTeX backend emits a multi-kB inline SVG that is exercised in
+    // `inline_math_default_is_ratex` below.
     let src = "let $a + b = c$ then\n";
-    insta::assert_snapshot!("inline_math", myst_md_rs::render_html(src));
+    insta::assert_snapshot!(
+        "inline_math",
+        myst_md_rs::render_html_with(src, myst_md_rs::MathBackend::MathJax)
+    );
 }
 
 #[test]
 fn block_math() {
     let src = "$$\nE = mc^2\n$$\n";
-    insta::assert_snapshot!("block_math", myst_md_rs::render_html(src));
+    insta::assert_snapshot!(
+        "block_math",
+        myst_md_rs::render_html_with(src, myst_md_rs::MathBackend::MathJax)
+    );
+}
+
+#[test]
+fn inline_math_default_is_ratex() {
+    let src = "let $a + b = c$ then\n";
+    let out = myst_md_rs::render_html(src);
+    assert!(
+        out.contains("<svg") && out.contains(r#"data-renderer="ratex""#),
+        "expected default backend to be RaTeX (SVG output); got:\n{out}"
+    );
+}
+
+#[test]
+fn block_math_default_is_ratex() {
+    let src = "$$\nE = mc^2\n$$\n";
+    let out = myst_md_rs::render_html(src);
+    assert!(
+        out.contains("<svg") && out.contains(r#"data-renderer="ratex""#),
+        "expected default backend to be RaTeX (SVG output); got:\n{out}"
+    );
+}
+
+#[test]
+fn block_math_imgmath_backend_emits_data_url() {
+    let src = "$$\nE = mc^2\n$$\n";
+    let out = myst_md_rs::render_html_with(src, myst_md_rs::MathBackend::ImgMath);
+    assert!(
+        out.contains("data:image/svg+xml;base64,")
+            && out.contains(r#"data-renderer="imgmath""#),
+        "expected imgmath backend to emit a data: URL; got:\n{out}"
+    );
 }
 
 #[test]

@@ -105,6 +105,18 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
                 let _ = writeln!(out, "{indent}<inline classes=\"{classes}\">");
             }
         }
+        NodeKind::Math { latex } => {
+            let _ = writeln!(out, "{indent}<math>");
+            let inner = "    ".repeat(depth + 1);
+            let _ = writeln!(out, "{inner}{latex}");
+        }
+        NodeKind::MathBlock { latex } => {
+            let _ = writeln!(out, "{indent}<math_block xml:space=\"preserve\">");
+            let inner = "    ".repeat(depth + 1);
+            for line in latex.split('\n') {
+                let _ = writeln!(out, "{inner}{line}");
+            }
+        }
         NodeKind::LiteralBlock { classes } => {
             if classes.is_empty() {
                 let _ = writeln!(out, "{indent}<literal_block xml:space=\"preserve\">");

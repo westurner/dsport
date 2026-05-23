@@ -1,5 +1,5 @@
 ---
 source: myst-md-rs/tests/snapshot.rs
-expression: "myst_md_rs::render_html(src)"
+expression: "myst_md_rs::render_html_with(src, myst_md_rs::MathBackend::MathJax)"
 ---
-<p>let <span class="math">a + b = c</span> then</p>
+<p>let <span class="math notranslate nohighlight">\(a + b = c\)</span> then</p>

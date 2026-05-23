@@ -1,6 +1,5 @@
 ---
 source: myst-md-rs/tests/snapshot.rs
-expression: "myst_md_rs::render_html(src)"
+expression: "myst_md_rs::render_html_with(src, myst_md_rs::MathBackend::MathJax)"
 ---
-<div class="math">E = mc^2
-</div>
+<div class="math notranslate nohighlight">\[E = mc^2\]</div>

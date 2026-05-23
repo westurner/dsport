@@ -81,6 +81,8 @@ impl PyNode {
             NodeKind::Literal => "literal".into(),
             NodeKind::TitleReference => "title_reference".into(),
             NodeKind::Inline { .. } => "inline".into(),
+            NodeKind::Math { .. } => "math".into(),
+            NodeKind::MathBlock { .. } => "math_block".into(),
             NodeKind::LiteralBlock { .. } => "literal_block".into(),
             NodeKind::BulletList { .. } => "bullet_list".into(),
             NodeKind::EnumeratedList { .. } => "enumerated_list".into(),

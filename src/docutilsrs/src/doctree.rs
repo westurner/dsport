@@ -39,6 +39,16 @@ pub enum NodeKind {
     Inline {
         classes: String,
     },
+    /// `<math>` inline element produced by the `:math:` role. `latex` is
+    /// the raw LaTeX source.
+    Math {
+        latex: String,
+    },
+    /// `<math_block>` element produced by the `.. math::` directive.
+    /// `latex` is the raw LaTeX source.
+    MathBlock {
+        latex: String,
+    },
     /// Pre-formatted block. `classes` is space-separated (e.g. "code python").
     LiteralBlock {
         classes: String,

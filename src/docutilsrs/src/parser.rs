@@ -153,6 +153,11 @@ enum Block {
         format: String,
         text: String,
     },
+    /// `.. math::` directive — accumulated LaTeX source. Routed through
+    /// `mathrenderrs` at HTML-emit time.
+    MathBlock {
+        latex: String,
+    },
     Footnote {
         label: String,
         body: Vec<Block>,
@@ -1467,6 +1472,22 @@ fn parse_directive(
                 text: inner.join("\n"),
             }
         }
+        "math" => {
+            // `.. math:: …` — args (if any) become the first line of the
+            // LaTeX body; any following indented block is appended. The
+            // body is emitted verbatim into a `<math_block>` and rendered
+            // through `mathrenderrs` at HTML time.
+            *i_ref += 1;
+            let inner = consume_indented_text(lines, i_ref, base_indent);
+            let args_t = args.trim();
+            let body_joined = inner.join("\n");
+            let latex = match (args_t.is_empty(), body_joined.is_empty()) {
+                (true, _) => body_joined,
+                (false, true) => args_t.to_string(),
+                (false, false) => format!("{}\n{}", args_t, body_joined),
+            };
+            Block::MathBlock { latex }
+        }
         _ => {
             // Unknown directive: consult the Python plugin registry. A
             // registered plugin receives `(args, body)` and returns a
@@ -2258,6 +2279,9 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
         Block::Raw { format, text } => {
             let r = tree.append(parent, NodeKind::Raw { format });
             tree.append(r, NodeKind::Text(text));
+        }
+        Block::MathBlock { latex } => {
+            tree.append(parent, NodeKind::MathBlock { latex });
         }
         Block::Table(td) => {
             emit_table(tree, parent, ctx, td);
@@ -3334,6 +3358,18 @@ fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str) {
         "title" | "title-reference" | "t" => {
             let n = tree.append(parent, NodeKind::TitleReference);
             push_text(tree, n, content);
+        }
+        "math" => {
+            // Inline math role: `:math:`E=mc^2``. The renderer side
+            // (html5_writer) routes this through `mathrenderrs` using
+            // whichever backend the writer was configured with
+            // (default RaTeX → SVG).
+            tree.append(
+                parent,
+                NodeKind::Math {
+                    latex: content.to_string(),
+                },
+            );
         }
         _ => {
             let n = tree.append(

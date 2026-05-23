@@ -93,6 +93,22 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 emit(tree, c, section_depth, out);
             }
         }
+        NodeKind::Math { latex } => {
+            // Manpages have no math typesetting; render the LaTeX
+            // source verbatim wrapped in `$…$` so the original is
+            // preserved for downstream tooling.
+            out.push('$');
+            out.push_str(latex);
+            out.push('$');
+        }
+        NodeKind::MathBlock { latex } => {
+            out.push_str(".nf\n");
+            out.push_str(latex);
+            if !latex.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(".fi\n");
+        }
         NodeKind::LiteralBlock { .. } => {
             out.push_str(".nf\n");
             for &c in &node.children {

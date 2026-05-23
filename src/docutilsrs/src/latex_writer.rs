@@ -85,6 +85,23 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 emit(tree, c, section_depth, out);
             }
         }
+        NodeKind::Math { latex } => {
+            // Inline math in LaTeX output round-trips as `$…$`.
+            out.push('$');
+            out.push_str(latex);
+            out.push('$');
+        }
+        NodeKind::MathBlock { latex } => {
+            // Display math in LaTeX output uses the `equation*`
+            // environment (matches docutils' `latex2e` writer for
+            // `<math_block>` without a label).
+            out.push_str("\\begin{equation*}\n");
+            out.push_str(latex);
+            if !latex.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str("\\end{equation*}\n");
+        }
         NodeKind::LiteralBlock { .. } => {
             out.push_str("\\begin{verbatim}\n");
             for &c in &node.children {

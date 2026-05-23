@@ -18,13 +18,21 @@
 
 use std::collections::VecDeque;
 
+use mathrenderrs::{MathBackend, MathDisplay, render as render_math};
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd, html};
 use pulldown_cmark_escape::{escape_html, escape_html_body_text};
 
 use crate::role::{Piece, split_text};
 
-/// Render a preprocessed MyST body to HTML.
+/// Render a preprocessed MyST body to HTML using the default math
+/// backend ([`MathBackend::Ratex`]).
 pub fn render(body: &str) -> String {
+    render_with(body, MathBackend::default())
+}
+
+/// Render a preprocessed MyST body to HTML, choosing the math
+/// rendering backend explicitly. See [`mathrenderrs::MathBackend`].
+pub fn render_with(body: &str, math_backend: MathBackend) -> String {
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_TABLES);
     opts.insert(Options::ENABLE_FOOTNOTES);
@@ -39,7 +47,7 @@ pub fn render(body: &str) -> String {
     // later wave.
 
     let parser = Parser::new_ext(body, opts);
-    let events = MystEvents::new(parser);
+    let events = MystEvents::new(parser, math_backend);
     let mut out = String::with_capacity(body.len());
     html::push_html(&mut out, events);
     out
@@ -51,6 +59,9 @@ enum CodeCloser {
     Forward,
     /// Emit a raw HTML closer.
     Html(&'static str),
+    /// Drain the buffered math source through [`mathrenderrs`] and emit
+    /// the rendered fragment in place of the usual `<div>…</div>` body.
+    Math,
 }
 
 /// Event-stream adapter that lowers MyST extensions to stock `pulldown_cmark`
@@ -67,16 +78,24 @@ struct MystEvents<'a, I: Iterator<Item = Event<'a>>> {
     pending_role: Option<String>,
     /// True while inside a code block — text inside must stay verbatim.
     in_code_block: bool,
+    /// When `Some`, the current fenced block has info string `math`; raw
+    /// `Text` events are diverted here instead of being forwarded, so on
+    /// `End(CodeBlock)` we can hand the whole source to [`mathrenderrs`].
+    math_buf: Option<String>,
+    /// Backend used to render `$…$` and `$$…$$` / `` ```math `` blocks.
+    math_backend: MathBackend,
 }
 
 impl<'a, I: Iterator<Item = Event<'a>>> MystEvents<'a, I> {
-    fn new(inner: I) -> Self {
+    fn new(inner: I, math_backend: MathBackend) -> Self {
         Self {
             inner,
             queue: VecDeque::new(),
             closer_stack: Vec::new(),
             pending_role: None,
             in_code_block: false,
+            math_buf: None,
+            math_backend,
         }
     }
 
@@ -103,19 +122,39 @@ impl<'a, I: Iterator<Item = Event<'a>>> MystEvents<'a, I> {
                     self.closer_stack
                         .push(CodeCloser::Html("</code></pre></div>\n"));
                 } else if info == "math" {
-                    self.queue
-                        .push_back(Event::Html(CowStr::from(r#"<div class="math">"#)));
-                    self.closer_stack.push(CodeCloser::Html("</div>\n"));
+                    // Buffer the body verbatim; on End(CodeBlock) we
+                    // hand it to mathrenderrs and emit the rendered
+                    // fragment in one piece.
+                    self.math_buf = Some(String::new());
+                    self.closer_stack.push(CodeCloser::Math);
                 } else {
                     self.queue.push_back(event);
                     self.closer_stack.push(CodeCloser::Forward);
                 }
+            }
+            Event::Text(ref s) if self.math_buf.is_some() => {
+                self.math_buf.as_mut().unwrap().push_str(s.as_ref());
             }
             Event::End(TagEnd::CodeBlock) => {
                 self.in_code_block = false;
                 match self.closer_stack.pop() {
                     Some(CodeCloser::Html(s)) => {
                         self.queue.push_back(Event::Html(CowStr::from(s)));
+                    }
+                    Some(CodeCloser::Math) => {
+                        let body = self.math_buf.take().unwrap_or_default();
+                        // Trim a single trailing newline that pulldown_cmark
+                        // appends to the last text event of a fenced block,
+                        // so RaTeX doesn't see stray whitespace.
+                        let trimmed = body.strip_suffix('\n').unwrap_or(&body);
+                        let html = render_math(
+                            self.math_backend,
+                            MathDisplay::Block,
+                            trimmed,
+                        );
+                        let mut html = html;
+                        html.push('\n');
+                        self.queue.push_back(Event::Html(CowStr::from(html)));
                     }
                     _ => self.queue.push_back(event),
                 }
@@ -147,7 +186,11 @@ impl<'a, I: Iterator<Item = Event<'a>>> MystEvents<'a, I> {
                     }
                     Piece::InlineMath(content) => {
                         self.queue.push_back(Event::InlineHtml(CowStr::from(
-                            render_inline_math(content),
+                            render_math(
+                                self.math_backend,
+                                MathDisplay::Inline,
+                                content,
+                            ),
                         )));
                     }
                 }
@@ -188,12 +231,6 @@ fn render_role(name: &str, content: &str) -> String {
         escape_attr(name),
         cbuf
     )
-}
-
-fn render_inline_math(content: &str) -> String {
-    let mut cbuf = String::new();
-    let _ = escape_html_body_text(&mut cbuf, content);
-    format!(r#"<span class="math">{cbuf}</span>"#)
 }
 
 fn escape_attr(s: &str) -> String {

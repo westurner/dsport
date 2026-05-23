@@ -15,6 +15,8 @@
 
 use pyo3::prelude::*;
 
+pub mod assets;
+pub mod config;
 pub mod errors;
 pub mod events;
 pub mod extension;
@@ -47,6 +49,16 @@ pub fn features() -> &'static [&'static str] {
         "extension:verify_needs_extensions",
         "util:matching",
         "util:console",
+        "config:read_conf_py",
+        "config:mathjax_path",
+        "config:imgmath",
+        "math:mathjax",
+        "math:imgmath",
+        "math:ratex",
+        "assets:fetch_and_cache",
+        "assets:sri_hash",
+        "assets:sri_hash_file",
+        "assets:fetch_with_integrity",
     ]
 }
 
@@ -71,6 +83,12 @@ fn sphinxdocrs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(extension::py_verify_needs_extensions, m)?)?;
     util_matching::register(m)?;
     util_console::register(m)?;
+    m.add_function(wrap_pyfunction!(config::py_read_conf_py, m)?)?;
+    m.add_function(wrap_pyfunction!(assets::py_cache_path_for, m)?)?;
+    m.add_function(wrap_pyfunction!(assets::py_fetch_and_cache, m)?)?;
+    m.add_function(wrap_pyfunction!(assets::py_sri_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(assets::py_sri_hash_file, m)?)?;
+    m.add_function(wrap_pyfunction!(assets::py_fetch_with_integrity, m)?)?;
 
     // Exception types
     m.add("SphinxError", py.get_type::<errors::SphinxError>())?;

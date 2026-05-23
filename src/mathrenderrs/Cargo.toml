@@ -1,0 +1,31 @@
+[package]
+name = "mathrenderrs"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Math rendering backend selector for docutilsrs/sphinxdocrs/myst-md-rs (default: RaTeX → SVG)"
+
+[lib]
+name = "mathrenderrs"
+
+[features]
+default = ["ratex"]
+## Enable the RaTeX backend (pulls in `ratex-parser` / `ratex-layout` /
+## `ratex-svg` with embedded KaTeX fonts so no external font directory
+## is required at runtime).
+ratex = [
+    "dep:ratex-parser",
+    "dep:ratex-layout",
+    "dep:ratex-svg",
+    "dep:ratex-types",
+]
+
+[dependencies]
+ratex-types  = { path = "../RaTeX/crates/ratex-types",  optional = true }
+ratex-parser = { path = "../RaTeX/crates/ratex-parser", optional = true }
+ratex-layout = { path = "../RaTeX/crates/ratex-layout", optional = true }
+ratex-svg    = { path = "../RaTeX/crates/ratex-svg",    optional = true, features = ["standalone", "embed-fonts"] }
+
+[dev-dependencies]
+insta = { workspace = true }

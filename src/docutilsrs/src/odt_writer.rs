@@ -201,6 +201,23 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 emit(tree, c, section_depth, out);
             }
         }
+        NodeKind::Math { latex } => {
+            // ODT has no native math container in this minimal writer;
+            // emit the LaTeX source inside a styled span so the
+            // information round-trips for downstream tooling.
+            let _ = write!(
+                out,
+                "<text:span text:style-name=\"Math\">{}</text:span>",
+                escape(latex)
+            );
+        }
+        NodeKind::MathBlock { latex } => {
+            let _ = write!(
+                out,
+                "<text:p text:style-name=\"Math_20_Block\">{}</text:p>",
+                escape(latex)
+            );
+        }
         NodeKind::LiteralBlock { .. } => {
             for &c in &node.children {
                 if let NodeKind::Text(s) = &tree.node(c).kind {

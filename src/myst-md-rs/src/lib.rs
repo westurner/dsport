@@ -75,9 +75,14 @@ pub struct ParseResult {
 
 /// Parse a MyST source document to HTML.
 pub fn parse_to_html(source: &str) -> ParseResult {
+    parse_to_html_with(source, MathBackend::default())
+}
+
+/// Parse a MyST source document to HTML, choosing the math backend.
+pub fn parse_to_html_with(source: &str, math_backend: MathBackend) -> ParseResult {
     let split = frontmatter::split(source);
     let preprocessed = preprocess::preprocess(split.body);
-    let html = render::render(&preprocessed);
+    let html = render::render_with(&preprocessed, math_backend);
     let fm = split.front_matter.as_ref().and_then(|v| serde_yaml::to_string(v).ok());
     ParseResult {
         html,
@@ -85,10 +90,20 @@ pub fn parse_to_html(source: &str) -> ParseResult {
     }
 }
 
-/// Convenience: just the HTML body, ignoring front matter.
+/// Convenience: just the HTML body, ignoring front matter. Uses the
+/// default math backend ([`MathBackend::Ratex`]).
 pub fn render_html(source: &str) -> String {
     parse_to_html(source).html
 }
+
+/// Like [`render_html`] but picks the math backend explicitly.
+pub fn render_html_with(source: &str, math_backend: MathBackend) -> String {
+    parse_to_html_with(source, math_backend).html
+}
+
+/// Re-exported from [`mathrenderrs`] so downstream callers don't need to
+/// depend on it directly to pick a math rendering backend.
+pub use mathrenderrs::MathBackend;
 
 /// Extract the front matter (if any), returning it as a YAML string.
 pub fn parse_front_matter(source: &str) -> Option<String> {

@@ -265,10 +265,86 @@ def rust_state_name(s: str) -> str:
     return rust_raw_string(s)
 
 
-def fix_py_regex_for_rust(pattern: str) -> str:
-    """Fix Python regex character-class syntax incompatible with fancy-regex.
+_EMPTY_OPTIONAL_EMPTY_RE = re.compile(r"\(\?:\(\?:\)\?\)")
+# NFA size threshold: fancy-regex / the underlying `regex` crate builds an NFA
+# with O(N) states for bounded repetitions `X{m,N}`.  N≥10 can exceed the
+# crate's compile-time limit for wide character classes such as `\w`.  We
+# approximate by replacing large upper bounds with `+` (match one-or-more).
+_NFA_UPPER_BOUND_THRESHOLD = 9
 
-    Two cases handled:
+
+def _rewrite_large_bounded_quantifiers(pattern: str) -> str:
+    """Replace ``X{m,N}`` with ``X+`` when ``N > _NFA_UPPER_BOUND_THRESHOLD``.
+
+    This is an *approximation* — ``\\w{1,100}`` matches at most 100 word chars
+    in Python but ``\\w+`` may match more.  For syntax-highlighting purposes
+    this is acceptable and avoids the NFA-too-large compile panic in the
+    ``regex`` crate.  Only the upper bound is replaced when it is large; small
+    bounds (e.g. ``{1,3}``) are left alone because they pose no NFA risk.
+
+    Also removes ``(?:(?:)?)`` — an "optional empty group" pattern emitted by
+    Pygments' ``regex_opt`` that is semantically a no-op but rejected by
+    ``fancy-regex``'s empty-quantifier check.
+    """
+    # Step 1: strip (?:(?:)?) — optional empty group, always matches empty.
+    pattern = _EMPTY_OPTIONAL_EMPTY_RE.sub("", pattern)
+
+    # Step 2: rewrite large bounded quantifiers outside character classes.
+    # We must not touch ``{m,N}`` that appear inside ``[...]``.
+    result: list[str] = []
+    i = 0
+    n = len(pattern)
+    in_charclass = 0  # nesting depth (0 = not inside)
+    while i < n:
+        c = pattern[i]
+        if c == "\\" and i + 1 < n:
+            result.append(c)
+            result.append(pattern[i + 1])
+            i += 2
+            continue
+        if c == "[":
+            in_charclass += 1
+            result.append(c)
+            i += 1
+            continue
+        if c == "]" and in_charclass:
+            in_charclass -= 1
+            result.append(c)
+            i += 1
+            continue
+        if c == "{" and not in_charclass:
+            # Try to parse {m,N} or {m,} or {,N}
+            j = i + 1
+            while j < n and (pattern[j].isdigit() or pattern[j] in ","):
+                j += 1
+            if j < n and pattern[j] == "}":
+                inner = pattern[i + 1:j]
+                parts = inner.split(",")
+                if len(parts) == 2:
+                    lo_str, hi_str = parts[0].strip(), parts[1].strip()
+                    try:
+                        hi = int(hi_str) if hi_str else None
+                    except ValueError:
+                        hi = None
+                    if hi is not None and hi > _NFA_UPPER_BOUND_THRESHOLD:
+                        # Replace {m,N} with + (one-or-more) since m >= 1
+                        # in all patterns we've encountered, or * when m==0.
+                        lo = int(lo_str) if lo_str else 0
+                        result.append("+" if lo >= 1 else "*")
+                        i = j + 1
+                        continue
+            result.append(c)
+            i += 1
+            continue
+        result.append(c)
+        i += 1
+    return "".join(result)
+
+
+def fix_py_regex_for_rust(pattern: str) -> str:
+    """Fix Python regex syntax incompatible with fancy-regex.
+
+    Three cases handled:
 
     1. Unescaped ``[`` inside ``[...]`` or ``[^...]``:
        Python's ``re`` treats a bare ``[`` as a literal inside a character
@@ -277,7 +353,13 @@ def fix_py_regex_for_rust(pattern: str) -> str:
     2. Leading ``]`` in a character class (``[][...]`` or ``[^][...]``):
        Python treats a ``]`` immediately after the opening ``[`` (or ``[^``)
        as a literal ``]``; fancy-regex does not.  Fix: escape to ``\\]``.
+
+    3. Large bounded quantifiers (``\\w{1,100}``) and empty optional groups
+       (``(?:(?:)?)``) that cause NFA-too-large panics or empty-quantifier
+       errors at compile time.  Delegated to
+       ``_rewrite_large_bounded_quantifiers``.
     """
+    pattern = _rewrite_large_bounded_quantifiers(pattern)
     result: list[str] = []
     i = 0
     n = len(pattern)

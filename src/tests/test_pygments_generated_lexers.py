@@ -550,6 +550,61 @@ GENERATED = {
             "$!{name.toUpperCase()}\n",
         ],
     ),
+    # --- Phase E transpilable batch (bitbake, cel, purescript) ---
+    "bitbake": (
+        "pygments.lexers.bitbake",
+        "BitBakeLexer",
+        [
+            "DESCRIPTION = \"A simple recipe\"\nPV = \"1.0\"\nSRC_URI = \"file://main.c\"\n",
+            "# comment\nPKGNAME := \"${PN}-extra\"\n",
+            "FILES_${PN} += \"${bindir}/foo\"\n",
+            "BBCLASSEXTEND = \"native nativesdk\"\n",
+            "do_install() {\n    install -d ${D}${bindir}\n}\n",
+        ],
+    ),
+    "cel": (
+        "pygments.lexers.cel",
+        "CELLexer",
+        [
+            "1 + 2\n",
+            "x == 'hello' && y > 0\n",
+            "request.auth.claims.email == 'user@example.com'\n",
+            "size(list) > 0 ? list[0] : 'default'\n",
+            "/* block comment */ // line comment\n42\n",
+        ],
+    ),
+    "purescript": (
+        "pygments.lexers.purescript",
+        "PureScriptLexer",
+        [
+            "module Main where\nimport Prelude\nmain = log \"Hello\"\n",
+            "data Maybe a = Nothing | Just a\n",
+            "-- comment\nadd :: Int -> Int -> Int\nadd x y = x + y\n",
+            "type alias Name = String\n",
+            "foreign import f :: String -> Effect Unit\n",
+        ],
+    ),
+    # --- adl / csharp (previously excluded, now fixed with NFA bound rewrite) ---
+    "adl": (
+        "pygments.lexers.archetype",
+        "AdlLexer",
+        [
+            "archetype (adl_version=2.0.6; rm_release=1.0.3)\n    openEHR-EHR-OBSERVATION.blood_pressure.v1.0.0\n",
+            "-- comment\nlanguage\n    original_language = <[ISO_639-1::en]>\n",
+            "description\n    original_author = <\n        [\"name\"] = <\"Test\">\n    >\n",
+        ],
+    ),
+    "csharp": (
+        "pygments.lexers.dotnet",
+        "CSharpLexer",
+        [
+            "using System;\nnamespace N { class C { static void Main() { Console.WriteLine(\"hi\"); } } }\n",
+            "// comment\npublic async Task<int> Foo() { return await bar; }\n",
+            "var x = new List<string> { \"a\", \"b\" };\n",
+            "interface IFoo { string Name { get; set; } }\n",
+            "record Point(int X, int Y);\n",
+        ],
+    ),
 }
 
 

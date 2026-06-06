@@ -279,32 +279,276 @@ the three bridge-only categories.
 ### Phase D — using(this) / DelegatingLexer engine + bulk ✅ DONE (5 + 10 = 15 lexers)
 
 
-## Formatter plan (18 total, 1 native)
+## Formatter plan (18 total, 1 native → rolling port)
 
 `html` formatter is native and byte-parity (note: `HtmlLexer` is also native now).
-The rest are bridge-served today.
-Priority order if/when formatters are ported natively:
+Phase F (Formatters) ports the remaining 17, prioritized by ROI and implementation effort.
 
-| formatter | alias(es) | port difficulty | notes |
-| --------- | --------- | --------------- | ----- |
-| NullFormatter | `text` | trivial | echo tokens' text |
-| RawTokenFormatter | `raw`, `tokens` | trivial | `repr` stream; useful for tests |
-| TestcaseFormatter | `testcase` | trivial | emits a unit-test skeleton |
-| TerminalFormatter | `terminal`, `console` | easy | 16-color ANSI map |
-| Terminal256Formatter | `terminal256` | medium | 256-color cube + style lookup |
-| TerminalTrueColorFormatter | `terminal16m` | medium | truecolor ANSI |
-| IRCFormatter | `irc` | easy | mIRC color codes |
-| BBCodeFormatter | `bbcode` | easy | `[color]` tags |
-| GroffFormatter | `groff` | medium | troff escapes |
-| LatexFormatter | `latex` | medium | needs style → macro table |
-| RtfFormatter | `rtf` | medium | RTF control words |
-| PangoMarkupFormatter | `pango` | easy | span markup |
-| Bmp/Gif/Img/Jpg | `bmp`/`gif`/`img`/`jpg` | **bridge-only** | image rendering; heavy deps |
-| SvgFormatter | `svg` | hard | text layout |
+**Library choices**:
+- **PIL replacement**: [`image`](https://crates.io/crates/image) crate (Bmp/Gif/Jpg/Png); optional feature gate
+- **ANSI color mapping**: built-in (simple RGB ↔ 16/256 color luts)
+- **LaTeX formatting**: [`RaTeX`](https://github.com/erweixin/RaTeX) for full TeX rendering (optional); fallback: simple escape + macro template
+- **RTF/Groff/Pango**: string templates with color code lookups; no external deps needed
+- **SVG**: [`svg`](https://crates.io/crates/svg) crate OR built-in string builder (no layout engine needed for token boxes)
 
-Recommendation: port `text`/`raw`/`testcase` opportunistically (they make
-the Rust test surface self-contained), then the ANSI terminal trio if a CLI
-needs them. Leave image formatters on the bridge permanently.
+| formatter | alias(es) | port difficulty | phase | deps | notes |
+| --------- | --------- | --------------- | ----- | ---- | ----- |
+| NullFormatter | `text` | trivial | F0 | none | echo tokens' text |
+| RawTokenFormatter | `raw`, `tokens` | trivial | F0 | none | `repr` stream; useful for tests |
+| TestcaseFormatter | `testcase` | trivial | F0 | none | emits a unit-test skeleton |
+| TerminalFormatter | `terminal`, `console` | easy | F1 | none | 16-color ANSI map (lut based) |
+| Terminal256Formatter | `terminal256` | medium | F1 | none | 256-color cube + nearest-neighbor lookup |
+| TerminalTrueColorFormatter | `terminal16m` | medium | F1 | none | truecolor ANSI (24-bit RGB escape codes) |
+| IRCFormatter | `irc` | easy | F1 | none | mIRC color codes (16-color lut) |
+| BBCodeFormatter | `bbcode` | easy | F1 | none | `[color]` tags |
+| GroffFormatter | `groff` | medium | F2 | none | troff escape sequences; color → `.defcolor` |
+| PangoMarkupFormatter | `pango` | easy | F2 | none | `<span color='#RRGGBB'>` markup |
+| LatexFormatter | `latex` | **medium–hard** | F2 | opt: ratex | escape `_{}$\` → macro table; opt `RaTeX::render` |
+| RtfFormatter | `rtf` | medium | F2 | none | RTF `{\colortbl}` + control words; style → macro |
+| SvgFormatter | `svg` | medium | F3 | opt: `svg` | token bounding boxes; CSS style injection |
+| Bmp/Gif/Img/Jpg/Png | `bmp`/`gif`/`img`/`jpg` | hard | F4 | opt: `image` | pixel rendering + layout; **permanent bridge** for `bmp`/`gif` (low demand) |
+
+**Phase summary**:
+
+| phase | formatters | effort | status | notes |
+| ----- | ---: | ------ | ------ | ----- |
+| **F0** — trivial (3) | text, raw, testcase | trivial | Not started | 0 deps; test harness friendly |
+| **F1** — terminal ANSI (6) | terminal, terminal256, terminal16m, irc, bbcode, (+ pango in F2) | low–med | Not started | 5 formatters share color lut infrastructure; one engine pass |
+| **F2** — markup (4) | groff, pango, latex, rtf | low–med | Not started | latex: opt `RaTeX` for full TeX; fallback escape+template |
+| **F3** — vector (1) | svg | medium | Not started | opt `svg` crate or manual builder |
+| **F4** — raster (5) | bmp, gif, img, jpg, png | hard | **bridge-only** | `image` crate optional; low demand, heavy deps → keep on bridge |
+
+**Recommendation**: port F0–F2 incrementally (low-effort, high coverage). F3 when SVG CLI use case emerges. **F4 permanently on bridge** — raster rendering is out of scope for text highlighting and pulls in heavy image processing deps.
+
+**Definition of done (formatter)**:
+1. Implement `Formatter` trait in `src/formatters/{name}.rs`
+2. Register in `formatters/registry.rs` (both getter + aliasing)
+3. Byte-parity tests vs Pygments output for ≥3 representative token streams
+4. `cargo build -p pygmentsrs`, `cargo test -p pygmentsrs --lib`, `make test-python` green
+5. Add to `docs/compat.md` table; update tracking table below
+
+---
+
+## Formatter implementation plan (Phase F)
+
+### F0 — Trivial formatters (text, raw, testcase) — 3 formatters
+
+**No external dependencies. Pure Rust string builders.**
+
+#### `NullFormatter` (`text`)
+- **I/O**: consume tokens, emit `.text` for each token, strip leading/trailing whitespace at EOF
+- **Complexity**: ~30 lines
+- **Test**: verify whitespace handling matches Pygments
+
+#### `RawTokenFormatter` (`raw`, `tokens`)  
+- **I/O**: consume tokens, emit `repr(token)` (tab-sep: type, string value)
+- **Complexity**: ~40 lines
+- **Test**: byte-parity with Pygments repr format (includes escape codes for special chars)
+
+#### `TestcaseFormatter` (`testcase`)
+- **I/O**: consume tokens, emit Rust unit-test boilerplate
+- **Complexity**: ~50 lines
+- **Test**: verify generated code compiles + contains expected token type names
+
+**ROI**: High. These are self-contained, improve test harness independence, and ship with zero cost.
+
+---
+
+### F1 — Terminal ANSI formatters (terminal, terminal256, terminal16m, irc, bbcode) — 5 formatters
+
+**Shared infrastructure: color lookup tables (RGB ↔ ANSI/IRC/BBCode)**
+
+#### Build once, use 5 times
+
+```rust
+// lib/ansi.rs
+pub struct ColorLut {
+    // 16-color ANSI (3-bit + bright bit)
+    ansi_16: [(u8, u8, u8); 16],
+    // 256-color cube: 6×6×6 RGB cube + grayscale
+    ansi_256: [(u8, u8, u8); 256],
+    // IRC mIRC color table (16 standard codes)
+    irc: [&str; 16],
+    // BBCode hex lookup
+}
+
+impl ColorLut {
+    fn rgb_to_ansi_16(&self, r: u8, g: u8, b: u8) -> u8 { /* nearest neighbor */ }
+    fn rgb_to_ansi_256(&self, r: u8, g: u8, b: u8) -> u8 { /* cube lookup + grayscale fallback */ }
+    fn rgb_to_irc(&self, r: u8, g: u8, b: u8) -> u8 { /* nearest in 16 mIRC colors */ }
+}
+```
+
+#### `TerminalFormatter` (`terminal`)
+- **I/O**: tokens → ANSI escape codes (3-bit color, bold/italic/underline via SGR)
+- **Complexity**: ~80 lines (tokentype → SGR, ColorLut calls)
+- **Shared**: ColorLut (RGB → 16-color)
+- **Test**: byte-parity with Pygments on 5 token streams (includes style overrides)
+
+#### `Terminal256Formatter` (`terminal256`)
+- **I/O**: tokens → 256-color ANSI codes (6×6×6 RGB cube + grayscale)
+- **Complexity**: ~90 lines (tokentype → SGR, ColorLut calls)
+- **Shared**: ColorLut (RGB → 256-color), **Reuse SGR logic** from TerminalFormatter
+- **Test**: verify color rounding (e.g. `#FF6600` → nearest 256 index)
+
+#### `TerminalTrueColorFormatter` (`terminal16m`)
+- **I/O**: tokens → 24-bit truecolor ANSI codes (ESC[38;2;R;G;Bm)
+- **Complexity**: ~60 lines (trivial — direct RGB, no lookup)
+- **Shared**: None (RGB passed through directly)
+- **Test**: verify 24-bit RGB escape format
+
+#### `IRCFormatter` (`irc`)
+- **I/O**: tokens → mIRC color codes (\x03NN)
+- **Complexity**: ~70 lines
+- **Shared**: ColorLut (RGB → mIRC 16-color index)
+- **Test**: byte-parity on IRC chat-like output
+
+#### `BBCodeFormatter` (`bbcode`)
+- **I/O**: tokens → `[color=#RRGGBB][bold]…[/bold][/color]` markup
+- **Complexity**: ~80 lines
+- **Shared**: None (hex pass-through)
+- **Test**: verify tag nesting order
+
+**Infrastructure cost**: ~150 lines for ColorLut (one-time); **formatters add ~80 lines each**.
+
+**ROI**: Very high. ANSI trio is heavily used in CLI/CI environments. One shared LUT serves all.
+
+---
+
+### F2 — Markup formatters (groff, pango, latex, rtf) — 4 formatters
+
+#### `GroffFormatter` (`groff`)
+- **I/O**: tokens → troff escape sequences (`.ft`, `.nr`, `.defcolor`)
+- **Complexity**: ~110 lines
+- **Dependencies**: none
+- **Color mapping**: RGB → troff `.defcolor` names (auto-allocate 0–1024 slots)
+- **Test**: verify `.ft` font changes match token style, color index consistency
+- **Notes**: Groff is a rarely-used backend; lower priority within F2
+
+#### `PangoMarkupFormatter` (`pango`)
+- **I/O**: tokens → Pango markup (`<span color='#RRGGBB' weight='bold'>…</span>`)
+- **Complexity**: ~90 lines
+- **Dependencies**: none
+- **Color**: pass-through hex; weight/style via XML attributes
+- **Test**: verify XML structure, color format (#RRGGBB), attribute escaping
+- **Notes**: Often paired with GTK+ rendering; moderate demand
+
+#### `LatexFormatter` (`latex`)
+- **I/O**: tokens → LaTeX macros (escape `_`, `{`, `}`, `$`, `\`; map style → `\textbf{}`, `\textit{}`, color → `\textcolor{name}{}`)
+- **Complexity**: ~150 lines (escape logic + macro table)
+- **Dependencies**: **optional** `ratex` (for full TeX rendering); fallback string template
+- **Variant A (escape + template)**: ~150 lines Rust, zero deps. No live rendering; just produces LaTeX source. Suitable for `latexmk` pipelines.
+  ```rust
+  // e.g. escape + macro table
+  fn escape_latex(s: &str) -> String { /* _ -> \_, $ -> \$, etc. */ }
+  fn style_to_latex(token: TokenType) -> &str { match … { Bold => r"\textbf", … } }
+  ```
+- **Variant B (RaTeX integration)**: ~50 lines Rust + `ratex` dep. Render tokens → PDF/SVG on demand.
+  ```rust
+  use ratex::{render_latex, RenderOptions};
+  let tex_src = build_latex_document(&tokens);
+  let pdf = render_latex(&tex_src, RenderOptions::pdf())?;
+  ```
+- **Decision**: Start with **Variant A** (escape + template); optionally gate `RaTeX` behind feature `ratex-render` for V2.
+- **Test**: byte-parity on LaTeX-safe token streams; verify escape sequences
+
+#### `RtfFormatter` (`rtf`)
+- **I/O**: tokens → RTF (`{\colortbl;...}` + `{\*\fonttbl}`, tokens as `\cf1\b text\b0`)
+- **Complexity**: ~140 lines (color table generation, RTF syntax)
+- **Dependencies**: none
+- **Color mapping**: allocate color slots in RTF preamble, map token colors to indices
+- **Test**: verify RTF structure (header, color table, body); open in Word/LibreOffice
+- **Notes**: RTF is aging but still used in some legacy workflows; moderate complexity but self-contained
+
+**Infrastructure cost**: ~100 lines for shared style-→-macro mapping; **formatters add ~90–150 lines each**.
+
+**ROI**: Medium. LaTeX is high-value (Sphinx use); RTF/Pango lower demand but straightforward.
+
+---
+
+### F3 — Vector formatter (svg) — 1 formatter
+
+#### `SvgFormatter` (`svg`)
+- **I/O**: tokens → `<svg>` with `<text>` elements, CSS `<style>` for token colors
+- **Complexity**: ~180 lines (layout bounding boxes, monospace font metrics)
+- **Dependencies**: optional `svg` crate (or manual XML builder)
+- **Layout**: 
+  - Monospace font assumption (or accept `font-width` option)
+  - Track line height, max line width
+  - Position each token as `<text x='..' y='..'>`
+  - Group by line or emit runs
+- **Color mapping**: token type → CSS class → `.token-type { color: #RRGGBB; }`
+- **Test**: verify SVG structure, validate with `xmllint`, render in browser
+- **Notes**: Less common than HTML for web (HTML formatter preferred); occasional use in documentation generators
+
+**ROI**: Low–medium. Niche use case; implement when SVG CLI demand appears.
+
+---
+
+### F4 — Raster formatters (bmp, gif, img, jpg, png) — 5 formatters
+
+**Status: Bridge-only (permanent). Rationale**:
+- Heavy `image` crate dependency (300+ KB; pulls in `tiff`, `jpeg`, `deflate`)
+- Require font rasterization (either `fontdue`, `rusttype`, or system fonts)
+- Low demand in typical code-highlighting workflows (HTML/SVG/ANSI dominate)
+- PIL in Pygments is already a "convenience" formatter, not core
+
+**Fallback**: users who need raster can pipe HTML to `wkhtmltoimage` or use `pandoc` with wkhtmltopdf.
+
+**Decision**: If raster demand surfaces, gate behind feature `raster-formatters` + `image` dep, implement later. For now, bridge serves these via PyO3.
+
+---
+
+## Formatter infrastructure (shared, all phases)
+
+### `Formatter` trait (core)
+```rust
+pub trait Formatter {
+    fn format(&self, tokens: &[(TokenType, &str)], writer: &mut dyn std::io::Write) -> std::io::Result<()>;
+}
+```
+
+### Style engine (shared by F1–F2)
+```rust
+// lib/style.rs
+pub struct Style {
+    pub color: Option<(u8, u8, u8)>,        // RGB
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub bgcolor: Option<(u8, u8, u8)>,
+}
+
+impl Style {
+    pub fn from_token(token: TokenType) -> Self { /* pygments token type → style */ }
+}
+```
+
+### Color utilities
+```rust
+// lib/color.rs
+pub fn rgb_to_ansi16(r: u8, g: u8, b: u8) -> u8;
+pub fn rgb_to_ansi256(r: u8, g: u8, b: u8) -> u8;
+pub fn rgb_to_hex(r: u8, g: u8, b: u8) -> String;
+```
+
+---
+
+## Updated tracking table
+
+| date | native lexers | native formatters | notes |
+| ---- | -----: | -----: | ------ |
+| (init) | 13 | 1 | html only |
+| Phase A | 37 | 1 | – |
+| Phase B | 59 | 1 | – |
+| Phase C | 72 | 1 | – |
+| Phase D (bulk) | 449 | 1 | – |
+| Phase E4 (dispatch) | **451** | 1 | Lexers complete ✅ |
+| **Phase F0** | 451 | **4** | text, raw, testcase + html = 4 |
+| **Phase F1** | 451 | **9** | + terminal trio + irc + bbcode = 9 |
+| **Phase F2** | 451 | **13** | + groff, pango, latex, rtf = 13 |
+| **Phase F3** | 451 | **14** | + svg = 14 |
+| **Phase F4** | 451 | **14** | bmp/gif/jpg/png bridge-only (no change) |
 
 ## Tooling status & improvements
 
@@ -354,18 +598,22 @@ Future tool/engine work (gated by Phase E need):
 
 ## Tracking
 
-| date | native lexers | transpilable remaining | native formatters | tests passing |
-| ---- | ------------: | ---------------------: | ----------------: | --------: |
-| (init) | 13 | 355 | 1 | – |
-| Phase A | 37 | 331 | 1 | – |
-| Phase B Batch 1 | 51 | 317 | 1 | – |
-| Phase B Batch 2 | 59 | 309 | 1 | – |
-| Phase C Batch 1 | 72 | 296 | 1 | – |
-| Phase D (engine + bulk) | 449 | 10 | 1 | 280 |
-| Final transpilable batch | 447 | 0 | 1 | 322 |
-| E4 dispatch + hand-craft (json_ld, yaml_ld) | **451** | **0** | 1 | **341** ✅ |
+| date | native lexers | transpilable remaining | native formatters | tests passing | status |
+| ---- | ------------: | ---------------------: | ----------------: | --------: | ------ |
+| (init) | 13 | 355 | 1 | – | bootstrap |
+| Phase A | 37 | 331 | 1 | – | high-value docs |
+| Phase B Batch 1 | 51 | 317 | 1 | – | config/markup |
+| Phase B Batch 2 | 59 | 309 | 1 | – | – |
+| Phase C Batch 1 | 72 | 296 | 1 | – | long tail |
+| Phase D (engine + bulk) | 449 | 10 | 1 | 280 | regexlexer bulk |
+| Final transpilable batch | 447 | 0 | 1 | 322 | transpilable exhausted |
+| **Phase E4** (dispatch + hand-craft) | **451** | **0** | 1 | **341** ✅ | Lexers complete |
+| **Phase F0** | 451 | 0 | **4** | TBD | text, raw, testcase, html |
+| **Phase F1** | 451 | 0 | **9** | TBD | terminal trio, irc, bbcode |
+| **Phase F2** | 451 | 0 | **13** | TBD | groff, pango, latex, rtf |
+| **Phase F3** | 451 | 0 | **14** | TBD | svg |
+| **Phase F4** | 451 | 0 | **14** | TBD | bmp/gif/jpg/png bridge-only |
 
-_451 = 436 generated modules + 4 built-in (text/python/json/diff) + 2 hand-crafted (json_ld/yaml_ld)
-+ 9 other hand-crafted (ini, properties, toml, gettext, darcs, vctreestatus, groff, bash, cmake).
-The `adl` and `csharp` exclusions bring the generated count from 448 → 436. `adl` is now mitigated
-with NFA-safe rewrite._
+_Lexers: 451 total (436 generated + 4 built-in + 2 hand-crafted markdown/rst/tid + 9 hand-crafted pre-Phase A).
+`adl` excluded from generation but now mitigated via NFA-safe rewrite. `csharp` remains excluded.
+Formatters: phases F0–F2 targeted for port; F3 optional (SVG low demand); F4 permanent bridge (raster deps)._

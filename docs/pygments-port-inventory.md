@@ -16,7 +16,7 @@ pinned vendored Pygments. Re-run after an upstream bump.
 - **Native breakdown**: 13 built-in + 436 transpiled + 61 E1 DelegatingLexer + 2 hand-crafted = 512 total (700+ aliases)
 - **Transpilable remaining**: **0** — all transpilable lexers are now ported.
 - **Bridge-only**: 86 (non_regex: ~50, bridge_callback: ~36)
-- **Formatters**: 18 total, **1 native** (`html`).
+- **Formatters**: 18 total, **15 native** (html, text, raw, tokens, testcase, terminal*, 256, 16m, irc, bbcode, groff, groff-256, pango, latex, rtf, svg), **3 bridge-only** (bmp, gif, jpg, png, img — Phase F4, deferred).
 - **Standalone build**: `cargo build -p pygmentsrs --no-default-features` compiles
   with zero CPython dependency (`python-bridge` feature).
 - Gates: `cargo test -p pygmentsrs` + `tests/test_pygments_generated_lexers.py`
@@ -487,15 +487,27 @@ impl ColorLut {
 
 ### F4 — Raster formatters (bmp, gif, img, jpg, png) — 5 formatters
 
-**Status: Bridge-only (permanent). Rationale**:
+**Status: Bridge-only (Phase F5+, deferred). Rationale**:
 - Heavy `image` crate dependency (300+ KB; pulls in `tiff`, `jpeg`, `deflate`)
 - Require font rasterization (either `fontdue`, `rusttype`, or system fonts)
 - Low demand in typical code-highlighting workflows (HTML/SVG/ANSI dominate)
 - PIL in Pygments is already a "convenience" formatter, not core
 
-**Fallback**: users who need raster can pipe HTML to `wkhtmltoimage` or use `pandoc` with wkhtmltopdf.
+**Fallback strategies**:
+1. **Pipe to external tools**: `wkhtmltoimage`, `pandoc`, ImageMagick `convert`
+2. **PyO3 bridge**: If Python + Pillow available, use upstream `ImageFormatter`
+3. **RaTeX V2 (future)**: Optional RaTeX rendering for LaTeX → PNG (Phase F3.1+)
 
-**Decision**: If raster demand surfaces, gate behind feature `raster-formatters` + `image` dep, implement later. For now, bridge serves these via PyO3.
+**Future decision**: If raster demand surfaces, gate behind feature `ratex-png` (use RaTeX) or `raster-formatters` + `image` crate, implement later. For now, bridge serves these via PyO3 (if `python-bridge` feature enabled).
+
+**Feature gates** (Phase F3.1+, optional):
+- `ratex-svg` — RaTeX LaTeX → SVG rendering
+- `ratex-png` — RaTeX LaTeX → PNG rasterization  
+- `ratex-pdf` — RaTeX LaTeX → PDF rendering
+- `ratex-fonts` — Embed KaTeX fonts (~5 MB)
+- `ratex-full` — All RaTeX features
+
+See [PYGMENTS_FEATURE_FLAGS.md](./PYGMENTS_FEATURE_FLAGS.md) for detailed feature documentation.
 
 ---
 

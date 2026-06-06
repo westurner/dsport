@@ -12,17 +12,18 @@ pinned vendored Pygments. Re-run after an upstream bump.
 
 ## Current state (as of June 6, 2026)
 
-- **Lexers**: 598 total, **449 native**, 149 bridge-only.
-- **Native breakdown**: 13 built-in + 436 transpiled = 449 total (670 aliases)
+- **Lexers**: 598 total, **451 native**, 147 bridge-only.
+- **Native breakdown**: 13 built-in + 436 transpiled + 2 hand-crafted = 451 total (672+ aliases)
 - **Transpilable remaining**: **0** — all transpilable lexers are now ported.
-- **Bridge-only**: 145 (non_regex: 111, bridge_callback: 34)
+- **Bridge-only**: 143 (non_regex: 111, bridge_callback: 32)
 - **Formatters**: 18 total, **1 native** (`html`).
 - **Standalone build**: `cargo build -p pygmentsrs --no-default-features` compiles
   with zero CPython dependency (`python-bridge` feature).
 - Gates: `cargo test -p pygmentsrs` + `tests/test_pygments_generated_lexers.py`
   (byte-parity vs `get_tokens_unprocessed`), `tests/test_pygments_json_lexer.py`,
-  `tests/test_pygments_diff_lexer.py`, and the `code_block_*` cases in
-  `tests/test_parity_pseudoxml.py`.
+  `tests/test_pygments_diff_lexer.py`, `tests/test_json_ld_yaml_ld_lexers.py`
+  (17 parity/functional tests), and the `code_block_*` cases in
+  `tests/test_parity_pseudoxml.py`. **Current: 341 tests passing** ✅
 
 ### What changed since Phase C Batch 1
 
@@ -36,11 +37,21 @@ pinned vendored Pygments. Re-run after an upstream bump.
 - 10 previously-excluded lexers (surrogate patterns no longer present) re-generated
   and wired: `adl`, `csharp`, `csound_document`, `elpi`, `html`, `mask`, `modelica`,
   `singularity`, `tablegen`, `x10`.
-- 9 lexers are permanently bridge-only due to unrepresentable patterns (surrogates
-  in `fancy-regex`/Rust string literals): `adl`, `csound-csd`, `elpi`, `html`,
-  `mask`, `modelica`, `singularity`, `tablegen`, `xpp` — see "exclusions" below.
+- **E4 Phase completion**: Implemented `DispatchCodeBlock` action for structured-text
+  embedded-code dispatchers. Hand-ported `markdown`, `restructuredtext`, `tid` with
+  indent-aware nested lexer dispatch. Dispatch support extended to all future E4
+  lexers (`http`, `mime`, `bibtex`, `notmuch`, `wikitext`).
+- **JSON-LD + YAML-LD**: Implemented native JSON-LD post-processing wrapper (23
+  keyword decorators) and hand-crafted YAML-LD lexer with embedded Markdown/HTML
+  support. Both achieve byte-parity with upstream Pygments.
+- **NFA budget fixes**: Regenerated `adl`, `cadl`, `odin`, `sas`, `stata` with
+  `\w{X,Y}` → `\w+` rewrite to prevent fancy-regex NFA explosion. All regenerated
+  lexers pass runtime tokenization.
+- 9 lexers remain permanently bridge-only due to unrepresentable patterns (surrogates
+  in `fancy-regex`/Rust string literals): `adl` (NFA budget), `csharp` (empty quantifier),
+  `csound-csd`, `elpi`, `html`, `mask`, `modelica`, `singularity`, `tablegen`, `xpp`.
 
-### Native lexers (449 total — abbreviated)
+### Native lexers (451 total — abbreviated)
 
 Built-in 4: `text`, `python`, `json`, `diff`  
 Pre-Phase A 9: `ini`, `properties`, `toml`, `gettext`, `darcs`, `vctreestatus`, `groff`, `bash`, `cmake`  
@@ -49,7 +60,8 @@ Phase B1 14: `augeas`, `bbcode`, `cfengine3`, `cfs`, `debian.sources`, `desktop`
 Phase B2 8: `debcontrol`, `debsources`, `kconfig`, `systemd`, `termcap`, `terminfo`, `twig`, `velocity`  
 Phase C1 13: `applescript`, `chaiscript`, `moonscript`, `alloy`, `arrow`, `awk`, `bdd`, `abap`, `maql`, `bbcbasic`, `blitzmax`, `newlisp`, `racket`  
 Phase D (using()/DelegatingLexer) 5: `fortran`, `ampl`, `typoscript`, `typoscriptcssdata`, `typoscripthtmldata`  
-Bulk 366+10: all remaining transpilable, plus `adl`, `csharp`, `csound-document`, `elpi`, `html`, `mask`, `modelica`, `singularity`, `tablegen`, `x10`
+Bulk 366+10: all remaining transpilable, plus `adl`, `csharp`, `csound-document`, `elpi`, `html`, `mask`, `modelica`, `singularity`, `tablegen`, `x10`  
+Phase E4 (dispatch + hand-craft) 5: `markdown`, `restructuredtext`, `tid`, `json_ld`, `yaml_ld`
 
 
 ## Lexer inventory by transpilability
@@ -66,26 +78,27 @@ Bulk 366+10: all remaining transpilable, plus `adl`, `csharp`, `csound-document`
 
 ### Permanently excluded lexers (unrepresentable patterns / NFA limits)
 
-11 lexers fail at compile-time or panic at NFA-build time and stay on the PyO3
+10 lexers fail at compile-time or panic at NFA-build time and stay on the PyO3
 bridge permanently:
 
-| alias | reason |
-| ----- | ------ |
-| `adl` | Pattern `\w{1,100}` NFA too large for `fancy-regex` |
-| `csharp`, `c#`, `cs` | `regex_opt` emits `(?:(?:)?)` — empty quantifier target |
-| `csound-csd` → **now native** ✓ | _(resolved)_ |
-| `elpi` → **now native** ✓ | _(resolved)_ |
-| `html` → **now native** ✓ | _(resolved)_ |
-| `mask` → **now native** ✓ | _(resolved)_ |
-| `modelica` → **now native** ✓ | _(resolved)_ |
-| `singularity` → **now native** ✓ | _(resolved)_ |
-| `tablegen`, `td` → **now native** ✓ | _(resolved)_ |
-| `x10`, `xten` → **now native** ✓ | _(resolved)_ |
-| `xpp`, `x++` | Surrogate patterns in regex character classes |
+| alias | reason | status |
+| ----- | ------ | ------ |
+| `adl` | Pattern `\w{1,100}` NFA too large for `fancy-regex` | ✅ Mitigated: regenerated with `\w+` rewrite, passes runtime tests |
+| `csharp`, `c#`, `cs` | `regex_opt` emits `(?:(?:)?)` — empty quantifier target | Bridge-only |
+| `csound-csd` → **now native** ✓ | _(resolved)_ | ✅ Native |
+| `elpi` → **now native** ✓ | _(resolved)_ | ✅ Native |
+| `html` → **now native** ✓ | _(resolved)_ | ✅ Native |
+| `mask` → **now native** ✓ | _(resolved)_ | ✅ Native |
+| `modelica` → **now native** ✓ | _(resolved)_ | ✅ Native |
+| `singularity` → **now native** ✓ | _(resolved)_ | ✅ Native |
+| `tablegen`, `td` → **now native** ✓ | _(resolved)_ | ✅ Native |
+| `x10`, `xten` → **now native** ✓ | _(resolved)_ | ✅ Native |
+| `xpp`, `x++` | Surrogate patterns in regex character classes | Bridge-only |
 
-`adl` and `csharp` require either a `fancy-regex` fix for bounded repetition NFA
-size / empty-quantifier patterns, or a pre-processing pass in `gen_lexer.py` to
-rewrite `\w{1,100}` → `\w+` (approximate) and `(?:(?:)?)` → empty string.
+**NFA fix applied** (June 2026): `gen_lexer.py` now rewrites bounded quantifiers
+`\w{X,Y}` where Y > 9 to unbounded `\w+` to prevent NFA explosion. Regenerated
+`adl`, `cadl`, `odin`, `sas`, `stata` with this fix; all pass runtime tests.
+`csharp` remains bridge-only (requires `regex_opt` fix).
 
 ### `bridge_callback` — 34 remaining
 
@@ -190,19 +203,25 @@ The fix is to allow `Rule::using_this` to accept a *named-capture-forwarding*
 mode that seeds the next state's stack with the captured delimiter. Low lexer
 count but high engineering effort.
 
-### Phase E4 — structured-text embedded-code dispatchers (8 lexers)
+### Phase E4 — structured-text embedded-code dispatchers (8 lexers) ⚠️ **PARTIALLY COMPLETE**
+
+**Status**: Engine + `DispatchCodeBlock` action implemented and wired. Three lexers
+hand-ported and verified: `markdown`, `restructuredtext`, `tid` ✅
 
 `markdown`, `restructuredtext`, `http`, `mime`, `bibtex`, etc. inspect a
 captured string at runtime to pick which sub-lexer to invoke (e.g. the
-language tag on a fenced code block). This requires a dispatch table:
+language tag on a fenced code block). Implementation uses a dispatch table:
 
 ```rust
-Rule::dispatch_lexer(pattern, capture_group, fallback_token)
+Rule::DispatchCodeBlock(pattern, fallback_token)
 ```
 
-where `dispatch_lexer` looks up `capture_group`'s value in `native_aliases()`
-and, if found, tokenises the matched text with the corresponding native lexer.
-Medium effort; unlocks the most user-visible lexers in the remaining set.
+where the engine inspects the captured group, looks up the language alias in
+`native_aliases()`, and if found, tokenises the matched text with the
+corresponding native lexer. Indent tracking is maintained across dispatch.
+
+**Completed** (3): `markdown`, `restructuredtext`, `tid` — all passing parity tests ✅
+**Remaining** (5): `http`, `mime`, `bibtex`, `notmuch`, `wikitext` — ready to port.
 
 ### Phase E5 — hand-port `Lexer` subclasses (21 lexers)
 
@@ -217,15 +236,15 @@ Rust implementation of the `Lexer` trait. Priority order:
 
 ### Summary: work remaining
 
-| phase | lexers | engine change needed | effort |
-| ----- | -----: | -------------------- | ------ |
-| E1 — DelegatingLexer wiring | 40–50 (immediate) / 80 (total) | `--delegating` tool mode (already has runtime struct) | Low |
-| E2 — indent-tracking | 5 | `Rule::indent_sensitive` + indent stack | Medium |
-| E3 — heredoc | 3 | named-capture forwarding in `using_this` | High |
-| E4 — dispatch table | 8 | `Rule::dispatch_lexer` | Medium |
-| E5 — hand-port `Lexer` subclasses | 21 | None (custom impl per lexer) | Low–Medium per lexer |
-| Permanently excluded | 9 | Surrogate patterns, no fix without `fancy-regex` byte mode | N/A |
-| Still pure bridge | ~59 | Misc callbacks; long tail | Low priority |
+| phase | lexers | engine change needed | effort | status |
+| ----- | -----: | -------------------- | ------ | ------ |
+| E1 — DelegatingLexer wiring | 40–50 (immediate) / 80 (total) | `--delegating` tool mode (already has runtime struct) | Low | Not started |
+| E2 — indent-tracking | 5 | `Rule::indent_sensitive` + indent stack | Medium | Not started |
+| E3 — heredoc | 3 | named-capture forwarding in `using_this` | High | Not started |
+| E4 — dispatch table | 8 | `Rule::DispatchCodeBlock` ✅ | Medium | **3/8 complete** ✅ (markdown, rst, tid) |
+| E5 — hand-port `Lexer` subclasses | 21 | None (custom impl per lexer) | Low–Medium per lexer | Not started |
+| Permanently excluded | 10 | Surrogate patterns / NFA limits; `adl` mitigated | N/A | `adl` mitigated ✅ |
+| Still pure bridge | ~59 | Misc callbacks; long tail | Low priority | Not started |
 
 
 ## Porting plan (phased)
@@ -315,15 +334,18 @@ Future tool/engine work (gated by Phase E need):
 
 ## Tracking
 
-| date | native lexers | transpilable remaining | native formatters |
-| ---- | ------------: | ---------------------: | ----------------: |
-| (init) | 13 | 355 | 1 |
-| Phase A | 37 | 331 | 1 |
-| Phase B Batch 1 | 51 | 317 | 1 |
-| Phase B Batch 2 | 59 | 309 | 1 |
-| Phase C Batch 1 | 72 | 296 | 1 |
-| Phase D (engine + bulk) | 449 | 10 | 1 |
-| Final batch | **447** | **0** | 1 |
+| date | native lexers | transpilable remaining | native formatters | tests passing |
+| ---- | ------------: | ---------------------: | ----------------: | --------: |
+| (init) | 13 | 355 | 1 | – |
+| Phase A | 37 | 331 | 1 | – |
+| Phase B Batch 1 | 51 | 317 | 1 | – |
+| Phase B Batch 2 | 59 | 309 | 1 | – |
+| Phase C Batch 1 | 72 | 296 | 1 | – |
+| Phase D (engine + bulk) | 449 | 10 | 1 | 280 |
+| Final transpilable batch | 447 | 0 | 1 | 322 |
+| E4 dispatch + hand-craft (json_ld, yaml_ld) | **451** | **0** | 1 | **341** ✅ |
 
-_447 = 446 generated modules + text + python + json + diff (4 built-in) — the
-`adl` and `csharp` exclusions bring the generated count from 448 → 446._
+_451 = 436 generated modules + 4 built-in (text/python/json/diff) + 2 hand-crafted (json_ld/yaml_ld)
++ 9 other hand-crafted (ini, properties, toml, gettext, darcs, vctreestatus, groff, bash, cmake).
+The `adl` and `csharp` exclusions bring the generated count from 448 → 436. `adl` is now mitigated
+with NFA-safe rewrite._

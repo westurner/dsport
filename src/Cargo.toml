@@ -27,6 +27,7 @@ exclude = [
 [workspace.package]
 edition = "2024"
 license = "BSD-2-Clause"
+# Requires Rust 1.70+ for std::sync::OnceLock (used in pygmentsrs runtime lexer registry).
 rust-version = "1.85"
 
 [workspace.dependencies]

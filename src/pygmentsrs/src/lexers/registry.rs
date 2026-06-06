@@ -1,11 +1,44 @@
 //! Lexer alias → lexer instance resolution.
 //!
-//! Mirrors `pygments.lexers.get_lexer_by_name`. New lexers register
-//! their aliases by extending both [`get_lexer_by_name`] and
-//! [`native_aliases`] (the latter advertises which aliases the
-//! native path handles, so callers can decide whether to short-circuit
-//! a PyO3 hop).
+//! Mirrors `pygments.lexers.get_lexer_by_name`. This module implements a **hybrid lexer registry**
+//! that combines compile-time performance with runtime extensibility:
+//!
+//! ## Design
+//!
+//! - **Compile-time lexers** (`LEXER_MAP`): ~800 built-in lexers registered via a perfect hash function
+//!   (phf crate). These provide O(1) lookup with zero runtime overhead.
+//! - **Runtime lexers** (`RUNTIME_LEXERS`): Dynamically registered lexers (e.g., from plugins, Python
+//!   interop). Stored in a thread-safe `HashMap<&'static str, LexerConstructor>` behind `RwLock`.
+//!
+//! ## Access Pattern
+//!
+//! 1. [`get_lexer_by_name`] checks the built-in map first (fast, lock-free)
+//! 2. Falls back to the runtime registry if not found (minimal contention)
+//!
+//! ## Usage
+//!
+//! ```ignore
+//! use pygmentsrs::lexers::registry::{get_lexer_by_name, register_lexer};
+//!
+//! // Use a built-in lexer (O(1), no locks)
+//! let lexer = get_lexer_by_name("python")?;
+//!
+//! // Register a custom lexer at runtime (e.g., from a plugin)
+//! register_lexer("my-lang", || Box::new(MyLexer))?;
+//! let custom = get_lexer_by_name("my-lang")?;
+//!
+//! // Cannot override built-ins (safety guarantee)
+//! assert!(register_lexer("python", || Box::new(MyLexer)).is_err());
+//! ```
+//!
+//! ## Thread Safety
+//!
+//! - `get_lexer_by_name()` is lock-free for built-ins and uses a read-lock for runtime lexers
+//! - `register_lexer()` and `unregister_lexer()` acquire a write lock
+//! - Safe for concurrent use across threads
 
+use std::collections::HashMap;
+use std::sync::{OnceLock, RwLock};
 use crate::lexer::Lexer;
 use crate::lexers::delegating::*;
 use crate::lexers::diff::DiffLexer;
@@ -792,12 +825,159 @@ static LEXER_MAP: phf::Map<&'static str, LexerConstructor> = phf_map! {
     "zone" => || Box::new(generated::zone::ZoneLexer),
     "🔥" => || Box::new(generated::mojo::MojoLexer),
 };
-pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
-    LEXER_MAP.get(alias).map(|ctor| ctor())
+
+// Runtime-mutable registry for dynamically registered lexers (e.g., plugins, Python interop).
+// Initialized lazily on first use with zero overhead if never accessed.
+static RUNTIME_LEXERS: OnceLock<RwLock<HashMap<&'static str, LexerConstructor>>> = OnceLock::new();
+
+fn get_runtime_registry() -> &'static RwLock<HashMap<&'static str, LexerConstructor>> {
+    RUNTIME_LEXERS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-pub fn native_aliases() -> &'static [&'static str] {
-    &[
+/// Get a lexer by name, checking both compile-time and runtime registries.
+///
+/// **Performance**: O(1) for built-in lexers (perfect hash), O(1) average for runtime lexers.
+///
+/// # Arguments
+///
+/// * `alias` - Lexer name/alias (case-sensitive, e.g., "python", "json", "rust")
+///
+/// # Returns
+///
+/// `Some(Box<dyn Lexer>)` if the alias is registered, `None` otherwise.
+///
+/// # Examples
+///
+/// ```ignore
+/// // Get a built-in lexer (fast, lock-free)
+/// if let Some(lexer) = get_lexer_by_name("python") {
+///     let tokens = lexer.get_tokens("x = 42");
+/// }
+///
+/// // Get a dynamically registered lexer
+/// if let Some(lexer) = get_lexer_by_name("my-custom-lang") {
+///     // Use the lexer
+/// }
+/// ```
+pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
+    // Fast path: check compile-time phf map first (O(1), zero-copy)
+    if let Some(constructor) = LEXER_MAP.get(alias) {
+        return Some(constructor());
+    }
+    
+    // Fallback: check runtime registry for dynamically registered lexers
+    if let Ok(registry) = get_runtime_registry().read() {
+        if let Some(constructor) = registry.get(alias) {
+            return Some(constructor());
+        }
+    }
+    
+    None
+}
+
+/// Register a lexer at runtime (for plugins, Python interop, etc.).
+///
+/// Lexers registered here become available via [`get_lexer_by_name`] and appear in [`native_aliases`].
+/// Built-in lexer names cannot be overridden (to prevent accidental shadowing).
+///
+/// # Arguments
+///
+/// * `name` - Lexer alias to register (must have `'static` lifetime)
+/// * `constructor` - Closure that constructs a `Box<dyn Lexer>`
+///
+/// # Errors
+///
+/// Returns `Err("Cannot override built-in lexer")` if `name` is already a built-in alias.
+/// Returns `Err("Failed to acquire write lock...")` if the registry lock cannot be acquired.
+///
+/// # Thread Safety
+///
+/// This function acquires a write lock on the runtime registry. Multiple registrations
+/// may block each other briefly, but reads remain unaffected.
+///
+/// # Examples
+///
+/// ```ignore
+/// use pygmentsrs::lexers::registry::register_lexer;
+///
+/// struct MyCustomLexer;
+/// impl crate::lexer::Lexer for MyCustomLexer {
+///     // ...
+/// }
+///
+/// // Register a custom lexer
+/// register_lexer("my-lang", || Box::new(MyCustomLexer))?;
+///
+/// // Now it's available
+/// let lexer = get_lexer_by_name("my-lang")?;
+/// ```
+pub fn register_lexer(name: &'static str, constructor: LexerConstructor) -> Result<(), &'static str> {
+    // Prevent runtime registration from shadowing built-ins
+    if LEXER_MAP.contains_key(name) {
+        return Err("Cannot override built-in lexer");
+    }
+    
+    let mut registry = get_runtime_registry().write()
+        .map_err(|_| "Failed to acquire write lock on lexer registry")?;
+    
+    registry.insert(name, constructor);
+    Ok(())
+}
+
+/// Unregister a dynamically registered lexer.
+///
+/// Built-in lexers cannot be unregistered (they remain available for the lifetime of the program).
+///
+/// # Arguments
+///
+/// * `name` - Name of the lexer to unregister
+///
+/// # Returns
+///
+/// `Some(constructor)` if the lexer was dynamically registered and successfully removed.
+/// `None` if the alias is not found, is a built-in, or the write lock cannot be acquired.
+///
+/// # Examples
+///
+/// ```ignore
+/// use pygmentsrs::lexers::registry::{register_lexer, unregister_lexer, get_lexer_by_name};
+///
+/// // Register and then unregister
+/// register_lexer("temp-lang", || Box::new(MyLexer))?;
+/// assert!(get_lexer_by_name("temp-lang").is_some());
+///
+/// unregister_lexer("temp-lang");
+/// assert!(get_lexer_by_name("temp-lang").is_none());
+/// ```
+pub fn unregister_lexer(name: &str) -> Option<LexerConstructor> {
+    get_runtime_registry().write().ok()?.remove(name)
+}
+
+/// Advertise all available aliases (both built-in and runtime-registered).
+///
+/// This function returns the union of built-in lexer aliases and any dynamically registered ones.
+/// Callers can use this to decide whether to short-circuit a PyO3 hop to upstream Pygments.
+///
+/// # Returns
+///
+/// A `Vec` of all registered lexer aliases (both compile-time and runtime).
+///
+/// # Examples
+///
+/// ```ignore
+/// use pygmentsrs::lexers::registry::{native_aliases, register_lexer};
+///
+/// let aliases = native_aliases();
+/// assert!(aliases.contains(&"python"));  // Built-in
+/// assert!(aliases.contains(&"py"));      // Built-in
+///
+/// // After registering a custom lexer
+/// register_lexer("my-lang", || Box::new(MyLexer))?;
+/// let aliases = native_aliases();
+/// assert!(aliases.contains(&"my-lang")); // Now included
+/// ```
+pub fn native_aliases() -> Vec<&'static str> {
+    let mut aliases = vec![
         "text",
         "plain",
         "",
@@ -1587,5 +1767,227 @@ pub fn native_aliases() -> &'static [&'static str] {
         "td",
         "x10",
         "xten",
-    ]
+    ];
+    
+    // Include any dynamically registered aliases
+    if let Ok(registry) = get_runtime_registry().read() {
+        aliases.extend(registry.keys().copied());
+    }
+    
+    aliases
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::token;
+
+    /// Mock lexer for testing runtime registration.
+    struct MockLexer;
+
+    impl Lexer for MockLexer {
+        fn get_tokens(&self, _code: &str) -> Vec<(token::TokenType, String)> {
+            vec![(token::TEXT, String::from("mock"))]
+        }
+    }
+
+    #[test]
+    fn test_builtin_lexer_lookup() {
+        // Built-in lexers should be found via perfect hash
+        let python = get_lexer_by_name("python");
+        assert!(python.is_some(), "Built-in 'python' lexer should be found");
+
+        let json = get_lexer_by_name("json");
+        assert!(json.is_some(), "Built-in 'json' lexer should be found");
+
+        let rust = get_lexer_by_name("rust");
+        assert!(rust.is_some(), "Built-in 'rust' lexer should be found");
+    }
+
+    #[test]
+    fn test_unknown_lexer_not_found() {
+        // Unknown lexers should not be found
+        let unknown = get_lexer_by_name("definitely-not-a-real-lexer-xyz");
+        assert!(unknown.is_none(), "Unknown lexer should not be found");
+    }
+
+    #[test]
+    fn test_register_and_lookup_dynamic_lexer() {
+        // Register a custom lexer
+        let result = register_lexer("test-mock-lang", || Box::new(MockLexer));
+        assert!(result.is_ok(), "Registration should succeed");
+
+        // Should now be findable
+        let lexer = get_lexer_by_name("test-mock-lang");
+        assert!(lexer.is_some(), "Dynamically registered lexer should be found");
+
+        // Cleanup
+        unregister_lexer("test-mock-lang");
+    }
+
+    #[test]
+    fn test_prevent_builtin_override() {
+        // Should not be able to override a built-in
+        let result = register_lexer("python", || Box::new(MockLexer));
+        assert!(
+            result.is_err(),
+            "Should not be able to override built-in 'python'"
+        );
+        assert_eq!(
+            result.err(),
+            Some("Cannot override built-in lexer"),
+            "Error message should indicate built-in override attempt"
+        );
+    }
+
+    #[test]
+    fn test_unregister_lexer() {
+        // Register a lexer
+        let _ = register_lexer("temp-test-lang", || Box::new(MockLexer));
+        assert!(
+            get_lexer_by_name("temp-test-lang").is_some(),
+            "Lexer should exist after registration"
+        );
+
+        // Unregister it
+        let constructor = unregister_lexer("temp-test-lang");
+        assert!(
+            constructor.is_some(),
+            "unregister_lexer should return the constructor"
+        );
+
+        // Should no longer be found
+        let lexer = get_lexer_by_name("temp-test-lang");
+        assert!(
+            lexer.is_none(),
+            "Lexer should not be found after unregistration"
+        );
+    }
+
+    #[test]
+    fn test_unregister_nonexistent_lexer() {
+        // Unregistering a non-existent lexer should return None
+        let result = unregister_lexer("definitely-not-registered-xyz");
+        assert!(result.is_none(), "Unregistering non-existent lexer should return None");
+    }
+
+    #[test]
+    fn test_unregister_builtin_lexer() {
+        // Cannot unregister a built-in lexer
+        let result = unregister_lexer("python");
+        assert!(
+            result.is_none(),
+            "Cannot unregister built-in lexer (should return None)"
+        );
+
+        // Built-in should still be available
+        assert!(
+            get_lexer_by_name("python").is_some(),
+            "Built-in lexer should still be available"
+        );
+    }
+
+    #[test]
+    fn test_native_aliases_includes_builtins() {
+        // Should include common built-in aliases
+        let aliases = native_aliases();
+        assert!(aliases.contains(&"python"), "Should include 'python'");
+        assert!(aliases.contains(&"py"), "Should include 'py'");
+        assert!(aliases.contains(&"json"), "Should include 'json'");
+        assert!(aliases.contains(&"rust"), "Should include 'rust'");
+        assert!(aliases.contains(&"rs"), "Should include 'rs'");
+    }
+
+    #[test]
+    fn test_native_aliases_includes_dynamic() {
+        // Register a custom lexer
+        let _ = register_lexer("test-alias-check", || Box::new(MockLexer));
+
+        // Aliases should now include the custom lexer
+        let aliases = native_aliases();
+        assert!(
+            aliases.contains(&"test-alias-check"),
+            "Should include dynamically registered lexer"
+        );
+
+        // Cleanup
+        unregister_lexer("test-alias-check");
+    }
+
+    #[test]
+    fn test_multiple_dynamic_registrations() {
+        // Register multiple lexers
+        let _ = register_lexer("test-lang-a", || Box::new(MockLexer));
+        let _ = register_lexer("test-lang-b", || Box::new(MockLexer));
+
+        // Both should be findable
+        assert!(
+            get_lexer_by_name("test-lang-a").is_some(),
+            "First lexer should be found"
+        );
+        assert!(
+            get_lexer_by_name("test-lang-b").is_some(),
+            "Second lexer should be found"
+        );
+
+        // Both should be in aliases
+        let aliases = native_aliases();
+        assert!(aliases.contains(&"test-lang-a"));
+        assert!(aliases.contains(&"test-lang-b"));
+
+        // Cleanup
+        unregister_lexer("test-lang-a");
+        unregister_lexer("test-lang-b");
+    }
+
+    #[test]
+    fn test_register_duplicate_dynamic_lexer() {
+        // Register a lexer
+        let _ = register_lexer("test-duplicate", || Box::new(MockLexer));
+
+        // Try to register the same one again (should succeed, overwriting the old one)
+        let result = register_lexer("test-duplicate", || Box::new(MockLexer));
+        assert!(
+            result.is_ok(),
+            "Re-registering dynamic lexer should succeed (no shadowing issue)"
+        );
+
+        // Should still be findable
+        assert!(get_lexer_by_name("test-duplicate").is_some());
+
+        // Cleanup
+        unregister_lexer("test-duplicate");
+    }
+
+    #[test]
+    fn test_lexer_case_sensitivity() {
+        // Lexer names are case-sensitive
+        let python_lower = get_lexer_by_name("python");
+        let python_upper = get_lexer_by_name("PYTHON");
+
+        assert!(python_lower.is_some(), "Lowercase 'python' should be found");
+        assert!(
+            python_upper.is_none(),
+            "Uppercase 'PYTHON' should not be found (case-sensitive)"
+        );
+    }
+
+    #[test]
+    fn test_concurrent_access_simulation() {
+        // Simple test to ensure concurrent-like access doesn't panic
+        // (Note: This is not a true concurrency test; actual concurrency
+        // testing would require using std::thread or tokio)
+
+        // Register a lexer
+        let _ = register_lexer("test-concurrent", || Box::new(MockLexer));
+
+        // Simulate multiple accesses
+        for _ in 0..10 {
+            let _ = get_lexer_by_name("test-concurrent");
+            let _ = native_aliases();
+        }
+
+        // Unregister
+        let _ = unregister_lexer("test-concurrent");
+    }
 }

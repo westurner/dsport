@@ -462,6 +462,94 @@ GENERATED = {
             "\"hex\"=hex:01,02,03\n",
         ],
     ),
+    # --- Phase B batch 2: more configs, installers, templates ---
+    "debcontrol": (
+        "pygments.lexers.installers",
+        "DebianControlLexer",
+        [
+            "Package: foo\nVersion: 1.0-1\n",
+            "Maintainer: John Doe <john@example.com>\n",
+            "Architecture: amd64\nDepends: bar (>= 1.0)\n",
+            "Description: A package\n A longer description\n",
+            "# comment\nPriority: optional\n",
+        ],
+    ),
+    "debsources": (
+        "pygments.lexers.installers",
+        "SourcesListLexer",
+        [
+            "deb http://example.com/debian bullseye main contrib\n",
+            "# comment\ndeb-src http://example.com/debian bullseye main\n",
+            "deb http://security.debian.org bullseye-security main\n",
+            "deb [arch=amd64] http://example.com bullseye main\n",
+        ],
+    ),
+    "kconfig": (
+        "pygments.lexers.configs",
+        "KconfigLexer",
+        [
+            "menuconfig FOO\n  bool \"Enable Foo\"\n",
+            "# comment\nif FOO\n  config BAR\n    string \"Bar\"\nendif\n",
+            "depends on FOO && BAR\n",
+            "default y if X\n",
+            "help\n  This is help text\n",
+        ],
+    ),
+    "systemd": (
+        "pygments.lexers.configs",
+        "SystemdLexer",
+        [
+            "[Unit]\nDescription=Service\n",
+            "[Service]\nType=simple\nExecStart=/usr/bin/foo\n",
+            "Restart=always\nRestartSec=10\n",
+            "[Install]\nWantedBy=multi-user.target\n",
+            "# comment\nAfter=network.target\n",
+        ],
+    ),
+    "termcap": (
+        "pygments.lexers.configs",
+        "TermcapLexer",
+        [
+            "vt100|xterm:\n  :do=^J:\n  :up=\\E[A:\n",
+            "# comment\n:ce=\\E[K:\n",
+            ":cm=\\E[%i%d;%dH:\n",
+            ":cl=\\E[H\\E[2J:\n",
+            ":bs:\n",
+        ],
+    ),
+    "terminfo": (
+        "pygments.lexers.configs",
+        "TerminfoLexer",
+        [
+            "xterm|X11 terminal emulator\n",
+            "\tcols#80, lines#24,\n",
+            "\tcup=\\E[%i%p1%d;%p2%dH,\n",
+            "# comment\t\n",
+            "\tclear=\\E[H\\E[J,\n",
+        ],
+    ),
+    "twig": (
+        "pygments.lexers.templates",
+        "TwigLexer",
+        [
+            "{{ variable }}\n",
+            "{% if condition %}yes{% endif %}\n",
+            "{% for item in items %}{{ item }}{% endfor %}\n",
+            "{% block content %}default{% endblock %}\n",
+            "{{ name | upper }}\n",
+        ],
+    ),
+    "velocity": (
+        "pygments.lexers.templates",
+        "VelocityLexer",
+        [
+            "$variable\n",
+            "#if($condition)yes#end\n",
+            "#foreach($item in $items)$item#end\n",
+            "#define($macro)content#end\n",
+            "$!{name.toUpperCase()}\n",
+        ],
+    ),
 }
 
 

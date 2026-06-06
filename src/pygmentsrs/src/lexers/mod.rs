@@ -73,6 +73,18 @@ impl Lexer for DelegatingLexer {
 
 /// Splice language-token insertions back into a root token stream.
 ///
+/// Public wrapper used by the `DispatchCodeBlock` engine action for
+/// RST-style indented code blocks.  See the private `do_insertions`
+/// below for full documentation.
+pub fn do_insertions_owned(
+    insertions: Vec<(usize, Vec<(TokenType, String)>)>,
+    root_tokens: Vec<(TokenType, String)>,
+) -> Vec<(TokenType, String)> {
+    do_insertions(insertions, root_tokens)
+}
+
+/// Splice language-token insertions back into a root token stream.
+///
 /// `insertions` is a list of `(byte_index_in_buffered, lang_tokens)` pairs;
 /// `root_tokens` is the root-lexer output over the buffered plain text.
 /// The result merges both streams in order.

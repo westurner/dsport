@@ -612,6 +612,114 @@ def _re_escape_for_rust(s: str) -> str:
     return _re.escape(s)
 
 
+# ---------------------------------------------------------------------------
+# Dispatch code-block callback detection
+# ---------------------------------------------------------------------------
+# ``DispatchCodeBlockSpec`` fields:
+#   prefix       -- list of (group_index, token_const, skip_if_none)
+#   lang_group   -- capture group index whose text names the lexer
+#   code_groups  -- list of capture group indices forming the code string
+#   suffix       -- list of (group_index, token_const, skip_if_none)
+#   fallback     -- token const when no native lexer is found
+#   strip_indent -- capture group index whose length = indent to strip, or None
+#
+# Group indices are 1-based (matching the compiled regex group numbering).
+# These are hardcoded per callback because the general-case detection from
+# source inspection is fragile and these callbacks are small in number.
+#
+# Key: callback ``__qualname__``.
+_DISPATCH_SPECS: dict[str, dict] = {
+    # MarkdownLexer._handle_codeblock
+    #   group 1 = initial (```), 2 = lang, 4 = whitespace (opt), 5 = extra (opt),
+    #   6 = newline, 7 = code, 9 = terminator
+    "MarkdownLexer._handle_codeblock": {
+        "prefix": [
+            (1, "TokenType::new(&[\"Literal\", \"String\", \"Backtick\"])", False),
+            (2, "TokenType::new(&[\"Literal\", \"String\", \"Backtick\"])", False),
+            (4, "WHITESPACE", True),
+            (5, "TEXT", True),
+            (6, "WHITESPACE", False),
+        ],
+        "lang_group": 2,
+        "code_groups": [7],
+        "suffix": [
+            (9, "TokenType::new(&[\"Literal\", \"String\", \"Backtick\"])", False),
+        ],
+        "fallback": "STRING",
+        "strip_indent": None,
+    },
+    # TiddlyWiki5Lexer._handle_codeblock
+    #   group 1 = ```, 2 = lang, 3 = newline, 4 = code, 5 = ``` (terminator)
+    "TiddlyWiki5Lexer._handle_codeblock": {
+        "prefix": [
+            (1, "STRING", False),
+            (2, "STRING", False),
+            (3, "TEXT", False),
+        ],
+        "lang_group": 2,
+        "code_groups": [4],
+        "suffix": [
+            (5, "STRING", False),
+        ],
+        "fallback": "STRING",
+        "strip_indent": None,
+    },
+    # TiddlyWiki5Lexer._handle_cssblock — always dispatches to css
+    # We map it to using_lexer("css") since it always uses CSS.
+    # (handled separately below as a special case)
+    # RstLexer._handle_sourcecode
+    #   groups 1-7 = header tokens, 6 = lang, 8 = indent, 9+10+11 = code
+    "RstLexer._handle_sourcecode": {
+        "prefix": [
+            (1, "PUNCTUATION", False),
+            (2, "TEXT", False),
+            (3, "TokenType::new(&[\"Operator\", \"Word\"])", False),
+            (4, "PUNCTUATION", False),
+            (5, "TEXT", False),
+            (6, "KEYWORD", False),
+            (7, "TEXT", False),
+        ],
+        "lang_group": 6,
+        "code_groups": [8, 9, 10, 11],
+        "suffix": [],
+        "fallback": "STRING",
+        "strip_indent": 8,
+    },
+}
+
+
+def _dispatch_spec_to_rust(spec: dict, pat_lit: str, ns_expr: str) -> str:
+    """Render a ``_DISPATCH_SPECS`` entry as a ``Rule::dispatch_code_block(...)``
+    Rust expression."""
+    def ge(group, tok, skip) -> str:
+        skip_s = "true" if skip else "false"
+        return f"GroupEmit {{ group: {group}, token: {tok}, skip_if_none: {skip_s} }}"
+
+    prefix_items = ", ".join(ge(*g) for g in spec["prefix"])
+    suffix_items = ", ".join(ge(*g) for g in spec["suffix"])
+    code_groups_items = ", ".join(str(g) for g in spec["code_groups"])
+    strip = f"Some({spec['strip_indent']})" if spec["strip_indent"] is not None else "None"
+    spec_expr = (
+        f"DispatchCodeBlockSpec {{\n"
+        f"            prefix: vec![{prefix_items}],\n"
+        f"            lang_group: {spec['lang_group']},\n"
+        f"            code_groups: vec![{code_groups_items}],\n"
+        f"            suffix: vec![{suffix_items}],\n"
+        f"            fallback_token: {spec['fallback']},\n"
+        f"            strip_indent_from_group: {strip},\n"
+        f"        }}"
+    )
+    if ns_expr == "NewState::None":
+        return f"Rule::dispatch_code_block({pat_lit}, {spec_expr})"
+    return f"Rule::dispatch_code_block_to({pat_lit}, {spec_expr}, {ns_expr})"
+
+
+def get_dispatch_info(action) -> dict | None:
+    """Return dispatch spec dict if *action* is a known dispatch callback."""
+    qn = getattr(action, "__qualname__", "")
+    return _DISPATCH_SPECS.get(qn)
+
+
 def rule_expr(pattern: str, action, new_state, flags: int) -> str:
     ns = new_state_expr(new_state)
     has_ns = ns != "NewState::None"
@@ -674,6 +782,18 @@ def rule_expr(pattern: str, action, new_state, flags: int) -> str:
                 return f"Rule::bygroups_to({pat_lit}, {groups_lit}, {ns})"
             return f"Rule::bygroups({pat_lit}, {groups_lit})"
 
+    # Check for known dispatch code-block callbacks.
+    spec = get_dispatch_info(action)
+    if spec is not None:
+        return _dispatch_spec_to_rust(spec, pat_lit, ns)
+
+    # TiddlyWiki5 _handle_cssblock always dispatches to CSS.
+    qn = getattr(action, "__qualname__", "")
+    if qn == "TiddlyWiki5Lexer._handle_cssblock":
+        if has_ns:
+            return f'Rule::using_lexer_to({pat_lit}, "css", None, {ns})'
+        return f'Rule::using_lexer({pat_lit}, "css", None)'
+
     raise NotTranspilable(
         f"action {getattr(action, '__qualname__', action)!r} is not "
         f"a token / bygroups / default / using() (arbitrary callback)"
@@ -719,6 +839,7 @@ def transpile(module: str, classname: str, rust_name: str) -> str:
     rendered: dict[str, list[str]] = {}
     uses_new_state = False
     uses_group_action = False
+    uses_dispatch = False
     for state, rules in states.items():
         exprs: list[str] = []
         for matchfn, action, new_state in rules:
@@ -728,6 +849,8 @@ def transpile(module: str, classname: str, rust_name: str) -> str:
                 uses_new_state = True
             if "GroupAction::" in expr or "Rule::using_" in expr or "bygroups_g" in expr:
                 uses_group_action = True
+            if "DispatchCodeBlockSpec" in expr or "GroupEmit" in expr:
+                uses_dispatch = True
             # Inject keyword alternatives before the first plain-NAME rule.
             # Only inject once per state (track via a flag).
             if (
@@ -745,6 +868,9 @@ def transpile(module: str, classname: str, rust_name: str) -> str:
         engine_parts.insert(0, "NewState")
     if uses_group_action:
         engine_parts.insert(0, "GroupAction")
+    if uses_dispatch:
+        engine_parts.append("DispatchCodeBlockSpec")
+        engine_parts.append("GroupEmit")
     engine_imports = ", ".join(sorted(engine_parts))
 
     lines: list[str] = []
@@ -885,6 +1011,9 @@ def classify_lexer(module: str, classname: str) -> tuple[str, str]:
                     if get_using_info(a) is not None:
                         continue  # using(this/Other) inside bygroups: ok
                     return ("bridge_callback", f"bygroups group is callback: {getattr(a, '__qualname__', a)!r:.40}")
+                continue
+            # Known dispatch code-block callbacks are now transpilable.
+            if qn in _DISPATCH_SPECS or qn == "TiddlyWiki5Lexer._handle_cssblock":
                 continue
             return ("bridge_callback", qn or repr(action)[:40])
     return ("transpilable", f"{len(states)} states")

@@ -58,6 +58,39 @@ pub enum Action {
     UsingThis { state: Option<Vec<&'static str>> },
     /// Lex the whole match with another registered lexer (using(OtherLexer)).
     UsingLexer { alias: &'static str, state: Option<Vec<&'static str>> },
+    /// Code-block dispatch: emit prefix/suffix tokens, look up a lexer by the
+    /// value of `lang_group`, then lex the code assembled from `code_groups`
+    /// with that lexer (or emit as `fallback_token` if the alias is unknown).
+    /// Mirrors the `_handle_codeblock` callback pattern used by MarkdownLexer,
+    /// TiddlyWiki5Lexer, RstLexer, etc.
+    DispatchCodeBlock(Box<DispatchCodeBlockSpec>),
+}
+
+/// Spec for how to dispatch a fenced/directive code block.
+pub struct DispatchCodeBlockSpec {
+    /// Groups emitted as tokens before the code (in order).
+    pub prefix: Vec<GroupEmit>,
+    /// Capture group whose text is used as the lexer alias.
+    pub lang_group: usize,
+    /// Capture group indices concatenated (in order) to form the code string.
+    pub code_groups: Vec<usize>,
+    /// Groups emitted as tokens after the code (in order).
+    pub suffix: Vec<GroupEmit>,
+    /// Token type used when no native lexer is found for the lang.
+    pub fallback_token: TokenType,
+    /// When `Some(g)`, strip `len(group[g])` bytes from the start of every
+    /// line in the assembled code before lexing (handles RST-style indentation).
+    pub strip_indent_from_group: Option<usize>,
+}
+
+/// A single group→token emission within a [`DispatchCodeBlockSpec`].
+pub struct GroupEmit {
+    /// Capture group index (1-based).
+    pub group: usize,
+    /// Token type to emit.
+    pub token: TokenType,
+    /// If true, skip this emit when the capture group is empty / did not match.
+    pub skip_if_none: bool,
 }
 
 /// State-stack transition after a rule fires.
@@ -176,6 +209,26 @@ impl Rule {
     }
     pub fn group_using_lexer(alias: &'static str, state: Option<Vec<&'static str>>) -> Option<GroupAction> {
         Some(GroupAction::UsingLexer { alias, state })
+    }
+    /// Code-block dispatch rule (mirrors `_handle_codeblock` callback pattern).
+    ///
+    /// Emits `prefix` tokens, looks up a native lexer for `spec.lang_group`'s
+    /// value, lexes `spec.code_groups` as assembled code (with optional indent
+    /// stripping), then emits `suffix` tokens.  Falls back to
+    /// `spec.fallback_token` when no native lexer is found.
+    pub fn dispatch_code_block(pattern: &str, spec: DispatchCodeBlockSpec) -> Self {
+        Self {
+            regex: compile(pattern),
+            action: Some(Action::DispatchCodeBlock(Box::new(spec))),
+            new_state: NewState::None,
+        }
+    }
+    pub fn dispatch_code_block_to(pattern: &str, spec: DispatchCodeBlockSpec, ns: NewState) -> Self {
+        Self {
+            regex: compile(pattern),
+            action: Some(Action::DispatchCodeBlock(Box::new(spec))),
+            new_state: ns,
+        }
     }
 }
 
@@ -306,6 +359,91 @@ pub fn tokenize_with_stack<T: StateTable>(
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+                Action::DispatchCodeBlock(spec) => {
+                    // 1. Emit prefix tokens.
+                    for ge in &spec.prefix {
+                        if let Some(g) = m.get(ge.group) {
+                            let s = &text[g.start()..g.end()];
+                            if !(ge.skip_if_none && s.is_empty()) {
+                                push_merged(&mut out, ge.token, s);
+                            }
+                        }
+                    }
+                    // 2. Assemble the code string from code_groups.
+                    let mut code = String::new();
+                    for &cg in &spec.code_groups {
+                        if let Some(g) = m.get(cg) {
+                            code.push_str(&text[g.start()..g.end()]);
+                        }
+                    }
+                    // 3. Look up lexer by lang group and lex the code.
+                    let lang = m.get(spec.lang_group)
+                        .map(|g| text[g.start()..g.end()].trim().to_string())
+                        .unwrap_or_default();
+                    {
+                        use crate::lexers::registry::get_lexer_by_name;
+                        // SAFETY: `lang` is a local owned String; we leak it here so
+                        // it can be passed as `&'static str` to the registry.  This is
+                        // intentional — the leaked memory is bounded by the number of
+                        // distinct language tags encountered at run time (a small set),
+                        // and reclaiming it would require a global cache.
+                        let lang_leaked: &'static str =
+                            Box::leak(lang.clone().into_boxed_str());
+                        if let Some(lexer) = get_lexer_by_name(lang_leaked) {
+                            if let Some(indent_grp) = spec.strip_indent_from_group {
+                                // RST-style: the code has leading indentation on every
+                                // non-blank line.  We strip it before lexing but emit
+                                // Text tokens for each stripped prefix, mirroring
+                                // Pygments' `do_insertions` approach.
+                                let indent_size = m.get(indent_grp)
+                                    .map(|g| g.end() - g.start())
+                                    .unwrap_or(0);
+                                if indent_size > 0 {
+                                    // Build insertions: (byte_pos_in_stripped, Text, indent).
+                                    let mut stripped = String::new();
+                                    let mut insertions: Vec<(usize, String)> = Vec::new();
+                                    for line in code.split_inclusive('\n') {
+                                        if line.len() > indent_size {
+                                            insertions.push((stripped.len(), line[..indent_size].to_string()));
+                                            stripped.push_str(&line[indent_size..]);
+                                        } else {
+                                            // Short or blank line — keep as-is.
+                                            stripped.push_str(line);
+                                        }
+                                    }
+                                    // Splice indent Text tokens back into lexer output.
+                                    let code_tokens = lexer.get_tokens(&stripped);
+                                    let insertions_fmt: Vec<(usize, Vec<(TokenType, String)>)> =
+                                        insertions.into_iter().map(|(pos, s)| {
+                                            (pos, vec![(token::TEXT, s)])
+                                        }).collect();
+                                    for (t, v) in crate::lexers::do_insertions_owned(insertions_fmt, code_tokens) {
+                                        push_merged(&mut out, t, &v);
+                                    }
+                                } else {
+                                    for (nt, nv) in lexer.get_tokens(&code) {
+                                        push_merged(&mut out, nt, &nv);
+                                    }
+                                }
+                            } else {
+                                for (nt, nv) in lexer.get_tokens(&code) {
+                                    push_merged(&mut out, nt, &nv);
+                                }
+                            }
+                        } else {
+                            push_merged(&mut out, spec.fallback_token, &code);
+                        }
+                    }
+                    // 4. Emit suffix tokens.
+                    for ge in &spec.suffix {
+                        if let Some(g) = m.get(ge.group) {
+                            let s = &text[g.start()..g.end()];
+                            if !(ge.skip_if_none && s.is_empty()) {
+                                push_merged(&mut out, ge.token, s);
                             }
                         }
                     }

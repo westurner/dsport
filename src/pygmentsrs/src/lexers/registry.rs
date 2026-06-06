@@ -56,6 +56,9 @@ pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
         "termcap" => Some(Box::new(generated::termcap::TermcapLexer)),
         "terminfo" => Some(Box::new(generated::terminfo::TerminfoLexer)),
         "twig" => Some(Box::new(generated::twig::TwigLexer)),
+        "markdown" | "md" => Some(Box::new(generated::markdown::MarkdownLexer)),
+        "restructuredtext" | "rst" | "rest" => Some(Box::new(generated::restructuredtext::RestructuredtextLexer)),
+        "tid" => Some(Box::new(generated::tid::TidLexer)),
         "velocity" => Some(Box::new(generated::velocity::VelocityLexer)),
         // --- Phase A: high-value doc/Sphinx languages ---
         "rust" | "rs" => Some(Box::new(generated::rust::RustLexer)),
@@ -555,6 +558,12 @@ pub fn native_aliases() -> &'static [&'static str] {
         "termcap",
         "terminfo",
         "twig",
+        "markdown",
+        "md",
+        "restructuredtext",
+        "rst",
+        "rest",
+        "tid",
         "velocity",
         // --- Phase A ---
         "rust",

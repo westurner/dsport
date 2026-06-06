@@ -217,9 +217,12 @@ def rule_expr(pattern: str, action, new_state, flags: int) -> str:
 def transpile(module: str, classname: str, rust_name: str) -> str:
     mod = importlib.import_module(module)
     cls = getattr(mod, classname)
-    cls()  # trigger RegexLexerMeta.process_tokendef -> cls._tokens
+    # Instantiate and read `_tokens` from the *instance*: token-variant
+    # lexers (e.g. `CSharpLexer`, `NemerleLexer`) set `self._tokens` in
+    # `__init__` and never populate the class attribute.
+    inst = cls()  # triggers RegexLexerMeta.process_tokendef
     flags = cls.flags
-    states = cls._tokens
+    states = inst._tokens
 
     struct = "".join(p.capitalize() for p in rust_name.split("_")) + "Lexer"
     aliases = list(cls.aliases)
@@ -309,8 +312,8 @@ def classify_lexer(module: str, classname: str) -> tuple[str, str]:
         base = cls.__bases__[0].__name__ if isinstance(cls, type) else type(cls).__name__
         return ("non_regex", base)
     try:
-        cls()  # trigger process_tokendef
-        states = cls._tokens
+        inst = cls()  # trigger process_tokendef
+        states = inst._tokens
     except Exception as exc:  # noqa: BLE001
         return ("error", f"tokendef: {str(exc)[:60]}")
     for _state, rules in states.items():

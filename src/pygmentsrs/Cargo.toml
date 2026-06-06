@@ -3,7 +3,7 @@ name = "pygmentsrs"
 version = "0.0.1"
 edition.workspace = true
 # Pygments is licensed under BSD-2-Clause; see LICENSE.pygments at the workspace root.
-license-file = "../../LICENSE.pygments"
+license-file = "LICENSE.pygments"
 rust-version.workspace = true
 description = "Rust port of Pygments"
 keywords = ["syntax", "highlighting", "lexer", "formatter"]

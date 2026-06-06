@@ -4,12 +4,21 @@
 //! edited by hand. See `pygmentsrs/docs/compat.md` for the generation
 //! strategy and the list of bridge-only (non-transpilable) lexers.
 
+pub mod abap;
+pub mod alloy;
 pub mod apache;
+pub mod applescript;
+pub mod arrow;
 pub mod augeas;
+pub mod awk;
 pub mod bash;
+pub mod bbcbasic;
 pub mod bbcode;
+pub mod bdd;
+pub mod blitzmax;
 pub mod cfengine3;
 pub mod cfs;
+pub mod chaiscript;
 pub mod clojure;
 pub mod cmake;
 pub mod css;
@@ -32,9 +41,12 @@ pub mod julia;
 pub mod kconfig;
 pub mod lighttpd;
 pub mod lua;
+pub mod maql;
 pub mod matlab;
+pub mod moonscript;
 pub mod moz_hashpreproc;
 pub mod moz_percentpreproc;
+pub mod newlisp;
 pub mod ng2;
 pub mod nginx;
 pub mod pacmanconf;
@@ -44,6 +56,7 @@ pub mod powershell;
 pub mod properties;
 pub mod protobuf;
 pub mod r;
+pub mod racket;
 pub mod registry;
 pub mod rust;
 pub mod scala;

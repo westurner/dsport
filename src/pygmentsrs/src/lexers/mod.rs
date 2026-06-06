@@ -4,13 +4,18 @@
 //! Phase 0 ships only the `text` passthrough so end-to-end builds
 //! work; Phase 1 adds the Python lexer; Phase 2 widens the set.
 
+pub mod bibtex;
 pub mod diff;
 pub mod generated;
+pub mod http;
 pub mod json;
 pub mod json_ld;
+pub mod mime;
+pub mod notmuch;
 pub mod python;
 pub mod registry;
 pub mod text;
+pub mod wikitext;
 pub mod yaml_ld;
 
 use crate::lexer::Lexer;

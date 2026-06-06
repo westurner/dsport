@@ -77,7 +77,7 @@ test-cargo-sphinx:
 
 out_dir=.
 test-python:
-	cd src && set -o pipefail && .venv/bin/pytest --cov=docutilsrs/python --cov=sphinxdocrs/python --cov-report=term-missing:skip-covered --cov-report=markdown:"${out_dir}/coverage.md" --cov-report=xml:"${out_dir}/cov.xml" --junitxml="${out_dir}/pytest-results.xml" tests/
+	cd src && set -o pipefail && .venv/bin/pytest -ra --cov=docutilsrs/python --cov=sphinxdocrs/python --cov-report=term-missing:skip-covered --cov-report=markdown:"${out_dir}/coverage.md" --cov-report=xml:"${out_dir}/cov.xml" --junitxml="${out_dir}/pytest-results.xml" tests/
 	test -f "${out_dir}/src/pytest-results.xml"
 	test -f "${out_dir}/src/coverage.md"
 	test -f "${out_dir}/src/cov.xml"

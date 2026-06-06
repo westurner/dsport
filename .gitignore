@@ -1,7 +1,10 @@
 
+build/
 build/tests
 src/sphinxdocrs/build/tests/
 #math-demo/sphinxdocrs/imgmath.txt
+.pytest_cache
+.venv
 .coverage
 build.log
 build.log.ansi

@@ -1,7 +1,8 @@
 .PHONY: all build test develop clean \
 	build-docutils build-pygments build-sphinx build-mathrenderrs build-myst-md-rs \
 	test-cargo test-cargo-docutils test-cargo-pygments test-cargo-sphinx \
-	test-cargo-mathrenderrs test-cargo-myst-md-rs \
+	test-cargo-mathrenderrs test-cargo-myst-md-rs test-cargo-pygments-coverage \
+	test-coverage-pygments coverage-pygments \
 	develop-docutils develop-pygments develop-sphinx develop-myst-md-rs \
 	test2 test3
 
@@ -65,6 +66,42 @@ test-cargo-mathrenderrs:
 
 test-cargo-pygments:
 	cd src/pygmentsrs && cargo test
+
+test-cargo-pygments-coverage:
+	@echo "=== Running pygmentsrs tests with LLVM coverage (branch + line) ===" && \
+	mkdir -p build/tests/pygmentsrs/coverage-report && \
+	cd src/pygmentsrs && \
+	cargo llvm-cov --html --output-dir ../../build/tests/pygmentsrs/coverage-report --show-missing-lines 2>&1 | tee ../../build/tests/pygmentsrs/llvm-cov.log && \
+	echo "✅ Coverage report generated: build/tests/pygmentsrs/coverage-report/index.html"
+
+test-coverage-pygments: test-cargo-pygments-coverage
+	@echo "=== LLVM Coverage Report Summary ===" && \
+	echo && \
+	echo "📊 Coverage Statistics:" && \
+	( grep -E "coverage:|Covered|Missing" build/tests/pygmentsrs/llvm-cov.log | head -20 || echo "(detailed stats in HTML report)" ) && \
+	echo && \
+	echo "📁 Coverage Files:" && \
+	ls -lh build/tests/pygmentsrs/coverage-report/ 2>/dev/null | tail -10 && \
+	echo && \
+	echo "🌐 Open HTML report:" && \
+	echo "   build/tests/pygmentsrs/coverage-report/index.html" && \
+	echo && \
+	echo "📄 Full logs:" && \
+	ls -lh build/tests/pygmentsrs/
+
+coverage-pygments:
+	@COVERAGE_DIR="build/tests/pygmentsrs" && \
+	echo "=== Generating pygmentsrs branch coverage report ===" && \
+	mkdir -p "$$COVERAGE_DIR/coverage-report" && \
+	cd src/pygmentsrs && \
+	echo "Instrumenting with LLVM profiling..." && \
+	cargo llvm-cov --html --output-dir ../../$$COVERAGE_DIR/coverage-report --show-missing-lines --text 2>&1 | tee "../../$$COVERAGE_DIR/coverage-text.txt" && \
+	echo && \
+	echo "📄 Text coverage report saved to $$COVERAGE_DIR/coverage-text.txt" && \
+	echo "🌐 HTML coverage report saved to $$COVERAGE_DIR/coverage-report/" && \
+	echo && \
+	echo "📊 Missing Lines Summary:" && \
+	( grep -A 5 "Missing" ../../$$COVERAGE_DIR/coverage-text.txt | head -20 || echo "(see HTML report for details)" )
 
 test-cargo-docutils:
 	cd src/docutilsrs && cargo test

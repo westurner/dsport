@@ -605,6 +605,38 @@ GENERATED = {
             "record Point(int X, int Y);\n",
         ],
     ),
+    # --- Phase E4: dispatch code-block lexers ---
+    "markdown": (
+        "pygments.lexers.markup",
+        "MarkdownLexer",
+        [
+            "# Heading\n\nParagraph text.\n",
+            "```python\nprint('hello')\n```\n",
+            "**bold** and *italic*\n",
+            "```rust\nfn main() {}\n```\n",
+            "> blockquote\n\n- list item\n",
+        ],
+    ),
+    "restructuredtext": (
+        "pygments.lexers.markup",
+        "RstLexer",
+        [
+            "Title\n=====\n\nParagraph text.\n",
+            ".. code-block:: python\n\n   x = 1\n   y = 2\n",
+            ".. note::\n\n   A note here.\n",
+            ".. code-block:: rust\n\n   fn main() {}\n",
+            "``inline code`` and **bold**.\n",
+        ],
+    ),
+    "tid": (
+        "pygments.lexers.markup",
+        "TiddlyWiki5Lexer",
+        [
+            "```python\nprint('hello')\n```\n",
+            "!Heading\nParagraph text.\n",
+            "```javascript\nconsole.log('hi');\n```\n",
+        ],
+    ),
 }
 
 

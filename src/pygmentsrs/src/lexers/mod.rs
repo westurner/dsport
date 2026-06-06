@@ -7,9 +7,11 @@
 pub mod diff;
 pub mod generated;
 pub mod json;
+pub mod json_ld;
 pub mod python;
 pub mod registry;
 pub mod text;
+pub mod yaml_ld;
 
 use crate::lexer::Lexer;
 use crate::token::{self, TokenType};

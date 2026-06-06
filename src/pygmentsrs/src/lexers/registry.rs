@@ -10,14 +10,17 @@ use crate::lexer::Lexer;
 use crate::lexers::diff::DiffLexer;
 use crate::lexers::generated;
 use crate::lexers::json::JsonLexer;
+use crate::lexers::json_ld::JsonLdLexer;
 use crate::lexers::python::PythonLexer;
 use crate::lexers::text::TextLexer;
-
+use crate::lexers::yaml_ld::YamlLdLexer;
 pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
     match alias {
         "text" | "plain" | "" => Some(Box::new(TextLexer)),
         "python" | "py" | "python3" | "py3" => Some(Box::new(PythonLexer)),
         "json" | "json-object" => Some(Box::new(JsonLexer)),
+        "jsonld" | "json-ld" => Some(Box::new(JsonLdLexer)),
+        "yaml-ld" | "yamlld" | "yaml" => Some(Box::new(YamlLdLexer)),
         "diff" | "udiff" => Some(Box::new(DiffLexer)),
         // --- transpiled (tools/gen_lexer.py) ---
         "ini" | "cfg" | "dosini" => Some(Box::new(generated::ini::IniLexer)),
@@ -503,6 +506,11 @@ pub fn native_aliases() -> &'static [&'static str] {
         "py3",
         "json",
         "json-object",
+        "jsonld",
+        "json-ld",
+        "yaml-ld",
+        "yamlld",
+        "yaml",
         "diff",
         "udiff",
         // --- transpiled ---

@@ -253,6 +253,9 @@ pub const NUMBER_OCT: TokenType = TokenType::new(&["Literal", "Number", "Oct"]);
 
 pub const PUNCTUATION: TokenType = TokenType::new(&["Punctuation"]);
 pub const PUNCTUATION_MARKER: TokenType = TokenType::new(&["Punctuation", "Marker"]);
+pub const PUNCTUATION_INDICATOR: TokenType = TokenType::new(&["Punctuation", "Indicator"]);
+
+pub const SCALAR_PLAIN: TokenType = TokenType::new(&["Literal", "Scalar", "Plain"]);
 
 pub const OPERATOR: TokenType = TokenType::new(&["Operator"]);
 pub const OPERATOR_WORD: TokenType = TokenType::new(&["Operator", "Word"]);

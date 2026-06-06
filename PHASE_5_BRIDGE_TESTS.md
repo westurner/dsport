@@ -376,25 +376,28 @@ cargo test --no-default-features
 
 If further coverage work is desired:
 
+
 1. **Performance Testing**
    - Benchmark bridge vs native Rust lexers/formatters
    - Memory usage analysis
    - Large document handling (100KB+ files)
+   - Deeply nested structures (1000+ levels)
 
-2. **Additional Language Coverage**
-   - More lexer/formatter combinations
-   - Stress testing with unusual language features
-   - Error recovery patterns
-
-3. **Fuzz Testing**
+2. **Fuzz Testing**
    - Random input generation for bridge inputs
    - Regression detection
    - Edge case discovery
+
+3. **Additional Language Coverage**
+   - More lexer/formatter combinations
+   - Stress testing with unusual language features
+   - Error recovery patterns
 
 4. **Documentation**
    - Guide for choosing bridge vs native
    - Performance comparison
    - Error handling patterns
+
 
 ---
 

@@ -470,6 +470,15 @@ pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
         "zephir" => Some(Box::new(generated::zephir::ZephirLexer)),
         "zig" => Some(Box::new(generated::zig::ZigLexer)),
         "zone" => Some(Box::new(generated::zone::ZoneLexer)),
+        // --- final transpilable batch (previously excluded, now clean) ---
+        "csound-document" | "csound-csd" => Some(Box::new(generated::csound_document::CsoundDocumentLexer)),
+        "elpi" => Some(Box::new(generated::elpi::ElpiLexer)),
+        "html" => Some(Box::new(generated::html::HtmlLexer)),
+        "mask" => Some(Box::new(generated::mask::MaskLexer)),
+        "modelica" => Some(Box::new(generated::modelica::ModelicaLexer)),
+        "singularity" => Some(Box::new(generated::singularity::SingularityLexer)),
+        "tablegen" | "td" => Some(Box::new(generated::tablegen::TablegenLexer)),
+        "x10" | "xten" => Some(Box::new(generated::x10::X10Lexer)),
         _ => None,
     }
 }
@@ -1156,5 +1165,17 @@ pub fn native_aliases() -> &'static [&'static str] {
         "zephir",
         "zig",
         "zone",
+        // --- final transpilable batch ---
+        "csound-document",
+        "csound-csd",
+        "elpi",
+        "html",
+        "mask",
+        "modelica",
+        "singularity",
+        "tablegen",
+        "td",
+        "x10",
+        "xten",
     ]
 }

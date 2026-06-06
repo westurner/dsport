@@ -174,6 +174,271 @@ def rust_state_name(s: str) -> str:
     return rust_raw_string(s)
 
 
+def fix_py_regex_for_rust(pattern: str) -> str:
+    """Fix Python regex character-class syntax incompatible with fancy-regex.
+
+    Two cases handled:
+
+    1. Unescaped ``[`` inside ``[...]`` or ``[^...]``:
+       Python's ``re`` treats a bare ``[`` as a literal inside a character
+       class; fancy-regex's parser rejects it.  Fix: escape to ``\\[``.
+
+    2. Leading ``]`` in a character class (``[][...]`` or ``[^][...]``):
+       Python treats a ``]`` immediately after the opening ``[`` (or ``[^``)
+       as a literal ``]``; fancy-regex does not.  Fix: escape to ``\\]``.
+    """
+    result: list[str] = []
+    i = 0
+    n = len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "\\" and i + 1 < n:
+            # Copy escape sequence verbatim.
+            result.append(c)
+            result.append(pattern[i + 1])
+            i += 2
+            continue
+        if c != "[":
+            result.append(c)
+            i += 1
+            continue
+        # Opening bracket — enter character class.
+        result.append("[")
+        i += 1
+        # Optional negation.
+        if i < n and pattern[i] == "^":
+            result.append("^")
+            i += 1
+        # Leading `]` is literal in Python but fancy-regex needs it escaped.
+        if i < n and pattern[i] == "]":
+            result.append("\\]")
+            i += 1
+        # Scan body of character class until unescaped closing `]`.
+        while i < n:
+            c = pattern[i]
+            if c == "\\" and i + 1 < n:
+                result.append(c)
+                result.append(pattern[i + 1])
+                i += 2
+                continue
+            if c == "]":
+                result.append("]")
+                i += 1
+                break
+            if c == "[":
+                # Bare `[` inside character class — escape it.
+                result.append("\\[")
+                i += 1
+                continue
+            result.append(c)
+            i += 1
+    return "".join(result)
+
+
+def detect_name_remap(cls) -> list[tuple[tuple[str, ...], object]]:
+    """Detect if *cls* overrides ``get_tokens_unprocessed`` with a simple
+    ``Token.Name → Token.Xxx`` remapping driven by word-sets stored as
+    class attributes.  Returns ``[(words_tuple, target_tokentype), ...]``
+    in the order the checks appear in the override (earlier = higher
+    priority), or ``[]`` if not detected / too complex.
+
+    Example pattern handled (Elixir, Erlang)::
+
+        def get_tokens_unprocessed(self, text):
+            for index, token, value in RegexLexer.get_tokens_unprocessed(self, text):
+                if token is Name:
+                    if value in self.KEYWORD:
+                        yield index, Keyword, value
+                    elif value in self.BUILTIN_DECLARATION:
+                        yield index, Keyword.Declaration, value
+                    ...
+                else:
+                    yield index, token, value
+    """
+    import inspect
+    import re as _re
+
+    if "get_tokens_unprocessed" not in cls.__dict__:
+        return []
+    try:
+        src = inspect.getsource(cls.__dict__["get_tokens_unprocessed"])
+    except Exception:
+        return []
+    if "token is Name" not in src:
+        return []
+
+    # Extract `elif value in self.ATTR:\n...: yield ..., TOKENTYPE, value` pairs.
+    #   Group 1: attribute name (e.g. KEYWORD, BUILTIN_DECLARATION)
+    #   Group 2: token type expression (e.g. Keyword, Keyword.Declaration)
+    _pair_re = _re.compile(
+        r"(?:if|elif)\s+value\s+in\s+self\.(\w+)"
+        r".*?yield[^,\n]+,\s*([\w.]+)\s*,\s*value",
+        _re.DOTALL,
+    )
+
+    from pygments import token as T
+    _tok_names = {
+        "Keyword": T.Keyword,
+        "Keyword.Declaration": T.Keyword.Declaration,
+        "Keyword.Namespace": T.Keyword.Namespace,
+        "Keyword.Reserved": T.Keyword.Reserved,
+        "Keyword.Type": T.Keyword.Type,
+        "Keyword.Constant": T.Keyword.Constant,
+        "Operator": T.Operator,
+        "Operator.Word": T.Operator.Word,
+        "Name": T.Name,
+        "Name.Builtin": T.Name.Builtin,
+        "Name.Builtin.Pseudo": T.Name.Builtin.Pseudo,
+        "Name.Class": T.Name.Class,
+        "Name.Constant": T.Name.Constant,
+        "Name.Function": T.Name.Function,
+        "Name.Variable": T.Name.Variable,
+        "Punctuation": T.Punctuation,
+    }
+
+    result: list[tuple[tuple[str, ...], object]] = []
+    for m in _pair_re.finditer(src):
+        attr_name, tok_expr = m.group(1).strip(), m.group(2).strip()
+        tok = _tok_names.get(tok_expr)
+        if tok is None:
+            continue
+        words_attr = getattr(cls, attr_name, None)
+        if not words_attr or not isinstance(words_attr, (tuple, frozenset, list)):
+            continue
+        words = tuple(str(w) for w in words_attr)
+        if not words:
+            continue
+        result.append((words, tok))
+    return result
+
+
+def detect_postproc_remap(cls) -> list[tuple[list[object], frozenset[str], object]]:
+    """Detect ``get_tokens_unprocessed`` overrides that remap token types
+    *after* the regex engine runs (e.g. Swift's Cocoa-builtin remapping).
+
+    Returns a list of ``(trigger_tokens, words, target_token)`` entries, or
+    ``[]`` if the override is not detected / too complex.
+
+    Each entry means: for any token whose type is in *trigger_tokens* and
+    whose string value is in *words*, replace the token type with
+    *target_token*.  Entries are ordered highest-priority first.
+
+    Handles two styles of word sources:
+    * ``self.ATTR``                   — class-level tuple/frozenset attribute
+    * ``from X.Y import A, B, C``    — imports inside the method body
+    """
+    import inspect
+    import re as _re
+
+    if "get_tokens_unprocessed" not in cls.__dict__:
+        return []
+    try:
+        src = inspect.getsource(cls.__dict__["get_tokens_unprocessed"])
+    except Exception:
+        return []
+
+    # Must have a `token is <type>` guard; if not, too complex.
+    if "token is" not in src:
+        return []
+
+    # Resolve any `from X.Y import A, B, C` inside the method (handles
+    # continuation lines joined with backslash).
+    # Join continuation lines first so the names span doesn't stop at $.
+    src_joined = src.replace("\\\n", " ")
+    import_re = _re.compile(
+        r"from\s+([\w.]+)\s+import\s+([\w,\s]+)"
+    )
+    local_names: dict[str, object] = {}
+    for m in import_re.finditer(src_joined):
+        module_path = m.group(1).strip()
+        names = [n.strip() for n in m.group(2).split(",")]
+        try:
+            mod = importlib.import_module(module_path)
+            for name in names:
+                name = name.strip()
+                if name:
+                    val = getattr(mod, name, None)
+                    if val is not None:
+                        local_names[name] = val
+        except Exception:
+            pass
+
+    # Parse the token-remap body: find blocks of the form
+    #   if token is A or token is B:
+    #       if value in X or value in Y:
+    #           token = TARGET
+    from pygments import token as T
+    _tok_names = {
+        "Name": T.Name,
+        "Name.Class": T.Name.Class,
+        "Name.Builtin": T.Name.Builtin,
+        "Name.Builtin.Pseudo": T.Name.Builtin.Pseudo,
+        "Name.Constant": T.Name.Constant,
+        "Keyword": T.Keyword,
+        "Keyword.Declaration": T.Keyword.Declaration,
+        "Keyword.Namespace": T.Keyword.Namespace,
+        "Operator.Word": T.Operator.Word,
+    }
+
+    # Find `if token is X (or token is Y)*:` triggers.
+    trigger_re = _re.compile(r"if\s+((?:token\s+is\s+[\w.]+\s*(?:or\s+)?)+):")
+    # Find `if value in VAR (or value in VAR2)*:` word-set references.
+    varlist_re = _re.compile(r"value\s+in\s+([\w.]+)")
+    # Find `token\s*=\s*(\w[\w.]*)` (assignment line, the target type).
+    assign_re = _re.compile(r"token\s*=\s*([\w.]+)")
+
+    result: list[tuple[list[object], frozenset[str], object]] = []
+
+    for blk in trigger_re.finditer(src):
+        trigger_src = blk.group(1)
+        triggers: list[object] = []
+        for tok_name in _re.findall(r"token\s+is\s+([\w.]+)", trigger_src):
+            if tok_name in _tok_names:
+                triggers.append(_tok_names[tok_name])
+        if not triggers:
+            continue
+
+        # Scan forward from this block for value-in checks and a token= assign.
+        rest = src[blk.end():]
+        # Only look at the immediately following indented block (≤ ~500 chars).
+        snippet = rest[:500]
+
+        vars_found = varlist_re.findall(snippet)
+        assign_found = assign_re.search(snippet)
+        if not vars_found or not assign_found:
+            continue
+        target_name = assign_found.group(1).strip()
+        target_tok = _tok_names.get(target_name)
+        if target_tok is None:
+            continue
+
+        # Collect all words from the referenced sets.
+        all_words: list[str] = []
+        for var in vars_found:
+            # Try self.VAR first, then local imports.
+            words_col = getattr(cls, var, None) or local_names.get(var)
+            if words_col and isinstance(words_col, (tuple, frozenset, list, set)):
+                all_words.extend(str(w) for w in words_col)
+        if not all_words:
+            continue
+
+        result.append((triggers, frozenset(all_words), target_tok))
+
+    return result
+
+
+def _words_pattern(words: tuple[str, ...]) -> str:
+    """Build a word-boundary alternation regex for the given keyword set."""
+    alts = "|".join(_re_escape_for_rust(w) for w in sorted(words))
+    return f"(?:{alts})(?![a-zA-Z0-9_!?])"
+
+
+def _re_escape_for_rust(s: str) -> str:
+    """Escape special regex chars in a literal string for use in a pattern."""
+    import re as _re
+    return _re.escape(s)
+
+
 def rule_expr(pattern: str, action, new_state, flags: int) -> str:
     ns = new_state_expr(new_state)
     has_ns = ns != "NewState::None"
@@ -182,7 +447,7 @@ def rule_expr(pattern: str, action, new_state, flags: int) -> str:
     if action is None:
         return f"Rule::default({ns})"
 
-    full_pat = flag_prefix(flags) + pattern
+    full_pat = flag_prefix(flags) + fix_py_regex_for_rust(pattern)
     pat_lit = rust_raw_string(full_pat)
 
     if is_tokentype(action):
@@ -227,18 +492,47 @@ def transpile(module: str, classname: str, rust_name: str) -> str:
     struct = "".join(p.capitalize() for p in rust_name.split("_")) + "Lexer"
     aliases = list(cls.aliases)
 
+    # Detect if the lexer overrides get_tokens_unprocessed with a simple
+    # Name→Token remapping driven by class-attribute word-sets (e.g. Elixir).
+    # If so, pre-generate keyword rules that fire before each generic NAME rule
+    # so the Rust engine matches them correctly without needing the Python hook.
+    name_remap = detect_name_remap(cls)
+    # Build the keyword-rule expressions to inject (highest priority first).
+    # Each entry is (rule_expr_str, target_token_const_str).
+    keyword_injections: list[str] = []
+    if name_remap:
+        for words, tok in name_remap:
+            pat = flag_prefix(flags) + _words_pattern(words)
+            const = token_expr(tok)
+            keyword_injections.append(f"Rule::token({rust_raw_string(pat)}, {const})")
+
     # Pre-render every rule so we can tell whether `NewState` is used
     # (it isn't for single-state token-only lexers) and avoid emitting
     # an unused import.
+    #
+    # NAME_CONST is the Rust identifier for Token.Name — used to find
+    # where to inject keyword rules.
+    from pygments import token as T
+    _NAME_CONST = token_expr(T.Name)
+
     rendered: dict[str, list[str]] = {}
     uses_new_state = False
     for state, rules in states.items():
-        exprs = []
+        exprs: list[str] = []
         for matchfn, action, new_state in rules:
             pattern = matchfn.__self__.pattern
             expr = rule_expr(pattern, action, new_state, flags)
             if "NewState::" in expr:
                 uses_new_state = True
+            # Inject keyword alternatives before the first plain-NAME rule.
+            # Only inject once per state (track via a flag).
+            if (
+                keyword_injections
+                and not any(ki in exprs for ki in keyword_injections)
+                and f", {_NAME_CONST})" in expr
+                and "bygroups" not in expr
+            ):
+                exprs.extend(keyword_injections)
             exprs.append(expr)
         rendered[state] = exprs
 
@@ -280,12 +574,53 @@ def transpile(module: str, classname: str, rust_name: str) -> str:
     lines.append("    Table(m)")
     lines.append("}")
     lines.append("")
-    lines.append(f"impl Lexer for {struct} {{")
-    lines.append("    fn get_tokens(&self, code: &str) -> Vec<(TokenType, String)> {")
-    lines.append("        let table = TABLE.get_or_init(build_table);")
-    lines.append("        tokenize(table, code)")
-    lines.append("    }")
-    lines.append("}")
+
+    # Detect post-processing token remaps (e.g. Swift Cocoa builtins).
+    postproc = detect_postproc_remap(cls)
+
+    if postproc:
+        # Emit a static word-set and a builder per remap entry.
+        for idx, (trigger_toks, words, target_tok) in enumerate(postproc):
+            set_name = f"REMAP_WORDS_{idx}"
+            build_fn = f"build_remap_{idx}"
+            # Sorted for deterministic output.
+            word_lits = ", ".join(f'"{w}"' for w in sorted(words))
+            lines.append(f"static {set_name}: OnceLock<std::collections::HashSet<&'static str>> = OnceLock::new();")
+            lines.append(f"fn {build_fn}() -> std::collections::HashSet<&'static str> {{")
+            lines.append(f"    [{word_lits}].into_iter().collect()")
+            lines.append("}")
+            lines.append("")
+
+        # Build trigger constants for comparison.
+        def tok_const_list(tok_list):
+            return ", ".join(token_expr(t) for t in tok_list)
+
+        lines.append(f"impl Lexer for {struct} {{")
+        lines.append("    fn get_tokens(&self, code: &str) -> Vec<(TokenType, String)> {")
+        lines.append("        let table = TABLE.get_or_init(build_table);")
+        lines.append("        let mut tokens = tokenize(table, code);")
+        for idx, (trigger_toks, _words, target_tok) in enumerate(postproc):
+            set_name = f"REMAP_WORDS_{idx}"
+            build_fn = f"build_remap_{idx}"
+            target_const = token_expr(target_tok)
+            triggers_check = " || ".join(f"*t == {token_expr(tt)}" for tt in trigger_toks)
+            lines.append(f"        let remap_{idx} = {set_name}.get_or_init({build_fn});")
+            lines.append(f"        for (t, v) in &mut tokens {{")
+            lines.append(f"            if ({triggers_check}) && remap_{idx}.contains(v.as_str()) {{")
+            lines.append(f"                *t = {target_const};")
+            lines.append(f"            }}")
+            lines.append(f"        }}")
+        lines.append("        tokens")
+        lines.append("    }")
+        lines.append("}")
+    else:
+        lines.append(f"impl Lexer for {struct} {{")
+        lines.append("    fn get_tokens(&self, code: &str) -> Vec<(TokenType, String)> {")
+        lines.append("        let table = TABLE.get_or_init(build_table);")
+        lines.append("        tokenize(table, code)")
+        lines.append("    }")
+        lines.append("}")
+
     lines.append("")
     return "\n".join(lines)
 

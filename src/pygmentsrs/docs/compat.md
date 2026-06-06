@@ -39,14 +39,53 @@ Generated into `src/pygmentsrs/src/lexers/generated/` by the transpiler
 | `groff`        | `groff`, `nroff`, `man`  |   ✅   |  ✅  | `pygments.lexers.text.GroffLexer`             |
 | `bash`         | `bash`, `sh`, `ksh`, `zsh`, `shell`, `openrc` | ✅ | ✅ | `pygments.lexers.shell.BashLexer` (heredoc `\2` backref via fancy-regex) |
 | `cmake`        | `cmake`                  |   ✅   |  ✅  | `pygments.lexers.make.CMakeLexer` (named backref `(?P=level)`) |
+| `go`           | `go`, `golang`           |   ✅   |  ✅  | `pygments.lexers.go.GoLexer`                  |
+| `typescript`   | `typescript`, `ts`       |   ✅   |  ✅  | `pygments.lexers.javascript.TypeScriptLexer`  |
+| `css`          | `css`                    |   ✅   |  ✅  | `pygments.lexers.css.CssLexer`                |
+| `xml`          | `xml`                    |   ✅   |  ✅  | `pygments.lexers.html.XmlLexer`               |
+| `sql`          | `sql`                    |   ✅   |  ✅  | `pygments.lexers.sql.SqlLexer`                |
+| `rust`         | `rust`, `rs`             |   ✅   |  ✅  | `pygments.lexers.rust.RustLexer` (regex fix: `[^\[` → `[^\\\[`)  |
+| `javascript`   | `javascript`, `js`       |   ✅   |  ✅  | `pygments.lexers.javascript.JavascriptLexer` (zero-width lookahead emits `Token.Text ""`) |
+| `lua`          | `lua`                    |   ✅   |  ✅  | `pygments.lexers.scripting.LuaLexer`          |
+| `r`            | `splus`, `s`, `r`        |   ✅   |  ✅  | `pygments.lexers.r.SLexer`                    |
+| `matlab`       | `matlab`                 |   ✅   |  ✅  | `pygments.lexers.matlab.MatlabLexer`          |
+| `julia`        | `julia`, `jl`            |   ✅   |  ✅  | `pygments.lexers.julia.JuliaLexer`            |
+| `haskell`      | `haskell`, `hs`          |   ✅   |  ✅  | `pygments.lexers.haskell.HaskellLexer` (regex fix: `[][` → `[\]\[`) |
+| `clojure`      | `clojure`, `clj`         |   ✅   |  ✅  | `pygments.lexers.jvm.ClojureLexer`            |
+| `erlang`       | `erlang`                 |   ✅   |  ✅  | `pygments.lexers.erlang.ErlangLexer`          |
+| `elixir`       | `elixir`, `ex`, `exs`    |   ✅   |  ✅  | `pygments.lexers.erlang.ElixirLexer` (keyword injection: `get_tokens_unprocessed` override replicated by pre-rule injection) |
+| `nginx`        | `nginx`                  |   ✅   |  ✅  | `pygments.lexers.configs.NginxConfLexer`      |
+| `apache`       | `apacheconf`, `aconf`, `apache` | ✅ | ✅ | `pygments.lexers.configs.ApacheConfLexer`  |
+| `powershell`   | `powershell`, `pwsh`, `posh`, `ps1`, `psm1` | ✅ | ✅ | `pygments.lexers.shell.PowerShellLexer` |
+| `tex`          | `tex`, `latex`           |   ✅   |  ✅  | `pygments.lexers.markup.TexLexer`             |
+| `graphql`      | `graphql`                |   ✅   |  ✅  | `pygments.lexers.graphql.GraphQLLexer`        |
+| `protobuf`     | `protobuf`, `proto`      |   ✅   |  ✅  | `pygments.lexers.dsls.ProtoBufLexer`          |
+| `scala`        | `scala`                  |   ✅   |  ✅  | `pygments.lexers.jvm.ScalaLexer`              |
+| `swift`        | `swift`                  |   ✅   |  ✅  | `pygments.lexers.objective.SwiftLexer` (Cocoa builtin remap: 3746-name post-processing set injected) |
+| `perl`         | `perl`, `pl`             |   ✅   |  ✅  | `pygments.lexers.perl.PerlLexer` (zero-width `(?=\w)` lookahead emits `Token.Name ""`) |
 
-Coverage status (from `python tools/gen_lexer.py --classify`): of ~585
-un-ported lexers, **355 are transpilable now** (token / `bygroups` /
+Coverage status (from `python tools/gen_lexer.py --classify`): of ~561
+un-ported lexers, **331 are transpilable now** (token / `bygroups` /
 `default` only — structural-token fallback means a missing named const no
-longer blocks). The rest are bridge-only: ~103 use arbitrary Python
+longer blocks). The rest are bridge-only: ~107 use arbitrary Python
 callbacks, ~111 are not `RegexLexer` subclasses, ~12 use
-`using()`/`this` delegation, 4 fail `process_tokendef`. Bridge-only
-lexers resolve through the PyO3 `pygments` fallback at runtime.
+`using()`/`this` delegation. Bridge-only lexers resolve through the
+PyO3 `pygments` fallback at runtime.
+
+### Transpiler enhancements (since initial batch)
+
+- **`fix_py_regex_for_rust`**: escapes bare `[` inside character classes
+  (`[^\[`) and leading `]` (`[][`) so fancy-regex accepts them.
+- **`detect_name_remap`**: detects `get_tokens_unprocessed` overrides
+  driven by class-attribute word-sets (Elixir pattern) and injects
+  keyword-priority rules before the generic `Name` rule.
+- **`detect_postproc_remap`**: detects overrides that remap `Name` /
+  `Name.Class` tokens to another type using imported word-sets (Swift
+  Cocoa pattern). Generates a post-processing loop in the Rust lexer's
+  `get_tokens` method with a `OnceLock<HashSet>`.
+- **Engine** (`engine.rs`): zero-width `Action::Single` now emits empty
+  string tokens (matching Python's `m.group()` verbatim). Zero-width rules
+  with no state transition are skipped to prevent infinite loops.
 
 ## Formatters
 

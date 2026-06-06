@@ -149,14 +149,29 @@ pub fn tokenize<T: StateTable>(table: &T, text: &str) -> Vec<(TokenType, String)
             if m0.start() != pos {
                 continue;
             }
+            // Zero-width guard: a rule that matches at `pos` but consumes
+            // nothing AND has no state transition would loop forever (Python's
+            // RegexLexer has the same invariant — every zero-width rule in a
+            // well-formed Pygments lexer carries a state transition).  Skip
+            // rather than hang; the next rule in the list will fire instead.
+            let is_zero_width = m0.start() == m0.end();
+            if is_zero_width && matches!(rule.new_state, NewState::None) {
+                continue;
+            }
             match rule.action.as_ref().unwrap() {
                 Action::Single(t) => {
+                    // Emit even when the matched string is empty: Python's
+                    // `get_tokens_unprocessed` yields `(pos, ttype, m.group())`
+                    // verbatim, including zero-width matches (e.g. the JS
+                    // `^(?=\s|/|<!--)` lookahead emits `Token.Text ""`).
                     let s = &text[m0.start()..m0.end()];
-                    if !s.is_empty() {
-                        push_merged(&mut out, *t, s);
-                    }
+                    push_merged(&mut out, *t, s);
                 }
                 Action::ByGroups(toks) => {
+                    // Python's bygroups callback guards `if data:` — it skips
+                    // empty-string captures.  Mirror that behaviour here so
+                    // optional groups (e.g. `([ \t]*)$`) don't emit stray
+                    // empty tokens.
                     for (i, maybe_t) in toks.iter().enumerate() {
                         let Some(t) = maybe_t else { continue };
                         if let Some(g) = m.get(i + 1) {

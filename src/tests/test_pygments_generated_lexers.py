@@ -110,6 +110,205 @@ GENERATED = {
             "if(WIN32)\n  add_library(a)\nendif()\n",
         ],
     ),
+    # --- Phase A: high-value doc/Sphinx languages (verified passing) ---
+    "go": (
+        "pygments.lexers.go",
+        "GoLexer",
+        [
+            "package main\nimport \"fmt\"\nfunc main() {}\n",
+            '// comment\nvar x int = 42\nconst s = "str"\n',
+            "func (r *Receiver) Method() string {}\n",
+            "defer close(ch)\nselect {}\n",
+            "for i := 0; i < 10; i++ { }\n",
+        ],
+    ),
+    "typescript": (
+        "pygments.lexers.javascript",
+        "TypeScriptLexer",
+        [
+            "interface Foo { bar: string; }\n",
+            "function add(a: number, b: number): number { return a + b; }\n",
+            "type ID = string | number;\n",
+            "class C<T> { value: T; }\n",
+            "async function f(): Promise<void> {}\n",
+        ],
+    ),
+    "css": (
+        "pygments.lexers.css",
+        "CssLexer",
+        [
+            "body { margin: 0; padding: 10px; }\n",
+            "/* comment */\n#id { color: red; }\n",
+            ".class { display: flex; }\n",
+            "@media (max-width: 600px) { }\n",
+            ":hover { opacity: 0.8; }\n",
+        ],
+    ),
+    "xml": (
+        "pygments.lexers.html",
+        "XmlLexer",
+        [
+            '<?xml version="1.0"?>\n<root><tag>text</tag></root>\n',
+            '<!-- comment -->\n<elem attr="value"/>\n',
+            '<tag a="1" b="2">content</tag>\n',
+            '<?processing-instruction?>\n<cdata><![CDATA[data]]></cdata>\n',
+            '<ns:element xmlns:ns="uri">mixed &amp; text</ns:element>\n',
+        ],
+    ),
+    "sql": (
+        "pygments.lexers.sql",
+        "SqlLexer",
+        [
+            "SELECT * FROM users WHERE id = 1;\n",
+            "-- comment\n/* block */\nINSERT INTO t VALUES (1, 'x');\n",
+            "UPDATE t SET x = 1 WHERE y = 2;\n",
+            'DELETE FROM t; CREATE TABLE x (id INT, name VARCHAR(50));\n',
+            "SELECT COUNT(*) as cnt, name FROM users GROUP BY name;\n",
+        ],
+    ),
+    "lua": (
+        "pygments.lexers.scripting",
+        "LuaLexer",
+        [
+            "function hello(x)\n  return x * 2\nend\n",
+            "-- comment\nlocal t = {1, 2, 3}\n",
+            "if x > 0 then\n  print(x)\nend\n",
+            'for i = 1, 10 do\n  print(i)\nend\n',
+            "t = {a = 1, b = 2}\nprint(t[\"a\"])\n",
+        ],
+    ),
+    "r": (
+        "pygments.lexers.r",
+        "SLexer",
+        [
+            "x <- c(1, 2, 3)\ny <- x * 2\n",
+            "# comment\nfunc <- function(x) { return(x + 1) }\n",
+            "if (x > 0) { print(x) }\n",
+            "for (i in 1:10) { print(i) }\n",
+            'df <- data.frame(a = c(1, 2), b = c("x", "y"))\n',
+        ],
+    ),
+    "matlab": (
+        "pygments.lexers.matlab",
+        "MatlabLexer",
+        [
+            "x = [1, 2, 3];\ny = x * 2;\n",
+            "% comment\nfunction out = add(a, b)\n  out = a + b;\nend\n",
+            "if x > 0\n  disp(x)\nend\n",
+            "for i = 1:10\n  fprintf('%d\\n', i)\nend\n",
+            "'string' \"char vector\"\n",
+        ],
+    ),
+    "julia": (
+        "pygments.lexers.julia",
+        "JuliaLexer",
+        [
+            "function add(x::Int, y::Int)::Int\n  return x + y\nend\n",
+            "# comment\nconst π = 3.14159\n",
+            "for i in 1:10\n  println(i)\nend\n",
+            "a = [1, 2, 3]\nb = a .* 2\n",
+            'struct Point\n  x::Float64\n  y::Float64\nend\n',
+        ],
+    ),
+    "clojure": (
+        "pygments.lexers.jvm",
+        "ClojureLexer",
+        [
+            "(defn add [x y] (+ x y))\n",
+            "; comment\n[1 2 3]\n{:a 1 :b 2}\n",
+            "(def x 42)\n(let [y (inc x)] y)\n",
+            "(map #(* % 2) [1 2 3])\n",
+            "(for [i (range 10)] i)\n",
+        ],
+    ),
+    "erlang": (
+        "pygments.lexers.erlang",
+        "ErlangLexer",
+        [
+            "add(X, Y) -> X + Y.\n",
+            "% comment\nfact(0) -> 1;\nfact(N) -> N * fact(N-1).\n",
+            "hello() ->\n  io:fwrite(\"hello~n\").\n",
+            "loop(N) when N > 0 -> loop(N-1).\n",
+            "list_add(Lst, Val) -> [Val | Lst].\n",
+        ],
+    ),
+    "nginx": (
+        "pygments.lexers.configs",
+        "NginxConfLexer",
+        [
+            "server {\n  listen 80;\n  server_name example.com;\n}\n",
+            "# comment\nworker_processes auto;\n",
+            "http {\n  upstream backend {\n    server 127.0.0.1:8080;\n  }\n}\n",
+            "location / {\n  proxy_pass http://backend;\n}\n",
+            "if ($request_method = POST) { return 405; }\n",
+        ],
+    ),
+    "apache": (
+        "pygments.lexers.configs",
+        "ApacheConfLexer",
+        [
+            "<VirtualHost *:80>\n  ServerName example.com\n</VirtualHost>\n",
+            "# comment\nListen 80\n",
+            "<Directory /var/www>\n  Options Indexes\n</Directory>\n",
+            "<If \"%{HTTP_HOST} == 'example.com'\">\n</If>\n",
+            "LoadModule rewrite_module modules/mod_rewrite.so\n",
+        ],
+    ),
+    "powershell": (
+        "pygments.lexers.shell",
+        "PowerShellLexer",
+        [
+            "Write-Host \"hello\"\n",
+            "# comment\n$x = 42\nGet-Content file.txt\n",
+            "function Foo { param($x) Write-Output $x }\n",
+            "foreach ($i in 1..10) { Write-Host $i }\n",
+            "$arr = @(1, 2, 3)\n$hash = @{a = 1; b = 2}\n",
+        ],
+    ),
+    "tex": (
+        "pygments.lexers.markup",
+        "TexLexer",
+        [
+            "\\documentclass{article}\n\\begin{document}\nhello\n\\end{document}\n",
+            "% comment\n\\section{Title}\n\\textbf{bold} \\textit{italic}\n",
+            "\\usepackage{amssymb}\n$x^2 + y^2 = z^2$\n",
+            "\\[\\sum_{i=1}^{n} i\\]\n",
+            "\\def\\macro{expansion}\n\\macro\n",
+        ],
+    ),
+    "graphql": (
+        "pygments.lexers.graphql",
+        "GraphQLLexer",
+        [
+            "query GetUser {\n  user(id: 1) {\n    name\n    email\n  }\n}\n",
+            "# comment\nmutation CreateUser {\n  createUser(name: \"x\") {\n    id\n  }\n}\n",
+            "type User {\n  id: ID!\n  name: String!\n}\n",
+            "query {\n  users(limit: 10) @cached {\n    id\n  }\n}\n",
+            "subscription OnUserUpdate {\n  userUpdated {\n    id\n  }\n}\n",
+        ],
+    ),
+    "protobuf": (
+        "pygments.lexers.dsls",
+        "ProtoBufLexer",
+        [
+            "syntax = \"proto3\";\npackage foo;\n",
+            "message User {\n  int32 id = 1;\n  string name = 2;\n}\n",
+            "service UserService {\n  rpc GetUser(Id) returns (User);\n}\n",
+            "// comment\nrequired bool flag = 1;\noptional string text = 2;\n",
+            "enum Status {\n  UNKNOWN = 0;\n  ACTIVE = 1;\n}\n",
+        ],
+    ),
+    "scala": (
+        "pygments.lexers.jvm",
+        "ScalaLexer",
+        [
+            "def add(x: Int, y: Int): Int = x + y\n",
+            "// comment\nval x: List[Int] = List(1, 2, 3)\n",
+            "class Point(val x: Double, val y: Double)\n",
+            "for (i <- 1 to 10) println(i)\n",
+            "case class User(name: String, age: Int)\n",
+        ],
+    ),
 }
 
 

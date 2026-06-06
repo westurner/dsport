@@ -12,18 +12,21 @@ pinned vendored Pygments. Re-run after an upstream bump.
 
 ## Current state (as of this writing)
 
-- **Lexers**: 598 total, **13 native**, 585 un-ported.
+- **Lexers**: 598 total, **37 native**, 561 un-ported.
 - **Formatters**: 18 total, **1 native** (`html`).
 - Gates: `cargo test -p pygmentsrs` + `tests/test_pygments_generated_lexers.py`
   (byte-parity vs `get_tokens_unprocessed`), `tests/test_pygments_json_lexer.py`,
   `tests/test_pygments_diff_lexer.py`, and the `code_block_*` cases in
   `tests/test_parity_pseudoxml.py`.
 
-### Native lexers (13)
+### Native lexers (37)
 
 `text`, `python`, `json`, `diff`, and the transpiled batch: `ini`,
 `properties`, `toml`, `gettext`, `darcs`, `vctreestatus`, `groff`,
-`bash`, `cmake`.
+`bash`, `cmake` (pre-Phase A), plus Phase A: `rust`, `go`, `javascript`,
+`typescript`, `css`, `xml`, `sql`, `swift`, `perl`, `lua`, `r`, `matlab`,
+`julia`, `haskell`, `clojure`, `erlang`, `elixir`, `nginx`, `apache`,
+`powershell`, `tex`, `graphql`, `protobuf`, `scala`.
 
 ## Lexer inventory by transpilability
 
@@ -216,3 +219,4 @@ Update after each batch (`--classify` totals):
 | date | native lexers | transpilable remaining | native formatters |
 | ---- | ------------: | ---------------------: | ----------------: |
 | (init) | 13 | 355 | 1 |
+| Phase A | 37 | 331 | 1 |

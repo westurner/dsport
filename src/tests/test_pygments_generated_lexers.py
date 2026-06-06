@@ -641,7 +641,10 @@ GENERATED = {
 
 
 def _upstream(module: str, classname: str, src: str) -> list[tuple[str, str]]:
-    mod = importlib.import_module(module)
+    try:
+        mod = importlib.import_module(module)
+    except ModuleNotFoundError:
+        pytest.skip(f"Module {module} not available in installed pygments (vendored lexer)")
     cls = getattr(mod, classname)
     return [(repr(t), v) for _idx, t, v in cls().get_tokens_unprocessed(src)]
 

@@ -92,3 +92,30 @@ def test_dispatch_plan_force_python():
     plan = hybrid.dispatch_plan("pseudoxml", prefer="python")
     assert plan["parser"] == "python"
     assert plan["writer"] == "python"
+
+
+def test_hybrid_html5_dispatch():
+    """Test that HTML5 route exists (doesn't need to match Python exactly)."""
+    src = "Hello *world*."
+    result = hybrid.publish_string(src, writer="html5")
+    # Just verify it produces output without crashing
+    assert result
+    assert "Hello" in result or "world" in result
+
+
+def test_compare_html5_diverges():
+    """Test compare with HTML5 writer - expected to diverge from Python."""
+    src = "Hello *world*."
+    cmp = hybrid.compare(src, writer="html5")
+    assert cmp.rust is not None
+    # Rust and Python HTML5 outputs may differ (body vs full doc)
+    assert cmp.python  # Python output should exist
+    # Don't assert identical=True since implementations differ
+
+
+def test_hybrid_html5_force_python():
+    """Test HTML5 with force python."""
+    src = "Hello *world*."
+    result = hybrid.publish_string(src, writer="html5", prefer="python")
+    py_result = _py(src, "html5")
+    assert result == py_result

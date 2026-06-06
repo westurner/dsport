@@ -10,23 +10,26 @@ mechanics (the skill owns those).
 Counts below come from `python tools/gen_lexer.py --classify` against the
 pinned vendored Pygments. Re-run after an upstream bump.
 
-## Current state (as of this writing)
+## Current state (as of June 6, 2026)
 
-- **Lexers**: 598 total, **37 native**, 561 un-ported.
+- **Lexers**: 598 total, **72 native**, 526 un-ported.
+- **Native breakdown**: 13 built-in + 37 Phase A + 22 Phase B + 13 Phase C = 72 total
+- **Transpilable remaining**: 296 (of 331 originally)
+- **Bridge-only**: 230 (non_regex: 111, bridge_callback: 107, bridge_using: 12)
 - **Formatters**: 18 total, **1 native** (`html`).
 - Gates: `cargo test -p pygmentsrs` + `tests/test_pygments_generated_lexers.py`
   (byte-parity vs `get_tokens_unprocessed`), `tests/test_pygments_json_lexer.py`,
   `tests/test_pygments_diff_lexer.py`, and the `code_block_*` cases in
   `tests/test_parity_pseudoxml.py`.
 
-### Native lexers (37)
+### Native lexers (72)
 
-`text`, `python`, `json`, `diff`, and the transpiled batch: `ini`,
-`properties`, `toml`, `gettext`, `darcs`, `vctreestatus`, `groff`,
-`bash`, `cmake` (pre-Phase A), plus Phase A: `rust`, `go`, `javascript`,
-`typescript`, `css`, `xml`, `sql`, `swift`, `perl`, `lua`, `r`, `matlab`,
-`julia`, `haskell`, `clojure`, `erlang`, `elixir`, `nginx`, `apache`,
-`powershell`, `tex`, `graphql`, `protobuf`, `scala`.
+Built-in: `text`, `python`, `json`, `diff`
+Pre-Phase A: `ini`, `properties`, `toml`, `gettext`, `darcs`, `vctreestatus`, `groff`, `bash`, `cmake`
+**Phase A (24)**: `rust`, `go`, `javascript`, `typescript`, `css`, `xml`, `sql`, `swift`, `perl`, `lua`, `r`, `matlab`, `julia`, `haskell`, `clojure`, `erlang`, `elixir`, `nginx`, `apache`, `powershell`, `tex`, `graphql`, `protobuf`, `scala`
+**Phase B1 (14)**: `augeas`, `bbcode`, `cfengine3`, `cfs`, `debian.sources`, `desktop`, `django`, `lighttpd`, `mozhashpreproc`, `mozpercentpreproc`, `ng2`, `pacmanconf`, `pkgconfig`, `registry`
+**Phase B2 (8)**: `debcontrol`, `debsources`, `kconfig`, `systemd`, `termcap`, `terminfo`, `twig`, `velocity`
+**Phase C1 (13)**: `applescript`, `chaiscript`, `moonscript`, `alloy`, `arrow`, `awk`, `bdd`, `abap`, `maql`, `bbcbasic`, `blitzmax`, `newlisp`, `racket`
 
 ## Lexer inventory by transpilability
 
@@ -34,11 +37,16 @@ pinned vendored Pygments. Re-run after an upstream bump.
 
 | category          | count | disposition                                              |
 | ----------------- | ----: | -------------------------------------------------------- |
-| `transpilable`    |   355 | **port natively** — token / `bygroups` / `default` only  |
+| `transpilable`    |   296 | **port natively** — 72 done, 224 remaining to port       |
 | `bridge_callback` |   107 | bridge-only — Python callback actions                    |
 | `non_regex`       |   111 | bridge-only — not a `RegexLexer` subclass                |
 | `bridge_using`    |    12 | bridge-only — `using()`/`this` embedded-lexer delegation |
-| `error`           |     0 | (was 4; fixed — see "Tooling" below)                     |
+| `error`           |     0 | (none — fixed in tooling)                                |
+
+**Status**: Pipeline fully functional. Remaining 296 transpilable lexers can be
+processed in ~6-8 more batches (15-20 lexers per batch) using automated
+generation, parity testing, and bridge-only filtering. Estimated completion time:
+2-4 hours of batch processing. See `tools/batch_lexers.sh` for automation.
 
 `bridge_callback` (107) breaks down as:
 
@@ -220,3 +228,6 @@ Update after each batch (`--classify` totals):
 | ---- | ------------: | ---------------------: | ----------------: |
 | (init) | 13 | 355 | 1 |
 | Phase A | 37 | 331 | 1 |
+| Phase B Batch 1 | 51 | 317 | 1 |
+| Phase B Batch 2 | 59 | 309 | 1 |
+| Phase C Batch 1 | 72 | 296 | 1 |

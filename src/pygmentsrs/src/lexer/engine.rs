@@ -23,13 +23,41 @@
 use crate::token::{self, TokenType};
 use fancy_regex::Regex;
 
-/// Action attached to a regex rule.
+/// Per-group action inside a `bygroups(...)` rule.
+///
+/// Each element corresponds to capture group 1..=N; `None` skips the
+/// group entirely (mirrors Python's `None` placeholder in `bygroups`).
+#[derive(Clone)]
+pub enum GroupAction {
+    /// Emit a static token for this capture group.
+    Token(TokenType),
+    /// Lex this group's text recursively with the *same* lexer,
+    /// optionally starting in a different named state.
+    /// `state = None` means start in "root".
+    UsingThis { state: Option<Vec<&'static str>> },
+    /// Lex this group's text with a *different* registered lexer
+    /// (looked up by its primary alias at call time).
+    /// `state = None` means start in "root".
+    UsingLexer { alias: &'static str, state: Option<Vec<&'static str>> },
+}
+
+impl From<TokenType> for GroupAction {
+    fn from(t: TokenType) -> Self {
+        GroupAction::Token(t)
+    }
+}
+
+/// Top-level action attached to a regex rule.
 pub enum Action {
     /// Emit a single token of this type covering the whole match.
     Single(TokenType),
     /// Per-group emission. Each entry corresponds to capture group
     /// 1..=N; `None` skips the group. Mirrors `pygments.lexer.bygroups`.
-    ByGroups(Vec<Option<TokenType>>),
+    ByGroups(Vec<Option<GroupAction>>),
+    /// Lex the whole match recursively with the same lexer (using(this)).
+    UsingThis { state: Option<Vec<&'static str>> },
+    /// Lex the whole match with another registered lexer (using(OtherLexer)).
+    UsingLexer { alias: &'static str, state: Option<Vec<&'static str>> },
 }
 
 /// State-stack transition after a rule fires.
@@ -70,14 +98,34 @@ impl Rule {
     pub fn bygroups(pattern: &str, tokens: Vec<Option<TokenType>>) -> Self {
         Self {
             regex: compile(pattern),
-            action: Some(Action::ByGroups(tokens)),
+            action: Some(Action::ByGroups(
+                tokens.into_iter().map(|t| t.map(GroupAction::Token)).collect(),
+            )),
             new_state: NewState::None,
         }
     }
     pub fn bygroups_to(pattern: &str, tokens: Vec<Option<TokenType>>, ns: NewState) -> Self {
         Self {
             regex: compile(pattern),
-            action: Some(Action::ByGroups(tokens)),
+            action: Some(Action::ByGroups(
+                tokens.into_iter().map(|t| t.map(GroupAction::Token)).collect(),
+            )),
+            new_state: ns,
+        }
+    }
+    /// `bygroups` with full `GroupAction` per group — used when one or more
+    /// groups contain `using(this)` or `using(OtherLexer)`.
+    pub fn bygroups_g(pattern: &str, actions: Vec<Option<GroupAction>>) -> Self {
+        Self {
+            regex: compile(pattern),
+            action: Some(Action::ByGroups(actions)),
+            new_state: NewState::None,
+        }
+    }
+    pub fn bygroups_g_to(pattern: &str, actions: Vec<Option<GroupAction>>, ns: NewState) -> Self {
+        Self {
+            regex: compile(pattern),
+            action: Some(Action::ByGroups(actions)),
             new_state: ns,
         }
     }
@@ -88,6 +136,46 @@ impl Rule {
             action: None,
             new_state: ns,
         }
+    }
+    /// `using(this)` — lex whole match with the same lexer from root state.
+    pub fn using_this(pattern: &str, state: Option<Vec<&'static str>>) -> Self {
+        Self {
+            regex: compile(pattern),
+            action: Some(Action::UsingThis { state }),
+            new_state: NewState::None,
+        }
+    }
+    pub fn using_this_to(pattern: &str, state: Option<Vec<&'static str>>, ns: NewState) -> Self {
+        Self {
+            regex: compile(pattern),
+            action: Some(Action::UsingThis { state }),
+            new_state: ns,
+        }
+    }
+    /// `using(OtherLexer)` — lex whole match with another registered lexer.
+    pub fn using_lexer(pattern: &str, alias: &'static str, state: Option<Vec<&'static str>>) -> Self {
+        Self {
+            regex: compile(pattern),
+            action: Some(Action::UsingLexer { alias, state }),
+            new_state: NewState::None,
+        }
+    }
+    pub fn using_lexer_to(pattern: &str, alias: &'static str, state: Option<Vec<&'static str>>, ns: NewState) -> Self {
+        Self {
+            regex: compile(pattern),
+            action: Some(Action::UsingLexer { alias, state }),
+            new_state: ns,
+        }
+    }
+    /// Convenience wrappers so generated code can pass `Some(token)` without importing GroupAction.
+    pub fn group_token(t: TokenType) -> Option<GroupAction> {
+        Some(GroupAction::Token(t))
+    }
+    pub fn group_using_this(state: Option<Vec<&'static str>>) -> Option<GroupAction> {
+        Some(GroupAction::UsingThis { state })
+    }
+    pub fn group_using_lexer(alias: &'static str, state: Option<Vec<&'static str>>) -> Option<GroupAction> {
+        Some(GroupAction::UsingLexer { alias, state })
     }
 }
 
@@ -124,7 +212,21 @@ pub trait StateTable: Send + Sync {
 }
 
 pub fn tokenize<T: StateTable>(table: &T, text: &str) -> Vec<(TokenType, String)> {
-    let mut stack: Vec<&str> = vec!["root"];
+    tokenize_with_stack(table, text, vec!["root"])
+}
+
+/// Tokenize `text` starting with an explicit state stack. Used by
+/// `using(this, state=...)` to resume lexing at a named state.
+pub fn tokenize_with_stack<T: StateTable>(
+    table: &T,
+    text: &str,
+    initial_stack: Vec<&'static str>,
+) -> Vec<(TokenType, String)> {
+    let mut stack: Vec<&str> = if initial_stack.is_empty() {
+        vec!["root"]
+    } else {
+        initial_stack.into_iter().map(|s| s as &str).collect()
+    };
     let mut pos = 0usize;
     let mut out: Vec<(TokenType, String)> = Vec::new();
 
@@ -149,35 +251,61 @@ pub fn tokenize<T: StateTable>(table: &T, text: &str) -> Vec<(TokenType, String)
             if m0.start() != pos {
                 continue;
             }
-            // Zero-width guard: a rule that matches at `pos` but consumes
-            // nothing AND has no state transition would loop forever (Python's
-            // RegexLexer has the same invariant — every zero-width rule in a
-            // well-formed Pygments lexer carries a state transition).  Skip
-            // rather than hang; the next rule in the list will fire instead.
             let is_zero_width = m0.start() == m0.end();
             if is_zero_width && matches!(rule.new_state, NewState::None) {
                 continue;
             }
+            let matched = &text[m0.start()..m0.end()];
             match rule.action.as_ref().unwrap() {
                 Action::Single(t) => {
-                    // Emit even when the matched string is empty: Python's
-                    // `get_tokens_unprocessed` yields `(pos, ttype, m.group())`
-                    // verbatim, including zero-width matches (e.g. the JS
-                    // `^(?=\s|/|<!--)` lookahead emits `Token.Text ""`).
-                    let s = &text[m0.start()..m0.end()];
-                    push_merged(&mut out, *t, s);
+                    push_merged(&mut out, *t, matched);
+                }
+                Action::UsingThis { state } => {
+                    // Lex the matched substring with the same state table,
+                    // starting in the specified state (or root).
+                    let init = state
+                        .as_ref()
+                        .map(|v| v.clone())
+                        .unwrap_or_else(|| vec!["root"]);
+                    let nested = tokenize_with_stack(table, matched, init);
+                    for (nt, nv) in nested {
+                        push_merged(&mut out, nt, &nv);
+                    }
+                }
+                Action::UsingLexer { alias, state } => {
+                    // Lex with a different registered lexer.
+                    let nested = lex_nested_alias(alias, matched, state.as_deref());
+                    for (nt, nv) in nested {
+                        push_merged(&mut out, nt, &nv);
+                    }
                 }
                 Action::ByGroups(toks) => {
-                    // Python's bygroups callback guards `if data:` — it skips
-                    // empty-string captures.  Mirror that behaviour here so
-                    // optional groups (e.g. `([ \t]*)$`) don't emit stray
-                    // empty tokens.
-                    for (i, maybe_t) in toks.iter().enumerate() {
-                        let Some(t) = maybe_t else { continue };
+                    for (i, maybe_action) in toks.iter().enumerate() {
+                        let Some(group_action) = maybe_action else { continue };
                         if let Some(g) = m.get(i + 1) {
                             let s = &text[g.start()..g.end()];
                             if !s.is_empty() {
-                                push_merged(&mut out, *t, s);
+                                match group_action {
+                                    GroupAction::Token(t) => {
+                                        push_merged(&mut out, *t, s);
+                                    }
+                                    GroupAction::UsingThis { state } => {
+                                        let init = state
+                                            .as_ref()
+                                            .map(|v| v.clone())
+                                            .unwrap_or_else(|| vec!["root"]);
+                                        let nested = tokenize_with_stack(table, s, init);
+                                        for (nt, nv) in nested {
+                                            push_merged(&mut out, nt, &nv);
+                                        }
+                                    }
+                                    GroupAction::UsingLexer { alias, state } => {
+                                        let nested = lex_nested_alias(alias, s, state.as_deref());
+                                        for (nt, nv) in nested {
+                                            push_merged(&mut out, nt, &nv);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -206,6 +334,28 @@ pub fn tokenize<T: StateTable>(table: &T, text: &str) -> Vec<(TokenType, String)
     }
 
     out
+}
+
+/// Dispatch a nested `using(OtherLexer)` call to the native registry.
+/// Falls back to emitting `Error` tokens for the entire slice when the
+/// alias has no native implementation, so the engine never panics and
+/// the caller does not need Python to be available.
+fn lex_nested_alias(
+    alias: &'static str,
+    text: &str,
+    _state: Option<&[&'static str]>,
+) -> Vec<(TokenType, String)> {
+    // The registry is in the sibling `lexers` module.  We import it
+    // here (not at the top of the file) to avoid a circular-dependency
+    // chain: `lexer::engine` → `lexers::registry` → `lexers::generated`
+    // → `lexer::engine`.  The `use` is inside the function so it is
+    // only resolved if this code path is actually reached at runtime.
+    use crate::lexers::registry::get_lexer_by_name;
+    if let Some(lexer) = get_lexer_by_name(alias) {
+        lexer.get_tokens(text)
+    } else {
+        vec![(token::ERROR, text.to_string())]
+    }
 }
 
 fn apply_transition(ns: &NewState, stack: &mut Vec<&'static str>) {

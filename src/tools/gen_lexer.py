@@ -128,6 +128,63 @@ def bygroups_args(action):
     return cell.cell_contents
 
 
+def get_using_info(action):
+    """Inspect a ``using(...)`` callback's closure and return ``(target, stack)``.
+
+    ``target`` is either the string ``"this"`` (for ``using(this, ...)`` /
+    ``using(this, state='foo')``) or a primary lexer alias string (for
+    ``using(SomeLexer)``).
+
+    ``stack`` is a list of state names (the ``state=`` argument converted to
+    a stack tuple by pygments) or ``None`` when no state override was given.
+
+    Returns ``None`` if ``action`` is not a ``using(...)`` callback.
+    """
+    if getattr(action, "__qualname__", "") != "using.<locals>.callback":
+        return None
+    freevars = action.__code__.co_freevars
+    try:
+        gt_kwargs = action.__closure__[freevars.index("gt_kwargs")].cell_contents
+    except (ValueError, IndexError):
+        gt_kwargs = {}
+    stack = gt_kwargs.get("stack", None)  # tuple like ('root', 'string') or None
+    if "_other" not in freevars:
+        # using(this, ...) — self-recursive
+        return ("this", list(stack) if stack else None)
+    try:
+        other_cls = action.__closure__[freevars.index("_other")].cell_contents
+    except (ValueError, IndexError):
+        return None
+    aliases = getattr(other_cls, "aliases", None)
+    alias = aliases[0] if aliases else other_cls.__name__.lower().replace("lexer", "")
+    return (alias, list(stack) if stack else None)
+
+
+def state_vec_literal(stack) -> str:
+    """Render an optional state list as a Rust ``Option<Vec<&'static str>>``."""
+    if not stack:
+        return "None"
+    items = ", ".join(f'"{s}"' for s in stack)
+    return f"Some(vec![{items}])"
+
+
+def group_action_expr(a) -> str:
+    """Render a single bygroups group entry as a ``GroupAction`` variant."""
+    if a is None:
+        return "None"
+    if is_tokentype(a):
+        return f"Some(GroupAction::Token({token_expr(a)}))"
+    info = get_using_info(a)
+    if info is not None:
+        target, stack = info
+        sv = state_vec_literal(stack)
+        if target == "this":
+            return f"Some(GroupAction::UsingThis {{ state: {sv} }})"
+        else:
+            return f'Some(GroupAction::UsingLexer {{ alias: "{target}", state: {sv} }})'
+    raise NotTranspilable(f"bygroups group is not a token or using(): {a!r}")
+
+
 def flag_prefix(flags: int) -> str:
     chars = "".join(c for bit, c in FLAG_CHARS if flags & bit)
     # Pygments lexers default to re.MULTILINE; the engine relies on `m`
@@ -456,26 +513,54 @@ def rule_expr(pattern: str, action, new_state, flags: int) -> str:
             return f"Rule::token_to({pat_lit}, {const}, {ns})"
         return f"Rule::token({pat_lit}, {const})"
 
+    # using(this, ...) or using(OtherLexer, ...) at the top-level rule.
+    using_info = get_using_info(action)
+    if using_info is not None:
+        target, stack = using_info
+        sv = state_vec_literal(stack)
+        if target == "this":
+            if has_ns:
+                return f"Rule::using_this_to({pat_lit}, {sv}, {ns})"
+            return f"Rule::using_this({pat_lit}, {sv})"
+        else:
+            if has_ns:
+                return f'Rule::using_lexer_to({pat_lit}, "{target}", {sv}, {ns})'
+            return f'Rule::using_lexer({pat_lit}, "{target}", {sv})'
+
     args = bygroups_args(action)
     if args is not None:
-        groups = []
-        for a in args:
-            if a is None:
-                groups.append("None")
-            elif is_tokentype(a):
-                groups.append(f"Some({token_expr(a)})")
-            else:
-                raise NotTranspilable(
-                    f"bygroups group is not a token: {a!r}"
-                )
-        groups_lit = "vec![" + ", ".join(groups) + "]"
-        if has_ns:
-            return f"Rule::bygroups_to({pat_lit}, {groups_lit}, {ns})"
-        return f"Rule::bygroups({pat_lit}, {groups_lit})"
+        # Decide whether any group needs GroupAction (i.e. contains using()).
+        has_using = any(
+            a is not None and not is_tokentype(a) and get_using_info(a) is not None
+            for a in args
+        )
+        if has_using:
+            # Emit bygroups_g / bygroups_g_to with full GroupAction groups.
+            groups = [group_action_expr(a) for a in args]
+            groups_lit = "vec![" + ", ".join(groups) + "]"
+            if has_ns:
+                return f"Rule::bygroups_g_to({pat_lit}, {groups_lit}, {ns})"
+            return f"Rule::bygroups_g({pat_lit}, {groups_lit})"
+        else:
+            # Plain token-only bygroups — keep the simple Vec<Option<TokenType>> form.
+            groups = []
+            for a in args:
+                if a is None:
+                    groups.append("None")
+                elif is_tokentype(a):
+                    groups.append(f"Some({token_expr(a)})")
+                else:
+                    raise NotTranspilable(
+                        f"bygroups group is not a token or using(): {a!r}"
+                    )
+            groups_lit = "vec![" + ", ".join(groups) + "]"
+            if has_ns:
+                return f"Rule::bygroups_to({pat_lit}, {groups_lit}, {ns})"
+            return f"Rule::bygroups({pat_lit}, {groups_lit})"
 
     raise NotTranspilable(
         f"action {getattr(action, '__qualname__', action)!r} is not "
-        f"a token / bygroups / default (likely using()/callback)"
+        f"a token / bygroups / default / using() (arbitrary callback)"
     )
 
 
@@ -517,6 +602,7 @@ def transpile(module: str, classname: str, rust_name: str) -> str:
 
     rendered: dict[str, list[str]] = {}
     uses_new_state = False
+    uses_group_action = False
     for state, rules in states.items():
         exprs: list[str] = []
         for matchfn, action, new_state in rules:
@@ -524,6 +610,8 @@ def transpile(module: str, classname: str, rust_name: str) -> str:
             expr = rule_expr(pattern, action, new_state, flags)
             if "NewState::" in expr:
                 uses_new_state = True
+            if "GroupAction::" in expr or "Rule::using_" in expr or "bygroups_g" in expr:
+                uses_group_action = True
             # Inject keyword alternatives before the first plain-NAME rule.
             # Only inject once per state (track via a flag).
             if (
@@ -536,7 +624,12 @@ def transpile(module: str, classname: str, rust_name: str) -> str:
             exprs.append(expr)
         rendered[state] = exprs
 
-    engine_imports = "NewState, Rule, StateTable, tokenize" if uses_new_state else "Rule, StateTable, tokenize"
+    engine_parts = ["Rule", "StateTable", "tokenize"]
+    if uses_new_state:
+        engine_parts.insert(0, "NewState")
+    if uses_group_action:
+        engine_parts.insert(0, "GroupAction")
+    engine_imports = ", ".join(sorted(engine_parts))
 
     lines: list[str] = []
     lines.append(f"//! AUTO-GENERATED from `pygments.{module}:{classname}`.")
@@ -630,11 +723,17 @@ def classify_lexer(module: str, classname: str) -> tuple[str, str]:
 
     Returns ``(category, detail)`` where category is one of:
 
-    * ``transpilable``    — ready to generate (token/bygroups/default only)
-    * ``bridge_using``    — uses ``using()`` / ``this`` (keep on PyO3 bridge)
-    * ``bridge_callback`` — arbitrary Python callback action (bridge)
-    * ``non_regex``       — not a ``RegexLexer`` subclass (bridge)
+    * ``transpilable``    — ready to generate (token/bygroups/default/using() only)
+    * ``bridge_callback`` — arbitrary Python callback action (bridge-only)
+    * ``non_regex``       — not a ``RegexLexer`` subclass (bridge-only)
     * ``error``           — failed to import / process_tokendef
+
+    ``using(this, ...)`` and ``using(OtherLexer)`` are now transpilable
+    (native recursive / delegating dispatch).  The old ``bridge_using``
+    bucket is removed — all such lexers now land in ``transpilable``.
+    The only remaining bridge cases are truly arbitrary Python callbacks
+    (i.e. free functions or closures that are neither a ``_TokenType``,
+    a ``bygroups``, nor a ``using``).
     """
     from pygments.lexer import RegexLexer
 
@@ -658,17 +757,19 @@ def classify_lexer(module: str, classname: str) -> tuple[str, str]:
             qn = getattr(action, "__qualname__", "")
             if is_tokentype(action):
                 continue
+            if qn == "using.<locals>.callback":
+                # using(this) and using(OtherLexer) are now transpilable.
+                continue
             if qn == "bygroups.<locals>.callback":
                 if bygroups_args(action) is None:
-                    return ("bridge_callback", "bygroups w/ nested callback")
-                if any(
-                    a is not None and not is_tokentype(a)
-                    for a in bygroups_args(action)
-                ):
-                    return ("bridge_callback", "bygroups w/ nested callback")
+                    return ("bridge_callback", "bygroups w/ unrecoverable args")
+                for a in bygroups_args(action):
+                    if a is None or is_tokentype(a):
+                        continue
+                    if get_using_info(a) is not None:
+                        continue  # using(this/Other) inside bygroups: ok
+                    return ("bridge_callback", f"bygroups group is callback: {getattr(a, '__qualname__', a)!r:.40}")
                 continue
-            if qn == "using.<locals>.callback":
-                return ("bridge_using", "using()/this delegation")
             return ("bridge_callback", qn or repr(action)[:40])
     return ("transpilable", f"{len(states)} states")
 

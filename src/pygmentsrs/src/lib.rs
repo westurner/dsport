@@ -1,24 +1,48 @@
 //! pygmentsrs — Rust port of Pygments.
 //!
-//! Phase 0 surface: `version()` + `features()`. Phase 1 adds the
-//! token tree, the `RegexLexer` engine, the Python lexer, and the
-//! HTML formatter (see `docs/handoff/pygments.md` in the dsport
-//! repo for the full plan).
-//!
 //! ## Lexer backends
 //!
 //! Three dispatch modes via [`Backend`] / the `backend=` parameter:
 //!
 //! * `Auto` (default): try the native Rust lexer first; if pygmentsrs
 //!   has no implementation for the alias, fall back to the PyO3
-//!   bridge to vendored upstream `pygments`.
+//!   bridge to vendored upstream `pygments` (requires `python-bridge`
+//!   feature, which is enabled by default).
 //! * `Rust`: native only; returns `None` if there's no Rust lexer.
 //! * `Python`: skip the native path entirely and call upstream
-//!   `pygments.lex(...)` via PyO3.
+//!   `pygments.lex(...)` via PyO3 (requires `python-bridge` feature).
+//!
+//! Build without Python / CPython dependency:
+//! ```sh
+//! cargo build -p pygmentsrs --no-default-features
+//! ```
 
+#[cfg(feature = "python-bridge")]
 use pyo3::prelude::*;
 
+#[cfg(feature = "python-bridge")]
 pub mod bridge;
+
+#[cfg(not(feature = "python-bridge"))]
+/// Stub bridge used when the `python-bridge` feature is disabled.
+/// All functions return `None`; the `Auto` backend behaves like `Rust`.
+pub mod bridge {
+    use crate::token::TokenType;
+
+    pub fn lex(_alias: &str, _code: &str) -> Option<Vec<(String, String)>> {
+        None
+    }
+    pub fn format(_name: &str, _tokens: &[(String, String)]) -> Option<String> {
+        None
+    }
+    pub fn alias_is_known(_alias: &str) -> bool {
+        false
+    }
+    pub fn formatter_is_known(_name: &str) -> bool {
+        false
+    }
+}
+
 pub mod formatters;
 pub mod lexer;
 pub mod lexers;
@@ -30,14 +54,7 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
-#[pyfunction(name = "version")]
-fn py_version() -> &'static str {
-    version()
-}
-
-/// Coarse capability flags advertised by the Rust port. Mirrors the
-/// `docutilsrs`/`sphinxdocrs` `features()` pattern so a hybrid
-/// wrapper can probe without importing internals.
+/// Coarse capability flags advertised by the Rust port.
 pub fn features() -> &'static [&'static str] {
     &[
         "token:hierarchy",
@@ -51,16 +68,6 @@ pub fn features() -> &'static [&'static str] {
         "formatters:html",
         "bridge:pygments",
     ]
-}
-
-#[pyfunction(name = "features")]
-fn py_features() -> Vec<&'static str> {
-    features().to_vec()
-}
-
-#[pyfunction(name = "supports")]
-fn py_supports(feature: &str) -> bool {
-    features().contains(&feature)
 }
 
 /// Which lexer implementation to use.
@@ -120,6 +127,7 @@ fn lex_rust(alias: &str, code: &str) -> Option<Vec<(String, String)>> {
     )
 }
 
+#[cfg(feature = "python-bridge")]
 #[pyfunction(name = "lex", signature = (alias, code, backend = "auto"))]
 fn py_lex(alias: &str, code: &str, backend: &str) -> PyResult<Option<Vec<(String, String)>>> {
     let b = Backend::parse(backend).ok_or_else(|| {
@@ -177,6 +185,7 @@ fn to_native_tokens(raw: Vec<(String, String)>) -> Vec<(token::TokenType, String
         .collect()
 }
 
+#[cfg(feature = "python-bridge")]
 #[pyfunction(name = "highlight", signature = (code, alias, formatter = "html", backend = "auto"))]
 fn py_highlight(
     code: &str,
@@ -194,28 +203,32 @@ fn py_highlight(
 
 /// Aliases natively implemented by pygmentsrs. Helpers for callers
 /// that want to pre-flight a dispatch decision.
+#[cfg(feature = "python-bridge")]
 #[pyfunction(name = "native_aliases")]
 fn py_native_aliases() -> Vec<&'static str> {
     lexers::registry::native_aliases().to_vec()
 }
 
+#[cfg(feature = "python-bridge")]
 #[pyfunction(name = "has_native_lexer")]
 fn py_has_native_lexer(alias: &str) -> bool {
     lexers::registry::get_lexer_by_name(alias).is_some()
 }
 
-/// Names of formatters with a native Rust implementation. Mirrors
-/// [`native_aliases`] for the formatter side of the pipeline.
+/// Names of formatters with a native Rust implementation.
+#[cfg(feature = "python-bridge")]
 #[pyfunction(name = "native_formatters")]
 fn py_native_formatters() -> Vec<&'static str> {
     formatters::registry::native_names().to_vec()
 }
 
+#[cfg(feature = "python-bridge")]
 #[pyfunction(name = "has_native_formatter")]
 fn py_has_native_formatter(name: &str) -> bool {
     formatters::registry::has_native(name)
 }
 
+#[cfg(feature = "python-bridge")]
 #[pymodule]
 fn pygmentsrs(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_version, m)?)?;
@@ -231,6 +244,25 @@ fn pygmentsrs(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+#[cfg(feature = "python-bridge")]
+#[pyfunction(name = "version")]
+fn py_version() -> &'static str {
+    version()
+}
+
+#[cfg(feature = "python-bridge")]
+#[pyfunction(name = "features")]
+fn py_features() -> Vec<&'static str> {
+    features().to_vec()
+}
+
+#[cfg(feature = "python-bridge")]
+#[pyfunction(name = "supports")]
+fn py_supports(feature: &str) -> bool {
+    features().contains(&feature)
+}
+
+#[cfg(feature = "python-bridge")]
 #[pyfunction(name = "main")]
 fn py_main() {
     println!("stub running");

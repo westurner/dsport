@@ -21,10 +21,16 @@ name = "pygmentsrs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
+# Build as a Python extension module (required for `maturin develop/build`).
 extension-module = ["pyo3/extension-module"]
+# Include the PyO3 bridge to upstream `pygments` (Backend::Python / Backend::Auto
+# fallback).  Disable with `--no-default-features` to produce a fully standalone
+# Rust library with zero CPython dependency.
+python-bridge = ["dep:pyo3"]
+default = ["python-bridge"]
 
 [dependencies]
-pyo3 = { workspace = true, features = ["auto-initialize"] }
+pyo3 = { workspace = true, features = ["auto-initialize"], optional = true }
 fancy-regex = "0.14"
 
 [dev-dependencies]

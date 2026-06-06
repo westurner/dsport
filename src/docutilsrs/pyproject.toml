@@ -7,7 +7,51 @@ name = "docutilsrs"
 version = "0.0.1"
 description = "Rust port of docutils"
 requires-python = ">=3.9"
-license = { text = "BSD-2-Clause" }
+# docutils is dedicated to the public domain with BSD-2-Clause exceptions.
+license = { text = "LicenseRef-public-domain", file = "../../LICENSE.docutils" }
+keywords = ["markup", "rst", "reStructuredText", "documentation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "License :: Public Domain",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Documentation",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Documentation",
+    "Topic :: Text Processing",
+    "Topic :: Text Processing :: Markup",
+    "Topic :: Text Processing :: Markup :: HTML",
+    "Topic :: Text Processing :: Markup :: LaTeX",
+    "Topic :: Text Processing :: Markup :: reStructuredText",
+    "Topic :: Text Processing :: Markup :: XML",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/westurner/dsport"
+"Source Code" = "https://github.com/westurner/dsport/tree/main/src/docutilsrs"
+#Documentation = "https://docutilsrs.readthedocs.io"
+
+"Upstream Homepage" = "https://docutils.sourceforge.io"
+"Upstream Documentation" = "https://docutils.sourceforge.io/docs/"
+"Upstream Source Code" = "https://sourceforge.net/p/docutils/code/"
+"Upstream Issue Tracker" = "https://sourceforge.net/p/docutils/bugs/"
+"Upstream Changelog" = "https://docutils.sourceforge.io/HISTORY.html"
 
 [tool.maturin]
 module-name = "docutilsrs"

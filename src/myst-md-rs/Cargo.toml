@@ -2,9 +2,20 @@
 name = "myst-md-rs"
 version = "0.0.1"
 edition.workspace = true
-license.workspace = true
+# MyST-Parser is licensed under MIT; see LICENSE.MyST-Parser at the workspace root.
+license-file = "../../LICENSE.MyST-Parser"
 rust-version.workspace = true
 description = "Rust port of MyST-Parser built on pulldown-cmark"
+keywords = ["markdown", "parser", "docutils", "sphinx"]
+categories = ["text-processing", "parser-implementations"]
+homepage = "https://github.com/westurner/dsport/tree/main/src/myst-md-rs"
+repository = "https://github.com/westurner/dsport"
+#documentation = "https://myst-md-rs.readthedocs.io"
+# Upstream MyST-Parser:
+#   homepage = "https://github.com/executablebooks/MyST-Parser"
+#   documentation = "https://myst-parser.readthedocs.io"
+#   repository = "https://github.com/executablebooks/MyST-Parser"
+
 
 [lib]
 name = "myst_md_rs"

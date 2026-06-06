@@ -2,9 +2,19 @@
 name = "sphinxdocrs"
 version = "0.0.1"
 edition.workspace = true
-license.workspace = true
+# Sphinx is licensed under BSD-2-Clause; see LICENSE.sphinx at the workspace root.
+license-file = "../../LICENSE.sphinx"
 rust-version.workspace = true
-description = "Rust port of Sphinx"
+description = "Rust port of Sphinxdoc"
+keywords = ["sphinx", "documentation", "generator", "builder"]
+categories = ["text-processing", "development-tools"]
+homepage = "https://github.com/westurner/dsport/tree/main/src/sphinxdocrs"
+repository = "https://github.com/westurner/dsport"
+#documentation = "https://sphinxdocrs.readthedocs.io"
+# Upstream sphinxdoc:
+#   homepage = "https://www.sphinx-doc.org/"
+#   documentation = "https://www.sphinx-doc.org/"
+#   repository = "https://github.com/sphinx-doc/sphinx"
 
 [lib]
 name = "sphinxdocrs"

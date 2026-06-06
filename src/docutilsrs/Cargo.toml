@@ -2,9 +2,20 @@
 name = "docutilsrs"
 version = "0.0.1"
 edition.workspace = true
-license.workspace = true
+# docutils is dedicated to the public domain (with BSD-2-Clause exceptions);
+# see LICENSE.docutils at the workspace root.
+license-file = "../../LICENSE.docutils"
 rust-version.workspace = true
 description = "Rust port of docutils"
+keywords = ["markup", "rst", "reStructuredText", "parser"]
+categories = ["text-processing", "documentation"]
+homepage = "https://github.com/westurner/dsport/tree/main/src/docutilsrs"
+repository = "https://github.com/westurner/dsport"
+#documentation = "https://docutilsrs.readthedocs.io"
+# Upstream docutils:
+#   homepage = "https://docutils.sourceforge.io"
+#   documentation = "https://docutils.sourceforge.io/docs/"
+#   repository = "https://sourceforge.net/p/docutils/code/"
 
 [lib]
 name = "docutilsrs"

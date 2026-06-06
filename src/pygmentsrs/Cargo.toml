@@ -2,9 +2,19 @@
 name = "pygmentsrs"
 version = "0.0.1"
 edition.workspace = true
-license.workspace = true
+# Pygments is licensed under BSD-2-Clause; see LICENSE.pygments at the workspace root.
+license-file = "../../LICENSE.pygments"
 rust-version.workspace = true
 description = "Rust port of Pygments"
+keywords = ["syntax", "highlighting", "lexer", "formatter"]
+categories = ["text-processing"]
+homepage = "https://github.com/westurner/dsport/tree/main/src/pygmentsrs"
+repository = "https://github.com/westurner/dsport"
+#eocumentation = "https://pygmentsrs.readthedocs.io"
+# Upstream pygments:
+#   homepage = "https://pygments.org"
+#   documentation = "https://pygments.org/docs"
+#   repository = "https://github.com/pygments/pygments"
 
 [lib]
 name = "pygmentsrs"

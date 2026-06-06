@@ -7,7 +7,37 @@ name = "myst-md-rs"
 version = "0.0.1"
 description = "Rust port of MyST-Parser built on pulldown-cmark"
 requires-python = ">=3.9"
-license = { text = "BSD-2-Clause" }
+license = { text = "MIT", file = "../../LICENSE.MyST-Parser" }
+keywords = ["markdown", "parser", "docutils", "sphinx"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Sphinx :: Extension",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Markup",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/westurner/dsport"
+"Source Code" = "https://github.com/westurner/dsport/tree/main/src/myst-md-rs"
+#Documentation = "https://myst-md-rs.readthedocs.io"
+
+"Upstream Homepage" = "https://github.com/executablebooks/MyST-Parser"
+"Upstream Documentation" = "https://myst-parser.readthedocs.io"
+"Upstream Source Code" = "https://github.com/executablebooks/MyST-Parser"
 
 [tool.maturin]
 module-name = "myst_md_rs"

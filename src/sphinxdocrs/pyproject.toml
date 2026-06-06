@@ -7,7 +7,46 @@ name = "sphinxdocrs"
 version = "0.0.1"
 description = "Rust port of Sphinx"
 requires-python = ">=3.9"
-license = { text = "BSD-2-Clause" }
+license = { text = "BSD-2-Clause", file = "../../LICENSE.sphinx" }
+keywords = ["sphinx", "documentation", "generator", "builder"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Framework :: Sphinx",
+    "Framework :: Sphinx :: Domain",
+    "Framework :: Sphinx :: Extension",
+    "Framework :: Sphinx :: Theme",
+    "Topic :: Documentation",
+    "Topic :: Documentation :: Sphinx",
+    "Topic :: Education",
+    "Topic :: Internet :: WWW/HTTP :: Site Management",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Documentation",
+    "Topic :: Text Processing",
+    "Topic :: Text Processing :: Markup",
+    "Topic :: Text Processing :: Markup :: HTML",
+    "Topic :: Text Processing :: Markup :: LaTeX",
+    "Topic :: Text Processing :: Markup :: reStructuredText",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
 dependencies = [
     "sphinxcontrib-applehelp>=1.0.7",
     "sphinxcontrib-devhelp>=1.0.6",
@@ -17,6 +56,17 @@ dependencies = [
     "sphinxcontrib-serializinghtml>=1.1.9",
     "sphinxcontrib-websupport",
 ]
+
+[project.urls]
+Homepage = "https://github.com/westurner/dsport"
+"Source Code" = "https://github.com/westurner/dsport/tree/main/src/sphinxdocrs"
+#Documentation = "https://sphinxdocrs.readthedocs.io"
+
+"Upstream Homepage" = "https://www.sphinx-doc.org/"
+"Upstream Documentation" = "https://www.sphinx-doc.org/"
+"Upstream Source Code" = "https://github.com/sphinx-doc/sphinx"
+"Upstream Issue Tracker" = "https://github.com/sphinx-doc/sphinx/issues"
+"Upstream Changelog" = "https://www.sphinx-doc.org/en/master/changes.html"
 
 [tool.maturin]
 module-name = "sphinxdocrs"

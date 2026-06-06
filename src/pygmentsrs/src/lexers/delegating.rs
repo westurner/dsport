@@ -54,7 +54,7 @@ pub fn delegate_tokens(
 
 /// Merge root tokens with language token insertions
 fn merge_tokens(
-    mut root_tokens: Vec<(TokenType, String)>,
+    root_tokens: Vec<(TokenType, String)>,
     insertions: Vec<(usize, Vec<(TokenType, String)>)>,
 ) -> Vec<(TokenType, String)> {
     if insertions.is_empty() {

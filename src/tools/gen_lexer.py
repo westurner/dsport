@@ -863,6 +863,13 @@ def transpile(module: str, classname: str, rust_name: str) -> str:
             exprs.append(expr)
         rendered[state] = exprs
 
+    # Check final rendered expressions to ensure GroupAction is actually used
+    # (avoid importing it if it's only in intermediate rule processing).
+    # Use any() with a generator for early exit without building large strings.
+    if uses_group_action:
+        if not any("GroupAction::" in expr for exprs in rendered.values() for expr in exprs):
+            uses_group_action = False
+
     engine_parts = ["Rule", "StateTable", "tokenize"]
     if uses_new_state:
         engine_parts.insert(0, "NewState")

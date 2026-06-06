@@ -23,7 +23,7 @@
 
 use crate::lexer::Lexer;
 use crate::token::{
-    self, COMMENT_SINGLE, ERROR, KEYWORD_CONSTANT, NAME_CONSTANT, NAME_DECORATOR,
+    self, COMMENT_SINGLE, KEYWORD_CONSTANT, NAME_CONSTANT, NAME_DECORATOR,
     NAME_NAMESPACE, NAME_TAG, NUMBER_FLOAT, NUMBER_INTEGER, PUNCTUATION, PUNCTUATION_INDICATOR,
     SCALAR_PLAIN, STRING, STRING_DOUBLE, STRING_SINGLE, TokenType, WHITESPACE,
 };
@@ -161,10 +161,6 @@ impl Lexer for YamlLdLexer {
         let mut out = Vec::new();
         let mut lines = code.split_inclusive('\n').peekable();
 
-        // Track the last unquoted or quoted key name so we can dispatch
-        // block scalars to the right embedded lexer.
-        let mut last_key: Option<String> = None;
-
         while let Some(line) = lines.next() {
             let trimmed = line.trim_start();
             let indent_len = line.len() - trimmed.len();
@@ -252,14 +248,12 @@ impl Lexer for YamlLdLexer {
                             emit_block_scalar_content(&scalar_content, indent_len + 2, &mut out);
                         }
                     }
-                    last_key = Some(bare_key);
                     continue;
                 }
 
                 // Inline value
                 if val_part.is_empty() {
                     // Key-only line (nested mapping follows)
-                    last_key = Some(bare_key);
                     // trailing newline
                     let newline = &line[indent_len + key_part.len() + 1..];
                     if !newline.is_empty() {
@@ -275,7 +269,6 @@ impl Lexer for YamlLdLexer {
                 if !tail.is_empty() {
                     out.push((WHITESPACE, tail.to_string()));
                 }
-                last_key = Some(bare_key);
                 continue;
             }
 

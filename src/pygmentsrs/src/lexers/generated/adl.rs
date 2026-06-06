@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::lexer::Lexer;
-use crate::lexer::engine::{GroupAction, NewState, Rule, StateTable, tokenize};
+use crate::lexer::engine::{NewState, Rule, StateTable, tokenize};
 use crate::token::*;
 
 /// Aliases: adl

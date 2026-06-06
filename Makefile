@@ -67,11 +67,17 @@ test-cargo-mathrenderrs:
 test-cargo-pygments:
 	cd src/pygmentsrs && cargo test
 
+
+install-cargo-llvm-cov:
+	rustup component add llvm-tools-preview --toolchain nightly-x86_64-unknown-linux-gnu
+
+PYGMENTS_CARGO_OPTS=--ignore-filename-regex "src/lexers/generated"
+
 test-cargo-pygments-coverage:
-	@echo "=== Running pygmentsrs tests with LLVM coverage (branch + line) ===" && \
-	mkdir -p build/tests/pygmentsrs/coverage-report && \
+	@echo "=== Running pygmentsrs tests with LLVM coverage (branch + line) ==="
+	mkdir -p build/tests/pygmentsrs/coverage-report
 	cd src/pygmentsrs && \
-	cargo llvm-cov --html --output-dir ../../build/tests/pygmentsrs/coverage-report --show-missing-lines 2>&1 | tee ../../build/tests/pygmentsrs/llvm-cov.log && \
+	cargo +nightly llvm-cov --branch --html --output-dir ../../build/tests/pygmentsrs/coverage-report --show-missing-lines $(PYGMENTS_CARGO_OPTS) 2>&1 | tee ../../build/tests/pygmentsrs/llvm-cov.log
 	echo "✅ Coverage report generated: build/tests/pygmentsrs/coverage-report/index.html"
 
 test-coverage-pygments: test-cargo-pygments-coverage

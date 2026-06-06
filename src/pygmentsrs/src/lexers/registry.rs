@@ -7,17 +7,12 @@
 //! a PyO3 hop).
 
 use crate::lexer::Lexer;
-use crate::lexers::bibtex::BibTexLexer;
 use crate::lexers::diff::DiffLexer;
 use crate::lexers::generated;
-use crate::lexers::http::HttpLexer;
 use crate::lexers::json::JsonLexer;
 use crate::lexers::json_ld::JsonLdLexer;
-use crate::lexers::mime::MimeLexer;
-use crate::lexers::notmuch::NotmuchLexer;
 use crate::lexers::python::PythonLexer;
 use crate::lexers::text::TextLexer;
-use crate::lexers::wikitext::WikitextLexer;
 use crate::lexers::yaml_ld::YamlLdLexer;
 pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
     match alias {
@@ -26,11 +21,6 @@ pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
         "json" | "json-object" => Some(Box::new(JsonLexer)),
         "jsonld" | "json-ld" => Some(Box::new(JsonLdLexer)),
         "yaml-ld" | "yamlld" | "yaml" => Some(Box::new(YamlLdLexer)),
-        "http" => Some(Box::new(HttpLexer)),
-        "mime" => Some(Box::new(MimeLexer)),
-        "bibtex" | "bib" => Some(Box::new(BibTexLexer)),
-        "notmuch" => Some(Box::new(NotmuchLexer)),
-        "wikitext" | "mediawiki" => Some(Box::new(WikitextLexer)),
         "diff" | "udiff" => Some(Box::new(DiffLexer)),
         // --- transpiled (tools/gen_lexer.py) ---
         "ini" | "cfg" | "dosini" => Some(Box::new(generated::ini::IniLexer)),
@@ -523,13 +513,6 @@ pub fn native_aliases() -> &'static [&'static str] {
         "yaml",
         "diff",
         "udiff",
-        "http",
-        "mime",
-        "bibtex",
-        "bib",
-        "notmuch",
-        "wikitext",
-        "mediawiki",
         // --- transpiled ---
         "ini",
         "cfg",

@@ -4,6 +4,7 @@
 //! Phase 0 ships only the `text` passthrough so end-to-end builds
 //! work; Phase 1 adds the Python lexer; Phase 2 widens the set.
 
+pub mod delegating;
 pub mod diff;
 pub mod generated;
 pub mod json;

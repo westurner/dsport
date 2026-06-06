@@ -309,6 +309,159 @@ GENERATED = {
             "case class User(name: String, age: Int)\n",
         ],
     ),
+    # --- Phase B: config/markup/template formats ---
+    "augeas": (
+        "pygments.lexers.configs",
+        "AugeasLexer",
+        [
+            "set /files/etc/passwd/*/uid 42\n",
+            "# comment\nadd /files/etc/fstab/1 /dev/sda1\n",
+            "rm /files/etc/hostname\n",
+            "move /files/etc/shadow /files/etc/shadow.bak\n",
+            "save\n",
+        ],
+    ),
+    "bbcode": (
+        "pygments.lexers.markup",
+        "BBCodeLexer",
+        [
+            "[b]bold[/b] [i]italic[/i]\n",
+            "[color=red]colored text[/color]\n",
+            "[url=http://example.com]link[/url]\n",
+            "[size=14]bigger[/size]\n",
+            "[quote]quoted[/quote]\n",
+        ],
+    ),
+    "cfengine3": (
+        "pygments.lexers.configs",
+        "Cfengine3Lexer",
+        [
+            "body common control {\n  bundlesequence => { \"main\" };\n}\n",
+            "# comment\nbundle agent main {\n",
+            "vars:\n  \"x\" string => \"value\";\n",
+            "commands:\n  \"/bin/echo\" args => \"hello\";\n",
+            "reports:\n  \"Report text\";\n",
+        ],
+    ),
+    "cfs": (
+        "pygments.lexers.templates",
+        "ColdfusionLexer",
+        [
+            "<cfset x = 1>\n",
+            "<cfif condition>yes</cfif>\n",
+            "<cfloop from=\"1\" to=\"10\" index=\"i\">\n  #i#\n</cfloop>\n",
+            "<cffunction name=\"foo\">\n</cffunction>\n",
+            "<cfoutput>#variable#</cfoutput>\n",
+        ],
+    ),
+    "debian.sources": (
+        "pygments.lexers.installers",
+        "DebianSourcesLexer",
+        [
+            "deb http://example.com/debian bullseye main\n",
+            "# comment\ndeb-src http://example.com/debian bullseye main\n",
+            "deb [signed-by=/usr/share/keyrings/archive.gpg] http://example.com\n",
+            "Signed-By: /usr/share/keyrings/example.gpg\n",
+        ],
+    ),
+    "desktop": (
+        "pygments.lexers.configs",
+        "DesktopLexer",
+        [
+            "[Desktop Entry]\nName=Foo\nExec=foo\n",
+            "Type=Application\nIcon=foo\n",
+            "Categories=Utility;\n",
+            "Version=1.0\n",
+            "Comment=A comment\n",
+        ],
+    ),
+    "django": (
+        "pygments.lexers.templates",
+        "DjangoLexer",
+        [
+            "{{ variable }}\n",
+            "{% if condition %}yes{% endif %}\n",
+            "{% for item in list %}{{ item }}{% endfor %}\n",
+            "{% load static %}\n",
+            "{% block content %}{% endblock %}\n",
+        ],
+    ),
+    "lighttpd": (
+        "pygments.lexers.configs",
+        "LighttpdConfLexer",
+        [
+            "server.port = 8080\n",
+            "# comment\nserver.document-root = \"/var/www\"\n",
+            "$HTTP[\"host\"] == \"example.com\" { server.document-root = \"/tmp\" }\n",
+            "mimetype.assign = ( \".html\" => \"text/html\" )\n",
+            "url.rewrite-once = ( \"^/(.*)$\" => \"/index.php?q=$1\" )\n",
+        ],
+    ),
+    "mozhashpreproc": (
+        "pygments.lexers.markup",
+        "MozPreprocHashLexer",
+        [
+            "#define SYMBOL value\n",
+            "# comment\n#ifdef SYMBOL\n",
+            "#else\n#endif\n",
+            "#include \"header.h\"\n",
+            "#undef SYMBOL\n",
+        ],
+    ),
+    "mozpercentpreproc": (
+        "pygments.lexers.markup",
+        "MozPreprocPercentLexer",
+        [
+            "%define SYMBOL value\n",
+            "% comment\n%ifdef SYMBOL\n",
+            "%else\n%endif\n",
+            "%include \"file.inc\"\n",
+            "%undef SYMBOL\n",
+        ],
+    ),
+    "ng2": (
+        "pygments.lexers.templates",
+        "Angular2Lexer",
+        [
+            "<div>{{ variable }}</div>\n",
+            "<button (click)=\"onClick()\">Click</button>\n",
+            "<input [(ngModel)]=\"field\">\n",
+            "<div *ngIf=\"condition\">show</div>\n",
+            "<div [ngClass]=\"classes\"></div>\n",
+        ],
+    ),
+    "pacmanconf": (
+        "pygments.lexers.configs",
+        "PacmanConfLexer",
+        [
+            "[options]\nHoldPkg = pacman glibc\n",
+            "# comment\nCleanMethod = KeepInstalled\n",
+            "[core]\nServer = https://mirrors.example.com/$repo/os/$arch\n",
+            "DBPath = /var/lib/pacman/\n",
+            "CacheDir = /var/cache/pacman/pkg/\n",
+        ],
+    ),
+    "pkgconfig": (
+        "pygments.lexers.configs",
+        "PkgConfigLexer",
+        [
+            "prefix=/usr\nlibdir=${prefix}/lib\n",
+            "# comment\nName: Foo\nVersion: 1.0\n",
+            "Description: A library\nRequires: bar >= 1.0\n",
+            "Libs: -L${libdir} -lfoo\n",
+            "Cflags: -I${prefix}/include\n",
+        ],
+    ),
+    "registry": (
+        "pygments.lexers.configs",
+        "RegeditLexer",
+        [
+            "[HKEY_LOCAL_MACHINE\\\\Software]\n\"Value\"=\"Data\"\n",
+            "; comment\n[HKEY_CURRENT_USER\\\\Control Panel]\n",
+            "\"string\"=\"data\"\n\"dword\"=dword:00000001\n",
+            "\"hex\"=hex:01,02,03\n",
+        ],
+    ),
 }
 
 

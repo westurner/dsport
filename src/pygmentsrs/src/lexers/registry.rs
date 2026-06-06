@@ -8,6 +8,7 @@
 
 use crate::lexer::Lexer;
 use crate::lexers::diff::DiffLexer;
+use crate::lexers::generated;
 use crate::lexers::json::JsonLexer;
 use crate::lexers::python::PythonLexer;
 use crate::lexers::text::TextLexer;
@@ -18,6 +19,20 @@ pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
         "python" | "py" | "python3" | "py3" => Some(Box::new(PythonLexer)),
         "json" | "json-object" => Some(Box::new(JsonLexer)),
         "diff" | "udiff" => Some(Box::new(DiffLexer)),
+        // --- transpiled (tools/gen_lexer.py) ---
+        "ini" | "cfg" | "dosini" => Some(Box::new(generated::ini::IniLexer)),
+        "properties" | "jproperties" => {
+            Some(Box::new(generated::properties::PropertiesLexer))
+        }
+        "toml" => Some(Box::new(generated::toml::TomlLexer)),
+        "pot" | "po" => Some(Box::new(generated::gettext::GettextLexer)),
+        "dpatch" => Some(Box::new(generated::darcs::DarcsLexer)),
+        "vctreestatus" => Some(Box::new(generated::vctreestatus::VctreestatusLexer)),
+        "groff" | "nroff" | "man" => Some(Box::new(generated::groff::GroffLexer)),
+        "bash" | "sh" | "ksh" | "zsh" | "shell" | "openrc" => {
+            Some(Box::new(generated::bash::BashLexer))
+        }
+        "cmake" => Some(Box::new(generated::cmake::CmakeLexer)),
         _ => None,
     }
 }
@@ -37,5 +52,26 @@ pub fn native_aliases() -> &'static [&'static str] {
         "json-object",
         "diff",
         "udiff",
+        // --- transpiled ---
+        "ini",
+        "cfg",
+        "dosini",
+        "properties",
+        "jproperties",
+        "toml",
+        "pot",
+        "po",
+        "dpatch",
+        "vctreestatus",
+        "groff",
+        "nroff",
+        "man",
+        "bash",
+        "sh",
+        "ksh",
+        "zsh",
+        "shell",
+        "openrc",
+        "cmake",
     ]
 }

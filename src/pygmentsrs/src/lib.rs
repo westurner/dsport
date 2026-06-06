@@ -42,8 +42,12 @@ pub fn features() -> &'static [&'static str] {
     &[
         "token:hierarchy",
         "lexer:regex_engine",
-        "lexers:python",
+        "engine:fancy_regex",
         "lexers:text",
+        "lexers:python",
+        "lexers:json",
+        "lexers:diff",
+        "lexers:transpiled",
         "formatters:html",
         "bridge:pygments",
     ]

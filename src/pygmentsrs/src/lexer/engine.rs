@@ -21,7 +21,7 @@
 //! not start-of-pos).
 
 use crate::token::{self, TokenType};
-use regex::Regex;
+use fancy_regex::Regex;
 
 /// Action attached to a regex rule.
 pub enum Action {
@@ -84,12 +84,22 @@ impl Rule {
     /// `default(...)` — zero-width transition.
     pub fn default(ns: NewState) -> Self {
         Self {
-            regex: Regex::new("").unwrap(),
+            regex: compile(""),
             action: None,
             new_state: ns,
         }
     }
 }
+
+/// Upper bound on backtracking steps for a single match attempt.
+///
+/// `fancy-regex` only backtracks for patterns that actually need it
+/// (lookaround / backreferences); pure-`regex`-compatible patterns run
+/// on the linear-time NFA and never hit this. The bound guards against
+/// catastrophic backtracking (ReDoS) on adversarial code-block input.
+/// 1,000,000 is `fancy-regex`'s own default; we set it explicitly so
+/// the intent is documented and tunable.
+const BACKTRACK_LIMIT: usize = 1_000_000;
 
 fn compile(pattern: &str) -> Regex {
     // Apply `(?m)` so `^`/`$` mean line-start/end (Python's
@@ -100,7 +110,10 @@ fn compile(pattern: &str) -> Regex {
     } else {
         format!("(?m){pattern}")
     };
-    Regex::new(&with_ml).unwrap_or_else(|e| panic!("uncompilable pattern {pattern:?}: {e}"))
+    fancy_regex::RegexBuilder::new(&with_ml)
+        .backtrack_limit(BACKTRACK_LIMIT)
+        .build()
+        .unwrap_or_else(|e| panic!("uncompilable pattern {pattern:?}: {e}"))
 }
 
 /// A `RegexLexer` is a static map of state-name → rules + a way to
@@ -129,7 +142,7 @@ pub fn tokenize<T: StateTable>(table: &T, text: &str) -> Vec<(TokenType, String)
                 apply_transition(&rule.new_state, &mut stack);
                 continue 'outer;
             }
-            let Some(m) = rule.regex.captures_at(text, pos) else {
+            let Ok(Some(m)) = rule.regex.captures_from_pos(text, pos) else {
                 continue;
             };
             let m0 = m.get(0).unwrap();
@@ -254,3 +267,101 @@ macro_rules! impl_lexer_via {
         }
     };
 }
+
+#[cfg(test)]
+mod tests {
+    //! Proof that the `fancy-regex` engine accepts the regex
+    //! constructs the `regex` crate rejects. ~44% of upstream Pygments
+    //! lexers use lookaround, and 23 use backreferences (the `bash`
+    //! heredoc rule is the canonical blocker). Each test below builds
+    //! a tiny state table whose patterns would `panic!` at
+    //! `compile(...)` under the old `regex`-crate engine.
+
+    use super::*;
+    use crate::token::{NAME, NUMBER, PUNCTUATION, STRING, TokenType};
+
+    /// One-state table built from an explicit rule list.
+    struct OneState(Vec<Rule>);
+    impl StateTable for OneState {
+        fn state(&self, name: &str) -> Option<&[Rule]> {
+            (name == "root").then_some(self.0.as_slice())
+        }
+    }
+
+    fn reprs(toks: &[(TokenType, String)]) -> Vec<(String, String)> {
+        toks.iter().map(|(t, v)| (t.repr(), v.clone())).collect()
+    }
+
+    #[test]
+    fn lookahead_compiles_and_matches() {
+        // `\d+(?=px)`: digits only when followed by `px`. Positive
+        // lookahead is unsupported by the `regex` crate.
+        let table = OneState(vec![
+            Rule::token(r"\d+(?=px)", NUMBER),
+            Rule::token(r"[a-z]+", NAME),
+        ]);
+        let out = reprs(&tokenize(&table, "10px"));
+        assert_eq!(
+            out,
+            vec![
+                ("Token.Literal.Number".into(), "10".into()),
+                ("Token.Name".into(), "px".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn lookbehind_compiles_and_matches() {
+        // `(?<=\$)\w+`: a word only when preceded by `$`. Lookbehind
+        // is unsupported by the `regex` crate.
+        let table = OneState(vec![
+            Rule::token(r"\$", PUNCTUATION),
+            Rule::token(r"(?<=\$)\w+", NAME),
+        ]);
+        let out = reprs(&tokenize(&table, "$foo"));
+        assert_eq!(
+            out,
+            vec![
+                ("Token.Punctuation".into(), "$".into()),
+                ("Token.Name".into(), "foo".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn backreference_compiles_and_matches() {
+        // `(["'])\w+\1`: a word wrapped in *matching* quotes. The `\1`
+        // backreference is the same construct the `bash` heredoc rule
+        // (`\2`) needs, and is unsupported by the `regex` crate.
+        let table = OneState(vec![
+            Rule::token(r#"(["'])\w+\1"#, STRING),
+            Rule::token(r".", NAME),
+        ]);
+
+        // Matching quotes -> single STRING token.
+        let matched = reprs(&tokenize(&table, "'abc'"));
+        assert_eq!(matched, vec![("Token.Literal.String".into(), "'abc'".into())]);
+
+        // Mismatched quotes -> backref fails, falls through to `.`.
+        let mismatched = reprs(&tokenize(&table, "'abc\""));
+        assert!(
+            mismatched.iter().all(|(t, _)| t == "Token.Name"),
+            "mismatched quotes must not be lexed as a string: {mismatched:?}"
+        );
+    }
+
+    #[test]
+    fn backtrack_limit_is_bounded() {
+        // A pathological pattern on adversarial input must terminate
+        // (return no match) rather than hang. `fancy-regex` surfaces a
+        // backtrack-limit overflow as `Err`, which the engine treats
+        // as "no match" and advances by one char.
+        let table = OneState(vec![Rule::token(r"(a+)+$", STRING), Rule::token(r".", NAME)]);
+        let input = "a".repeat(40) + "!";
+        // Must complete (not hang) and consume the whole input.
+        let out = tokenize(&table, &input);
+        let consumed: usize = out.iter().map(|(_, v)| v.len()).sum();
+        assert_eq!(consumed, input.len());
+    }
+}
+

@@ -5,6 +5,7 @@
 //! work; Phase 1 adds the Python lexer; Phase 2 widens the set.
 
 pub mod diff;
+pub mod generated;
 pub mod json;
 pub mod python;
 pub mod registry;

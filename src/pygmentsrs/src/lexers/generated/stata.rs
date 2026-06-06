@@ -42,7 +42,7 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)\*|\+|\^|/|!|~|==|~=", OPERATOR),
         Rule::token(r"(?ms)%-?\d{1,2}(\.\d{1,2})?[gfe]c?", NAME_OTHER),
         Rule::token(r"(?ms)%(21x|16H|16L|8H|8L)", NAME_OTHER),
-        Rule::token(r"(?ms)%-?(tc|tC|td|tw|tm|tq|th|ty|tg)\S{0,32}", NAME_OTHER),
+        Rule::token(r"(?ms)%-?(tc|tC|td|tw|tm|tq|th|ty|tg)\S*", NAME_OTHER),
         Rule::token(r"(?ms)%[-~]?\d{1,4}s", NAME_OTHER),
         Rule::token(r"(?ms).", TEXT),
     ]);
@@ -75,7 +75,7 @@ fn build_table() -> Table {
     m.insert(r"format", vec![
         Rule::token(r"(?ms)%-?\d{1,2}(\.\d{1,2})?[gfe]c?", NAME_OTHER),
         Rule::token(r"(?ms)%(21x|16H|16L|8H|8L)", NAME_OTHER),
-        Rule::token(r"(?ms)%-?(tc|tC|td|tw|tm|tq|th|ty|tg)\S{0,32}", NAME_OTHER),
+        Rule::token(r"(?ms)%-?(tc|tC|td|tw|tm|tq|th|ty|tg)\S*", NAME_OTHER),
         Rule::token(r"(?ms)%[-~]?\d{1,4}s", NAME_OTHER),
     ]);
     m.insert(r"comments-block", vec![
@@ -136,7 +136,7 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)\$(\{|(?=[$`]))", NAME_VARIABLE_GLOBAL, NewState::Push(vec![r"macro-global-nested"])),
         Rule::token_to(r"(?ms)\$", NAME_VARIABLE_GLOBAL, NewState::Push(vec![r"macro-global-name"])),
         Rule::token_to(r"(?ms)`", NAME_VARIABLE, NewState::Push(vec![r"macro-local"])),
-        Rule::token_to(r"(?ms)\w{1,32}", NAME_VARIABLE_GLOBAL, NewState::Pop(1)),
+        Rule::token_to(r"(?ms)\w+", NAME_VARIABLE_GLOBAL, NewState::Pop(1)),
     ]);
     Table(m)
 }

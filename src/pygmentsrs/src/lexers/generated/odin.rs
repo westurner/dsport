@@ -114,7 +114,7 @@ fn build_table() -> Table {
         Rule::bygroups(r"(?m)([ \t]*)(--.*)$", vec![Some(WHITESPACE), Some(COMMENT)]),
     ]);
     m.insert(r"archetype_id", vec![
-        Rule::bygroups(r"(?m)([ \t]*)(([a-zA-Z]\w{1,100}(\.[a-zA-Z]\w{1,100})*::)?[a-zA-Z]\w{1,100}(-[a-zA-Z]\w{1,100}){2}\.\w{1,100}[\w-]*\.v\d+(\.\d+){,2}((-[a-z]+)(\.\d+)?)?)", vec![Some(WHITESPACE), Some(NAME_DECORATOR)]),
+        Rule::bygroups(r"(?m)([ \t]*)(([a-zA-Z]\w+(\.[a-zA-Z]\w+)*::)?[a-zA-Z]\w+(-[a-zA-Z]\w+){2}\.\w+[\w-]*\.v\d+(\.\d+){,2}((-[a-z]+)(\.\d+)?)?)", vec![Some(WHITESPACE), Some(NAME_DECORATOR)]),
     ]);
     m.insert(r"date_constraints", vec![
         Rule::token(r"(?m)[Xx?YyMmDdHhSs\d]{2,4}([:-][Xx?YyMmDdHhSs\d]{2}){2}", LITERAL_DATE),
@@ -165,7 +165,7 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\s+", WHITESPACE),
     ]);
     m.insert(r"any_code", vec![
-        Rule::bygroups(r"(?m)([ \t]*)(([a-zA-Z]\w{1,100}(\.[a-zA-Z]\w{1,100})*::)?[a-zA-Z]\w{1,100}(-[a-zA-Z]\w{1,100}){2}\.\w{1,100}[\w-]*\.v\d+(\.\d+){,2}((-[a-z]+)(\.\d+)?)?)", vec![Some(WHITESPACE), Some(NAME_DECORATOR)]),
+        Rule::bygroups(r"(?m)([ \t]*)(([a-zA-Z]\w+(\.[a-zA-Z]\w+)*::)?[a-zA-Z]\w+(-[a-zA-Z]\w+){2}\.\w+[\w-]*\.v\d+(\.\d+){,2}((-[a-z]+)(\.\d+)?)?)", vec![Some(WHITESPACE), Some(NAME_DECORATOR)]),
         Rule::token(r"(?m)[a-z_]\w*[0-9.]+(@[^\]]+)?", NAME_DECORATOR),
         Rule::token(r"(?m)[a-z_]\w*", NAME_CLASS),
         Rule::token(r"(?m)[0-9]+", TEXT),

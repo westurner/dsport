@@ -133,7 +133,7 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[+-]?\d+%?", NUMBER_INTEGER),
     ]);
     m.insert(r"archetype_id", vec![
-        Rule::bygroups(r"(?m)([ \t]*)(([a-zA-Z]\w{1,100}(\.[a-zA-Z]\w{1,100})*::)?[a-zA-Z]\w{1,100}(-[a-zA-Z]\w{1,100}){2}\.\w{1,100}[\w-]*\.v\d+(\.\d+){,2}((-[a-z]+)(\.\d+)?)?)", vec![Some(WHITESPACE), Some(NAME_DECORATOR)]),
+        Rule::bygroups(r"(?m)([ \t]*)(([a-zA-Z]\w+(\.[a-zA-Z]\w+)*::)?[a-zA-Z]\w+(-[a-zA-Z]\w+){2}\.\w+[\w-]*\.v\d+(\.\d+){,2}((-[a-z]+)(\.\d+)?)?)", vec![Some(WHITESPACE), Some(NAME_DECORATOR)]),
     ]);
     m.insert(r"string", vec![
         Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
@@ -160,7 +160,7 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\s+", WHITESPACE),
     ]);
     m.insert(r"any_code", vec![
-        Rule::bygroups(r"(?m)([ \t]*)(([a-zA-Z]\w{1,100}(\.[a-zA-Z]\w{1,100})*::)?[a-zA-Z]\w{1,100}(-[a-zA-Z]\w{1,100}){2}\.\w{1,100}[\w-]*\.v\d+(\.\d+){,2}((-[a-z]+)(\.\d+)?)?)", vec![Some(WHITESPACE), Some(NAME_DECORATOR)]),
+        Rule::bygroups(r"(?m)([ \t]*)(([a-zA-Z]\w+(\.[a-zA-Z]\w+)*::)?[a-zA-Z]\w+(-[a-zA-Z]\w+){2}\.\w+[\w-]*\.v\d+(\.\d+){,2}((-[a-z]+)(\.\d+)?)?)", vec![Some(WHITESPACE), Some(NAME_DECORATOR)]),
         Rule::token(r"(?m)[a-z_]\w*[0-9.]+(@[^\]]+)?", NAME_DECORATOR),
         Rule::token(r"(?m)[a-z_]\w*", NAME_CLASS),
         Rule::token(r"(?m)[0-9]+", TEXT),

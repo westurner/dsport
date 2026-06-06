@@ -13,3 +13,4 @@ src/build.log
 src/cov.xml
 src/coverage.md
 src/pytest-results.xml
+src/pygmentsrs/fuzz/target/

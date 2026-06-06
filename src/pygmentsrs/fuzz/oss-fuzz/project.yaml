@@ -1,0 +1,40 @@
+# pygmentsrs OSS-Fuzz Project Configuration
+#
+# Register this with OSS-Fuzz by adding to their projects.yaml:
+# https://github.com/google/oss-fuzz/blob/master/projects/pygmentsrs/project.yaml
+
+language: rust
+primary_contact: "westurner@github"
+auto_ccs:
+  - "fuzzing@github"
+sanitizers:
+  - address
+  - memory
+  - undefined
+view_restrictions: public
+
+# Fuzzing engine: libFuzzer (default for Rust)
+fuzzing_engines:
+  - libfuzzer
+
+# Job templates for CI
+jobs:
+  - name: fuzz_lex_python
+    fuzzer: fuzz_lex_python
+    target: python-lexer
+    duration: 60  # Run for 60 seconds in periodic jobs
+    
+  - name: fuzz_lex_arbitrary_lexer
+    fuzzer: fuzz_lex_arbitrary_lexer
+    target: arbitrary-lexer
+    duration: 120
+    
+  - name: fuzz_format_html
+    fuzzer: fuzz_format_html
+    target: html-formatter
+    duration: 60
+    
+  - name: fuzz_bridge_e2e
+    fuzzer: fuzz_bridge_e2e
+    target: bridge-integration
+    duration: 60

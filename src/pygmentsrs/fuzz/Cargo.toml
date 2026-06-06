@@ -1,0 +1,59 @@
+[package]
+name = "pygmentsrs-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[workspace]
+# Standalone fuzz workspace - uses libfuzzer-sys which may conflict with main workspace
+
+[dependencies]
+libfuzzer-sys = "0.4"
+pygmentsrs = { path = ".." }
+arbitrary = { version = "1.3", features = ["derive"] }
+
+# Sanitizer-safe dependencies (verified for ASAN/MSAN)
+# These versions are known to work with Address Sanitizer and Memory Sanitizer
+
+[profile.release]
+# Sanitizer-compatible compiler settings
+opt-level = 1           # ASAN works better with -O1 than -O3
+debug = 1               # Include debug symbols for better error reporting
+lto = false             # LTO can interfere with sanitizers
+codegen-units = 1       # Single codegen unit for consistent instrumentation
+
+[[bin]]
+name = "fuzz_lex_arbitrary_lexer"
+path = "fuzz_targets/fuzz_lex_arbitrary_lexer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_lex_python"
+path = "fuzz_targets/fuzz_lex_python.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_lex_javascript"
+path = "fuzz_targets/fuzz_lex_javascript.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_format_html"
+path = "fuzz_targets/fuzz_format_html.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_format_arbitrary"
+path = "fuzz_targets/fuzz_format_arbitrary.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_bridge_e2e"
+path = "fuzz_targets/fuzz_bridge_e2e.rs"
+test = false
+doc = false

@@ -1,0 +1,22 @@
+[build]
+# Sanitizer flags for local fuzzing
+# These enable coverage instrumentation and basic sanitizers
+
+# LLVM Coverage instrumentation for better feedback
+# libfuzzer-sys handles this automatically with nightly
+
+# Address Sanitizer (ASAN) - Memory safety
+# Uncomment to enable locally (requires: RUSTFLAGS="...")
+# rustflags = ["-Zsanitizer=address"]
+
+# Memory Sanitizer (MSAN) - Uninitialized memory detection
+# Only works on Linux, requires special build
+# Uncomment to enable locally
+# rustflags = ["-Zsanitizer=memory", "-Zsanitizer-memory-track-origins"]
+
+# Undefined Behavior Sanitizer (UBSAN)
+# Uncomment to enable locally
+# rustflags = ["-Zsanitizer=undefined"]
+
+# For OSS-Fuzz, these are set via environment variables
+# See oss-fuzz/build.sh for full configuration

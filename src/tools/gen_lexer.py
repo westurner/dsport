@@ -196,7 +196,41 @@ def flag_prefix(flags: int) -> str:
 
 
 def rust_raw_string(s: str) -> str:
-    """Emit ``s`` as a Rust raw string literal with enough ``#`` hashes."""
+    """Emit ``s`` as a Rust raw string literal with enough ``#`` hashes.
+
+    Rust 1.72+ rejects string literals containing Unicode bidi-override
+    code points (U+202A/B/C/D/E, U+2066–2069, U+200F, U+061C) unless
+    they appear as ``\\u{XXXX}`` escape sequences.  Patterns that cover
+    large Unicode ranges (e.g. CSharp/Nemerle) embed these characters
+    literally in their regex strings, so we escape them here.
+    """
+    # Bidi override / directional code points that Rust forbids in literals,
+    # plus any lone surrogate halves (0xD800–0xDFFF) that Python may expose
+    # from some Pygments patterns (e.g. `re.compile` accepts surrogates in
+    # byte-level string patterns but Rust's str cannot represent them).
+    BIDI = {0x061C, 0x200F, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+            0x2066, 0x2067, 0x2068, 0x2069}
+    needs_escape = any(ord(c) in BIDI or 0xD800 <= ord(c) <= 0xDFFF for c in s)
+    if needs_escape:
+        # Cannot use a raw string — build a regular Rust string with \u{} escapes.
+        escaped = ""
+        for c in s:
+            o = ord(c)
+            if o in BIDI or 0xD800 <= o <= 0xDFFF:
+                escaped += f"\\u{{{o:04X}}}"
+            elif c == "\\":
+                escaped += "\\\\"
+            elif c == '"':
+                escaped += '\\"'
+            elif c == "\n":
+                escaped += "\\n"
+            elif c == "\r":
+                escaped += "\\r"
+            elif c == "\t":
+                escaped += "\\t"
+            else:
+                escaped += c
+        return f'"{escaped}"'
     n = 0
     while f'"{"#" * n}' in s or s.endswith('"' + "#" * n):
         n += 1
@@ -812,7 +846,7 @@ def cmd_classify(filter_cat: str | None) -> int:
         for primary, classname, module, detail in rows:
             # Emit a ready-to-use generate spec for transpilable rows.
             if cat == "transpilable":
-                rust = primary.replace("-", "_").replace("+", "p") or classname.lower()
+                rust = primary.replace("-", "_").replace("+", "p").replace(".", "_") or classname.lower()
                 print(f"  {module}:{classname}:{rust}    # {detail}")
             else:
                 print(f"  {primary:18} {classname:28} {detail}")
@@ -831,6 +865,7 @@ def cmd_registry(specs: list[str]) -> int:
     for spec in specs:
         try:
             module, classname, rust_name = spec.split(":")
+            rust_name = rust_name.replace(".", "_")  # Rust identifiers cannot contain dots
         except ValueError:
             print(f"// SKIP {spec!r}: expected module:Class:rust_name")
             continue
@@ -861,6 +896,7 @@ def cmd_generate(specs: list[str]) -> int:
     for spec in specs:
         try:
             module, classname, rust_name = spec.split(":")
+            rust_name = rust_name.replace(".", "_")  # Rust identifiers cannot contain dots
         except ValueError:
             print(f"SKIP {spec!r}: expected module:Class:rust_name")
             skipped.append(spec)
@@ -872,7 +908,12 @@ def cmd_generate(specs: list[str]) -> int:
             skipped.append(spec)
             continue
         out = OUT_DIR / f"{rust_name}.rs"
-        out.write_text(src, encoding="utf-8")
+        try:
+            out.write_text(src, encoding="utf-8")
+        except (UnicodeEncodeError, ValueError) as exc:
+            print(f"SKIP {classname} ({rust_name}): encode error: {exc}")
+            skipped.append(spec)
+            continue
         print(f"WROTE {out.relative_to(REPO_ROOT)}")
         written.append((rust_name, classname))
     print(f"\n{len(written)} written, {len(skipped)} skipped")

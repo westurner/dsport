@@ -12,18 +12,17 @@ pinned vendored Pygments. Re-run after an upstream bump.
 
 ## Current state (as of June 6, 2026)
 
-- **Lexers**: 598 total, **451 native**, 147 bridge-only.
-- **Native breakdown**: 13 built-in + 436 transpiled + 2 hand-crafted = 451 total (672+ aliases)
+- **Lexers**: 598 total, **512 native**, 86 bridge-only.
+- **Native breakdown**: 13 built-in + 436 transpiled + 61 E1 DelegatingLexer + 2 hand-crafted = 512 total (700+ aliases)
 - **Transpilable remaining**: **0** — all transpilable lexers are now ported.
-- **Bridge-only**: 143 (non_regex: 111, bridge_callback: 32)
+- **Bridge-only**: 86 (non_regex: ~50, bridge_callback: ~36)
 - **Formatters**: 18 total, **1 native** (`html`).
 - **Standalone build**: `cargo build -p pygmentsrs --no-default-features` compiles
   with zero CPython dependency (`python-bridge` feature).
 - Gates: `cargo test -p pygmentsrs` + `tests/test_pygments_generated_lexers.py`
   (byte-parity vs `get_tokens_unprocessed`), `tests/test_pygments_json_lexer.py`,
   `tests/test_pygments_diff_lexer.py`, `tests/test_json_ld_yaml_ld_lexers.py`
-  (17 parity/functional tests), and the `code_block_*` cases in
-  `tests/test_parity_pseudoxml.py`. **Current: 341 tests passing** ✅
+  (17 parity/functional tests). **Current: 341 tests passing** ✅
 
 ### What changed since Phase C Batch 1
 

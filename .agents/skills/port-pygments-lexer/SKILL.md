@@ -21,6 +21,10 @@ with upstream. This skill is the end-to-end workflow.
 - Survey which of the ~585 un-ported lexers can be transpiled now.
 - Decide whether a lexer must stay on the runtime PyO3 `pygments` bridge.
 
+The overall roadmap, phased batches, and progress tracker live in
+`docs/pygments-port-inventory.md`. This skill is the per-batch mechanics;
+that doc says *which* lexers to do next.
+
 ## Prerequisites
 
 - Run everything from `src/` (the cargo workspace root). The venv is `src/.venv`.
@@ -61,10 +65,15 @@ cd src
 
 The `transpilable` bucket prints ready-to-use `module:ClassName:rust_name`
 specs (with rule counts). Pick targets from there. Categories:
-`transpilable`, `bridge_using`, `bridge_callback`, `non_regex`, `error`.
+`transpilable`, `bridge_using`, `bridge_callback`, `non_regex` (all
+bridge-only). `error` should be empty — if a lexer errors, it is almost
+always a token-variant lexer whose `_tokens` lives on the instance (the
+tool already reads the instance); a new error category usually means an
+upstream API change worth investigating.
 
-Prefer lexers that are commonly used in docs/Sphinx (`rust`, `c`, `cpp`,
-`yaml`, `rst`, `make`, `dockerfile`, `sql`) and have a modest rule count.
+Prefer the next unfinished phase in `docs/pygments-port-inventory.md`
+(Phase A is the high-value doc/Sphinx languages). To work a single source
+module end-to-end: `--classify transpilable | grep <module>`.
 
 ## 2. Generate
 
@@ -148,7 +157,17 @@ make -C .. test-python            # full pytest + coverage report
 ```
 
 Then update the transpiled-lexers table and counts in
-`src/pygmentsrs/docs/compat.md`.
+`src/pygmentsrs/docs/compat.md`, and the tracking row in
+`docs/pygments-port-inventory.md`.
+
+## Batching many lexers
+
+For a whole phase/module, pass all specs to one `generate` and one
+`--registry` invocation, then paste once. Keep a batch to ~10–25 lexers so
+a parity failure is easy to bisect. The `--registry` output is already
+sorted/de-duplicated for direct pasting. After wiring, add every alias's
+samples to `GENERATED` before running the parity suite so a single
+`pytest` run validates the whole batch.
 
 ## Troubleshooting
 

@@ -93,8 +93,8 @@ pub fn rgb_to_ansi256(r: u8, g: u8, b: u8) -> u8 {
         if gray > 238 {
             return 231; // near white
         }
-        // Map to 232-255 range
-        let step = ((gray - 48) * 24) / 208;
+        // Map to 232-255 range (use u32 to avoid overflow in intermediate computation)
+        let step = ((gray as u32 - 48) * 24) / 208;
         return (232 + step.min(23)) as u8;
     }
     

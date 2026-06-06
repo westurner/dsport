@@ -37,10 +37,12 @@ pinned vendored Pygments. Re-run after an upstream bump.
 - 10 previously-excluded lexers (surrogate patterns no longer present) re-generated
   and wired: `adl`, `csharp`, `csound_document`, `elpi`, `html`, `mask`, `modelica`,
   `singularity`, `tablegen`, `x10`.
-- **E4 Phase completion**: Implemented `DispatchCodeBlock` action for structured-text
-  embedded-code dispatchers. Hand-ported `markdown`, `restructuredtext`, `tid` with
-  indent-aware nested lexer dispatch. Dispatch support extended to all future E4
-  lexers (`http`, `mime`, `bibtex`, `notmuch`, `wikitext`).
+- **E4 Phase completion**: Implemented `DispatchCodeBlock` action for **regex-based**
+  embedded-code dispatch (lexers that capture language tags in patterns).
+  Hand-ported `markdown`, `restructuredtext`, `tid` with indent-aware nested lexer
+  dispatch. E4 scope now complete. The 5 callback-based structured-text lexers
+  (`http`, `mime`, `bibtex`, `notmuch`, `wikitext`) reclassified to Phase E5 since
+  they require custom Lexer subclass implementations with state management.
 - **JSON-LD + YAML-LD**: Implemented native JSON-LD post-processing wrapper (23
   keyword decorators) and hand-crafted YAML-LD lexer with embedded Markdown/HTML
   support. Both achieve byte-parity with upstream Pygments.
@@ -100,10 +102,12 @@ bridge permanently:
 `adl`, `cadl`, `odin`, `sas`, `stata` with this fix; all pass runtime tests.
 `csharp` remains bridge-only (requires `regex_opt` fix).
 
-### `bridge_callback` — 34 remaining
+### `bridge_callback` — 34 remaining (5 earmarked for E5 as custom Lexer subclasses)
 
 These lexers use arbitrary Python callbacks that cannot be expressed as static
-regex rules. Grouped by callback pattern:
+regex rules. Of these, **5 structured-text lexers use callback-based dispatch**
+and are prioritized for Phase E5 hand-porting (`http`, `mime`, `bibtex`, `notmuch`,
+`wikitext`). The remaining 29 are grouped by callback pattern below:
 
 **Indentation-tracking** (5): `haml`, `pug`, `sass`, `scaml`, `slim`
 — all use `_indentation`, a shared helper in `pygments.lexers.indentation`
@@ -118,9 +122,9 @@ that tracks indent level. Requires a stateful hook (see Phase E plan).
 **Scheme `decimal_cb`** (2): `lilypond`, `scheme`
 — `SchemeLexer.decimal_cb` disambiguates `#` prefixes at runtime.
 
-**Structured-text callbacks** (8): `bibtex`, `http`, `markdown`, `mime`,
-  `notmuch`, `restructuredtext`, `tid`, `wikitext`
-— parse embedded code blocks or structured headers; each needs a dispatch table.
+**Structured-text callbacks** (3, remaining on bridge): `http`, `mime`, `bibtex`, `notmuch`, `wikitext` moved to E5
+— parse embedded code blocks or structured headers; candidates for custom Lexer subclass implementation.
+**Note**: `markdown`, `restructuredtext`, `tid` completed in E4 with regex-based dispatch.
 
 **Other single callbacks** (14): `arturo`, `csound`, `dasm16`, `fortranfixed`,
   `haxe`, `maple`, `perl6`, `rebol`, `red`, `sml`, `snowball`, `urbiscript`,
@@ -138,9 +142,13 @@ that tracks indent level. Requires a stateful hook (see Phase E plan).
 
 ## Remaining work — Phase E plan
 
-All remaining 145 lexers are bridge-only. `Backend::Auto` already handles them
+All remaining 143 lexers are bridge-only. `Backend::Auto` already handles them
 transparently. The bridge is "good enough" for correctness; Phase E is a
 performance/standalone optimisation.
+
+**Status**: Phase E4 (regex-based dispatch) is **complete** ✅. The 5 remaining
+structured-text lexers that use callback-based dispatch have been reclassified
+to Phase E5 (custom Lexer subclasses), bringing E5 from 21 to 26 lexers.
 
 ### Phase E1 — `DelegatingLexer` wiring (80 lexers, highest ROI)
 
@@ -203,14 +211,13 @@ The fix is to allow `Rule::using_this` to accept a *named-capture-forwarding*
 mode that seeds the next state's stack with the captured delimiter. Low lexer
 count but high engineering effort.
 
-### Phase E4 — structured-text embedded-code dispatchers (8 lexers) ⚠️ **PARTIALLY COMPLETE**
+### Phase E4 — regex-based embedded-code dispatch (3 lexers) ✅ **COMPLETE**
 
 **Status**: Engine + `DispatchCodeBlock` action implemented and wired. Three lexers
 hand-ported and verified: `markdown`, `restructuredtext`, `tid` ✅
 
-`markdown`, `restructuredtext`, `http`, `mime`, `bibtex`, etc. inspect a
-captured string at runtime to pick which sub-lexer to invoke (e.g. the
-language tag on a fenced code block). Implementation uses a dispatch table:
+**Scope**: Lexers with **regex-based dispatch** — patterns directly capture language
+tags in regex groups (e.g. Markdown's ` ```lang `). Implementation uses a dispatch table:
 
 ```rust
 Rule::DispatchCodeBlock(pattern, fallback_token)
@@ -221,13 +228,26 @@ where the engine inspects the captured group, looks up the language alias in
 corresponding native lexer. Indent tracking is maintained across dispatch.
 
 **Completed** (3): `markdown`, `restructuredtext`, `tid` — all passing parity tests ✅
-**Remaining** (5): `http`, `mime`, `bibtex`, `notmuch`, `wikitext` — ready to port.
+
+**Note**: The remaining "structured-text embedded-code" lexers (`http`, `mime`,
+`bibtex`, `notmuch`, `wikitext`) use **Python callbacks** to extract dispatch
+information at runtime from headers/content structure. These require custom
+`Lexer` subclass implementations with state management and belong in **Phase E5**
+(see below).
 
 ### Phase E5 — hand-port `Lexer` subclasses (21 lexers)
 
 21 lexers subclass `Lexer` directly (not `RegexLexer`). Each requires a custom
 Rust implementation of the `Lexer` trait. Priority order:
 
+**Callback-based structured-text dispatchers** (5, from E4 analysis):
+- `http` — extract `Content-Type` header → dispatch body
+- `mime` — parse MIME boundaries → dispatch parts
+- `bibtex` — ExtendedRegexLexer with context callbacks
+- `notmuch` — parse email headers → dispatch body  
+- `wikitext` — template tag dispatch with nesting
+
+**Other high-priority**:
 1. `MakefileLexer` — very high use in code-block directives
 2. `SqliteConsoleLexer`, `PostgresConsoleLexer` — moderate use
 3. `RobotFrameworkLexer` — test/CI docs
@@ -241,8 +261,9 @@ Rust implementation of the `Lexer` trait. Priority order:
 | E1 — DelegatingLexer wiring | 40–50 (immediate) / 80 (total) | `--delegating` tool mode (already has runtime struct) | Low | Not started |
 | E2 — indent-tracking | 5 | `Rule::indent_sensitive` + indent stack | Medium | Not started |
 | E3 — heredoc | 3 | named-capture forwarding in `using_this` | High | Not started |
-| E4 — dispatch table | 8 | `Rule::DispatchCodeBlock` ✅ | Medium | **3/8 complete** ✅ (markdown, rst, tid) |
-| E5 — hand-port `Lexer` subclasses | 21 | None (custom impl per lexer) | Low–Medium per lexer | Not started |
+| E4 — regex-based dispatch | 3 | `Rule::DispatchCodeBlock` ✅ | Medium | **3/3 complete** ✅ (markdown, rst, tid) |
+| E4-deferred — callback-based dispatch | 5 | Custom Lexer subclasses (→ E5) | High | **Reclassified to E5** |
+| E5 — hand-port `Lexer` subclasses | 26 (21 + 5 from E4) | None (custom impl per lexer) | Low–Medium per lexer | Not started |
 | Permanently excluded | 10 | Surrogate patterns / NFA limits; `adl` mitigated | N/A | `adl` mitigated ✅ |
 | Still pure bridge | ~59 | Misc callbacks; long tail | Low priority | Not started |
 

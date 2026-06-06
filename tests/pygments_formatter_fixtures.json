@@ -1,0 +1,206 @@
+{
+  "simple": {
+    "code": "x = 42",
+    "tokens": [
+      [
+        "Token.Name",
+        "x"
+      ],
+      [
+        "Token.Text",
+        " "
+      ],
+      [
+        "Token.Operator",
+        "="
+      ],
+      [
+        "Token.Text",
+        " "
+      ],
+      [
+        "Token.Literal.Number.Integer",
+        "42"
+      ],
+      [
+        "Token.Text.Whitespace",
+        "\n"
+      ]
+    ],
+    "output": {
+      "html": "<div class=\"highlight\"><pre><span></span><span class=\"n\">x</span> <span class=\"o\">=</span> <span class=\"mi\">42</span>\n</pre></div>\n",
+      "terminal": "x = \u001b[34m42\u001b[39;49;00m\u001b[37m\u001b[39;49;00m\n",
+      "terminal256": "x \u001b[38;5;241m=\u001b[39m \u001b[38;5;241m42\u001b[39m\n",
+      "terminal16m": "x \u001b[38;2;102;102;102m=\u001b[39m \u001b[38;2;102;102;102m42\u001b[39m\n",
+      "latex": "\\begin{Verbatim}[commandchars=\\\\\\{\\}]\n\\PY{n}{x} \\PY{o}{=} \\PY{l+m+mi}{42}\n\\end{Verbatim}\n",
+      "rtf": "{\\rtf1\\ansi\\uc0\\deff0{\\fonttbl{\\f0\\fmodern\\fprq1\\fcharset0;}}\n{\\colortbl;\n\\red187\\green187\\blue187;\n\\red61\\green123\\blue123;\n\\red156\\green101\\blue0;\n\\red0\\green128\\blue0;\n\\red176\\green0\\blue64;\n\\red102\\green102\\blue102;\n\\red170\\green34\\blue255;\n\\red0\\green0\\blue255;\n\\red203\\green63\\blue56;\n\\red25\\green23\\blue124;\n\\red136\\green0\\blue0;\n\\red118\\green118\\blue0;\n\\red113\\green113\\blue113;\n\\red104\\green120\\blue34;\n\\red186\\green33\\blue33;\n\\red164\\green90\\blue119;\n\\red170\\green93\\blue31;\n\\red0\\green0\\blue128;\n\\red128\\green0\\blue128;\n\\red160\\green0\\blue0;\n\\red0\\green132\\blue0;\n\\red228\\green0\\blue0;\n\\red0\\green68\\blue221;\n\\red255\\green0\\blue0;\n}\n\\f0\\sa0\n\\dntblnsbdb\nx {\\cf6 =} {\\cf6 42}{\\cf1 \\par}\n}\n",
+      "groff": ".defcolor 000080 rgb #000080\n.defcolor 0000FF rgb #0000FF\n.defcolor 0044DD rgb #0044DD\n.defcolor 008000 rgb #008000\n.defcolor 008400 rgb #008400\n.defcolor 19177C rgb #19177C\n.defcolor 3D7B7B rgb #3D7B7B\n.defcolor 666666 rgb #666666\n.defcolor 687822 rgb #687822\n.defcolor 717171 rgb #717171\n.defcolor 767600 rgb #767600\n.defcolor 800080 rgb #800080\n.defcolor 880000 rgb #880000\n.defcolor 9C6500 rgb #9C6500\n.defcolor A00000 rgb #A00000\n.defcolor A45A77 rgb #A45A77\n.defcolor AA22FF rgb #AA22FF\n.defcolor AA5D1F rgb #AA5D1F\n.defcolor B00040 rgb #B00040\n.defcolor BA2121 rgb #BA2121\n.defcolor CB3F38 rgb #CB3F38\n.defcolor E40000 rgb #E40000\n.defcolor bbbbbb rgb #bbbbbb\n.nf\n\\f[CR]\nx \\m[666666]=\\m[] \\m[666666]42\\m[]\n\n.fi",
+      "svg": "<?xml version=\"1.0\"?>\n<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.0//EN\" \"http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd\">\n<svg xmlns=\"http://www.w3.org/2000/svg\">\n<g font-family=\"monospace\" font-size=\"14px\">\n<text x=\"0\" y=\"14\" xml:space=\"preserve\">x&#160;<tspan fill=\"#666666\">=</tspan>&#160;<tspan fill=\"#666666\">42</tspan><tspan fill=\"#bbbbbb\"></tspan></text>\n<text x=\"0\" y=\"33\" xml:space=\"preserve\"><tspan fill=\"#bbbbbb\"></tspan></text></g></svg>\n",
+      "bbcode": "x [color=#666666]=[/color] [color=#666666]42[/color][color=#bbbbbb]\n[/color]"
+    }
+  },
+  "string": {
+    "code": "text = \"hello world\"",
+    "tokens": [
+      [
+        "Token.Name",
+        "text"
+      ],
+      [
+        "Token.Text",
+        " "
+      ],
+      [
+        "Token.Operator",
+        "="
+      ],
+      [
+        "Token.Text",
+        " "
+      ],
+      [
+        "Token.Literal.String.Double",
+        "\""
+      ],
+      [
+        "Token.Literal.String.Double",
+        "hello world"
+      ],
+      [
+        "Token.Literal.String.Double",
+        "\""
+      ],
+      [
+        "Token.Text.Whitespace",
+        "\n"
+      ]
+    ],
+    "output": {
+      "html": "<div class=\"highlight\"><pre><span></span><span class=\"n\">text</span> <span class=\"o\">=</span> <span class=\"s2\">&quot;hello world&quot;</span>\n</pre></div>\n",
+      "terminal": "text = \u001b[33m\"\u001b[39;49;00m\u001b[33mhello world\u001b[39;49;00m\u001b[33m\"\u001b[39;49;00m\u001b[37m\u001b[39;49;00m\n",
+      "terminal256": "text \u001b[38;5;241m=\u001b[39m \u001b[38;5;124m\"\u001b[39m\u001b[38;5;124mhello world\u001b[39m\u001b[38;5;124m\"\u001b[39m\n",
+      "terminal16m": "text \u001b[38;2;102;102;102m=\u001b[39m \u001b[38;2;186;33;33m\"\u001b[39m\u001b[38;2;186;33;33mhello world\u001b[39m\u001b[38;2;186;33;33m\"\u001b[39m\n",
+      "latex": "\\begin{Verbatim}[commandchars=\\\\\\{\\}]\n\\PY{n}{text} \\PY{o}{=} \\PY{l+s+s2}{\\PYZdq{}}\\PY{l+s+s2}{hello world}\\PY{l+s+s2}{\\PYZdq{}}\n\\end{Verbatim}\n",
+      "rtf": "{\\rtf1\\ansi\\uc0\\deff0{\\fonttbl{\\f0\\fmodern\\fprq1\\fcharset0;}}\n{\\colortbl;\n\\red187\\green187\\blue187;\n\\red61\\green123\\blue123;\n\\red156\\green101\\blue0;\n\\red0\\green128\\blue0;\n\\red176\\green0\\blue64;\n\\red102\\green102\\blue102;\n\\red170\\green34\\blue255;\n\\red0\\green0\\blue255;\n\\red203\\green63\\blue56;\n\\red25\\green23\\blue124;\n\\red136\\green0\\blue0;\n\\red118\\green118\\blue0;\n\\red113\\green113\\blue113;\n\\red104\\green120\\blue34;\n\\red186\\green33\\blue33;\n\\red164\\green90\\blue119;\n\\red170\\green93\\blue31;\n\\red0\\green0\\blue128;\n\\red128\\green0\\blue128;\n\\red160\\green0\\blue0;\n\\red0\\green132\\blue0;\n\\red228\\green0\\blue0;\n\\red0\\green68\\blue221;\n\\red255\\green0\\blue0;\n}\n\\f0\\sa0\n\\dntblnsbdb\ntext {\\cf6 =} {\\cf15 \"}{\\cf15 hello world}{\\cf15 \"}{\\cf1 \\par}\n}\n",
+      "groff": ".defcolor 000080 rgb #000080\n.defcolor 0000FF rgb #0000FF\n.defcolor 0044DD rgb #0044DD\n.defcolor 008000 rgb #008000\n.defcolor 008400 rgb #008400\n.defcolor 19177C rgb #19177C\n.defcolor 3D7B7B rgb #3D7B7B\n.defcolor 666666 rgb #666666\n.defcolor 687822 rgb #687822\n.defcolor 717171 rgb #717171\n.defcolor 767600 rgb #767600\n.defcolor 800080 rgb #800080\n.defcolor 880000 rgb #880000\n.defcolor 9C6500 rgb #9C6500\n.defcolor A00000 rgb #A00000\n.defcolor A45A77 rgb #A45A77\n.defcolor AA22FF rgb #AA22FF\n.defcolor AA5D1F rgb #AA5D1F\n.defcolor B00040 rgb #B00040\n.defcolor BA2121 rgb #BA2121\n.defcolor CB3F38 rgb #CB3F38\n.defcolor E40000 rgb #E40000\n.defcolor bbbbbb rgb #bbbbbb\n.nf\n\\f[CR]\ntext \\m[666666]=\\m[] \\m[BA2121]\"\\m[]\\m[BA2121]hello world\\m[]\\m[BA2121]\"\\m[]\n\n.fi",
+      "svg": "<?xml version=\"1.0\"?>\n<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.0//EN\" \"http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd\">\n<svg xmlns=\"http://www.w3.org/2000/svg\">\n<g font-family=\"monospace\" font-size=\"14px\">\n<text x=\"0\" y=\"14\" xml:space=\"preserve\">text&#160;<tspan fill=\"#666666\">=</tspan>&#160;<tspan fill=\"#BA2121\">&quot;</tspan><tspan fill=\"#BA2121\">hello&#160;world</tspan><tspan fill=\"#BA2121\">&quot;</tspan><tspan fill=\"#bbbbbb\"></tspan></text>\n<text x=\"0\" y=\"33\" xml:space=\"preserve\"><tspan fill=\"#bbbbbb\"></tspan></text></g></svg>\n",
+      "bbcode": "text [color=#666666]=[/color] [color=#BA2121]\"hello world\"[/color][color=#bbbbbb]\n[/color]"
+    }
+  },
+  "comment": {
+    "code": "# comment",
+    "tokens": [
+      [
+        "Token.Comment.Single",
+        "# comment"
+      ],
+      [
+        "Token.Text.Whitespace",
+        "\n"
+      ]
+    ],
+    "output": {
+      "html": "<div class=\"highlight\"><pre><span></span><span class=\"c1\"># comment</span>\n</pre></div>\n",
+      "terminal": "\u001b[37m# comment\u001b[39;49;00m\u001b[37m\u001b[39;49;00m\n",
+      "terminal256": "\u001b[38;5;66;03m# comment\u001b[39;00m\n",
+      "terminal16m": "\u001b[38;2;61;123;123;03m# comment\u001b[39;00m\n",
+      "latex": "\\begin{Verbatim}[commandchars=\\\\\\{\\}]\n\\PY{c+c1}{\\PYZsh{} comment}\n\\end{Verbatim}\n",
+      "rtf": "{\\rtf1\\ansi\\uc0\\deff0{\\fonttbl{\\f0\\fmodern\\fprq1\\fcharset0;}}\n{\\colortbl;\n\\red187\\green187\\blue187;\n\\red61\\green123\\blue123;\n\\red156\\green101\\blue0;\n\\red0\\green128\\blue0;\n\\red176\\green0\\blue64;\n\\red102\\green102\\blue102;\n\\red170\\green34\\blue255;\n\\red0\\green0\\blue255;\n\\red203\\green63\\blue56;\n\\red25\\green23\\blue124;\n\\red136\\green0\\blue0;\n\\red118\\green118\\blue0;\n\\red113\\green113\\blue113;\n\\red104\\green120\\blue34;\n\\red186\\green33\\blue33;\n\\red164\\green90\\blue119;\n\\red170\\green93\\blue31;\n\\red0\\green0\\blue128;\n\\red128\\green0\\blue128;\n\\red160\\green0\\blue0;\n\\red0\\green132\\blue0;\n\\red228\\green0\\blue0;\n\\red0\\green68\\blue221;\n\\red255\\green0\\blue0;\n}\n\\f0\\sa0\n\\dntblnsbdb\n{\\cf2\\i # comment}{\\cf1 \\par}\n}\n",
+      "groff": ".defcolor 000080 rgb #000080\n.defcolor 0000FF rgb #0000FF\n.defcolor 0044DD rgb #0044DD\n.defcolor 008000 rgb #008000\n.defcolor 008400 rgb #008400\n.defcolor 19177C rgb #19177C\n.defcolor 3D7B7B rgb #3D7B7B\n.defcolor 666666 rgb #666666\n.defcolor 687822 rgb #687822\n.defcolor 717171 rgb #717171\n.defcolor 767600 rgb #767600\n.defcolor 800080 rgb #800080\n.defcolor 880000 rgb #880000\n.defcolor 9C6500 rgb #9C6500\n.defcolor A00000 rgb #A00000\n.defcolor A45A77 rgb #A45A77\n.defcolor AA22FF rgb #AA22FF\n.defcolor AA5D1F rgb #AA5D1F\n.defcolor B00040 rgb #B00040\n.defcolor BA2121 rgb #BA2121\n.defcolor CB3F38 rgb #CB3F38\n.defcolor E40000 rgb #E40000\n.defcolor bbbbbb rgb #bbbbbb\n.nf\n\\f[CR]\n\\m[3D7B7B]\\f[CI]# comment\\f[CR]\\m[]\n\n.fi",
+      "svg": "<?xml version=\"1.0\"?>\n<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.0//EN\" \"http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd\">\n<svg xmlns=\"http://www.w3.org/2000/svg\">\n<g font-family=\"monospace\" font-size=\"14px\">\n<text x=\"0\" y=\"14\" xml:space=\"preserve\"><tspan fill=\"#3D7B7B\" font-style=\"italic\">#&#160;comment</tspan><tspan fill=\"#bbbbbb\"></tspan></text>\n<text x=\"0\" y=\"33\" xml:space=\"preserve\"><tspan fill=\"#bbbbbb\"></tspan></text></g></svg>\n",
+      "bbcode": "[color=#3D7B7B][i]# comment[/i][/color][color=#bbbbbb]\n[/color]"
+    }
+  },
+  "complex": {
+    "code": "def foo(x):\n    return x + 1  # adds one",
+    "tokens": [
+      [
+        "Token.Keyword",
+        "def"
+      ],
+      [
+        "Token.Text.Whitespace",
+        " "
+      ],
+      [
+        "Token.Name.Function",
+        "foo"
+      ],
+      [
+        "Token.Punctuation",
+        "("
+      ],
+      [
+        "Token.Name",
+        "x"
+      ],
+      [
+        "Token.Punctuation",
+        ")"
+      ],
+      [
+        "Token.Punctuation",
+        ":"
+      ],
+      [
+        "Token.Text.Whitespace",
+        "\n"
+      ],
+      [
+        "Token.Text",
+        "    "
+      ],
+      [
+        "Token.Keyword",
+        "return"
+      ],
+      [
+        "Token.Text",
+        " "
+      ],
+      [
+        "Token.Name",
+        "x"
+      ],
+      [
+        "Token.Text",
+        " "
+      ],
+      [
+        "Token.Operator",
+        "+"
+      ],
+      [
+        "Token.Text",
+        " "
+      ],
+      [
+        "Token.Literal.Number.Integer",
+        "1"
+      ],
+      [
+        "Token.Text",
+        "  "
+      ],
+      [
+        "Token.Comment.Single",
+        "# adds one"
+      ],
+      [
+        "Token.Text.Whitespace",
+        "\n"
+      ]
+    ],
+    "output": {
+      "html": "<div class=\"highlight\"><pre><span></span><span class=\"k\">def</span><span class=\"w\"> </span><span class=\"nf\">foo</span><span class=\"p\">(</span><span class=\"n\">x</span><span class=\"p\">):</span>\n    <span class=\"k\">return</span> <span class=\"n\">x</span> <span class=\"o\">+</span> <span class=\"mi\">1</span>  <span class=\"c1\"># adds one</span>\n</pre></div>\n",
+      "terminal": "\u001b[34mdef\u001b[39;49;00m\u001b[37m \u001b[39;49;00m\u001b[32mfoo\u001b[39;49;00m(x):\u001b[37m\u001b[39;49;00m\n    \u001b[34mreturn\u001b[39;49;00m x + \u001b[34m1\u001b[39;49;00m  \u001b[37m# adds one\u001b[39;49;00m\u001b[37m\u001b[39;49;00m\n",
+      "terminal256": "\u001b[38;5;28;01mdef\u001b[39;00m\u001b[38;5;250m \u001b[39m\u001b[38;5;21mfoo\u001b[39m(x):\n    \u001b[38;5;28;01mreturn\u001b[39;00m x \u001b[38;5;241m+\u001b[39m \u001b[38;5;241m1\u001b[39m  \u001b[38;5;66;03m# adds one\u001b[39;00m\n",
+      "terminal16m": "\u001b[38;2;0;128;0;01mdef\u001b[39;00m\u001b[38;2;187;187;187m \u001b[39m\u001b[38;2;0;0;255mfoo\u001b[39m(x):\n    \u001b[38;2;0;128;0;01mreturn\u001b[39;00m x \u001b[38;2;102;102;102m+\u001b[39m \u001b[38;2;102;102;102m1\u001b[39m  \u001b[38;2;61;123;123;03m# adds one\u001b[39;00m\n",
+      "latex": "\\begin{Verbatim}[commandchars=\\\\\\{\\}]\n\\PY{k}{def}\\PY{+w}{ }\\PY{n+nf}{foo}\\PY{p}{(}\\PY{n}{x}\\PY{p}{)}\\PY{p}{:}\n    \\PY{k}{return} \\PY{n}{x} \\PY{o}{+} \\PY{l+m+mi}{1}  \\PY{c+c1}{\\PYZsh{} adds one}\n\\end{Verbatim}\n",
+      "rtf": "{\\rtf1\\ansi\\uc0\\deff0{\\fonttbl{\\f0\\fmodern\\fprq1\\fcharset0;}}\n{\\colortbl;\n\\red187\\green187\\blue187;\n\\red61\\green123\\blue123;\n\\red156\\green101\\blue0;\n\\red0\\green128\\blue0;\n\\red176\\green0\\blue64;\n\\red102\\green102\\blue102;\n\\red170\\green34\\blue255;\n\\red0\\green0\\blue255;\n\\red203\\green63\\blue56;\n\\red25\\green23\\blue124;\n\\red136\\green0\\blue0;\n\\red118\\green118\\blue0;\n\\red113\\green113\\blue113;\n\\red104\\green120\\blue34;\n\\red186\\green33\\blue33;\n\\red164\\green90\\blue119;\n\\red170\\green93\\blue31;\n\\red0\\green0\\blue128;\n\\red128\\green0\\blue128;\n\\red160\\green0\\blue0;\n\\red0\\green132\\blue0;\n\\red228\\green0\\blue0;\n\\red0\\green68\\blue221;\n\\red255\\green0\\blue0;\n}\n\\f0\\sa0\n\\dntblnsbdb\n{\\cf4\\b def}{\\cf1  }{\\cf8 foo}(x):{\\cf1 \\par}\n    {\\cf4\\b return} x {\\cf6 +} {\\cf6 1}  {\\cf2\\i # adds one}{\\cf1 \\par}\n}\n",
+      "groff": ".defcolor 000080 rgb #000080\n.defcolor 0000FF rgb #0000FF\n.defcolor 0044DD rgb #0044DD\n.defcolor 008000 rgb #008000\n.defcolor 008400 rgb #008400\n.defcolor 19177C rgb #19177C\n.defcolor 3D7B7B rgb #3D7B7B\n.defcolor 666666 rgb #666666\n.defcolor 687822 rgb #687822\n.defcolor 717171 rgb #717171\n.defcolor 767600 rgb #767600\n.defcolor 800080 rgb #800080\n.defcolor 880000 rgb #880000\n.defcolor 9C6500 rgb #9C6500\n.defcolor A00000 rgb #A00000\n.defcolor A45A77 rgb #A45A77\n.defcolor AA22FF rgb #AA22FF\n.defcolor AA5D1F rgb #AA5D1F\n.defcolor B00040 rgb #B00040\n.defcolor BA2121 rgb #BA2121\n.defcolor CB3F38 rgb #CB3F38\n.defcolor E40000 rgb #E40000\n.defcolor bbbbbb rgb #bbbbbb\n.nf\n\\f[CR]\n\\m[008000]\\f[CB]def\\f[CR]\\m[]\\m[bbbbbb] \\m[]\\m[0000FF]foo\\m[](x):\n    \\m[008000]\\f[CB]return\\f[CR]\\m[] x \\m[666666]+\\m[] \\m[666666]1\\m[]  \\m[3D7B7B]\\f[CI]# adds one\\f[CR]\\m[]\n\n.fi",
+      "svg": "<?xml version=\"1.0\"?>\n<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.0//EN\" \"http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd\">\n<svg xmlns=\"http://www.w3.org/2000/svg\">\n<g font-family=\"monospace\" font-size=\"14px\">\n<text x=\"0\" y=\"14\" xml:space=\"preserve\"><tspan fill=\"#008000\" font-weight=\"bold\">def</tspan><tspan fill=\"#bbbbbb\">&#160;</tspan><tspan fill=\"#0000FF\">foo</tspan>(x):<tspan fill=\"#bbbbbb\"></tspan></text>\n<text x=\"0\" y=\"33\" xml:space=\"preserve\"><tspan fill=\"#bbbbbb\"></tspan>&#160;&#160;&#160;&#160;<tspan fill=\"#008000\" font-weight=\"bold\">return</tspan>&#160;x&#160;<tspan fill=\"#666666\">+</tspan>&#160;<tspan fill=\"#666666\">1</tspan>&#160;&#160;<tspan fill=\"#3D7B7B\" font-style=\"italic\">#&#160;adds&#160;one</tspan><tspan fill=\"#bbbbbb\"></tspan></text>\n<text x=\"0\" y=\"52\" xml:space=\"preserve\"><tspan fill=\"#bbbbbb\"></tspan></text></g></svg>\n",
+      "bbcode": "[color=#008000][b]def[/b][/color][color=#bbbbbb] [/color][color=#0000FF]foo[/color](x):[color=#bbbbbb]\n[/color]    [color=#008000][b]return[/b][/color] x [color=#666666]+[/color] [color=#666666]1[/color]  [color=#3D7B7B][i]# adds one[/i][/color][color=#bbbbbb]\n[/color]"
+    }
+  }
+}

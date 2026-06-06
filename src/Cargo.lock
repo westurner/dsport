@@ -1435,6 +1435,7 @@ dependencies = [
  "fancy-regex",
  "insta",
  "mockall",
+ "phf",
  "pyo3",
  "rstest",
 ]

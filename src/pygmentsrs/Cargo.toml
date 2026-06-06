@@ -32,6 +32,7 @@ default = ["python-bridge"]
 [dependencies]
 pyo3 = { workspace = true, features = ["auto-initialize"], optional = true }
 fancy-regex = "0.14"
+phf = { version = "0.11", features = ["macros"] }
 
 [dev-dependencies]
 insta = { workspace = true }

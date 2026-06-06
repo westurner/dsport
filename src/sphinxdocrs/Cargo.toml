@@ -19,6 +19,10 @@ regex = "1.10"
 
 [dev-dependencies]
 insta = { workspace = true }
+rstest = { workspace = true }
+mockall = { workspace = true }
+wiremock = { workspace = true }
+rvcr = { workspace = true }
 
 [[bin]]
 name = "sphinx-build-rs"

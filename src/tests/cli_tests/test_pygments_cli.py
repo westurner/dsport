@@ -20,7 +20,10 @@ from pytest import raises
 from pygments import cmdline, highlight
 
 TESTDIR = path.dirname(path.abspath(__file__))
-TESTFILE = path.join(TESTDIR, 'test_cmdline.py')
+# This test module is a vendored copy of pygments' own ``test_cmdline.py``,
+# which reads its own source file as sample input. Point ``TESTFILE`` at this
+# module so the self-referential reads keep working after the rename.
+TESTFILE = path.abspath(__file__)
 
 TESTCODE = '''\
 def func(args):

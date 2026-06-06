@@ -1,0 +1,13 @@
+# Python packages from PyPI
+pygments
+docutils
+MyST-Parser
+sphinx
+
+# local maturin crates (built in-place via maturin develop / PEP 660)
+-e src/RaTeX/
+-e src/mathrenderrs/
+-e src/pygmentsrs/
+-e src/docutilsrs/
+-e src/myst-md-rs/
+-e src/sphinxdocrs/

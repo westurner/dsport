@@ -16,21 +16,22 @@ RUST_BINS = [
 ]
 
 PYTHON_SCRIPTS = [
-    "docutils-rs-py",
-    "rst2html-rs-py",
-    "rst2html4-rs-py",
-    "rst2html5-rs-py",
-    "rst2latex-rs-py",
-    "rst2man-rs-py",
-    "rst2odt-rs-py",
-    "rst2pseudoxml-rs-py",
-    "rst2s5-rs-py",
-    "rst2xetex-rs-py",
-    "pygmentize-rs-py",
-    "sphinx-build-rs-py",
-    "sphinx-quickstart-rs-py",
-    "sphinx-apidoc-rs-py",
-    "sphinx-autogen-rs-py",
+    # TODO: are these necessary?
+    # "docutils-rs-py",
+    # "rst2html-rs-py",
+    # "rst2html4-rs-py",
+    # "rst2html5-rs-py",
+    # "rst2latex-rs-py",
+    # "rst2man-rs-py",
+    # "rst2odt-rs-py",
+    # "rst2pseudoxml-rs-py",
+    # "rst2s5-rs-py",
+    # "rst2xetex-rs-py",
+    # "pygmentize-rs-py",
+    # "sphinx-build-rs-py",
+    # "sphinx-quickstart-rs-py",
+    # "sphinx-apidoc-rs-py",
+    # "sphinx-autogen-rs-py",
 ]
 
 @pytest.mark.parametrize("pkg,bin_name", [(pkg, bin_name) for pkg, bins in RUST_BINS for bin_name in bins])

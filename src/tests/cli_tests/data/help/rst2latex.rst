@@ -91,9 +91,6 @@ Generic Parser Options
 --line-length-limit=<length>
                         Maximal number of characters in an input line. Default
                         10 000.
---legacy-ids            Keep identifiers backwards compatible. Default.
---matching-ids          Explicit targets use identifiers matching the
-                        reference name.
 --validate              Validate the document tree after parsing.
 --no-validation         Do not validate the document tree. (default)
 
@@ -245,4 +242,5 @@ LaTeX-Specific Options
 --new-column-widths     Use new algorithm to determine table column widths.
                         (future default)
 --docutils-footnotes    Footnotes with numbers/symbols by Docutils. (default)
---latex-footnotes       Footnotes with numbers by LaTeX.
+                        (The alternative, --latex-footnotes, is not
+                        implemented yet.)

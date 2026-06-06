@@ -52,6 +52,59 @@ Purpose: define how coding agents and contributors should navigate this reposito
   - snapshot tests for structured outputs (insta)
   - focused integration tests for Python<->Rust boundaries
 
+### Rust test tools
+
+| Need | Tool | Notes |
+|------|------|-------|
+| Fixture injection | [`rstest`](https://docs.rs/rstest) | `#[fixture]` for setup; `#[once]` for session-scoped init |
+| Parametrization | `rstest` `#[case]` | `#[rstest] #[case(a, b)] fn test(#[case] x: T, #[case] y: T)` |
+| Trait mocking | [`mockall`](https://docs.rs/mockall) | `#[automock]` on trait; `mock.expect_*()` DSL |
+| HTTP server mock | [`wiremock`](https://docs.rs/wiremock) | Spin up a local server; assert request patterns |
+| HTTP record/replay | [`rvcr`](https://docs.rs/rvcr) | Records to a JSON cassette on first run, replays in CI — equivalent to `requests-cache` / `vcrpy` |
+| Snapshot testing | [`insta`](https://docs.rs/insta) | Already in use; `insta::assert_snapshot!` |
+
+### Fixture and parametrization patterns
+
+```rust
+// Shared fixture — built once per test binary (session scope)
+#[fixture]
+#[once]
+fn coverage_tree() -> Doctree { common::build_coverage_tree(&common::coverage_rst("html")) }
+
+// Function-scoped fixture (default)
+#[fixture]
+fn default_options() -> Html5Options { Html5Options::default() }
+
+// Parametrized test
+#[rstest]
+#[case("html",  "<!DOCTYPE")]
+#[case("latex", r"\documentclass")]
+fn test_writer_output(#[case] fmt: &str, #[case] prefix: &str) {
+    assert!(render(fmt).contains(prefix));
+}
+```
+
+### Mocking pattern
+
+Define behavior under test behind a trait, then use `#[automock]` in tests:
+
+```rust
+#[cfg_attr(test, automock)]
+trait Renderer { fn render(&self, src: &str) -> String; }
+```
+
+### HTTP record/replay pattern (rvcr)
+
+```rust
+// First run: records to tests/cassettes/my_test.json
+// Subsequent runs: replays from cassette, no network needed
+let client = reqwest::Client::builder()
+    .with(VcrMiddleware::new("tests/cassettes/my_test.json", VcrMode::Record))
+    .build();
+```
+
+Commit cassette files. Set `VcrMode::Replay` in CI or use the `rvcr` auto-detect feature.
+
 ## Python/Rust interop requirements
 
 - Python must be able to import and call `docutilsrs` and `sphinxdocrs` modules.

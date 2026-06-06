@@ -11,6 +11,7 @@ name = "mathrenderrs"
 
 [features]
 default = ["ratex"]
+extension-module = ["pyo3/extension-module"]
 ## Enable the RaTeX backend (pulls in `ratex-parser` / `ratex-layout` /
 ## `ratex-svg` with embedded KaTeX fonts so no external font directory
 ## is required at runtime).
@@ -22,10 +23,14 @@ ratex = [
 ]
 
 [dependencies]
+pyo3 = { workspace = true, features = ["auto-initialize"] }
 ratex-types  = { path = "../RaTeX/crates/ratex-types",  optional = true }
 ratex-parser = { path = "../RaTeX/crates/ratex-parser", optional = true }
 ratex-layout = { path = "../RaTeX/crates/ratex-layout", optional = true }
 ratex-svg    = { path = "../RaTeX/crates/ratex-svg",    optional = true, features = ["standalone", "embed-fonts"] }
+# TODO: ratex-pdf
 
 [dev-dependencies]
 insta = { workspace = true }
+rstest = { workspace = true }
+mockall = { workspace = true }

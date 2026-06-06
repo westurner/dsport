@@ -2,3 +2,11 @@
 build/tests
 src/sphinxdocrs/build/tests/
 #math-demo/sphinxdocrs/imgmath.txt
+.coverage
+build.log
+build.log.ansi
+src/.coverage
+src/build.log
+src/cov.xml
+src/coverage.md
+src/pytest-results.xml

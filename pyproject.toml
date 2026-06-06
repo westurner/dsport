@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dsport"
+version = "0.0.1"
+description = "Meta-package: Rust ports of docutils, Pygments, MyST-MD, and Sphinx"
+requires-python = ">=3.9"
+license = { text = "BSD-2-Clause" }
+# Install order matters: the sub-packages are maturin-built Rust extension
+# modules. pip cannot compile them transitively when resolving this package's
+# dependencies, so they must be built and installed first:
+#
+#   pip install -r requirements.txt   # compiles + installs each Rust crate
+#   pip install .                     # installs this dsport meta-package
+#
+# `make develop` does the equivalent via `maturin develop` for each crate.
+# Once the sub-packages are on PyPI, `pip install dsport` will work directly.
+dependencies = [
+    "ratex-py",
+    "mathrenderrs",
+    "docutilsrs",
+    "pygmentsrs",
+    "myst-md-rs",
+    "sphinxdocrs",
+]
+
+[tool.hatch.build.targets.wheel]
+# Pure-Python meta-package; no source files to include.
+sources = []

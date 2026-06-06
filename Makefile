@@ -1,44 +1,98 @@
-.PHONY: all build test develop clean
+.PHONY: all build test develop clean \
+	build-docutils build-pygments build-sphinx build-mathrenderrs build-myst-md-rs \
+	test-cargo test-cargo-docutils test-cargo-pygments test-cargo-sphinx \
+	test-cargo-mathrenderrs test-cargo-myst-md-rs \
+	develop-docutils develop-pygments develop-sphinx develop-myst-md-rs \
+	test2 test3
+
+REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+TEST_CARGO_CMD ?= $(MAKE) -C "$(REPO_ROOT)" test-cargo
+TEST_PYTHON_CMD ?= $(MAKE) -C "$(REPO_ROOT)" test-python
+TEST2_CARGO_CMD ?= CARGO_TERM_COLOR=always FORCE_COLOR=1 $(TEST_CARGO_CMD)
+TEST2_PYTHON_CMD ?= CARGO_TERM_COLOR=always FORCE_COLOR=1 PYTEST_ADDOPTS=--color=yes $(TEST_PYTHON_CMD)
 
 all: build
 
 # ========== BUILD ==========
-build: build-docutils build-pygments build-sphinx
+build: build-mathrenderrs build-pygments build-docutils build-myst-md-rs build-sphinx
+
+build-mathrenderrs:
+	cd src/mathrenderrs && cargo build
+
+build-pygments:
+	cd src/pygmentsrs && cargo build
 
 build-docutils:
 	cd src/docutilsrs && cargo build
 
-build-pygments:
-	cd src/pygmentsrs && cargo build
+build-myst-md-rs:
+	cd src/myst-md-rs && cargo build
 
 build-sphinx:
 	cd src/sphinxdocrs && cargo build
 
 # ========== TEST ==========
-test: test-cargo test-python
+test:
+	@set -o pipefail; \
+	{ \
+		$(MAKE) -C "$(REPO_ROOT)" test-cargo; \
+		$(MAKE) -C "$(REPO_ROOT)" test-python; \
+	} 2>&1 | tee build.log
 
-test-cargo: test-cargo-docutils test-cargo-pygments test-cargo-sphinx
+test2:
+	@set -o pipefail; set -x; \
+	{ \
+		$(TEST2_CARGO_CMD); \
+		$(TEST2_PYTHON_CMD); \
+	} 2>&1 | tee build.log.ansi; \
+	sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' build.log.ansi > build.log && \
+	rm -f build.log.ansi
 
-test-cargo-docutils:
-	cd src/docutilsrs && cargo test
+test3:
+	@bash -lc 'set -o pipefail; set -x; { $(TEST2_CARGO_CMD); $(TEST2_PYTHON_CMD); } 2>&1 | tee >(sed -E "s/\x1B\[[0-9;]*[[:alpha:]]//g" > build.log)'
+
+test4:
+	./shellwrap.sh -c "$(MAKE) test-cargo test-python"
+
+test-python-colors:
+	./shellwrap.sh -c "$(MAKE) test-python"
+
+test-cargo: test-cargo-mathrenderrs test-cargo-pygments test-cargo-docutils \
+	test-cargo-myst-md-rs test-cargo-sphinx
+
+test-cargo-mathrenderrs:
+	cd src/mathrenderrs && cargo test
 
 test-cargo-pygments:
 	cd src/pygmentsrs && cargo test
 
+test-cargo-docutils:
+	cd src/docutilsrs && cargo test
+
+test-cargo-myst-md-rs:
+	cd src/myst-md-rs && cargo test
+
 test-cargo-sphinx:
 	cd src/sphinxdocrs && cargo test
 
+out_dir=.
 test-python:
-	cd src && .venv/bin/pytest tests/
+	cd src && set -o pipefail && .venv/bin/pytest --cov=docutilsrs/python --cov=sphinxdocrs/python --cov-report=term-missing:skip-covered --cov-report=markdown:"${out_dir}/coverage.md" --cov-report=xml:"${out_dir}/cov.xml" --junitxml="${out_dir}/pytest-results.xml" tests/
+	test -f "${out_dir}/src/pytest-results.xml"
+	test -f "${out_dir}/src/coverage.md"
+	test -f "${out_dir}/src/cov.xml"
 
 # ========== DEVELOP (maturin) ==========
-develop: develop-docutils develop-pygments develop-sphinx
+develop: develop-pygments develop-docutils develop-myst-md-rs develop-sphinx
+
+develop-pygments:
+	cd src && .venv/bin/maturin develop --manifest-path pygmentsrs/Cargo.toml --release
 
 develop-docutils:
 	cd src && .venv/bin/maturin develop --manifest-path docutilsrs/Cargo.toml --release
 
-develop-pygments:
-	cd src && .venv/bin/maturin develop --manifest-path pygmentsrs/Cargo.toml --release
+develop-myst-md-rs:
+	cd src && .venv/bin/maturin develop --manifest-path myst-md-rs/Cargo.toml --release
 
 develop-sphinx:
 	cd src && .venv/bin/maturin develop --manifest-path sphinxdocrs/Cargo.toml --release
@@ -47,21 +101,21 @@ develop-sphinx:
 test-all: \
 	test-rst2html-build-docs-docutils-readme \
 	test-rst2html5-build-docs-docutils-readme \
-	test-sphinxdocrs-build-docs-sphinx
-
+		$(TEST_CARGO_CMD); \
+		$(TEST_PYTHON_CMD); \
 
 SPHINXRS_OUTPUT ?= ${PWD}/build/tests/sphinxdocrs
 DOCUTILSRS_OUTPUT ?= ${PWD}/build/tests/docutilsrs
 
 test-sphinxdocrs-build-docs-sphinx:
-	mkdir -p "${SPHINXRS_OUTPUT}"
-	set -x; \
+		$(TEST2_CARGO_CMD); \
+		$(TEST2_PYTHON_CMD); \
 	cd src/sphinxdocrs; time cargo run -q -p sphinxdocrs --bin \
 		sphinx-build-rs -- ../sphinx/doc "${SPHINXRS_OUTPUT}" 2>&1 \
 		| tee "${SPHINXRS_OUTPUT}"/sphinx-build.log.txt
 	test -d "${SPHINXRS_OUTPUT}"
 	test -e "${SPHINXRS_OUTPUT}"/index.html
-	test -e "${SPHINXRS_OUTPUT}"/sphinx-build.log.txt
+	@bash -lc 'set -o pipefail; set -x; { $(TEST2_CARGO_CMD); $(TEST2_PYTHON_CMD); } 2>&1 | tee >(sed -E "s/\x1B\[[0-9;]*[[:alpha:]]//g" > build.log)'
 
 test-rst2html-build-docs-docutils-readme: 
 	mkdir -p "${DOCUTILSRS_OUTPUT}"

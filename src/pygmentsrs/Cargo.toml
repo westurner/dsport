@@ -19,6 +19,8 @@ regex = "1.10"
 
 [dev-dependencies]
 insta = { workspace = true }
+rstest = { workspace = true }
+mockall = { workspace = true }
 
 [[bin]]
 name = "pygmentize-rs"

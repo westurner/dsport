@@ -25,6 +25,10 @@ chrono = "0.4.44"
 
 [dev-dependencies]
 insta = { workspace = true }
+rstest = { workspace = true }
+mockall = { workspace = true }
+wiremock = { workspace = true }
+rvcr = { workspace = true }
 
 [[bin]]
 name = "docutils-rs"

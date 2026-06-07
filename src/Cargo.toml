@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "docutilsrs",
+    "jinja2rs",
     "mathrenderrs",
     "myst-md-rs",
     "pygmentsrs",
@@ -16,7 +17,7 @@ exclude = [
     "RaTeX",
     "docutils",
     "sphinx",
-    "jinja2",
+    "jinja2",  # Python source — excluded from Cargo workspace
     "markdown-it-py",
     "minijinja",
     "MyST-Parser",

@@ -5,7 +5,7 @@
 //!
 //! # Security Features
 //!
-//! ## 1. Seccomp Filtering (Linux only)
+//! ## 1. Seccomp Filtering (Linux only, optional feature)
 //!
 //! Restricts syscalls using Linux Secure Computing Mode (seccomp) with BPF filters.
 //! Denies all syscalls except a whitelist of safe operations.
@@ -15,14 +15,26 @@
 //!
 //! Default: Minimal (recommended)
 //!
-//! ## 2. Resource Limits (Unix only)
+//! **To enable:** Add to `Cargo.toml`:
+//! ```toml
+//! [dependencies]
+//! jinja2rs = { version = "0.0.1", features = ["seccomp"] }
+//! ```
+//!
+//! ## 2. Resource Limits (Unix only, optional feature)
 //!
 //! Enforces OS-level resource limits on processes executing templates.
 //!
 //! - Virtual memory limit (`RLIMIT_AS`)
 //! - CPU time limit (`RLIMIT_CPU`)
 //!
-//! ## 3. Path Sandboxing
+//! **To enable:** Add to `Cargo.toml`:
+//! ```toml
+//! [dependencies]
+//! jinja2rs = { version = "0.0.1", features = ["resource-limits"] }
+//! ```
+//!
+//! ## 3. Path Sandboxing (always available)
 //!
 //! Restricts filesystem access to explicitly whitelisted directories.
 //! By default, **no paths are allowed** (strict mode).
@@ -41,8 +53,8 @@
 //!     .with_write_path("/tmp/output");
 //!
 //! let env = SandboxedEnvironmentBuilder::new()
-//!     .with_path_policy(policy)?           // Restrict file access
-//!     .with_python_callable_warnings()     // Warn about Python objects
+//!     .with_path_policy(policy)?           // Always available
+//!     .with_python_callable_warnings()
 //!     .build();
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -51,6 +63,30 @@
 //!
 //! Optional warnings when Python objects are detected in template context.
 //! Useful for migration from Python Jinja2.
+//!
+//! # Full Lockdown Example (all features enabled)
+//!
+//! When you enable multiple features, you can layer all protections:
+//!
+//! ```rust,no_run
+//! # #[cfg(all(feature = "seccomp", feature = "resource-limits"))]
+//! # {
+//! use jinja2rs::sandbox_config::{SandboxedEnvironmentBuilder, PathPolicy, SeccompWhitelist};
+//!
+//! let policy = PathPolicy::new()
+//!     .with_read_path("/var/templates")
+//!     .with_write_path("/tmp/output");
+//!
+//! let env = SandboxedEnvironmentBuilder::new()
+//!     .with_seccomp_whitelist(SeccompWhitelist::Minimal)
+//!     .with_seccomp_filtering()?               // Requires: feature = "seccomp"
+//!     .with_resource_limits(512*1024*1024, 10)?  // Requires: feature = "resource-limits"
+//!     .with_path_policy(policy)?               // Always available
+//!     .with_python_callable_warnings()
+//!     .build();
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # }
+//! ```
 //!
 //! # Defense in Depth
 //!
@@ -275,9 +311,37 @@ impl SandboxedEnvironmentBuilder {
     /// Restricts syscalls that can be invoked from templates.
     /// This is a defense-in-depth measure and requires the seccomp feature.
     ///
+    /// # Requirements
+    ///
+    /// This method is only available when the `seccomp` feature is enabled.
+    ///
+    /// Add to your `Cargo.toml`:
+    /// ```toml
+    /// [dependencies]
+    /// jinja2rs = { version = "0.0.1", features = ["seccomp"] }
+    /// ```
+    ///
     /// # Errors
     ///
-    /// Returns an error if seccomp is not available or cannot be initialized.
+    /// Returns an error if:
+    /// - Seccomp is not available on this system (requires Linux >= 3.17)
+    /// - The seccomp filter cannot be initialized
+    /// - A syscall name cannot be resolved
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # #[cfg(feature = "seccomp")]
+    /// # {
+    /// use jinja2rs::sandbox_config::{SandboxedEnvironmentBuilder, SeccompWhitelist};
+    ///
+    /// let env = SandboxedEnvironmentBuilder::new()
+    ///     .with_seccomp_whitelist(SeccompWhitelist::Minimal)
+    ///     .with_seccomp_filtering()?
+    ///     .build();
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # }
+    /// ```
     #[cfg(all(feature = "seccomp", unix))]
     pub fn with_seccomp_filtering(mut self) -> Result<Self, Box<dyn std::error::Error>> {
         enable_seccomp_whitelist(self.seccomp_whitelist)?;
@@ -287,10 +351,25 @@ impl SandboxedEnvironmentBuilder {
 
     /// Set the seccomp syscall whitelist strictness level.
     ///
+    /// Controls which syscalls are allowed when seccomp filtering is active.
+    /// This setting has no effect unless `with_seccomp_filtering()` is also called.
+    ///
     /// # Arguments
     ///
     /// * `level` — Use `SeccompWhitelist::Minimal` (default) for most cases,
     ///   or `SeccompWhitelist::Broad` if you encounter rejections.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use jinja2rs::sandbox_config::{SandboxedEnvironmentBuilder, SeccompWhitelist};
+    ///
+    /// // Use broad whitelist for better compatibility
+    /// let env = SandboxedEnvironmentBuilder::new()
+    ///     .with_seccomp_whitelist(SeccompWhitelist::Broad)
+    ///     // Call with_seccomp_filtering() to activate (requires feature)
+    ///     .build();
+    /// ```
     pub fn with_seccomp_whitelist(mut self, level: SeccompWhitelist) -> Self {
         self.seccomp_whitelist = level;
         self
@@ -300,6 +379,16 @@ impl SandboxedEnvironmentBuilder {
     ///
     /// Sets `RLIMIT_AS` (virtual memory) and `RLIMIT_CPU` (CPU time).
     ///
+    /// # Requirements
+    ///
+    /// This method is only available when the `resource-limits` feature is enabled.
+    ///
+    /// Add to your `Cargo.toml`:
+    /// ```toml
+    /// [dependencies]
+    /// jinja2rs = { version = "0.0.1", features = ["resource-limits"] }
+    /// ```
+    ///
     /// # Arguments
     ///
     /// * `memory_bytes` — Maximum virtual memory (e.g., 512 MB = 512 * 1024 * 1024)
@@ -307,7 +396,26 @@ impl SandboxedEnvironmentBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error if limits cannot be set.
+    /// Returns an error if:
+    /// - Limits cannot be set on this system
+    /// - Resource management is not available
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # #[cfg(feature = "resource-limits")]
+    /// # {
+    /// use jinja2rs::sandbox_config::SandboxedEnvironmentBuilder;
+    ///
+    /// let env = SandboxedEnvironmentBuilder::new()
+    ///     .with_resource_limits(
+    ///         512 * 1024 * 1024,  // 512 MB virtual memory limit
+    ///         10,                  // 10 second CPU time limit
+    ///     )?
+    ///     .build();
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # }
+    /// ```
     #[cfg(all(feature = "resource-limits", unix))]
     pub fn with_resource_limits(
         mut self,

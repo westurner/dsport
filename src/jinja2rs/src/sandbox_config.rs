@@ -34,17 +34,15 @@
 //! ### Example
 //!
 //! ```rust,no_run
-//! use jinja2rs::sandbox::{SandboxedEnvironmentBuilder};
-//! use jinja2rs::sandbox_config::{SeccompWhitelist, PathPolicy};
+//! use jinja2rs::sandbox_config::{SandboxedEnvironmentBuilder, PathPolicy};
 //!
 //! let policy = PathPolicy::new()
 //!     .with_read_path("/var/templates")
 //!     .with_write_path("/tmp/output");
 //!
 //! let env = SandboxedEnvironmentBuilder::new()
-//!     .with_seccomp_filtering()?           // Restrict syscalls
-//!     .with_resource_limits(512*1024*1024, 10)?  // Memory: 512MB, CPU: 10s
 //!     .with_path_policy(policy)?           // Restrict file access
+//!     .with_python_callable_warnings()     // Warn about Python objects
 //!     .build();
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -231,20 +229,18 @@ impl Default for PathPolicy {
 /// # Example
 ///
 /// ```rust,no_run
-/// use jinja2rs::sandbox::SandboxedEnvironmentBuilder;
-/// use jinja2rs::sandbox_config::{SeccompWhitelist, PathPolicy};
+/// use jinja2rs::sandbox_config::{SandboxedEnvironmentBuilder, PathPolicy};
 ///
-/// // Full lockdown: seccomp + resource limits + path sandboxing
+/// // Path sandboxing: restrict template file access
 /// let policy = PathPolicy::new()
 ///     .with_read_path("/var/templates")
 ///     .with_write_path("/tmp/output");
 ///
 /// let env = SandboxedEnvironmentBuilder::new()
-///     .with_seccomp_filtering()?
-///     .with_resource_limits(512 * 1024 * 1024, 10)?
 ///     .with_path_policy(policy)?
 ///     .with_python_callable_warnings()
 ///     .build();
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct SandboxedEnvironmentBuilder {
     environment: Environment,
@@ -342,8 +338,7 @@ impl SandboxedEnvironmentBuilder {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use jinja2rs::sandbox::SandboxedEnvironmentBuilder;
-    /// use jinja2rs::sandbox_config::PathPolicy;
+    /// use jinja2rs::sandbox_config::{SandboxedEnvironmentBuilder, PathPolicy};
     ///
     /// let policy = PathPolicy::new()
     ///     .with_read_path("/var/templates")
@@ -382,7 +377,7 @@ impl SandboxedEnvironmentBuilder {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use jinja2rs::sandbox::SandboxedEnvironmentBuilder;
+    /// use jinja2rs::sandbox_config::SandboxedEnvironmentBuilder;
     ///
     /// let env = SandboxedEnvironmentBuilder::new()
     ///     .with_read_path("/var/templates")?
@@ -421,7 +416,7 @@ impl SandboxedEnvironmentBuilder {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use jinja2rs::sandbox::SandboxedEnvironmentBuilder;
+    /// use jinja2rs::sandbox_config::SandboxedEnvironmentBuilder;
     ///
     /// let env = SandboxedEnvironmentBuilder::new()
     ///     .with_write_path("/tmp/output")?
@@ -461,7 +456,7 @@ impl SandboxedEnvironmentBuilder {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use jinja2rs::sandbox::SandboxedEnvironmentBuilder;
+    /// use jinja2rs::sandbox_config::SandboxedEnvironmentBuilder;
     ///
     /// // Strict mode (default)
     /// let env1 = SandboxedEnvironmentBuilder::new()
@@ -536,7 +531,7 @@ impl SandboxedEnvironmentBuilder {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use jinja2rs::sandbox::SandboxedEnvironmentBuilder;
+    /// use jinja2rs::sandbox_config::SandboxedEnvironmentBuilder;
     ///
     /// let env = SandboxedEnvironmentBuilder::new()
     ///     .with_read_path("/templates")?
@@ -912,7 +907,7 @@ fn check_path_in_whitelist(
     allowed_paths: &[String],
     allow_symlinks: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;  // {, PathBuf};
     use std::fs;
 
     let path_obj = Path::new(file_path);
@@ -1031,7 +1026,7 @@ pub fn validate_context_for_python_callables(ctx: &serde_json::Value) {
 
 #[cfg(all(feature = "python-callable-warnings", feature = "tracing"))]
 fn check_for_python_callables(val: &serde_json::Value, path: &str) {
-    use serde_json::json;
+    // use serde_json::json;
 
     match val {
         serde_json::Value::Object(map) => {
@@ -1091,7 +1086,7 @@ pub fn validate_context_for_python_callables(_ctx: &serde_json::Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    // use std::fs;
     use std::path::Path;
 
     // ============================================================================

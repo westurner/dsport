@@ -58,7 +58,7 @@ fn string_empty() {
 #[test]
 fn string_with_space() {
     let result = lex("\" space \"");
-    assert!(result.iter().any(|(t, v)| *t == STRING_DOUBLE),
+    assert!(result.iter().any(|(t, _v)| *t == STRING_DOUBLE),
             "String with space not found");
 }
 
@@ -75,7 +75,7 @@ fn string_escape_simple() {
 fn string_escape_quote() {
     // Backslash before quote is escape, not string end
     let result = lex("\"\\\"inner\\\"\"");
-    assert!(result.iter().any(|(t, v)| *t == STRING_DOUBLE),
+    assert!(result.iter().any(|(t, _v)| *t == STRING_DOUBLE),
             "String with escaped quotes not found");
 }
 
@@ -83,7 +83,7 @@ fn string_escape_quote() {
 fn string_escape_backslash() {
     // Double backslash
     let result = lex("\"\\\\\"");
-    assert!(result.iter().any(|(t, v)| *t == STRING_DOUBLE),
+    assert!(result.iter().any(|(t, _v)| *t == STRING_DOUBLE),
             "String with escaped backslash not found");
 }
 
@@ -92,7 +92,7 @@ fn string_unicode_escape_valid() {
     // \uXXXX escape: in_escape=true, char='u' → in_unicode_escape=4
     // Then consume 4 hex digits
     let result = lex("\"\\u0041\"");
-    assert!(result.iter().any(|(t, v)| *t == STRING_DOUBLE),
+    assert!(result.iter().any(|(t, _v)| *t == STRING_DOUBLE),
             "Unicode escape not handled");
 }
 
@@ -135,7 +135,7 @@ fn string_unterminated() {
 fn string_multiple_escapes() {
     // Multiple escape sequences in one string
     let result = lex("\"\\n\\t\\\"\\\\\"");
-    assert!(result.iter().any(|(t, v)| *t == STRING_DOUBLE),
+    assert!(result.iter().any(|(t, _v)| *t == STRING_DOUBLE),
             "Multiple escapes not parsed");
 }
 
@@ -308,7 +308,7 @@ fn number_float_negative_exponent() {
 #[test]
 fn number_complex() {
     let result = lex("-123.456e-78");
-    assert!(result.iter().any(|(t, v)| *t == NUMBER_FLOAT),
+    assert!(result.iter().any(|(t, _v)| *t == NUMBER_FLOAT),
             "Complex number not parsed as float");
 }
 
@@ -410,7 +410,7 @@ fn comment_single_line() {
 #[test]
 fn comment_single_line_with_content() {
     let result = lex("// this is a comment");
-    assert!(result.iter().any(|(t, v)| *t == COMMENT_SINGLE),
+    assert!(result.iter().any(|(t, _v)| *t == COMMENT_SINGLE),
             "Comment line not parsed");
 }
 
@@ -611,7 +611,7 @@ fn json_empty_array() {
 fn json_simple_object() {
     let src = r#"{"name": "value"}"#;
     let result = lex_repr(src);
-    assert!(result.iter().any(|(t, v)| t == "Token.Name.Tag"),
+    assert!(result.iter().any(|(t, _v)| t == "Token.Name.Tag"),
             "Object key not found or not Name.Tag");
 }
 

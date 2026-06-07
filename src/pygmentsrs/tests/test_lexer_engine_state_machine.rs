@@ -7,7 +7,7 @@
 //! - Action dispatch: Single, ByGroups, UsingThis, UsingLexer, DispatchCodeBlock
 //! - Edge cases: zero-width rules, nested lexing, backreference failures
 
-use pygmentsrs::lexer::Lexer;
+//use pygmentsrs::lexer::Lexer;
 use pygmentsrs::lexers::registry::get_lexer_by_name;
 use pygmentsrs::token::*;
 

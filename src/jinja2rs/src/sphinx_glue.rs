@@ -14,11 +14,11 @@
 //! call to `jinja2rs::sphinx_glue::BuiltinTemplateLoader`.  Template contexts
 //! are passed as `serde_json::Value` or any `Serialize` type.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+//use std::collections::HashMap;
+use std::path::{PathBuf};  // {, Path}
 
 use serde::Serialize;
-use serde_json::Value as JsonValue;
+//use serde_json::Value as JsonValue;
 
 use crate::errors::Jinja2Error;
 use crate::filters;
@@ -122,7 +122,7 @@ impl BuiltinTemplateLoader {
 mod tests {
     use super::*;
     use std::fs;
-    use std::io::Write;
+    //use std::io::Write;
 
     #[test]
     fn test_render_from_dir() {

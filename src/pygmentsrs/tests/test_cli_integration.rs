@@ -11,7 +11,7 @@
 use std::process::Command;
 use std::io::Write;
 use std::fs;
-use std::path::PathBuf;
+//use std::path::PathBuf;
 
 // Helper: Run pygments with args and return status code + output
 fn run_pygments(args: &[&str]) -> (i32, String, String) {
@@ -207,7 +207,7 @@ fn test_cli_invalid_lexer() {
 #[test]
 fn test_cli_invalid_format() {
     // Test: pygments -f nosuchformat (invalid format)
-    let (code, _stdout, stderr) = run_pygments_with_stdin(&["-l", "python", "-f", "nosuchformat_xyz"], "code");
+    let (code, _stdout, _stderr) = run_pygments_with_stdin(&["-l", "python", "-f", "nosuchformat_xyz"], "code");
     
     assert_ne!(code, 0, "Invalid format should exit with non-zero code");
 }
@@ -268,7 +268,7 @@ fn test_cli_multiple_lexer_formats() {
 #[test]
 fn test_cli_empty_input() {
     // Test: empty input should still succeed
-    let (code, stdout, _stderr) = run_pygments_with_stdin(&["-l", "python", "-f", "html"], "");
+    let (code, _stdout, _stderr) = run_pygments_with_stdin(&["-l", "python", "-f", "html"], "");
     
     assert_eq!(code, 0, "Empty input should exit with code 0");
     // Empty input produces minimal/empty output in most formatters

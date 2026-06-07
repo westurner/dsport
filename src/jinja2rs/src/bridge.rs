@@ -6,7 +6,7 @@
 //! while the Rust (`sphinxdocrs`) path bypasses Python entirely.
 
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyString};
+use pyo3::types::{PyDict, PyList};  //, PyString};
 
 /// Python-facing `Environment` class.
 #[pyclass(name = "Environment")]
@@ -99,12 +99,12 @@ fn pyobj_to_json(obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
     if let Ok(s) = obj.extract::<String>() {
         return Ok(serde_json::Value::String(s));
     }
-    if let Ok(list) = obj.downcast::<PyList>() {
+    if let Ok(list) = obj.cast::<PyList>() {
         let arr: PyResult<Vec<serde_json::Value>> = list.iter().map(|x| pyobj_to_json(&x)).collect();
         return Ok(serde_json::Value::Array(arr?));
     }
-    if let Ok(d) = obj.downcast::<PyDict>() {
-        return pydict_to_json(d);
+    if let Ok(d) = obj.cast::<PyDict>() {
+        return pydict_to_json(&d);
     }
     // Fallback: str(obj)
     Ok(serde_json::Value::String(obj.str()?.to_string()))

@@ -36,7 +36,7 @@ i18n = []
 
 # Enable seccomp filtering (Linux only; requires kernel >= 3.17).
 # When enabled, SandboxedEnvironment can enforce syscall restrictions.
-seccomp = ["nix/process"]
+seccomp = ["nix/process", "libseccomp"]
 
 # Enable resource limits (ulimit-based memory/CPU restrictions).
 # When enabled, SandboxedEnvironment can enforce OS resource limits.
@@ -68,6 +68,7 @@ serde_json = "1"
 thiserror = "2"
 tracing = { version = "0.1", optional = true }
 nix = { version = "0.28", features = [], optional = true }
+libseccomp = { version = "0.3", optional = true }
 urlencoding = "2"
 
 [dev-dependencies]

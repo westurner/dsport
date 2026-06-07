@@ -148,6 +148,206 @@ impl Object for AccessKey {
     }
 }
 
+/// `debug` global — mirrors `jinja2.globals.debug`.
+///
+/// Returns a pretty-printed representation of a value for debugging.
+/// Renders similar to Python's `pformat` function.
+#[derive(Debug)]
+pub struct Debug;
+
+impl Debug {
+    pub fn new() -> Self {
+        Debug
+    }
+}
+
+impl Default for Debug {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for Debug {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<debug>")
+    }
+}
+
+impl Object for Debug {
+    fn repr(self: &Arc<Self>) -> ObjectRepr {
+        ObjectRepr::Plain
+    }
+
+    fn call(
+        self: &Arc<Self>,
+        _state: &State<'_, '_>,
+        args: &[Value],
+    ) -> Result<Value, Error> {
+        if args.is_empty() {
+            return Err(Error::new(
+                ErrorKind::MissingArgument,
+                "debug() requires at least one argument",
+            ));
+        }
+        // Use JSON pretty-printing as a substitute for pformat
+        let val = &args[0];
+        let pretty = serde_json::to_string_pretty(&val)
+            .unwrap_or_else(|_| val.to_string());
+        Ok(Value::from(pretty))
+    }
+}
+
+/// `cycler` global — mirrors `jinja2.globals.cycler`.
+///
+/// Cycles through a list of values. Each call to `next()` returns the
+/// next value in the list, wrapping around.
+///
+/// Usage in template:
+/// ```jinja
+/// {% set colors = cycler('red', 'blue', 'green') %}
+/// {{ colors.next() }}    {# → 'red' #}
+/// {{ colors.next() }}    {# → 'blue' #}
+/// {{ colors.next() }}    {# → 'green' #}
+/// {{ colors.next() }}    {# → 'red' (wraps) #}
+/// {{ colors.current }}   {# → 'red' #}
+/// ```
+#[derive(Debug)]
+pub struct Cycler {
+    items: Vec<Value>,
+    current_index: Mutex<usize>,
+}
+
+impl Cycler {
+    pub fn new(items: Vec<Value>) -> Self {
+        Self {
+            items,
+            current_index: Mutex::new(0),
+        }
+    }
+}
+
+impl fmt::Display for Cycler {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<Cycler>")
+    }
+}
+
+impl Object for Cycler {
+    fn repr(self: &Arc<Self>) -> ObjectRepr {
+        ObjectRepr::Plain
+    }
+
+    fn call_method(
+        self: &Arc<Self>,
+        _state: &State<'_, '_>,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, Error> {
+        match method {
+            "next" | "__next__" => {
+                if !args.is_empty() {
+                    return Err(Error::new(
+                        ErrorKind::TooManyArguments,
+                        "cycler.next() takes no arguments",
+                    ));
+                }
+                let mut idx = self.current_index.lock().unwrap();
+                let current = if self.items.is_empty() {
+                    Value::from(())
+                } else {
+                    let val = self.items[*idx].clone();
+                    *idx = (*idx + 1) % self.items.len();
+                    val
+                };
+                Ok(current)
+            }
+            _ => Err(Error::from(ErrorKind::UnknownMethod)),
+        }
+    }
+
+    fn get_value(self: &Arc<Self>, key: &Value) -> Option<Value> {
+        match key.as_str()? {
+            "current" => {
+                let idx = self.current_index.lock().unwrap();
+                if self.items.is_empty() {
+                    Some(Value::from(()))
+                } else {
+                    // Current is the one we're about to return (before incrementing)
+                    let current_idx = if *idx == 0 {
+                        self.items.len() - 1
+                    } else {
+                        *idx - 1
+                    };
+                    Some(self.items[current_idx].clone())
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
+/// `joiner` global — mirrors `jinja2.globals.joiner`.
+///
+/// Returns a callable that joins multiple strings with a separator,
+/// but only adds the separator starting from the second call.
+///
+/// Usage in template:
+/// ```jinja
+/// {% set comma = joiner(', ') %}
+/// {{ comma('a') }}    {# → 'a' #}
+/// {{ comma('b') }}    {# → ', b' #}
+/// {{ comma('c') }}    {# → ', c' #}
+/// ```
+#[derive(Debug)]
+pub struct Joiner {
+    separator: String,
+    first: Mutex<bool>,
+}
+
+impl Joiner {
+    pub fn new(separator: String) -> Self {
+        Self {
+            separator,
+            first: Mutex::new(true),
+        }
+    }
+}
+
+impl fmt::Display for Joiner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<Joiner>")
+    }
+}
+
+impl Object for Joiner {
+    fn repr(self: &Arc<Self>) -> ObjectRepr {
+        ObjectRepr::Plain
+    }
+
+    fn call(
+        self: &Arc<Self>,
+        _state: &State<'_, '_>,
+        args: &[Value],
+    ) -> Result<Value, Error> {
+        if args.is_empty() {
+            return Err(Error::new(
+                ErrorKind::MissingArgument,
+                "joiner() requires at least one argument",
+            ));
+        }
+        
+        let mut first = self.first.lock().unwrap();
+        let text = args[0].to_string();
+        
+        if *first {
+            *first = false;
+            Ok(Value::from(text))
+        } else {
+            Ok(Value::from(format!("{}{}", self.separator, text)))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,5 +369,28 @@ mod tests {
         assert!(!seen.contains("n"));
         seen.insert("n".to_owned());
         assert!(seen.contains("n"));
+    }
+
+    #[test]
+    fn test_cycler_basic() {
+        let cycler = Cycler::new(vec![
+            Value::from("red"),
+            Value::from("blue"),
+            Value::from("green"),
+        ]);
+        assert_eq!(cycler.items.len(), 3);
+    }
+
+    #[test]
+    fn test_joiner_basic() {
+        let joiner = Joiner::new(", ".to_string());
+        assert_eq!(joiner.separator, ", ");
+    }
+
+    #[test]
+    fn test_debug_create() {
+        let debug = Debug::new();
+        let debug_str = debug.to_string();
+        assert_eq!(debug_str, "<debug>");
     }
 }

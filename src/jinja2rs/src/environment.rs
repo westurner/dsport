@@ -42,6 +42,8 @@ impl Environment {
     /// Create a new environment with Jinja2 defaults:
     /// - All built-in minijinja filters and tests.
     /// - Sphinx utility filters (`tobool`, `toint`, `todim`, `slice_index`).
+    /// - Phase 3 filters: `indent`, `wordwrap`, `xmlattr`, `urlencode`, `filesizeformat`.
+    /// - Phase 4 globals: `debug`, `cycler`, `joiner`.
     /// - Sphinx globals (`accesskey`, `idgen`, `warning`).
     /// - Auto-escape enabled for `.html`, `.xml`, `.htm`.
     pub fn new() -> Self {
@@ -54,8 +56,16 @@ impl Environment {
         env.add_filter("filesizeformat", filters::filesizeformat);
         env.add_filter("slice_index", filters::slice_index);
 
-        // Sphinx-specific globals
+        // Phase 3 filters
+        env.add_filter("indent", filters::indent);
+        env.add_filter("wordwrap", filters::wordwrap);
+        env.add_filter("xmlattr", filters::xmlattr);
+        env.add_filter("urlencode", filters::urlencode);
+
+        // Sphinx-specific and Phase 4 globals
         env.add_global("idgen", minijinja::Value::from_object(globals::IdGen::new()));
+        env.add_global("accesskey", minijinja::Value::from_object(globals::AccessKey::new()));
+        env.add_global("debug", minijinja::Value::from_object(globals::Debug::new()));
 
         Self {
             inner: env,

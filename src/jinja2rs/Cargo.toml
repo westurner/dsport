@@ -60,6 +60,7 @@ minijinja = { path = "../minijinja/minijinja", features = [
     "serde",
     "loader",
     "unicode",
+    "urlencode",
 ] }
 minijinja-contrib = { path = "../minijinja/minijinja-contrib", features = ["pycompat"] }
 serde = { version = "1", features = ["derive"] }
@@ -67,6 +68,7 @@ serde_json = "1"
 thiserror = "2"
 tracing = { version = "0.1", optional = true }
 nix = { version = "0.28", features = [], optional = true }
+urlencoding = "2"
 
 [dev-dependencies]
 insta = { workspace = true }

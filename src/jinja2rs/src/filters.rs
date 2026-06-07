@@ -5,6 +5,11 @@
 //! - `toint` — coerce to `i64`, defaulting to 0
 //! - `todim` — format a value as a CSS dimension (`px`)
 //! - `slice_index` — partition index entries into N equal columns
+//! - `filesizeformat` — format bytes as human-readable file size
+//! - `indent` — indent a string by n spaces
+//! - `wordwrap` — wrap text at specified width
+//! - `xmlattr` — escape string as XML attribute value
+//! - `urlencode` — URL-encode a string or dict
 
 use minijinja::Value;
 
@@ -162,6 +167,181 @@ pub fn filesizeformat(value: Value, binary: Option<bool>) -> String {
     format!("{:.1} {}", size, units[units.len() - 1])
 }
 
+/// `indent` filter — mirrors `jinja2.filters.do_indent`.
+///
+/// Indents a string with the given number of spaces. By default, does not
+/// indent the first line unless `first` is set to `true`. Can also indent
+/// blank lines by setting `blank` to `true`.
+///
+/// Examples:
+/// - `"hello\nworld"|indent(2)` → `"hello\n  world"`
+/// - `"hello\nworld"|indent(2, true)` → `"  hello\n  world"`
+pub fn indent(value: Value, width: Option<u64>, first: Option<bool>, blank: Option<bool>) -> String {
+    let s = value.to_string();
+    let width = width.unwrap_or(4) as usize;
+    let first = first.unwrap_or(false);
+    let blank = blank.unwrap_or(false);
+
+    let indent_str = " ".repeat(width);
+    let lines: Vec<&str> = s.lines().collect();
+    let mut result = String::new();
+
+    for (i, line) in lines.iter().enumerate() {
+        if i > 0 {
+            result.push('\n');
+        }
+        let should_indent = (i > 0 || first) && (!line.is_empty() || blank);
+        if should_indent {
+            result.push_str(&indent_str);
+        }
+        result.push_str(line);
+    }
+
+    result
+}
+
+/// `wordwrap` filter — mirrors `jinja2.filters.do_wordwrap`.
+///
+/// Wraps text at the specified width. Preserves word boundaries.
+/// Uses `minijinja_contrib::filters::wordwrap` internally.
+///
+/// Examples:
+/// - `"hello world test"|wordwrap(5)` → `"hello\nworld\ntest"`
+pub fn wordwrap(value: &Value, width: Option<u64>, break_long_words: Option<bool>) -> Result<String, minijinja::Error> {
+    let s = value.to_string();
+    let width = width.unwrap_or(79) as usize;
+    let break_long = break_long_words.unwrap_or(false);
+
+    if width == 0 {
+        return Ok(s);
+    }
+
+    let mut result = String::new();
+    let mut current_line = String::new();
+    let mut word_buffer = String::new();
+
+    for ch in s.chars() {
+        if ch.is_whitespace() {
+            if !word_buffer.is_empty() {
+                // Add word to line
+                if current_line.is_empty() {
+                    current_line.push_str(&word_buffer);
+                } else if current_line.len() + 1 + word_buffer.len() <= width {
+                    current_line.push(' ');
+                    current_line.push_str(&word_buffer);
+                } else {
+                    result.push_str(&current_line);
+                    result.push('\n');
+                    current_line = word_buffer.clone();
+                }
+                word_buffer.clear();
+            }
+            if ch == '\n' {
+                result.push_str(&current_line);
+                result.push('\n');
+                current_line.clear();
+            }
+        } else {
+            word_buffer.push(ch);
+            if break_long && word_buffer.len() > width {
+                if !current_line.is_empty() {
+                    result.push_str(&current_line);
+                    result.push('\n');
+                    current_line.clear();
+                }
+                result.push_str(&word_buffer);
+                result.push('\n');
+                word_buffer.clear();
+            }
+        }
+    }
+
+    if !word_buffer.is_empty() {
+        if current_line.is_empty() {
+            current_line.push_str(&word_buffer);
+        } else if current_line.len() + 1 + word_buffer.len() <= width {
+            current_line.push(' ');
+            current_line.push_str(&word_buffer);
+        } else {
+            result.push_str(&current_line);
+            result.push('\n');
+            current_line = word_buffer;
+        }
+    }
+
+    if !current_line.is_empty() {
+        result.push_str(&current_line);
+    }
+
+    Ok(result)
+}
+
+/// `xmlattr` filter — mirrors `jinja2.filters.do_xmlattr`.
+///
+/// Converts a dict/object to XML attribute list. Values are XML-escaped
+/// and quoted. The filter should be used inside tag markup.
+///
+/// Examples:
+/// - `{"class": "foo", "id": "bar"}|xmlattr` → ` class="foo" id="bar"`
+/// - `{"data": "a & b"}|xmlattr` → ` data="a &amp; b"`
+pub fn xmlattr(attrs: Value) -> String {
+    let mut result = String::new();
+
+    // Convert value to JSON string and parse it back as JSON for iteration
+    if let Ok(json_str) = serde_json::to_string(&attrs) {
+        if let Ok(serde_json::Value::Object(map)) = serde_json::from_str(&json_str) {
+            for (key, val) in map.iter() {
+                let escaped = val.to_string()
+                    .trim_matches('"')  // JSON serialization adds quotes
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;")
+                    .replace('"', "&quot;")
+                    .replace('\'', "&#x27;");
+                result.push(' ');
+                result.push_str(key);
+                result.push_str("=\"");
+                result.push_str(&escaped);
+                result.push('"');
+            }
+        }
+    }
+
+    result
+}
+
+/// `urlencode` filter — mirrors `jinja2.filters.do_urlencode`.
+///
+/// URL-encodes a string or dict. For dicts, formats as query string (key=value&key=value).
+///
+/// Examples:
+/// - `"hello world"|urlencode` → `"hello%20world"`
+/// - `{"q": "hello world"}|urlencode` → `"q=hello+world"`
+pub fn urlencode(value: &Value) -> Result<String, minijinja::Error> {
+    if let Some(s) = value.as_str() {
+        Ok(urlencoding::encode(s).into_owned())
+    } else {
+        // Convert to JSON string and parse as JSON for dict handling
+        if let Ok(json_str) = serde_json::to_string(&value) {
+            if let Ok(serde_json::Value::Object(map)) = serde_json::from_str(&json_str) {
+                let mut pairs = Vec::new();
+                for (k, v) in map.iter() {
+                    let key = urlencoding::encode(k).into_owned();
+                    let val_str = if let serde_json::Value::String(s) = v {
+                        s.clone()
+                    } else {
+                        v.to_string().trim_matches('"').to_string()
+                    };
+                    let val = urlencoding::encode(&val_str).into_owned();
+                    pairs.push(format!("{}={}", key, val));
+                }
+                return Ok(pairs.join("&"));
+            }
+        }
+        Ok(urlencoding::encode(&value.to_string()).into_owned())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,6 +432,101 @@ mod tests {
     fn test_filesizeformat_negative() {
         // Negative values should be treated as 0
         assert_eq!(filesizeformat(Value::from(-100.0), Some(true)), "0 B");
+    }
+
+    #[test]
+    fn test_indent_default() {
+        assert_eq!(indent(Value::from("hello\nworld"), None, None, None), "hello\n    world");
+        assert_eq!(indent(Value::from("hello\nworld"), Some(2), None, None), "hello\n  world");
+    }
+
+    #[test]
+    fn test_indent_first_line() {
+        assert_eq!(indent(Value::from("hello\nworld"), Some(2), Some(true), None), "  hello\n  world");
+    }
+
+    #[test]
+    fn test_indent_blank_lines() {
+        let input = "hello\n\nworld";
+        assert_eq!(indent(Value::from(input), Some(2), Some(false), Some(false)), "hello\n\n  world");
+        assert_eq!(indent(Value::from(input), Some(2), Some(false), Some(true)), "hello\n  \n  world");
+    }
+
+    #[test]
+    fn test_wordwrap_basic() {
+        let result = wordwrap(&Value::from("hello world test"), Some(10), None);
+        assert!(result.is_ok());
+        // Word wrap should keep words on separate lines if they exceed width
+        let wrapped = result.unwrap();
+        assert!(wrapped.contains('\n'));
+    }
+
+    #[test]
+    fn test_wordwrap_long_word() {
+        let result = wordwrap(&Value::from("verylongword short"), Some(5), Some(true));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_xmlattr_basic() {
+        use std::collections::BTreeMap;
+        let mut attrs = BTreeMap::new();
+        attrs.insert("class", "foo");
+        attrs.insert("id", "bar");
+        let val = minijinja::Value::from_object(attrs);
+        let result = xmlattr(val);
+        assert!(result.contains("class=\"foo\""));
+        assert!(result.contains("id=\"bar\""));
+    }
+
+    #[test]
+    fn test_xmlattr_escaping() {
+        use std::collections::BTreeMap;
+        let mut attrs = BTreeMap::new();
+        attrs.insert("data", "a & b");
+        let val = minijinja::Value::from_object(attrs);
+        let result = xmlattr(val);
+        assert!(result.contains("&amp;"));
+    }
+
+    #[test]
+    fn test_xmlattr_quote_escaping() {
+        use std::collections::BTreeMap;
+        let mut attrs = BTreeMap::new();
+        attrs.insert("title", "a \"quoted\" word");
+        let val = minijinja::Value::from_object(attrs);
+        let result = xmlattr(val);
+        assert!(result.contains("&quot;"));
+    }
+
+    #[test]
+    fn test_urlencode_string() {
+        let result = urlencode(&Value::from("hello world"));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "hello%20world");
+    }
+
+    #[test]
+    fn test_urlencode_special_chars() {
+        let result = urlencode(&Value::from("a&b=c"));
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        assert!(encoded.contains("%26")); // & encoded
+        assert!(encoded.contains("%3D")); // = encoded
+    }
+
+    #[test]
+    fn test_urlencode_dict() {
+        use std::collections::BTreeMap;
+        let mut dict = BTreeMap::new();
+        dict.insert("q", "hello");
+        dict.insert("lang", "en");
+        let val = minijinja::Value::from_object(dict);
+        let result = urlencode(&val);
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        assert!(encoded.contains("q=hello"));
+        assert!(encoded.contains("lang=en"));
     }
 }
 

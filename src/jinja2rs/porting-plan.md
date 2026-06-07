@@ -520,6 +520,61 @@ Python (optional bridge for migration):
     env.render_str("{{ user.items() }}", {"user": {...}})
 ```
 
+## CLI Binaries
+
+### j2substrs — Ansible-compatible template renderer
+
+**Status:** ✨ COMPLETE
+
+A command-line tool for substituting variables in Jinja2 templates with values from:
+- Environment variables (automatically injected)
+- Custom variables (via `-s KEY=VALUE` flags)
+- Ansible inventory (via `--inventory` in ansible mode)
+
+**Features:**
+- Multiple compatibility modes: `jinja2` (default, Python method syntax), `minijinja` (filter-based), `ansible` (Ansible playbooks with inventory)
+- Template sources: stdin, file, or positional argument
+- Output routing: stdout or file (with preview + optional confirmation)
+- Ansible inventory support:
+  - Load from file (`--inventory FILE`)
+  - Load from stdin (`--inventory-stdin`)
+  - Load inline YAML/JSON (`--inventory-inline 'all: {...}'`)
+  - Set current hostname (`--inventory-hostname NAME`)
+
+**Available variables in ansible mode:**
+- `groups`: Dictionary mapping group names to host lists (e.g., `groups.all`, `groups.webservers`)
+- `hostvars`: Dictionary mapping hostnames to their variables (e.g., `hostvars[hostname]`)
+- `inventory_hostname`: Current host being templated (from `--inventory-hostname`)
+- Group-level `vars` from the `all` group are injected at top level (e.g., `ansible_user`, `deploy_env`)
+
+**Usage examples:**
+```bash
+# Basic stdin substitution
+echo "Hello {{ USER }}" | j2substrs
+
+# With custom variables
+j2substrs --file config.txt -s APP=myapp -s VERSION=1.0
+
+# Preview before writing
+j2substrs --file template.j2 --output result.yml --preview
+
+# Auto-confirm preview (CI/CD)
+j2substrs --file template.j2 --output result.yml --preview --yes
+
+# Ansible mode with inventory
+j2substrs --mode ansible --file playbook.j2 \
+  --inventory /etc/ansible/hosts \
+  --inventory-hostname web1 \
+  --output playbook.yml
+```
+
+**Implementation details:**
+- Binary: `src/bin/j2substrs.rs` (~380 lines)
+- Clap-based argument parsing with derive macros
+- Supports repeatable flags (`-s` can be used multiple times)
+- JSON context construction for proper nested structure support
+- Inventory loaded via `ansible_inventory::Inventory` module (YAML/JSON auto-detection)
+
 ## Compatibility notes
 
 ### Jinja2 vs minijinja behavior differences

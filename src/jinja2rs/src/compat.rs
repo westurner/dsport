@@ -1,6 +1,6 @@
 //! `jinja2rs::compat` — Jinja2 vs minijinja compatibility modes.
 //!
-//! This module provides configuration for two compatibility modes:
+//! This module provides configuration for three compatibility modes:
 //!
 //! - **Jinja2 mode** (default): Drop-in compatible with Python Jinja2. Enables
 //!   Python method syntax like `obj.items()`, `obj.values()`, `dict.get()`,
@@ -9,9 +9,107 @@
 //! - **minijinja mode**: Uses minijinja's native filter-based approach.
 //!   Methods like `.items()` are not available; use `|items` filter instead.
 //!   This mode has lower overhead and is more explicit.
+//!
+//! - **Ansible mode**: Specialized mode for Ansible playbooks with:
+//!   - Curated Ansible standard filters (`to_nice_json`, `combine`, `regex_*`, etc.)
+//!   - Inventory support (hosts, groups, hostvars)
+//!   - YAML validation for playbooks and inventories
+//!   - Composable method syntax (can combine with Jinja2 or filter-based approach)
+
+use std::path::PathBuf;
+
+/// Ansible inventory source.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnsibleInventorySource {
+    /// Load inventory from a file path
+    File(PathBuf),
+    /// Load inventory from standard input
+    Stdin,
+    /// Load inventory from inline YAML/JSON string
+    Inline(String),
+}
+
+/// Ansible-specific configuration (composable with method_syntax).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnsibleMode {
+    /// Whether to enable Python method syntax (Jinja2-style).
+    /// If false, use filter-based syntax (minijinja-style).
+    pub method_syntax: bool,
+
+    /// Enable YAML/JSON validation for playbooks and inventories.
+    /// When enabled, validates structure before rendering.
+    pub enable_validation: bool,
+
+    /// Inventory source for Ansible variables.
+    /// When set, loads inventory and provides:
+    /// - `inventory_hostname` — current host name
+    /// - `groups` — group membership
+    /// - `hostvars` — host variables
+    /// - `group_names` — list of groups
+    pub inventory_source: Option<AnsibleInventorySource>,
+}
+
+impl Default for AnsibleMode {
+    fn default() -> Self {
+        AnsibleMode {
+            method_syntax: true,      // Default to Jinja2-style methods
+            enable_validation: true,   // Validate by default
+            inventory_source: None,
+        }
+    }
+}
+
+impl AnsibleMode {
+    /// Create an Ansible mode with all features enabled.
+    pub fn full() -> Self {
+        AnsibleMode::default()
+    }
+
+    /// Create an Ansible mode with method syntax enabled.
+    pub fn with_methods() -> Self {
+        AnsibleMode {
+            method_syntax: true,
+            enable_validation: true,
+            inventory_source: None,
+        }
+    }
+
+    /// Create an Ansible mode with filter-based syntax (no methods).
+    pub fn filter_only() -> Self {
+        AnsibleMode {
+            method_syntax: false,
+            enable_validation: true,
+            inventory_source: None,
+        }
+    }
+
+    /// Enable inventory support from a file.
+    pub fn with_inventory_file(mut self, path: impl Into<PathBuf>) -> Self {
+        self.inventory_source = Some(AnsibleInventorySource::File(path.into()));
+        self
+    }
+
+    /// Enable inventory support from stdin.
+    pub fn with_inventory_stdin(mut self) -> Self {
+        self.inventory_source = Some(AnsibleInventorySource::Stdin);
+        self
+    }
+
+    /// Enable inventory support from inline YAML/JSON.
+    pub fn with_inventory_inline(mut self, data: String) -> Self {
+        self.inventory_source = Some(AnsibleInventorySource::Inline(data));
+        self
+    }
+
+    /// Enable or disable validation.
+    pub fn with_validation(mut self, enable: bool) -> Self {
+        self.enable_validation = enable;
+        self
+    }
+}
 
 /// Compatibility mode configuration for the template environment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CompatMode {
     /// Jinja2 compatibility mode (default).
     ///
@@ -32,6 +130,35 @@ pub enum CompatMode {
     ///
     /// This mode is more efficient and encourages explicit filter-based syntax.
     Minijinja,
+
+    /// Ansible compatibility mode (composable).
+    ///
+    /// Specialized mode for Ansible playbooks with:
+    /// - Curated Ansible standard filters
+    /// - Inventory support (hosts, groups, variables)
+    /// - YAML validation
+    /// - Composable method syntax (can use Jinja2 or filter-based)
+    ///
+    /// # Examples
+    ///
+    /// Ansible with method syntax:
+    /// ```rust,ignore
+    /// CompatMode::Ansible(AnsibleMode::with_methods())
+    /// ```
+    ///
+    /// Ansible with filter-based syntax:
+    /// ```rust,ignore
+    /// CompatMode::Ansible(AnsibleMode::filter_only())
+    /// ```
+    ///
+    /// Ansible with inventory:
+    /// ```rust,ignore
+    /// CompatMode::Ansible(
+    ///     AnsibleMode::default()
+    ///         .with_inventory_file("/etc/ansible/hosts")
+    /// )
+    /// ```
+    Ansible(AnsibleMode),
 }
 
 impl Default for CompatMode {
@@ -44,12 +171,38 @@ impl Default for CompatMode {
 impl CompatMode {
     /// Returns true if this is Jinja2 compatibility mode.
     pub fn is_jinja2(&self) -> bool {
-        *self == CompatMode::Jinja2
+        matches!(self, CompatMode::Jinja2)
     }
 
     /// Returns true if this is minijinja compatibility mode.
     pub fn is_minijinja(&self) -> bool {
-        *self == CompatMode::Minijinja
+        matches!(self, CompatMode::Minijinja)
+    }
+
+    /// Returns true if this is Ansible compatibility mode.
+    pub fn is_ansible(&self) -> bool {
+        matches!(self, CompatMode::Ansible(_))
+    }
+
+    /// Get the Ansible mode if this is Ansible mode, otherwise None.
+    pub fn as_ansible(&self) -> Option<&AnsibleMode> {
+        match self {
+            CompatMode::Ansible(cfg) => Some(cfg),
+            _ => None,
+        }
+    }
+
+    /// Check if this mode supports Python method syntax.
+    ///
+    /// Returns true for:
+    /// - Jinja2 mode (always has method syntax)
+    /// - Ansible mode with `method_syntax: true`
+    pub fn has_method_syntax(&self) -> bool {
+        match self {
+            CompatMode::Jinja2 => true,
+            CompatMode::Minijinja => false,
+            CompatMode::Ansible(cfg) => cfg.method_syntax,
+        }
     }
 }
 
@@ -66,11 +219,66 @@ mod tests {
     fn test_is_jinja2() {
         assert!(CompatMode::Jinja2.is_jinja2());
         assert!(!CompatMode::Minijinja.is_jinja2());
+        assert!(!CompatMode::Ansible(AnsibleMode::default()).is_jinja2());
     }
 
     #[test]
     fn test_is_minijinja() {
         assert!(CompatMode::Minijinja.is_minijinja());
         assert!(!CompatMode::Jinja2.is_minijinja());
+        assert!(!CompatMode::Ansible(AnsibleMode::default()).is_minijinja());
+    }
+
+    #[test]
+    fn test_is_ansible() {
+        assert!(CompatMode::Ansible(AnsibleMode::default()).is_ansible());
+        assert!(!CompatMode::Jinja2.is_ansible());
+        assert!(!CompatMode::Minijinja.is_ansible());
+    }
+
+    #[test]
+    fn test_has_method_syntax_jinja2() {
+        assert!(CompatMode::Jinja2.has_method_syntax());
+    }
+
+    #[test]
+    fn test_has_method_syntax_minijinja() {
+        assert!(!CompatMode::Minijinja.has_method_syntax());
+    }
+
+    #[test]
+    fn test_has_method_syntax_ansible_with_methods() {
+        let ansible = CompatMode::Ansible(AnsibleMode::with_methods());
+        assert!(ansible.has_method_syntax());
+    }
+
+    #[test]
+    fn test_has_method_syntax_ansible_filter_only() {
+        let ansible = CompatMode::Ansible(AnsibleMode::filter_only());
+        assert!(!ansible.has_method_syntax());
+    }
+
+    #[test]
+    fn test_ansible_mode_default() {
+        let mode = AnsibleMode::default();
+        assert!(mode.method_syntax);
+        assert!(mode.enable_validation);
+        assert!(mode.inventory_source.is_none());
+    }
+
+    #[test]
+    fn test_ansible_mode_with_inventory() {
+        let mode = AnsibleMode::default()
+            .with_inventory_file("/etc/ansible/hosts");
+        assert!(mode.inventory_source.is_some());
+    }
+
+    #[test]
+    fn test_ansible_mode_as_ansible() {
+        let mode = CompatMode::Ansible(AnsibleMode::default());
+        assert!(mode.as_ansible().is_some());
+
+        let mode = CompatMode::Jinja2;
+        assert!(mode.as_ansible().is_none());
     }
 }

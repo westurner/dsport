@@ -53,10 +53,13 @@ pub mod sandbox;
 pub mod sandbox_config;
 pub mod sphinx_glue;
 pub mod i18n;
+pub mod ansible_filters;
+pub mod ansible_inventory;
+pub mod ansible_validation;
 
 mod bridge;
 
-pub use compat::CompatMode;
+pub use compat::{CompatMode, AnsibleMode, AnsibleInventorySource};
 pub use environment::Environment;
 pub use errors::Jinja2Error;
 pub use sandbox::SandboxedEnvironment;

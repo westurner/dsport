@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use minijinja::Environment as MiniEnv;
+use minijinja::Value;
 use serde::Serialize;
 
 use crate::compat::CompatMode;
@@ -167,7 +168,67 @@ impl Environment {
         match mode {
             CompatMode::Jinja2 => self.enable_jinja2_compat(),
             CompatMode::Minijinja => self.enable_minijinja_compat(),
+            CompatMode::Ansible(cfg) => {
+                // Register Ansible filters
+                self.register_ansible_filters();
+                
+                // Set method syntax based on Ansible mode configuration
+                if cfg.method_syntax {
+                    self.enable_jinja2_compat();
+                } else {
+                    self.enable_minijinja_compat();
+                }
+                
+                // TODO: Add inventory support when cfg.inventory_source is Some
+                // TODO: Add YAML validation when cfg.enable_validation is true
+            }
         }
+    }
+
+    /// Register Ansible-specific filters.
+    fn register_ansible_filters(&mut self) {
+        // to_nice_json returns Result - wrap in a filter-compatible closure
+        self.inner.add_filter("to_nice_json", |val: Value| {
+            crate::ansible_filters::to_nice_json(val)
+                .unwrap_or_else(|_| Value::from(""))
+        });
+        
+        // from_json returns Result - wrap in a filter-compatible closure
+        self.inner.add_filter("from_json", |val: Value| {
+            crate::ansible_filters::from_json(val)
+                .unwrap_or_else(|_| Value::from(""))
+        });
+        
+        self.add_filter("quote", crate::ansible_filters::quote);
+        
+        // path_join takes 2 arguments - wrap in closure
+        self.inner.add_filter("path_join", |val: Value| {
+            crate::ansible_filters::path_join(val, Value::from(""))
+        });
+        
+        // combine takes 2 arguments - wrap in closure
+        self.inner.add_filter("combine", |val: Value| {
+            crate::ansible_filters::combine(val, Value::from(""))
+                .unwrap_or_else(|_| Value::from(""))
+        });
+        
+        // regex_search takes 2 arguments - wrap in closure
+        self.inner.add_filter("regex_search", |val: Value| {
+            crate::ansible_filters::regex_search(val, Value::from(""))
+        });
+        
+        // regex_replace takes 3 arguments - wrap in closure
+        self.inner.add_filter("regex_replace", |val: Value| {
+            crate::ansible_filters::regex_replace(val, Value::from(""), Value::from(""))
+        });
+        
+        // regex_findall takes 2 arguments - wrap in closure
+        self.inner.add_filter("regex_findall", |val: Value| {
+            crate::ansible_filters::regex_findall(val, Value::from(""))
+        });
+        
+        self.add_filter("to_nice_yaml", crate::ansible_filters::to_nice_yaml);
+        self.add_filter("from_yaml", crate::ansible_filters::from_yaml);
     }
 
     /// Enable Jinja2 compatibility mode explicitly.

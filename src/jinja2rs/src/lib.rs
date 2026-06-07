@@ -87,13 +87,20 @@ pub fn features() -> &'static [&'static str] {
         "globals:debug",
         "globals:cycler",
         "globals:joiner",
+        "globals:lipsum",
         "globals:warning",
+        "i18n:gettext",
+        "i18n:ngettext",
         "sandbox:sandboxed_environment",
         "sandbox:seccomp_filtering",
         "sandbox:resource_limits",
         "sandbox:python_callable_warnings",
         "sphinx_glue:builtin_template_loader",
         "bridge:pyo3",
+        "bridge:environment",
+        "bridge:sandboxed_environment",
+        "bridge:template",
+        "bridge:exceptions",
     ]
 }
 

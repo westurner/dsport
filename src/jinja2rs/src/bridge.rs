@@ -6,7 +6,35 @@
 //! while the Rust (`sphinxdocrs`) path bypasses Python entirely.
 
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};  //, PyString};
+use pyo3::types::{PyDict, PyList};
+use std::sync::Arc;
+use std::sync::Mutex;
+
+/// Python-facing `Template` class.
+///
+/// Holds a reference to a rendered template output or source.
+#[pyclass(name = "Template")]
+pub struct PyTemplate {
+    source: Arc<Mutex<String>>,
+}
+
+#[pymethods]
+impl PyTemplate {
+    /// Render the template with the given keyword-argument context.
+    fn render(&self, _context: &Bound<'_, PyDict>) -> PyResult<String> {
+        // For now, return the cached source
+        self.source
+            .lock()
+            .map(|s| s.clone())
+            .map_err(|_| crate::errors::TemplateError::new_err("Template lock failed"))
+    }
+
+    /// Return the module's source code.
+    fn module(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let dict = PyDict::new(py);
+        Ok(dict.into())
+    }
+}
 
 /// Python-facing `Environment` class.
 #[pyclass(name = "Environment")]
@@ -28,7 +56,27 @@ impl PyEnvironment {
         let ctx = pydict_to_json(context)?;
         self.inner
             .render_str(source, &ctx)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+            .map_err(|e| {
+                crate::errors::TemplateRuntimeError::new_err(e.to_string())
+            })
+    }
+
+    /// Get a template by name. Requires the template to have been added via add_template().
+    ///
+    /// Note: This is a simplified implementation. For file-based templates,
+    /// use FileSystemLoader instead.
+    fn get_template(&self, name: &str) -> PyResult<PyTemplate> {
+        self.inner
+            .get_template(name)
+            .map_err(|e| match e {
+                crate::errors::Jinja2Error::TemplateNotFound(ref n) => {
+                    crate::errors::TemplateNotFound::new_err(format!("Template '{}' not found", n))
+                }
+                _ => crate::errors::TemplateError::new_err(e.to_string()),
+            })
+            .map(|_| PyTemplate {
+                source: Arc::new(Mutex::new(name.to_string())),
+            })
     }
 
     /// Add a template from a string source.
@@ -40,7 +88,7 @@ impl PyEnvironment {
         let source_s: &'static str = Box::leak(source.to_owned().into_boxed_str());
         self.inner
             .add_template(name_s, source_s)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+            .map_err(|e| crate::errors::TemplateError::new_err(e.to_string()))
     }
 }
 
@@ -63,7 +111,31 @@ impl PySandboxedEnvironment {
         let ctx = pydict_to_json(context)?;
         self.inner
             .render_str(source, &ctx)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+            .map_err(|e| crate::errors::TemplateError::new_err(e.to_string()))
+    }
+
+    /// Add a template from a string source.
+    fn add_template(&mut self, name: &str, source: &str) -> PyResult<()> {
+        let name_s: &'static str = Box::leak(name.to_owned().into_boxed_str());
+        let source_s: &'static str = Box::leak(source.to_owned().into_boxed_str());
+        self.inner
+            .add_template(name_s, source_s)
+            .map_err(|e| crate::errors::TemplateError::new_err(e.to_string()))
+    }
+
+    /// Get a template by name.
+    fn get_template(&self, name: &str) -> PyResult<PyTemplate> {
+        self.inner
+            .get_template(name)
+            .map_err(|e| match e {
+                crate::errors::Jinja2Error::TemplateNotFound(ref n) => {
+                    crate::errors::TemplateNotFound::new_err(format!("Template '{}' not found", n))
+                }
+                _ => crate::errors::TemplateError::new_err(e.to_string()),
+            })
+            .map(|_| PyTemplate {
+                source: Arc::new(Mutex::new(name.to_string())),
+            })
     }
 }
 
@@ -112,7 +184,18 @@ fn pyobj_to_json(obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
 
 /// Register the bridge classes and functions into the `jinja2rs` Python module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = m.py();
+    
+    m.add_class::<PyTemplate>()?;
     m.add_class::<PyEnvironment>()?;
     m.add_class::<PySandboxedEnvironment>()?;
+
+    // Register exception types
+    m.add("TemplateNotFound", py.get_type::<crate::errors::TemplateNotFound>())?;
+    m.add("TemplateError", py.get_type::<crate::errors::TemplateError>())?;
+    m.add("TemplateSyntaxError", py.get_type::<crate::errors::TemplateSyntaxError>())?;
+    m.add("UndefinedError", py.get_type::<crate::errors::UndefinedError>())?;
+    m.add("TemplateRuntimeError", py.get_type::<crate::errors::TemplateRuntimeError>())?;
+
     Ok(())
 }

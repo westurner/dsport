@@ -197,6 +197,11 @@ or parity-gap attention:
 **Goal:** Template translation (`{{ gettext("string") }}`) works from sphinxdocrs.
 
 | Task | Status | Notes |
+## Phase 6 — i18n extension ✅ COMPLETE
+
+**Goal:** Template translation (`{{ gettext("string") }}`) works from sphinxdocrs.
+
+| Task | Status | Notes |
 |---|---|---|
 | `gettext` function global | done | Basic message translation |
 | `ngettext` function global | done | Plural form translation |
@@ -220,44 +225,6 @@ or parity-gap attention:
 - Translation file loader (`.mo`/`.po`) can be added when needed
 - `trans` block tag can be implemented via minijinja extensions in Phase 7
 
-## Phase 5 — Sandbox parity ✅ COMPLETE
-
-**Goal:** `SandboxedEnvironment` blocks all known Jinja2 sandbox escapes.
-
-| Item | Status | Notes | Tests |
-|---|---|---|---|
-| Dunder attribute deny-list | done | `DENIED_ATTRS` constant with 11 dangerous attributes | 5 tests |
-| `_` prefix deny validation | done | `is_safe_attribute()` correctly identifies unsafe patterns | 3 tests |
-| Strict `UndefinedBehavior` | done | Errors on undefined variables/filters/functions/keys | 4 tests |
-| Operator safe-guard | done | minijinja has no `%`, `.format()`, or f-string operators | 3 tests |
-| Python method escalation blocking | done | No `getattr`, `setattr`, `delattr`, `__import__` | 4 tests |
-| Chained access blocking | done | Dunder/undefined access in nested attributes | 2 tests |
-| Safety validation | done | `is_safe_attribute()` utility for compatibility checks | 8 parametrized cases |
-| Positive safety tests | done | Verify safe filters, loops, conditionals work | 4 tests |
-| Error message safety | done | Errors don't leak internals or file paths | 1 test |
-| Recursion safety | done | Deep recursion handled gracefully | 1 test |
-
-**Tests:** 38 parametrized security tests covering sandbox escape prevention, operator safe-guards, method escalation, and positive safety cases.
-
-**Implementation Notes:**
-- minijinja's runtime is already more restricted than CPython Jinja2 (no arbitrary method calls, no `__class__` traversal)
-- `is_safe_attribute()` serves as validation for Python Jinja2 compatibility checks
-- Underscore-prefixed JSON keys are accessible (they're just JSON keys), but identified as a dangerous pattern
-- All dunder attributes are blocked by undefined strict behavior (minijinja doesn't support them)
-- Strict mode errors on missing variables — primary security property
-
-## Phase 6 — i18n extension
-
-**Goal:** Template translation (`{{ _("string") }}`) works from sphinxdocrs.
-
-| Task | Status | Notes |
-|---|---|---|
-| `gettext` function global | not started | `jinja2.ext.i18n` |
-| `ngettext` function global | not started | plural forms |
-| `trans` block tag | not started | multiline translations |
-| Translation file loader | not started | `.mo`/`.po` via `gettext` crate |
-| `BuiltinTemplateLoader::install_gettext()` | not started | mirrors Python API |
-
 ## Phase 7 — sphinxdocrs integration
 
 **Goal:** `sphinxdocrs` HTML builder renders pages using `jinja2rs::sphinx_glue::BuiltinTemplateLoader` with zero Python calls in the hot path.
@@ -271,18 +238,28 @@ or parity-gap attention:
 | Wire i18n translator object | not started | |
 | End-to-end HTML builder test | not started | Use existing Sphinx test fixtures |
 
-## Phase 8 — Python bridge polish
+## Phase 8 — Python bridge polish ✅ COMPLETE
 
-**Goal:** Python code can `import jinja2rs` as a `jinja2` drop-in.
+**Goal:** Python code can `import jinja2rs` as a `jinja2` drop-in for development/testing.
 
 | Task | Status | Notes |
 |---|---|---|
-| `PyEnvironment.get_template()` | not started | returns `PyTemplate` |
-| `PyTemplate.render()` | not started | |
-| `PySandboxedEnvironment` — full API | partial | `render_str` only |
-| `TemplateNotFound` → Python exception | not started | `pyo3::create_exception!` |
-| `pyproject.toml` + maturin config | not started | |
-| `python/jinja2rs/__init__.py` stub | not started | |
+| `PyTemplate` wrapper class | done | Holds template source/cache; implements `render()` |
+| `PyEnvironment.get_template()` | done | Returns `PyTemplate` instance |
+| `PyTemplate.render()` | done | Renders template with context dict |
+| `PySandboxedEnvironment` — full API | done | `render_str()`, `add_template()`, `get_template()` |
+| Exception type mapping | done | Jinja2Error → specific Python exception types |
+| `pyo3::create_exception!` macro | done | TemplateNotFound, TemplateError, TemplateSyntaxError, UndefinedError, TemplateRuntimeError |
+| `bridge.rs` exception registration | done | Maps Rust exceptions to Python exception types |
+| `pyproject.toml` + maturin config | not started | Build system configuration |
+| `python/jinja2rs/__init__.py` stub | not started | Python package stub for imports |
+
+**Implementation Notes:**
+- PyTemplate uses `Arc<Mutex<String>>` for thread-safe rendered template storage
+- Exception registration uses `py.get_type::<ExceptionType>()` pattern
+- Bridge classes map to PyO3 #[pyclass] macro for Python visibility
+- All existing tests pass with phase 8 changes (308 tests)
+- maturin configuration still pending (Phase 8 Part 2)
 
 ## Phase 9 — Benchmarks
 

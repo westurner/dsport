@@ -11,6 +11,7 @@ RUN dnf -y install \
 		pkgconf-pkg-config openssl-devel \
 		python3 python3-pip python3-devel python3-virtualenv \
 		libffi-devel zlib-devel \
+		libseccomp-devel \
 		ca-certificates curl which findutils \
 		procps-ng tar gzip xz \
 		ripgrep jq \

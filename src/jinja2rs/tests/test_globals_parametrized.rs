@@ -31,7 +31,7 @@ fn env_with_context() -> (Environment, serde_json::Value) {
 /// Fixture: idgen global for testing incremental IDs.
 #[fixture]
 fn env_with_idgen() -> Environment {
-    let mut env = Environment::new();
+    let env = Environment::new();
     // idgen is added by default in Environment::new()
     env
 }
@@ -46,7 +46,7 @@ fn env_with_idgen() -> Environment {
 #[case(2)]
 #[case(3)]
 fn test_idgen_next_basic(env_with_idgen: Environment, #[case] expected_id: u64) {
-    let mut env = env_with_idgen;
+    let env = env_with_idgen;
     // Each call to idgen.next() should increment
     for i in 1..=expected_id {
         let out = env
@@ -60,7 +60,7 @@ fn test_idgen_next_basic(env_with_idgen: Environment, #[case] expected_id: u64) 
 
 /// Test idgen.current() returns the last generated ID without incrementing.
 #[rstest]
-fn test_idgen_current_no_increment(mut env_with_idgen: Environment) {
+fn test_idgen_current_no_increment(env_with_idgen: Environment) {
     env_with_idgen
         .render_str("{{ idgen.next() }}", json!({}))
         .unwrap();

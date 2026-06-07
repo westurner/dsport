@@ -85,7 +85,7 @@ fn test_dunder_globals_denied(sandbox_env: SandboxedEnvironment) {
 #[case("_private")]
 #[case("_internal")]
 #[case("_safe_attribute")]
-fn test_underscore_prefix_validation(sandbox_env: SandboxedEnvironment, #[case] attr: &str) {
+fn test_underscore_prefix_validation(#[case] attr: &str) {
     // Verify that is_safe_attribute() correctly identifies underscore patterns as unsafe
     assert!(!SandboxedEnvironment::is_safe_attribute(attr),
             "is_safe_attribute should return false for underscore-prefixed names");

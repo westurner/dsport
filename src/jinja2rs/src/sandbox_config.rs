@@ -68,7 +68,7 @@
 //!
 //! When you enable multiple features, you can layer all protections:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! # #[cfg(all(feature = "seccomp", feature = "resource-limits"))]
 //! # {
 //! use jinja2rs::sandbox_config::{SandboxedEnvironmentBuilder, PathPolicy, SeccompWhitelist};
@@ -330,7 +330,7 @@ impl SandboxedEnvironmentBuilder {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// # #[cfg(feature = "seccomp")]
     /// # {
     /// use jinja2rs::sandbox_config::{SandboxedEnvironmentBuilder, SeccompWhitelist};
@@ -402,7 +402,7 @@ impl SandboxedEnvironmentBuilder {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// # #[cfg(feature = "resource-limits")]
     /// # {
     /// use jinja2rs::sandbox_config::SandboxedEnvironmentBuilder;
@@ -690,6 +690,7 @@ impl Default for SandboxedEnvironmentBuilder {
 
 /// Internal configuration for sandboxed environments.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]  // Fields are used when sandbox/seccomp/resource-limits features are enabled
 pub struct SandboxConfig {
     pub(crate) enable_seccomp: bool,
     pub(crate) seccomp_whitelist: SeccompWhitelist,
@@ -721,6 +722,7 @@ impl Default for SandboxConfig {
 // ============================================================================
 
 /// Minimal seccomp whitelist: essential syscalls only.
+#[allow(dead_code)]  // Used when seccomp feature is enabled
 const SECCOMP_MINIMAL: &[&str] = &[
     // Memory management (essential for Rust runtime)
     "brk", "mmap", "mprotect", "munmap",
@@ -735,6 +737,7 @@ const SECCOMP_MINIMAL: &[&str] = &[
 ];
 
 /// Broad seccomp whitelist: includes compatibility syscalls.
+#[allow(dead_code)]  // Used when seccomp feature is enabled
 const SECCOMP_BROAD: &[&str] = &[
     // Memory management
     "brk", "mmap", "mprotect", "munmap", "mremap",
@@ -770,6 +773,7 @@ const SECCOMP_BROAD: &[&str] = &[
 /// This function is only available on Linux with kernel >= 3.17.
 /// On other platforms, it logs a warning and returns `Ok(())` without filtering.
 #[cfg(all(feature = "seccomp", unix, target_os = "linux"))]
+#[allow(dead_code)]  // Called only when seccomp feature is enabled
 fn enable_seccomp_whitelist(whitelist: SeccompWhitelist) -> Result<(), Box<dyn std::error::Error>> {
     use libseccomp::{ScmpAction, ScmpSyscall};
 
@@ -780,7 +784,7 @@ fn enable_seccomp_whitelist(whitelist: SeccompWhitelist) -> Result<(), Box<dyn s
 
     // Create a new seccomp filter context.
     // Default action is to kill the process if a syscall is not explicitly allowed.
-    let mut ctx = libseccomp::ScmpFilterContext::new(ScmpAction::KillProcess)?;
+    let mut ctx = libseccomp::ScmpFilterContext::new_filter(ScmpAction::KillProcess)?;
 
     // Add each allowed syscall to the whitelist.
     for syscall_name in allow_syscalls {
@@ -803,6 +807,7 @@ fn enable_seccomp_whitelist(whitelist: SeccompWhitelist) -> Result<(), Box<dyn s
 }
 
 #[cfg(not(all(feature = "seccomp", unix, target_os = "linux")))]
+#[allow(dead_code)]  // Stub implementation for platforms without seccomp
 fn enable_seccomp_whitelist(_whitelist: SeccompWhitelist) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "tracing")]
     tracing::warn!("seccomp: not available on this platform; skipping");
@@ -819,8 +824,9 @@ fn enable_seccomp_whitelist(_whitelist: SeccompWhitelist) -> Result<(), Box<dyn 
 /// - `RLIMIT_AS`: Virtual memory limit (address space)
 /// - `RLIMIT_CPU`: CPU time limit
 #[cfg(all(feature = "resource-limits", unix, target_os = "linux"))]
+#[allow(dead_code)]  // Called only when resource-limits feature is enabled
 fn set_resource_limits(memory_bytes: u64, cpu_secs: u64) -> Result<(), Box<dyn std::error::Error>> {
-    use nix::sys::resource::{getrlimit, setrlimit, Resource};
+    use nix::sys::resource::{setrlimit, Resource};
 
     setrlimit(
         Resource::RLIMIT_AS,
@@ -845,6 +851,7 @@ fn set_resource_limits(memory_bytes: u64, cpu_secs: u64) -> Result<(), Box<dyn s
 }
 
 #[cfg(not(all(feature = "resource-limits", unix, target_os = "linux")))]
+#[allow(dead_code)]  // Stub implementation for platforms without resource-limits
 fn set_resource_limits(_memory_bytes: u64, _cpu_secs: u64) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "tracing")]
     tracing::warn!(

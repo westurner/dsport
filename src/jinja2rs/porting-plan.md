@@ -29,6 +29,42 @@ call without crossing the Python boundary at all.
 | `src/minijinja/` | Core Rust engine (minijinja 2.20); **do not modify** |
 | `src/sphinx/sphinx/jinja2glue.py` | Sphinx integration — primary porting target |
 
+## Building with Features
+
+jinja2rs supports optional features for advanced sandboxing and security:
+
+| Feature | Purpose | System Dependencies | Docs |
+|---------|---------|---------------------|------|
+| `sandbox` | Path/attribute/method sandboxing | none | Built-in |
+| `seccomp` | Linux syscall filtering | libseccomp, kernel >= 3.17 | [LIBSECCOMP_SETUP.md](../../docs/LIBSECCOMP_SETUP.md) |
+| `resource-limits` | Memory/CPU limits (RLIMIT_AS/CPU) | nix crate | Built-in |
+| `python-callable-warnings` | Warn on Python callables in context | tracing crate | Built-in |
+
+### Quick build examples
+
+```bash
+# Minimal: just path/attribute sandboxing (no external deps)
+cargo test --features sandbox
+
+# Full sandbox with syscall filtering (requires libseccomp system library)
+cargo test --features sandbox,seccomp,resource-limits
+
+# With all features
+cargo test --features sandbox,seccomp,resource-limits,python-callable-warnings
+```
+
+**For Ubuntu/Debian:**
+```bash
+sudo apt install libseccomp-dev
+```
+
+**For Fedora/RHEL:**
+```bash
+sudo dnf install libseccomp-devel
+```
+
+See [LIBSECCOMP_SETUP.md](../../docs/LIBSECCOMP_SETUP.md) for detailed installation instructions and troubleshooting.
+
 ## Completed (Phase 1 — Bootstrap) ✅ COMPLETE
 
 - [x] `Cargo.toml` — crate with `minijinja` + `minijinja-contrib` dependencies

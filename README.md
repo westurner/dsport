@@ -29,6 +29,33 @@ pytest tests/ -q
 Snapshot tests use `insta`. Review pending snapshots with `cargo insta review`
 (install via `cargo install cargo-insta`).
 
+## Optional Feature Flags
+
+Some crates in the workspace support optional features that require system dependencies:
+
+### jinja2rs seccomp feature
+
+To build jinja2rs with syscall sandboxing (Linux only):
+
+```sh
+# Install system dependency (choose one)
+
+# Ubuntu/Debian
+sudo apt install libseccomp-dev
+
+# Fedora/RHEL
+sudo dnf install libseccomp-devel
+```
+
+Then build with the seccomp feature:
+
+```sh
+cd src/jinja2rs
+cargo test --features sandbox,seccomp,resource-limits
+```
+
+See [docs/LIBSECCOMP_SETUP.md](docs/LIBSECCOMP_SETUP.md) for detailed platform-specific installation instructions and troubleshooting.
+
 ## Objectives
 - port docutils (src/docutils) to rust as `docutilsrs`
 - port sphinxdoc (src/sphinx) to rust as `sphinxdocrs`

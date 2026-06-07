@@ -1,6 +1,6 @@
 .PHONY: all build test develop clean \
 	build-docutils build-pygments build-sphinx build-mathrenderrs build-myst-md-rs \
-	test-cargo test-cargo-docutils test-cargo-pygments test-cargo-sphinx \
+	test-cargo test-cargo-docutils test-cargo-pygments test-cargo-jinja2rs test-cargo-sphinx \
 	test-cargo-mathrenderrs test-cargo-myst-md-rs test-cargo-pygments-coverage \
 	test-coverage-pygments coverage-pygments \
 	develop-docutils develop-pygments develop-sphinx develop-myst-md-rs \
@@ -59,13 +59,16 @@ test-python-colors:
 	./shellwrap.sh -c "$(MAKE) test-python"
 
 test-cargo: test-cargo-mathrenderrs test-cargo-pygments test-cargo-docutils \
-	test-cargo-myst-md-rs test-cargo-sphinx
+	test-cargo-jinja2rs test-cargo-myst-md-rs test-cargo-sphinx
 
 test-cargo-mathrenderrs:
 	cd src/mathrenderrs && cargo test
 
 test-cargo-pygments:
 	cd src/pygmentsrs && cargo test
+
+test-cargo-jinja2rs:
+	cd src/jinja2rs && cargo test --features sandbox,seccomp,resource-limits,python-callable-warnings
 
 
 install-cargo-llvm-cov:

@@ -43,6 +43,7 @@
 
 use pyo3::prelude::*;
 
+pub mod compat;
 pub mod environment;
 pub mod errors;
 pub mod filters;
@@ -55,6 +56,7 @@ pub mod i18n;
 
 mod bridge;
 
+pub use compat::CompatMode;
 pub use environment::Environment;
 pub use errors::Jinja2Error;
 pub use sandbox::SandboxedEnvironment;

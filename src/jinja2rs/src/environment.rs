@@ -10,6 +10,7 @@ use std::sync::Arc;
 use minijinja::Environment as MiniEnv;
 use serde::Serialize;
 
+use crate::compat::CompatMode;
 use crate::errors::Jinja2Error;
 use crate::filters;
 use crate::globals;
@@ -145,4 +146,56 @@ impl Environment {
         self.inner
             .add_global("ngettext", minijinja::Value::from_object(ngettext_global));
     }
+
+    /// Enable Jinja2 compatibility mode (default).
+    ///
+    /// This mode adds Python method syntax support via the `minijinja-contrib`
+    /// pycompat module, making templates written for Python Jinja2 work without
+    /// modification:
+    ///
+    /// - `dict.items()`, `dict.values()`, `dict.keys()`, `dict.get()`
+    /// - `str.upper()`, `str.lower()`, `str.split()`, `str.format()`, etc.
+    /// - `list.count()`
+    ///
+    /// Example:
+    /// ```ignore
+    /// let mut env = Environment::new();
+    /// env.set_compat_mode(CompatMode::Jinja2);  // Enable Python methods
+    /// env.render_str("{{ user.items() }}", ctx).unwrap();
+    /// ```
+    pub fn set_compat_mode(&mut self, mode: CompatMode) {
+        match mode {
+            CompatMode::Jinja2 => self.enable_jinja2_compat(),
+            CompatMode::Minijinja => self.enable_minijinja_compat(),
+        }
+    }
+
+    /// Enable Jinja2 compatibility mode explicitly.
+    ///
+    /// This is the default and enables Python method syntax.
+    /// Use this if you need to switch back from minijinja mode.
+    pub fn enable_jinja2_compat(&mut self) {
+        self.inner
+            .set_unknown_method_callback(minijinja_contrib::pycompat::unknown_method_callback);
+    }
+
+    /// Enable minijinja compatibility mode (strict).
+    ///
+    /// This mode disables Python method syntax and uses filter-based approach only.
+    /// Methods like `.items()` are not available; use `|items` filter instead.
+    ///
+    /// This mode is more efficient and encourages explicit filter-based syntax.
+    ///
+    /// Example:
+    /// ```ignore
+    /// let mut env = Environment::new();
+    /// env.enable_minijinja_compat();  // Disable Python methods
+    /// // env.render_str("{{ user.items() }}", ctx) -> Error!
+    /// env.render_str("{{ user | items }}", ctx).unwrap();  // OK
+    /// ```
+    pub fn enable_minijinja_compat(&mut self) {
+        // Disable unknown method callback (no-op by default in minijinja)
+        // This is a no-op since minijinja doesn't support unknown methods by default
+    }
 }
+

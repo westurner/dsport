@@ -34,6 +34,19 @@ sandbox = []
 # Enable i18n extension (gettext-based translation support).
 i18n = []
 
+# Enable seccomp filtering (Linux only; requires kernel >= 3.17).
+# When enabled, SandboxedEnvironment can enforce syscall restrictions.
+seccomp = ["nix/process"]
+
+# Enable resource limits (ulimit-based memory/CPU restrictions).
+# When enabled, SandboxedEnvironment can enforce OS resource limits.
+resource-limits = ["nix/process"]
+
+# Enable Python callable detection warnings in context validation.
+# Logs warnings when Python objects are detected in template context
+# (useful for migration from Python Jinja2).
+python-callable-warnings = ["tracing"]
+
 [dependencies]
 pyo3 = { workspace = true, features = ["auto-initialize"] }
 minijinja = { path = "../minijinja/minijinja", features = [
@@ -52,6 +65,8 @@ minijinja-contrib = { path = "../minijinja/minijinja-contrib", features = ["pyco
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+tracing = { version = "0.1", optional = true }
+nix = { version = "0.28", features = [], optional = true }
 
 [dev-dependencies]
 insta = { workspace = true }

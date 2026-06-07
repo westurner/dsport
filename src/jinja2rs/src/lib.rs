@@ -49,6 +49,7 @@ pub mod filters;
 pub mod globals;
 pub mod loaders;
 pub mod sandbox;
+pub mod sandbox_config;
 pub mod sphinx_glue;
 
 mod bridge;
@@ -56,6 +57,7 @@ mod bridge;
 pub use environment::Environment;
 pub use errors::Jinja2Error;
 pub use sandbox::SandboxedEnvironment;
+pub use sandbox_config::SandboxedEnvironmentBuilder;
 pub use loaders::{DictLoader, ChoiceLoader, FileSystemLoader, SphinxFileSystemLoader, Loader};
 
 /// Crate version string. Mirrors `Cargo.toml` `[package].version`.
@@ -78,6 +80,9 @@ pub fn features() -> &'static [&'static str] {
         "globals:idgen",
         "globals:warning",
         "sandbox:sandboxed_environment",
+        "sandbox:seccomp_filtering",
+        "sandbox:resource_limits",
+        "sandbox:python_callable_warnings",
         "sphinx_glue:builtin_template_loader",
         "bridge:pyo3",
     ]

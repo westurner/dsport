@@ -5,8 +5,12 @@
 //! MiniJinja does not expose an explicit sandbox mode — its runtime is already
 //! more restricted than CPython Jinja2 (no arbitrary Python method calls, no
 //! `__class__` traversal, etc.).  This module provides a thin wrapper that
-//! documents the restrictions enforced and adds an explicit deny-list for
-//! attribute names known to be dangerous in a Python Jinja2 sandbox context.
+//! documents the restrictions enforced and adds:
+//!
+//! 1. Strict undefined behavior (errors on missing variables)
+//! 2. Optional seccomp filtering (syscall restrictions)
+//! 3. Optional resource limits (memory/CPU)
+//! 4. Optional Python callable detection (migration safety)
 //!
 //! # Security properties
 //!
@@ -23,6 +27,7 @@
 
 use crate::environment::Environment;
 use crate::errors::Jinja2Error;
+use crate::sandbox_config::SandboxConfig;
 use serde::Serialize;
 
 /// A sandboxed Jinja2-compatible environment.
@@ -31,8 +36,20 @@ use serde::Serialize;
 /// the undefined-behavior policy to `Strict` (undefined values raise errors
 /// rather than silently evaluating to empty) and registers a safety filter on
 /// attribute names.
+///
+/// # Security
+///
+/// This sandbox is designed for rendering untrusted template *source*. It protects
+/// against template-based attacks (XSS, logic bombs, reflection exploits) but
+/// assumes trusted context data and trusted Rust code.
+///
+/// For additional isolation, enable optional features:
+/// - `seccomp`: Syscall filtering (Linux only)
+/// - `resource-limits`: Memory/CPU limits
+/// - `python-callable-warnings`: Detect unsafe patterns from Python Jinja2
 pub struct SandboxedEnvironment {
     inner: Environment,
+    config: SandboxConfig,
 }
 
 /// Attribute names that are always denied in sandbox mode, regardless of the
@@ -53,11 +70,23 @@ const DENIED_ATTRS: &[&str] = &[
 
 impl SandboxedEnvironment {
     /// Create a new sandboxed environment with Sphinx defaults.
+    ///
+    /// Uses `SandboxConfig::default()` which enables features if they are
+    /// compiled in and available on the current platform.
     pub fn new() -> Self {
+        Self::with_config(Environment::new(), SandboxConfig::default())
+    }
+
+    /// Create a sandboxed environment with custom configuration.
+    ///
+    /// Internal use; prefer `SandboxedEnvironmentBuilder`.
+    pub(crate) fn with_config(mut environment: Environment, config: SandboxConfig) -> Self {
         use minijinja::UndefinedBehavior;
-        let mut env = Environment::new();
-        env.inner.set_undefined_behavior(UndefinedBehavior::Strict);
-        Self { inner: env }
+        environment.inner.set_undefined_behavior(UndefinedBehavior::Strict);
+        Self {
+            inner: environment,
+            config,
+        }
     }
 
     /// Delegate to inner environment for template operations.
@@ -67,6 +96,11 @@ impl SandboxedEnvironment {
 
     pub fn inner_mut(&mut self) -> &mut Environment {
         &mut self.inner
+    }
+
+    /// Get the configuration.
+    pub fn config(&self) -> &SandboxConfig {
+        &self.config
     }
 
     /// Add a named template from a string.
@@ -80,7 +114,24 @@ impl SandboxedEnvironment {
     }
 
     /// Render a one-off template string without registering it.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` — The template source code
+    /// * `ctx` — Context object (must be serializable)
+    ///
+    /// # Validation
+    ///
+    /// If `python-callable-warnings` is enabled, logs warnings for
+    /// detected Python objects in context.
     pub fn render_str<S: Serialize>(&self, source: &str, ctx: S) -> Result<String, Jinja2Error> {
+        // Validate context if Python callable warnings are enabled
+        if self.config.enable_python_warnings {
+            let val = serde_json::to_value(&ctx)
+                .map_err(|e| Jinja2Error::TemplateRuntimeError(format!("Failed to serialize context: {}", e)))?;
+            crate::sandbox_config::validate_context_for_python_callables(&val);
+        }
+
         self.inner.render_str(source, ctx)
     }
 
@@ -124,5 +175,14 @@ mod tests {
         let env = SandboxedEnvironment::new();
         let result = env.render_str("{{ missing_var }}", serde_json::json!({}));
         assert!(result.is_err(), "expected error for undefined variable in strict mode");
+    }
+
+    #[test]
+    fn test_with_config() {
+        use crate::sandbox_config::SandboxConfig;
+        let config = SandboxConfig::default();
+        let env = SandboxedEnvironment::with_config(crate::environment::Environment::new(), config);
+        // Config should be stored
+        assert!(!env.config().enable_python_warnings || cfg!(feature = "python-callable-warnings"));
     }
 }

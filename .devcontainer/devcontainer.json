@@ -28,7 +28,9 @@
 				"ms-python.python",
 				"ms-python.vscode-pylance",
 				"vadimcn.vscode-lldb",
-				"lextudio.restructuredtext"
+				"lextudio.restructuredtext",
+				"charliermarsh.ruff",
+				"ms-python.isort"
 			],
 			"settings": {
 				"terminal.integrated.defaultProfile.linux": "bash",

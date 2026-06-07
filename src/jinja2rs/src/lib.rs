@@ -51,6 +51,7 @@ pub mod loaders;
 pub mod sandbox;
 pub mod sandbox_config;
 pub mod sphinx_glue;
+pub mod i18n;
 
 mod bridge;
 

@@ -273,3 +273,193 @@ fn test_realistic_list_template(env_with_idgen: Environment) {
     assert!(out.contains("id=\"item-3\""));
     assert!(out.contains("Buy milk"));
 }
+
+// ============================================================================
+// PHASE 4 CYCLER TESTS
+// ============================================================================
+
+/// Test cycler creation and basic iteration.
+#[rstest]
+fn test_cycler_creation(test_env: Environment) {
+    let template = r#"
+{% set colors = cycler('red', 'blue', 'green') %}
+{{ colors.next() }},{{ colors.next() }},{{ colors.next() }},{{ colors.next() }}
+"#;
+    let out = test_env
+        .render_str(template, json!({}))
+        .expect("cycler should create and cycle");
+    
+    assert!(out.contains("red") && out.contains("blue") && out.contains("green"));
+}
+
+/// Test cycler with single value.
+#[rstest]
+fn test_cycler_single_value(test_env: Environment) {
+    let template = r#"
+{% set single = cycler('x') %}
+{{ single.next() }},{{ single.next() }},{{ single.next() }}
+"#;
+    let out = test_env
+        .render_str(template, json!({}))
+        .expect("cycler with single value should work");
+    
+    assert_eq!(out.trim(), "x,x,x");
+}
+
+/// Test cycler in loops.
+#[rstest]
+fn test_cycler_in_loop(test_env: Environment) {
+    let template = r#"
+{% set colors = cycler('odd', 'even') %}
+{% for i in range(4) %}<div class="{{ colors.next() }}">{{ i }}</div>{% endfor %}
+"#;
+    let out = test_env
+        .render_str(template, json!({}))
+        .expect("cycler in loop should work");
+    
+    assert!(out.contains(r#"class="odd""#));
+    assert!(out.contains(r#"class="even""#));
+}
+
+/// Test cycler.current attribute.
+#[rstest]
+fn test_cycler_current_attribute(test_env: Environment) {
+    let template = r#"
+{% set colors = cycler('a', 'b', 'c') %}
+{{ colors.next() }}: {{ colors.current }},
+{{ colors.next() }}: {{ colors.current }},
+{{ colors.next() }}: {{ colors.current }}
+"#;
+    let out = test_env
+        .render_str(template, json!({}))
+        .expect("cycler.current should work");
+    
+    assert!(out.contains("a:") && out.contains("a,"));
+}
+
+// ============================================================================
+// PHASE 4 JOINER TESTS
+// ============================================================================
+
+/// Test joiner creation and basic operation.
+#[rstest]
+fn test_joiner_creation(test_env: Environment) {
+    let template = r#"
+{% set comma = joiner(', ') %}
+{{ comma('one') }}{{ comma('two') }}{{ comma('three') }}
+"#;
+    let out = test_env
+        .render_str(template, json!({}))
+        .expect("joiner should create and join");
+    
+    assert_eq!(out.trim(), "one, two, three");
+}
+
+/// Test joiner with different separators.
+#[rstest]
+#[case(" | ", "a", "b", "c", "a | b | c")]
+#[case("; ", "a", "b", "c", "a; b; c")]
+#[case(" - ", "a", "b", "c", "a - b - c")]
+fn test_joiner_separators(
+    test_env: Environment,
+    #[case] sep: &str,
+    #[case] val1: &str,
+    #[case] val2: &str,
+    #[case] val3: &str,
+    #[case] expected: &str,
+) {
+    let template = "{% set j = joiner(separator) %}\
+                    {{ j(val1) }}{{ j(val2) }}{{ j(val3) }}";
+    let out = test_env
+        .render_str(template, json!({"separator": sep, "val1": val1, "val2": val2, "val3": val3}))
+        .expect("joiner with custom separator should work");
+    
+    assert_eq!(out.trim(), expected);
+}
+
+/// Test joiner in loops.
+#[rstest]
+fn test_joiner_in_loop(test_env: Environment) {
+    let template = r#"
+{% set comma = joiner(', ') %}
+{% for item in items %}{{ comma(item) }}{% endfor %}
+"#;
+    let out = test_env
+        .render_str(template, json!({"items": ["apple", "banana", "cherry"]}))
+        .expect("joiner in loop should work");
+    
+    assert_eq!(out.trim(), "apple, banana, cherry");
+}
+
+/// Test joiner with empty first call.
+#[rstest]
+fn test_joiner_empty_first_call(test_env: Environment) {
+    let template = r#"
+{% set comma = joiner(', ') %}
+{{ comma('') }}{{ comma('hello') }}
+"#;
+    let out = test_env
+        .render_str(template, json!({}))
+        .expect("joiner with empty string should work");
+    
+    assert!(out.contains(", hello"));
+}
+
+// ============================================================================
+// PHASE 4 LIPSUM TESTS
+// ============================================================================
+
+/// Test lipsum generation.
+#[rstest]
+fn test_lipsum_generation(test_env: Environment) {
+    let template = "{{ lipsum() }}";
+    let out = test_env
+        .render_str(template, json!({}))
+        .expect("lipsum should generate");
+    
+    assert!(out.contains("Lorem ipsum"));
+    assert!(!out.is_empty());
+}
+
+/// Test lipsum with parameter.
+#[rstest]
+#[case(1)]
+#[case(3)]
+#[case(5)]
+fn test_lipsum_paragraphs(test_env: Environment, #[case] n: i64) {
+    let template = format!("{{{{ lipsum({}) }}}}", n);
+    let out = test_env
+        .render_str(&template, json!({}))
+        .expect("lipsum with parameter should work");
+    
+    assert!(out.contains("Lorem ipsum"));
+    // Check approximate number of newlines (n-1 newlines for n paragraphs)
+    let newline_count = out.matches('\n').count() as i64;
+    assert!(newline_count >= n - 1, "lipsum({}) should have at least {} newlines", n, n - 1);
+}
+
+/// Test lipsum in realistic template.
+#[rstest]
+fn test_lipsum_in_template(test_env: Environment) {
+    let template = r#"
+<article>
+<h1>{{ title }}</h1>
+{{ lipsum(2) }}
+</article>
+"#;
+    let out = test_env
+        .render_str(template, json!({"title": "Test Article"}))
+        .expect("lipsum in template should work");
+    
+    assert!(out.contains("<h1>Test Article</h1>"));
+    assert!(out.contains("Lorem ipsum"));
+}
+
+// ============================================================================
+// FIXTURE FOR OTHER TESTS
+// ============================================================================
+
+#[fixture]
+fn test_env() -> Environment {
+    Environment::new()
+}

@@ -348,6 +348,179 @@ impl Object for Joiner {
     }
 }
 
+/// `cycler` global factory — mirrors `jinja2.globals.cycler`.
+///
+/// Creates a factory object that, when called with arguments, returns a Cycler
+/// instance. Usage in templates:
+/// ```jinja
+/// {% set colors = cycler('red', 'blue', 'green') %}
+/// {{ colors.next() }}    {# → 'red' #}
+/// {{ colors.next() }}    {# → 'blue' #}
+/// ```
+#[derive(Debug)]
+pub struct CyclerFactory;
+
+impl CyclerFactory {
+    pub fn new() -> Self {
+        CyclerFactory
+    }
+}
+
+impl Default for CyclerFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for CyclerFactory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<cycler>")
+    }
+}
+
+impl Object for CyclerFactory {
+    fn repr(self: &Arc<Self>) -> ObjectRepr {
+        ObjectRepr::Plain
+    }
+
+    fn call(
+        self: &Arc<Self>,
+        _state: &State<'_, '_>,
+        args: &[Value],
+    ) -> Result<Value, Error> {
+        if args.is_empty() {
+            return Err(Error::new(
+                ErrorKind::MissingArgument,
+                "cycler() requires at least one argument",
+            ));
+        }
+        Ok(Value::from_object(Cycler::new(args.to_vec())))
+    }
+}
+
+/// `joiner` global factory — mirrors `jinja2.globals.joiner`.
+///
+/// Creates a factory object that, when called with a separator argument,
+/// returns a Joiner instance. Usage in templates:
+/// ```jinja
+/// {% set comma = joiner(', ') %}
+/// {{ comma('a') }}    {# → 'a' #}
+/// {{ comma('b') }}    {# → ', b' #}
+/// ```
+#[derive(Debug)]
+pub struct JoinerFactory;
+
+impl JoinerFactory {
+    pub fn new() -> Self {
+        JoinerFactory
+    }
+}
+
+impl Default for JoinerFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for JoinerFactory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<joiner>")
+    }
+}
+
+impl Object for JoinerFactory {
+    fn repr(self: &Arc<Self>) -> ObjectRepr {
+        ObjectRepr::Plain
+    }
+
+    fn call(
+        self: &Arc<Self>,
+        _state: &State<'_, '_>,
+        args: &[Value],
+    ) -> Result<Value, Error> {
+        let separator = args
+            .first()
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        Ok(Value::from_object(Joiner::new(separator)))
+    }
+}
+
+/// `lipsum` global — mirrors `jinja2.globals.lipsum`.
+///
+/// Returns a callable that generates lorem ipsum text. When called with
+/// `n`, returns `n` paragraphs of lorem ipsum text.
+///
+/// Usage in template:
+/// ```jinja
+/// {{ lipsum(3) }}    {# → 3 paragraphs of lorem ipsum #}
+/// ```
+#[derive(Debug)]
+pub struct LipsumFactory;
+
+impl LipsumFactory {
+    pub fn new() -> Self {
+        LipsumFactory
+    }
+}
+
+impl Default for LipsumFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for LipsumFactory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<lipsum>")
+    }
+}
+
+impl Object for LipsumFactory {
+    fn repr(self: &Arc<Self>) -> ObjectRepr {
+        ObjectRepr::Plain
+    }
+
+    fn call(
+        self: &Arc<Self>,
+        _state: &State<'_, '_>,
+        args: &[Value],
+    ) -> Result<Value, Error> {
+        let n = args
+            .first()
+            .and_then(|v| v.as_i64())
+            .unwrap_or(5) as usize;
+        
+        Ok(Value::from(generate_lipsum(n)))
+    }
+}
+
+/// Helper function to generate lorem ipsum text.
+fn generate_lipsum(n: usize) -> String {
+    // Standard Lorem ipsum text, broken into paragraphs
+    const PARAGRAPHS: &[&str] = &[
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+        "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.",
+        "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.",
+        "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
+        "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium.",
+        "Totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.",
+        "Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores.",
+        "Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit.",
+        "Sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem.",
+        "Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam.",
+    ];
+
+    let mut result = String::new();
+    for i in 0..n {
+        if i > 0 {
+            result.push('\n');
+        }
+        result.push_str(PARAGRAPHS[i % PARAGRAPHS.len()]);
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,5 +565,37 @@ mod tests {
         let debug = Debug::new();
         let debug_str = debug.to_string();
         assert_eq!(debug_str, "<debug>");
+    }
+
+    #[test]
+    fn test_lipsum_generation() {
+        let lipsum = generate_lipsum(1);
+        assert!(!lipsum.is_empty());
+        assert!(lipsum.contains("Lorem ipsum"));
+    }
+
+    #[test]
+    fn test_lipsum_multiple_paragraphs() {
+        let lipsum = generate_lipsum(3);
+        let newlines = lipsum.matches('\n').count();
+        assert_eq!(newlines, 2, "3 paragraphs should have 2 newlines");
+    }
+
+    #[test]
+    fn test_cycler_factory() {
+        let factory = CyclerFactory::new();
+        assert_eq!(factory.to_string(), "<cycler>");
+    }
+
+    #[test]
+    fn test_joiner_factory() {
+        let factory = JoinerFactory::new();
+        assert_eq!(factory.to_string(), "<joiner>");
+    }
+
+    #[test]
+    fn test_lipsum_factory() {
+        let factory = LipsumFactory::new();
+        assert_eq!(factory.to_string(), "<lipsum>");
     }
 }

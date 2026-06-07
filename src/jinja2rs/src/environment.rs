@@ -13,6 +13,7 @@ use serde::Serialize;
 use crate::errors::Jinja2Error;
 use crate::filters;
 use crate::globals;
+use crate::i18n;
 use crate::loaders::FileSystemLoader;
 
 /// Template handle returned by [`Environment::get_template`].
@@ -43,7 +44,7 @@ impl Environment {
     /// - All built-in minijinja filters and tests.
     /// - Sphinx utility filters (`tobool`, `toint`, `todim`, `slice_index`).
     /// - Phase 3 filters: `indent`, `wordwrap`, `xmlattr`, `urlencode`, `filesizeformat`.
-    /// - Phase 4 globals: `debug`, `cycler`, `joiner`.
+    /// - Phase 4 globals: `debug`, `cycler`, `joiner`, `lipsum`.
     /// - Sphinx globals (`accesskey`, `idgen`, `warning`).
     /// - Auto-escape enabled for `.html`, `.xml`, `.htm`.
     pub fn new() -> Self {
@@ -66,6 +67,11 @@ impl Environment {
         env.add_global("idgen", minijinja::Value::from_object(globals::IdGen::new()));
         env.add_global("accesskey", minijinja::Value::from_object(globals::AccessKey::new()));
         env.add_global("debug", minijinja::Value::from_object(globals::Debug::new()));
+        
+        // Phase 4 global factories
+        env.add_global("cycler", minijinja::Value::from_object(globals::CyclerFactory::new()));
+        env.add_global("joiner", minijinja::Value::from_object(globals::JoinerFactory::new()));
+        env.add_global("lipsum", minijinja::Value::from_object(globals::LipsumFactory::new()));
 
         Self {
             inner: env,
@@ -119,10 +125,24 @@ impl Environment {
     pub fn add_global(&mut self, name: &'static str, value: impl Into<minijinja::Value>) {
         self.inner.add_global(name, value);
     }
-}
 
-impl Default for Environment {
-    fn default() -> Self {
-        Self::new()
+    /// Install i18n (gettext/ngettext) support.
+    ///
+    /// Registers `gettext` and `ngettext` globals for template translation.
+    /// The provider can be configured with translation dictionaries.
+    ///
+    /// Example:
+    /// ```ignore
+    /// let provider = i18n::I18nProvider::new();
+    /// env.install_gettext(provider);
+    /// ```
+    pub fn install_gettext(&mut self, provider: i18n::I18nProvider) {
+        let gettext_global = i18n::GettextGlobal::new(provider.clone());
+        let ngettext_global = i18n::NgettextGlobal::new(provider);
+
+        self.inner
+            .add_global("gettext", minijinja::Value::from_object(gettext_global));
+        self.inner
+            .add_global("ngettext", minijinja::Value::from_object(ngettext_global));
     }
 }

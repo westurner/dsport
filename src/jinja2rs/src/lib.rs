@@ -56,6 +56,7 @@ mod bridge;
 pub use environment::Environment;
 pub use errors::Jinja2Error;
 pub use sandbox::SandboxedEnvironment;
+pub use loaders::{DictLoader, ChoiceLoader, FileSystemLoader, SphinxFileSystemLoader, Loader};
 
 /// Crate version string. Mirrors `Cargo.toml` `[package].version`.
 pub fn version() -> &'static str {

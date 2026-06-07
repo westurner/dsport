@@ -51,6 +51,7 @@ impl Environment {
         env.add_filter("tobool", filters::tobool);
         env.add_filter("toint", filters::toint);
         env.add_filter("todim", filters::todim);
+        env.add_filter("filesizeformat", filters::filesizeformat);
         env.add_filter("slice_index", filters::slice_index);
 
         // Sphinx-specific globals

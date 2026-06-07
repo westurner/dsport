@@ -62,6 +62,7 @@ impl BuiltinTemplateLoader {
         env.inner_mut().inner.add_filter("tobool", filters::tobool);
         env.inner_mut().inner.add_filter("toint", filters::toint);
         env.inner_mut().inner.add_filter("todim", filters::todim);
+        env.inner_mut().inner.add_filter("filesizeformat", filters::filesizeformat);
         env.inner_mut().inner.add_filter("slice_index", filters::slice_index);
 
         // Register Sphinx globals

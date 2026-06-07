@@ -122,6 +122,46 @@ pub fn slice_index(values: Value, slices: usize) -> Value {
     Value::from(result)
 }
 
+/// `filesizeformat` filter — mirrors `jinja2.filters.do_filesizeformat`.
+///
+/// Converts a file size in bytes to a human-readable format (B, KB, MB, GB, TB).
+/// By default, `binary=true` uses 1024-based units; set `binary=false` for 1000-based SI units.
+///
+/// Examples:
+/// - `1024|filesizeformat` → `"1.0 KiB"`
+/// - `1000|filesizeformat` → `"1000 B"`
+/// - `1000|filesizeformat(false)` → `"1.0 kB"`
+/// - `1536|filesizeformat` → `"1.5 KiB"`
+pub fn filesizeformat(value: Value, binary: Option<bool>) -> String {
+    let bytes = match value.as_i64() {
+        Some(n) => (n as f64).max(0.0),
+        None => return value.to_string(),
+    };
+
+    const BINARY_UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB"];
+    const DECIMAL_UNITS: &[&str] = &["B", "kB", "MB", "GB", "TB"];
+
+    let (divisor, units) = if binary.unwrap_or(true) {
+        (1024.0, BINARY_UNITS)
+    } else {
+        (1000.0, DECIMAL_UNITS)
+    };
+
+    if bytes < divisor {
+        return format!("{:.0} {}", bytes, units[0]);
+    }
+
+    let mut size = bytes;
+    for i in 1..units.len() {
+        size /= divisor;
+        if size < divisor || i == units.len() - 1 {
+            return format!("{:.1} {}", size, units[i]);
+        }
+    }
+
+    format!("{:.1} {}", size, units[units.len() - 1])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,4 +225,33 @@ mod tests {
         assert_eq!(todim(Value::from("2em")), "2em");
         assert_eq!(todim(Value::from("auto")), "auto");
     }
+
+    #[test]
+    fn test_filesizeformat_binary() {
+        assert_eq!(filesizeformat(Value::from(0.0), Some(true)), "0 B");
+        assert_eq!(filesizeformat(Value::from(512.0), Some(true)), "512 B");
+        assert_eq!(filesizeformat(Value::from(1024.0), Some(true)), "1.0 KiB");
+        assert_eq!(filesizeformat(Value::from(1536.0), Some(true)), "1.5 KiB");
+        assert_eq!(filesizeformat(Value::from(1048576.0), Some(true)), "1.0 MiB");
+    }
+
+    #[test]
+    fn test_filesizeformat_decimal() {
+        assert_eq!(filesizeformat(Value::from(1000.0), Some(false)), "1.0 kB");
+        assert_eq!(filesizeformat(Value::from(1500.0), Some(false)), "1.5 kB");
+        assert_eq!(filesizeformat(Value::from(1000000.0), Some(false)), "1.0 MB");
+    }
+
+    #[test]
+    fn test_filesizeformat_large() {
+        assert_eq!(filesizeformat(Value::from(1099511627776.0), Some(true)), "1.0 TiB");
+        assert_eq!(filesizeformat(Value::from(1000000000000.0), Some(false)), "1.0 TB");
+    }
+
+    #[test]
+    fn test_filesizeformat_negative() {
+        // Negative values should be treated as 0
+        assert_eq!(filesizeformat(Value::from(-100.0), Some(true)), "0 B");
+    }
 }
+

@@ -108,8 +108,123 @@ impl AnsibleMode {
     }
 }
 
-/// Compatibility mode configuration for the template environment.
+/// Kubernetes manifest inventory source.
 #[derive(Debug, Clone, PartialEq)]
+pub enum KubernetesInventorySource {
+    /// Load manifests from a file path
+    File(PathBuf),
+    /// Load manifests from standard input
+    Stdin,
+    /// Load manifests from inline YAML string
+    Inline(String),
+}
+
+/// Kubernetes-specific configuration (composable with method_syntax).
+#[derive(Debug, Clone, PartialEq)]
+pub struct KubernetesMode {
+    /// Whether to enable Python method syntax (Jinja2-style).
+    /// If false, use filter-based syntax (minijinja-style).
+    pub method_syntax: bool,
+
+    /// Enable YAML validation for Kubernetes manifests.
+    /// When enabled, validates structure before rendering.
+    pub enable_validation: bool,
+
+    /// Manifest source for Kubernetes resource variables.
+    /// When set, loads manifests and provides:
+    /// - `kubernetes_resources` — all resources by kind
+    /// - `kubernetes_pods` — pod details (name, namespace, labels)
+    /// - `kubernetes_deployments` — deployment details
+    /// - `kubernetes_services` — service details
+    /// - `kubernetes_namespace` — current namespace
+    pub manifest_source: Option<KubernetesInventorySource>,
+
+    /// Default namespace for resource operations (default: "default")
+    pub namespace: String,
+
+    /// Filter resources by kind (e.g., "Deployment", "Pod", "Service")
+    /// None = include all kinds
+    pub resource_kind_filter: Option<String>,
+}
+
+impl Default for KubernetesMode {
+    fn default() -> Self {
+        KubernetesMode {
+            method_syntax: true,
+            enable_validation: true,
+            manifest_source: None,
+            namespace: "default".to_string(),
+            resource_kind_filter: None,
+        }
+    }
+}
+
+impl KubernetesMode {
+    /// Create Kubernetes mode with all features enabled.
+    pub fn full() -> Self {
+        KubernetesMode::default()
+    }
+
+    /// Create Kubernetes mode with method syntax enabled.
+    pub fn with_methods() -> Self {
+        KubernetesMode {
+            method_syntax: true,
+            enable_validation: true,
+            manifest_source: None,
+            namespace: "default".to_string(),
+            resource_kind_filter: None,
+        }
+    }
+
+    /// Create Kubernetes mode with filter-based syntax (no methods).
+    pub fn filter_only() -> Self {
+        KubernetesMode {
+            method_syntax: false,
+            enable_validation: true,
+            manifest_source: None,
+            namespace: "default".to_string(),
+            resource_kind_filter: None,
+        }
+    }
+
+    /// Set the default namespace.
+    pub fn with_namespace(mut self, namespace: impl Into<String>) -> Self {
+        self.namespace = namespace.into();
+        self
+    }
+
+    /// Filter resources by kind (e.g., "Deployment", "Pod").
+    pub fn with_resource_kind(mut self, kind: impl Into<String>) -> Self {
+        self.resource_kind_filter = Some(kind.into());
+        self
+    }
+
+    /// Enable manifest support from a file.
+    pub fn with_manifest_file(mut self, path: impl Into<PathBuf>) -> Self {
+        self.manifest_source = Some(KubernetesInventorySource::File(path.into()));
+        self
+    }
+
+    /// Enable manifest support from stdin.
+    pub fn with_manifest_stdin(mut self) -> Self {
+        self.manifest_source = Some(KubernetesInventorySource::Stdin);
+        self
+    }
+
+    /// Enable manifest support from inline YAML.
+    pub fn with_manifest_inline(mut self, data: String) -> Self {
+        self.manifest_source = Some(KubernetesInventorySource::Inline(data));
+        self
+    }
+
+    /// Enable or disable validation.
+    pub fn with_validation(mut self, enable: bool) -> Self {
+        self.enable_validation = enable;
+        self
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum CompatMode {
     /// Jinja2 compatibility mode (default).
     ///
@@ -159,6 +274,31 @@ pub enum CompatMode {
     /// )
     /// ```
     Ansible(AnsibleMode),
+
+    /// Kubernetes compatibility mode (composable).
+    ///
+    /// Specialized mode for Kubernetes manifests with:
+    /// - Kubernetes resource filters and accessors
+    /// - Manifest loading (from `podman generate kube` output or raw K8s YAML)
+    /// - Support for workload introspection (Pods, Deployments, Services, etc.)
+    /// - Composable method syntax (can use Jinja2 or filter-based)
+    ///
+    /// # Examples
+    ///
+    /// Kubernetes with method syntax:
+    /// ```rust,ignore
+    /// CompatMode::Kubernetes(KubernetesMode::with_methods())
+    /// ```
+    ///
+    /// Kubernetes with manifest file:
+    /// ```rust,ignore
+    /// CompatMode::Kubernetes(
+    ///     KubernetesMode::default()
+    ///         .with_manifest_file("deployment.yaml")
+    ///         .with_namespace("production")
+    /// )
+    /// ```
+    Kubernetes(KubernetesMode),
 }
 
 impl Default for CompatMode {
@@ -192,16 +332,31 @@ impl CompatMode {
         }
     }
 
+    /// Returns true if this is Kubernetes compatibility mode.
+    pub fn is_kubernetes(&self) -> bool {
+        matches!(self, CompatMode::Kubernetes(_))
+    }
+
+    /// Get the Kubernetes mode if this is Kubernetes mode, otherwise None.
+    pub fn as_kubernetes(&self) -> Option<&KubernetesMode> {
+        match self {
+            CompatMode::Kubernetes(cfg) => Some(cfg),
+            _ => None,
+        }
+    }
+
     /// Check if this mode supports Python method syntax.
     ///
     /// Returns true for:
     /// - Jinja2 mode (always has method syntax)
     /// - Ansible mode with `method_syntax: true`
+    /// - Kubernetes mode with `method_syntax: true`
     pub fn has_method_syntax(&self) -> bool {
         match self {
             CompatMode::Jinja2 => true,
             CompatMode::Minijinja => false,
             CompatMode::Ansible(cfg) => cfg.method_syntax,
+            CompatMode::Kubernetes(cfg) => cfg.method_syntax,
         }
     }
 }

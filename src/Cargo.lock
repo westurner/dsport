@@ -1269,6 +1269,7 @@ dependencies = [
  "mockall",
  "nix",
  "pyo3",
+ "regex",
  "rstest",
  "serde",
  "serde_json",

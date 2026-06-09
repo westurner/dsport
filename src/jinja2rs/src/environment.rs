@@ -182,6 +182,20 @@ impl Environment {
                 // TODO: Add inventory support when cfg.inventory_source is Some
                 // TODO: Add YAML validation when cfg.enable_validation is true
             }
+            CompatMode::Kubernetes(cfg) => {
+                // Register Kubernetes filters
+                self.register_kubernetes_filters();
+                
+                // Set method syntax based on Kubernetes mode configuration
+                if cfg.method_syntax {
+                    self.enable_jinja2_compat();
+                } else {
+                    self.enable_minijinja_compat();
+                }
+                
+                // TODO: Add manifest support when cfg.manifest_source is Some
+                // TODO: Add YAML validation when cfg.enable_validation is true
+            }
         }
     }
 
@@ -201,34 +215,66 @@ impl Environment {
         
         self.add_filter("quote", crate::ansible_filters::quote);
         
-        // path_join takes 2 arguments - wrap in closure
-        self.inner.add_filter("path_join", |val: Value| {
-            crate::ansible_filters::path_join(val, Value::from(""))
+        // path_join takes 2 arguments - wrap in closure accepting 2 args
+        self.inner.add_filter("path_join", |val: Value, other: Value| {
+            crate::ansible_filters::path_join(val, other)
         });
         
-        // combine takes 2 arguments - wrap in closure
-        self.inner.add_filter("combine", |val: Value| {
-            crate::ansible_filters::combine(val, Value::from(""))
+        // combine takes 2 arguments - wrap in closure accepting 2 args
+        self.inner.add_filter("combine", |val: Value, other: Value| {
+            crate::ansible_filters::combine(val, other)
                 .unwrap_or_else(|_| Value::from(""))
         });
         
-        // regex_search takes 2 arguments - wrap in closure
-        self.inner.add_filter("regex_search", |val: Value| {
-            crate::ansible_filters::regex_search(val, Value::from(""))
+        // regex_search takes 2 arguments - wrap in closure accepting 2 args
+        self.inner.add_filter("regex_search", |val: Value, pattern: Value| {
+            crate::ansible_filters::regex_search(val, pattern)
         });
         
-        // regex_replace takes 3 arguments - wrap in closure
-        self.inner.add_filter("regex_replace", |val: Value| {
-            crate::ansible_filters::regex_replace(val, Value::from(""), Value::from(""))
+        // regex_replace takes 3 arguments - wrap in closure accepting 3 args
+        self.inner.add_filter("regex_replace", |val: Value, pattern: Value, replacement: Value| {
+            crate::ansible_filters::regex_replace(val, pattern, replacement)
         });
         
-        // regex_findall takes 2 arguments - wrap in closure
-        self.inner.add_filter("regex_findall", |val: Value| {
-            crate::ansible_filters::regex_findall(val, Value::from(""))
+        // regex_findall takes 2 arguments - wrap in closure accepting 2 args
+        self.inner.add_filter("regex_findall", |val: Value, pattern: Value| {
+            crate::ansible_filters::regex_findall(val, pattern)
         });
         
         self.add_filter("to_nice_yaml", crate::ansible_filters::to_nice_yaml);
         self.add_filter("from_yaml", crate::ansible_filters::from_yaml);
+    }
+
+    /// Register Kubernetes-specific filters.
+    fn register_kubernetes_filters(&mut self) {
+        // Workload introspection filters
+        self.add_filter("replicas", crate::kubernetes_filters::replicas);
+        self.add_filter("container_image", crate::kubernetes_filters::container_image);
+        
+        // Metadata accessors
+        self.inner.add_filter("label", |val: Value, key: Value| {
+            crate::kubernetes_filters::label(val, key)
+        });
+        
+        self.inner.add_filter("annotation", |val: Value, key: Value| {
+            crate::kubernetes_filters::annotation(val, key)
+        });
+        
+        // Resource kind/name/namespace accessors
+        self.add_filter("k8s_kind", crate::kubernetes_filters::k8s_kind);
+        self.add_filter("k8s_name", crate::kubernetes_filters::k8s_name);
+        self.add_filter("k8s_namespace", crate::kubernetes_filters::k8s_namespace);
+        self.add_filter("k8s_labels", crate::kubernetes_filters::k8s_labels);
+        self.add_filter("k8s_annotations", crate::kubernetes_filters::k8s_annotations);
+        
+        // Resource filtering and checking
+        self.inner.add_filter("k8s_in_namespace", |val: Value, namespace: Value| {
+            crate::kubernetes_filters::k8s_in_namespace(val, namespace)
+        });
+        
+        self.inner.add_filter("k8s_has_label", |val: Value, key: Value, expected_val: Value| {
+            crate::kubernetes_filters::k8s_has_label(val, key, expected_val)
+        });
     }
 
     /// Enable Jinja2 compatibility mode explicitly.

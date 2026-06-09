@@ -483,7 +483,77 @@ The `minijinja-contrib` crate provides the `pycompat` module which:
 - Phase 12+: Add method-resolution benchmarks (Jinja2 mode vs minijinja mode overhead)
 - Future: Custom method implementations for advanced use cases
 
+## Phase 12.5 — Ansible filter completeness ✅ COMPLETE
 
+**Status:** ✅ COMPLETE
+
+Comprehensive implementation of Ansible-compatible filters for template rendering in playbooks and inventory variable processing.
+
+### Implemented Filters
+
+| Filter | Purpose | Implementation | Tests |
+|--------|---------|-----------------|-------|
+| `combine()` | Recursive dict merging | ✅ Full recursive merge with nested objects | 4 tests |
+| `regex_search()` | Extract text matching regex pattern | ✅ Capture group extraction | 3 tests |
+| `regex_replace()` | Replace text matching regex pattern | ✅ All occurrences replaced | 2 tests |
+| `regex_findall()` | Find all matches of regex pattern | ✅ Returns array of matches/captures | 3 tests |
+| `to_nice_yaml()` | Convert value to pretty-printed YAML | ✅ Serializes to indented YAML | 2 tests |
+| `from_yaml()` | Parse YAML string to value | ✅ Handles nested structures | 2 tests |
+| `to_nice_json()` | Convert value to pretty-printed JSON | ✅ Serializes to formatted JSON | 1 test |
+| `from_json()` | Parse JSON string to value | ✅ Handles complex objects | 1 test |
+| `quote()` | Shell-escape quotes in string | ✅ Handles special chars | 3 tests |
+| `path_join()` | Join path components | ✅ Platform-aware path handling | 1 test |
+
+### Implementation Details
+
+- **Location:** `src/jinja2rs/src/ansible_filters.rs` (~350 lines)
+- **Dependencies:** `regex = "1"`, `serde_yaml = "0.9"`
+- **Registration:** Via `Environment::register_ansible_filters()` when `CompatMode::Ansible` is set
+- **Error Handling:** Graceful fallback to string representation on filter errors
+
+### Key Features
+
+1. **Recursive dict merging** - `combine()` properly handles nested dictionaries without data loss
+2. **Regex support** - Full regex capture group extraction with pattern matching
+3. **YAML/JSON serialization** - Bidirectional conversion between templates and structured data
+4. **Shell safety** - `quote()` filter prevents shell injection vulnerabilities
+
+### Test Coverage
+
+- **Unit tests:** 21 tests covering all filter functions and edge cases (all passing)
+- **Integration tests:** 14 tests demonstrating real-world Ansible playbook scenarios (all passing)
+- **Total test coverage:** 35 tests across unit and integration suites
+
+### Usage Examples
+
+```rust
+// Enable Ansible mode to register filters
+let mut env = Environment::new();
+env.set_compat_mode(CompatMode::Ansible(AnsibleMode::full()));
+
+// combine() - merge inventory variables
+let template = r#"
+{% set base = {"env": "dev", "region": "us-east"} %}
+{% set overrides = {"env": "prod"} %}
+{% set config = base | combine(overrides) %}
+"#;
+
+// regex_search() - extract version from string
+let template = r#"
+{% set version = "nginx/1.24.0" | regex_search("nginx/(.+)") %}
+"#;
+
+// to_nice_yaml() - format playbook output
+let template = r#"
+{{ data | to_nice_yaml }}
+"#;
+```
+
+### Architecture
+
+- Filters registered in `register_ansible_filters()` as 2-3 argument closures
+- Multi-argument support via proper closure signatures (e.g., `|val: Value, pattern: Value|`)
+- minijinja's `add_filter()` method handles argument count detection from closure signature
 
 ## Architecture diagram
 

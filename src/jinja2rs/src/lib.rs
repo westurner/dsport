@@ -56,6 +56,8 @@ pub mod i18n;
 pub mod ansible_filters;
 pub mod ansible_inventory;
 pub mod ansible_validation;
+pub mod kubernetes_filters;
+pub mod kubernetes_inventory;
 
 mod bridge;
 

@@ -134,7 +134,7 @@ impl Environment {
     /// The provider can be configured with translation dictionaries.
     ///
     /// Example:
-    /// ```ignore
+    /// ```rust,ignore
     /// let provider = i18n::I18nProvider::new();
     /// env.install_gettext(provider);
     /// ```
@@ -159,7 +159,7 @@ impl Environment {
     /// - `list.count()`
     ///
     /// Example:
-    /// ```ignore
+    /// ```rust,ignore
     /// let mut env = Environment::new();
     /// env.set_compat_mode(CompatMode::Jinja2);  // Enable Python methods
     /// env.render_str("{{ user.items() }}", ctx).unwrap();

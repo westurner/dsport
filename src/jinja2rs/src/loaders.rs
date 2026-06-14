@@ -236,7 +236,7 @@ impl SphinxFileSystemLoader {
 /// where templates are built into the binary or loaded once at startup.
 ///
 /// Example:
-/// ```ignore
+/// ```rust,ignore
 /// let mut loader = DictLoader::new();
 /// loader.insert("greeting.html", "Hello {{ name }}!");
 /// env.add_template("greeting.html", "Hello {{ name }}!").unwrap();
@@ -286,7 +286,7 @@ impl Default for DictLoader {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```rust,ignore
 /// let dict = DictLoader::from_map(map! {
 ///     "builtin.html" => "{{ name }}"
 /// });

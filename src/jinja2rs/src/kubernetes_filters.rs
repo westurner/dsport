@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```rust,ignore
 /// {{ deployment | replicas }}  // Returns 3
 /// ```
 pub fn replicas(value: Value) -> Value {
@@ -29,7 +29,7 @@ pub fn replicas(value: Value) -> Value {
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```rust,ignore
 /// {{ pod | container_image }}  // Returns "myapp:1.0"
 /// ```
 pub fn container_image(value: Value) -> Value {
@@ -62,7 +62,7 @@ pub fn container_image(value: Value) -> Value {
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```rust,ignore
 /// {{ pod | label("app") }}  // Returns "myapp"
 /// ```
 pub fn label(value: Value, key: Value) -> Value {
@@ -222,7 +222,7 @@ pub fn k8s_in_namespace(value: Value, namespace: Value) -> Value {
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```rust,ignore
 /// {% if resource | k8s_has_label("app", "myapp") %}
 /// ```
 pub fn k8s_has_label(value: Value, key: Value, expected_val: Value) -> Value {

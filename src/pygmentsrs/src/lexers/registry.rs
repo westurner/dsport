@@ -17,7 +17,7 @@
 //!
 //! ## Usage
 //!
-//! ```ignore
+//! ```rust,ignore
 //! use pygmentsrs::lexers::registry::{get_lexer_by_name, register_lexer};
 //!
 //! // Use a built-in lexer (O(1), no locks)
@@ -848,7 +848,7 @@ fn get_runtime_registry() -> &'static RwLock<HashMap<&'static str, LexerConstruc
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```rust,ignore
 /// // Get a built-in lexer (fast, lock-free)
 /// if let Some(lexer) = get_lexer_by_name("python") {
 ///     let tokens = lexer.get_tokens("x = 42");
@@ -897,7 +897,7 @@ pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```rust,ignore
 /// use pygmentsrs::lexers::registry::register_lexer;
 ///
 /// struct MyCustomLexer;
@@ -939,7 +939,7 @@ pub fn register_lexer(name: &'static str, constructor: LexerConstructor) -> Resu
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```rust,ignore
 /// use pygmentsrs::lexers::registry::{register_lexer, unregister_lexer, get_lexer_by_name};
 ///
 /// // Register and then unregister
@@ -964,7 +964,7 @@ pub fn unregister_lexer(name: &str) -> Option<LexerConstructor> {
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```rust,ignore
 /// use pygmentsrs::lexers::registry::{native_aliases, register_lexer};
 ///
 /// let aliases = native_aliases();

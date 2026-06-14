@@ -1,3 +1,0 @@
-# Workspace is now defined at the repository root (see ../Cargo.toml)
-# This file is kept for reference; cargo will discover the root workspace
-# when run from this directory.

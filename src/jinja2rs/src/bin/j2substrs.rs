@@ -521,7 +521,6 @@
 //!     -V, --version               Show version
 
 use clap::Parser;
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;

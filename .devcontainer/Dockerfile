@@ -24,6 +24,7 @@ RUN if ! getent group ${USER_GID} >/dev/null; then groupadd -g ${USER_GID} ${USE
 	   fi \
 	&& echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/${USERNAME} \
 	&& chmod 0440 /etc/sudoers.d/${USERNAME}
+	&& mkdir -p /workspaces && chown ${USER_UID}:${USER_GID} /workspaces
 
 USER ${USERNAME}
 ENV CARGO_HOME=/home/${USERNAME}/.cargo \

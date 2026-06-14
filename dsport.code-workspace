@@ -1,0 +1,42 @@
+{
+  "folders": [
+    {
+      "path": ".",
+      "name": "dsport (root)"
+    },
+    {
+      "path": "src/jinja2rs",
+      "name": "jinja2rs"
+    },
+    {
+      "path": "src/docutilsrs",
+      "name": "docutilsrs"
+    },
+    {
+      "path": "src/sphinxdocrs",
+      "name": "sphinxdocrs"
+    },
+    {
+      "path": "src/pygmentsrs",
+      "name": "pygmentsrs"
+    }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder:dsport (root)}/src/.venv/bin/python",
+    "[rust]": {
+      "editor.formatOnSave": true,
+      "editor.defaultFormatter": "rust-lang.rust-analyzer"
+    },
+    "[python]": {
+      "editor.formatOnSave": true,
+      "editor.defaultFormatter": "ms-python.python"
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "rust-lang.rust-analyzer",
+      "ms-python.python",
+      "tamasfe.even-better-toml"
+    ]
+  }
+}

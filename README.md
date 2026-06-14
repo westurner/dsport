@@ -3,8 +3,7 @@
 
 ## Dev loop
 
-All Rust commands run from `src/` (the workspace root). The Python venv lives
-at `src/.venv/` and is git-ignored.
+The Rust workspace is rooted at the repository root (see `Cargo.toml`). All `cargo` commands can run from the repository root or from `src/`. The Python venv lives at `src/.venv/` and is git-ignored.
 
 ```sh
 # one-time setup
@@ -12,12 +11,13 @@ cd src
 python3 -m venv .venv && source .venv/bin/activate
 pip install maturin pytest
 
-# Rust gates
+# Rust gates (from repository root or src/)
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 
 # Build extensions into the venv (re-run after Rust changes)
+cd src
 (cd docutilsrs && maturin develop --release)
 (cd sphinxdocrs && maturin develop --release)
 (cd pygmentsrs && maturin develop --release)
@@ -47,9 +47,13 @@ sudo apt install libseccomp-dev
 sudo dnf install libseccomp-devel
 ```
 
-Then build with the seccomp feature:
+Then build with the seccomp feature (from repository root or src/jinja2rs):
 
 ```sh
+# From repository root:
+cargo test -p jinja2rs --features sandbox,seccomp,resource-limits
+
+# Or from src/jinja2rs:
 cd src/jinja2rs
 cargo test --features sandbox,seccomp,resource-limits
 ```
@@ -74,7 +78,7 @@ These choices unblock everything downstream. Capture each in a short ADR under `
 
 - **Upstream pin**: record the exact upstream version/commit of vendored `src/docutils/` and `src/sphinx/`. Parity is defined against that pin; bumps are explicit events.
 - **Names**: on-disk crate dirs, Rust crate names, and Python import names are all `docutilsrs` and `sphinxdocrs`. These do not shadow installed `docutils` / `sphinx`. The compiled PyO3 extension modules are exposed directly under those names (no separate `_`-prefixed inner module).
-- **Bindings stack**: PyO3 + maturin. Cargo workspace rooted at `src/Cargo.toml`, with `docutilsrs` and `sphinxdocrs` as members, so shared code (PyO3 conversion layer, plugin-resolver crate, test helpers) lives as path deps and tooling runs once across the workspace.
+- **Bindings stack**: PyO3 + maturin. Cargo workspace rooted at the repository root (see `Cargo.toml`), with `docutilsrs`, `sphinxdocrs`, `pygmentsrs`, and `jinja2rs` as members under `src/`, so shared code (PyO3 conversion layer, plugin-resolver crate, test helpers) lives as path deps and tooling runs once across the workspace.
 - **Doctree representation**: owned Rust tree (arena + `NodeId` indices, enum-dispatched node kinds) with FFI converters to/from `docutils.nodes` at the boundary. Wrapper-over-Python-nodes was rejected: per-access PyO3/GIL cost is paid on every traversal, and traversals dominate transforms and writers. Converter parity is guarded by round-trip snapshot tests (Python → Rust → Python, asserted via pseudo-XML).
 - **Plugin discovery**: define a Python entry point group (e.g. `docutilsrs.equivalents`) that maps a Python dotted name to a Rust crate + symbol. This is more robust than a freeform `pyproject.toml` key and works for already-installed third-party packages.
 

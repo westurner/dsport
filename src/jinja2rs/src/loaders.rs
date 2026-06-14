@@ -20,7 +20,39 @@ use crate::errors::Jinja2Error;
 ///
 /// Returns `Ok(Some(source))` when found, `Ok(None)` if the template does not
 /// exist in any search path, or `Err` on I/O failure.
-pub fn load_from_paths(paths: &[PathBuf], name: &str) -> Result<Option<String>, Jinja2Error> {
+///
+/// # Security
+///
+/// This loader is hardened against the most common path-traversal patterns:
+///
+/// - `name` containing a NUL byte is rejected outright.
+/// - The candidate is `canonicalize()`d (resolving symlinks and `..`) and
+///   confirmed to live inside the canonicalized base directory. Symlinks that
+///   *escape* the base are blocked; symlinks that stay inside it are allowed
+///   (matching Jinja2 behavior).
+/// - The subsequent read uses the canonical path, eliminating the simplest
+///   string-level TOCTOU window.
+/// - By default, only regular files are read. Sockets, FIFOs, and devices are
+///   rejected unless `allow_special_files=true`. Directories are *always*
+///   rejected, regardless of that flag.
+///
+/// **Residual risk:** between `canonicalize()` and `open(2)` the kernel
+/// re-resolves the path string. An attacker with write access to a parent
+/// directory can swap a component for a symlink in that window and redirect
+/// the read. Eliminating this fully requires
+/// `openat2(..., RESOLVE_BENEATH)` (Linux 5.6+) or directory-fd-relative
+/// `*at` syscalls. This matches the upstream Jinja2 risk profile; sandboxed
+/// deployments should use `crate::sandbox_config` for stronger guarantees.
+fn load_from_paths_impl(
+    paths: &[PathBuf],
+    name: &str,
+    allow_special_files: bool,
+) -> Result<Option<String>, Jinja2Error> {
+    // Reject null bytes — they can truncate paths on some platforms.
+    if name.contains('\0') {
+        return Ok(None);
+    }
+
     // Also try legacy Sphinx `_t` suffix when the template ends in `.jinja`.
     let legacy_name: Option<String> = if name.ends_with(".jinja") {
         Some(format!("{}_t", &name[..name.len() - 6]))
@@ -29,15 +61,48 @@ pub fn load_from_paths(paths: &[PathBuf], name: &str) -> Result<Option<String>, 
     };
 
     for base in paths {
-        let candidate = base.join(name);
-        if candidate.exists() {
-            let source = fs::read_to_string(&candidate)?;
+        // Canonicalize the base once per search root.  Skip roots that cannot
+        // be resolved (non-existent or permission-denied directories).
+        let Ok(canonical_base) = base.canonicalize() else { continue; };
+
+        // Security: resolve `candidate` to its real, symlink-free path and
+        // confirm it lives inside `canonical_base`.
+        //
+        // Reading from the *canonical* path (not the original `candidate`)
+        // prevents TOCTOU races where a symlink is swapped between the check
+        // and the read.
+        //
+        // When `canonicalize` fails the path does not exist (or is
+        // inaccessible); we return `None` rather than falling back to an
+        // unresolved `starts_with` check — `Path::starts_with` does not
+        // normalise `..` components and so cannot be used as a security
+        // boundary on un-canonicalized paths.
+        let safe_read = |sub: PathBuf| -> Result<Option<String>, Jinja2Error> {
+            match sub.canonicalize() {
+                Ok(canonical) if canonical.starts_with(&canonical_base) => {
+                    // Directories are *always* rejected: reading one would
+                    // surface an `IsADirectory` error, and `name` values like
+                    // "", ".", or ".." resolve to the base directory itself.
+                    if canonical.is_dir() {
+                        return Ok(None);
+                    }
+                    // Other non-regular files (sockets, FIFOs, devices) are
+                    // rejected by default and only read when explicitly opted in.
+                    if !allow_special_files && !canonical.is_file() {
+                        return Ok(None);
+                    }
+                    Ok(Some(fs::read_to_string(&canonical)?))
+                }
+                Ok(_) => Ok(None),  // resolved outside the base directory
+                Err(_) => Ok(None), // path does not exist or is inaccessible
+            }
+        };
+
+        if let Some(source) = safe_read(base.join(name))? {
             return Ok(Some(source));
         }
         if let Some(ref legacy) = legacy_name {
-            let legacy_path = base.join(legacy);
-            if legacy_path.exists() {
-                let source = fs::read_to_string(&legacy_path)?;
+            if let Some(source) = safe_read(base.join(legacy))? {
                 return Ok(Some(source));
             }
         }
@@ -45,11 +110,32 @@ pub fn load_from_paths(paths: &[PathBuf], name: &str) -> Result<Option<String>, 
     Ok(None)
 }
 
+/// Read a template source from a list of search paths (default: regular files only).
+///
+/// By default, only regular files are read. Use `load_from_paths_with_special`
+/// to allow reading from sockets, FIFOs, or other special files.
+pub fn load_from_paths(paths: &[PathBuf], name: &str) -> Result<Option<String>, Jinja2Error> {
+    load_from_paths_impl(paths, name, false)
+}
+
+/// Read a template source from a list of search paths, optionally allowing special files.
+///
+/// When `allow_special_files` is true, reads from sockets, FIFOs, and other
+/// non-regular files are allowed. Default (false) only reads regular files.
+pub fn load_from_paths_with_special(
+    paths: &[PathBuf],
+    name: &str,
+    allow_special_files: bool,
+) -> Result<Option<String>, Jinja2Error> {
+    load_from_paths_impl(paths, name, allow_special_files)
+}
+
 /// A filesystem loader that searches one or more directories for templates.
 ///
 /// Mirrors `jinja2.FileSystemLoader`.
 pub struct FileSystemLoader {
     pub(crate) paths: Arc<Vec<PathBuf>>,
+    pub(crate) allow_special_files: bool,
 }
 
 impl FileSystemLoader {
@@ -57,6 +143,7 @@ impl FileSystemLoader {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             paths: Arc::new(vec![path.into()]),
+            allow_special_files: false,
         }
     }
 
@@ -64,7 +151,23 @@ impl FileSystemLoader {
     pub fn with_paths(paths: Vec<PathBuf>) -> Self {
         Self {
             paths: Arc::new(paths),
+            allow_special_files: false,
         }
+    }
+
+    /// Allow reading from non-regular files (sockets, FIFOs, devices).
+    ///
+    /// By default, only regular files are read. Set this to true to also
+    /// read from special files. This can be useful for reading from named pipes
+    /// or device files, but should be used with caution in untrusted contexts.
+    pub fn with_special_files(mut self, allow: bool) -> Self {
+        self.allow_special_files = allow;
+        self
+    }
+
+    /// Check if reading from non-regular files is allowed.
+    pub fn allows_special_files(&self) -> bool {
+        self.allow_special_files
     }
 
     /// Load a template source by name, used as a minijinja loader closure.
@@ -75,7 +178,8 @@ impl FileSystemLoader {
     /// Return a minijinja-compatible loader closure for this instance.
     pub fn into_minijinja_loader(self) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
         let paths = self.paths.clone();
-        move |name: &str| Ok(Self::load_source(&paths, name))
+        let allow_special = self.allow_special_files;
+        move |name: &str| Ok(load_from_paths_with_special(&paths, name, allow_special).ok().flatten())
     }
 }
 
@@ -103,16 +207,23 @@ impl SphinxFileSystemLoader {
         }
     }
 
+    /// Allow reading from non-regular files (sockets, FIFOs, devices).
+    pub fn with_special_files(mut self, allow: bool) -> Self {
+        self.inner = self.inner.with_special_files(allow);
+        self
+    }
+
     /// Return template source, attempting both `.jinja` and `_t` suffix.
     pub fn get_source(&self, name: &str) -> Result<Option<String>, Jinja2Error> {
-        load_from_paths(&self.inner.paths, name)
+        load_from_paths_with_special(&self.inner.paths, name, self.inner.allow_special_files)
     }
 
     /// Return a minijinja-compatible loader closure.
     pub fn into_minijinja_loader(self) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
         let paths = self.inner.paths.clone();
+        let allow_special = self.inner.allow_special_files;
         move |name: &str| {
-            load_from_paths(&paths, name).map_err(|e| {
+            load_from_paths_with_special(&paths, name, allow_special).map_err(|e| {
                 minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string())
             })
         }
@@ -199,7 +310,7 @@ pub trait Loader: Send + Sync {
 
 impl Loader for FileSystemLoader {
     fn get_source(&self, name: &str) -> Result<Option<String>, Jinja2Error> {
-        load_from_paths(&self.paths, name)
+        load_from_paths_with_special(&self.paths, name, self.allow_special_files)
     }
 }
 

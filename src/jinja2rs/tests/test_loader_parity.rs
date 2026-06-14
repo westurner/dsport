@@ -7,6 +7,7 @@
 //! - **pending** — known gap
 
 use jinja2rs::loaders::{DictLoader, ChoiceLoader, FileSystemLoader, Loader};
+use rstest::rstest;
 use serde_json::json;
 use jinja2rs::environment::Environment;
 use std::collections::HashMap;
@@ -189,25 +190,175 @@ fn test_filesystem_loader_subdirectory_exact() {
     assert_eq!(result, "nested content");
 }
 
-#[test]
-#[ignore] // TODO: FileSystemLoader path traversal protection
-fn test_filesystem_loader_invalid_path_safe_exact() {
+#[rstest]
+#[case("../../../etc/passwd",         "relative traversal (3 levels)")]
+#[case("../../etc/passwd",            "relative traversal (2 levels)")]
+#[case("../etc/passwd",               "relative traversal (1 level)")]
+#[case("/etc/passwd",                 "absolute path bypass")]
+#[case("subdir/../../etc/passwd",     "traversal through sub-component")]
+#[case("./../../etc/passwd",          "dot-slash prefix traversal")]
+#[case("subdir/../../../etc/passwd",  "traversal out of subdir and base")]
+#[case("good\0../../../etc/passwd",   "null-byte injection")]
+#[case("..",                          "parent directory bare")]
+#[case(".",                           "current directory bare")]
+#[case("",                            "empty name")]
+fn test_filesystem_loader_invalid_path_safe_exact(#[case] attack: &str, #[case] _label: &str) {
     use tempfile::TempDir;
-    
+
     let tmpdir = TempDir::new().unwrap();
     let loader = FileSystemLoader::new(tmpdir.path());
-    
-    // Path traversal attempts should not read outside the template directory
-    // (This is tested more thoroughly in sandbox security tests)
-    let result = loader.get_source("../../../etc/passwd").unwrap();
-    // It's OK if this either returns None or returns no content from the temp dir
-    match result {
-        None => assert!(true), // Path was blocked
-        Some(content) => {
-            // If content was returned, it should not be from system files
-            assert!(!content.contains("root"));
-        }
-    }
+
+    // The only correct result for any traversal attempt is None.
+    // A content-based check is not a security guarantee.
+    let result = loader.get_source(attack).unwrap();
+    assert_eq!(result, None, "path traversal was not blocked for: {attack:?}");
+}
+
+/// Positive control: ensure the loader still serves legitimate files.
+/// Without this a buggy "always returns None" implementation would
+/// silently pass every traversal case above.
+#[test]
+fn test_filesystem_loader_legitimate_file_still_works() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let tmpdir = TempDir::new().unwrap();
+    fs::write(tmpdir.path().join("ok.html"), "OK").unwrap();
+    let loader = FileSystemLoader::new(tmpdir.path());
+
+    assert_eq!(loader.get_source("ok.html").unwrap().as_deref(), Some("OK"));
+}
+
+/// Symlinks that escape the base directory must be blocked.
+///
+/// This is the canonical traversal attacker scenario: an attacker who can
+/// drop a file into the templates directory plants a symlink that points
+/// outside the templates root.
+#[cfg(unix)]
+#[test]
+fn test_filesystem_loader_blocks_escaping_symlink() {
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use tempfile::TempDir;
+
+    let outside = TempDir::new().unwrap();
+    fs::write(outside.path().join("secret"), "PWNED").unwrap();
+
+    let tmpdir = TempDir::new().unwrap();
+    symlink(outside.path().join("secret"), tmpdir.path().join("escape.html")).unwrap();
+
+    let loader = FileSystemLoader::new(tmpdir.path());
+    let result = loader.get_source("escape.html").unwrap();
+    assert_eq!(result, None, "escaping symlink was followed out of the base directory");
+}
+
+/// Symlinks that stay inside the base directory are allowed
+/// (matches upstream Jinja2 behavior).
+#[cfg(unix)]
+#[test]
+fn test_filesystem_loader_allows_internal_symlink() {
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use tempfile::TempDir;
+
+    let tmpdir = TempDir::new().unwrap();
+    fs::write(tmpdir.path().join("real.html"), "REAL").unwrap();
+    symlink(tmpdir.path().join("real.html"), tmpdir.path().join("link.html")).unwrap();
+
+    let loader = FileSystemLoader::new(tmpdir.path());
+    assert_eq!(loader.get_source("link.html").unwrap().as_deref(), Some("REAL"));
+}
+
+/// The base directory itself may be a symlink to the real templates directory.
+///
+/// Because the loader canonicalizes the base before comparing, a legitimate
+/// template reached through a symlinked root must still resolve. This guards
+/// against an over-zealous `starts_with` check that would reject everything
+/// when the configured base differs from its canonical form.
+#[cfg(unix)]
+#[test]
+fn test_filesystem_loader_symlinked_base_resolves() {
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use tempfile::TempDir;
+
+    let parent = TempDir::new().unwrap();
+    let real_dir = parent.path().join("real_templates");
+    fs::create_dir(&real_dir).unwrap();
+    fs::write(real_dir.join("page.html"), "PAGE").unwrap();
+
+    // The loader is rooted at a symlink pointing to the real directory.
+    let link_dir = parent.path().join("link_templates");
+    symlink(&real_dir, &link_dir).unwrap();
+
+    let loader = FileSystemLoader::new(&link_dir);
+    assert_eq!(loader.get_source("page.html").unwrap().as_deref(), Some("PAGE"));
+}
+
+/// An escaping symlinked *directory* component must block traversal through it.
+///
+/// This differs from the final-component symlink test: here the symlink is an
+/// intermediate directory (`link -> /outside`), and the request reads a file
+/// *underneath* it (`link/secret`). The canonicalized target escapes the base,
+/// so the read must be refused.
+#[cfg(unix)]
+#[test]
+fn test_filesystem_loader_blocks_escaping_symlinked_dir() {
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use tempfile::TempDir;
+
+    let outside = TempDir::new().unwrap();
+    fs::write(outside.path().join("secret"), "PWNED").unwrap();
+
+    let tmpdir = TempDir::new().unwrap();
+    // A directory symlink inside the base that points outside it.
+    symlink(outside.path(), tmpdir.path().join("link")).unwrap();
+
+    let loader = FileSystemLoader::new(tmpdir.path());
+    let result = loader.get_source("link/secret").unwrap();
+    assert_eq!(result, None, "read traversed an escaping symlinked directory");
+}
+
+/// Directories are always rejected, even with allow_special_files=true.
+#[test]
+fn test_filesystem_loader_directories_always_rejected() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let tmpdir = TempDir::new().unwrap();
+    fs::create_dir(tmpdir.path().join("adir")).unwrap();
+
+    // Default loader: a directory name resolves to None (not an Err).
+    let loader = FileSystemLoader::new(tmpdir.path());
+    assert_eq!(loader.get_source("adir").unwrap(), None);
+    assert_eq!(loader.get_source(".").unwrap(), None);
+
+    // Even with special files allowed, directories must still be rejected
+    // rather than surfacing an IsADirectory I/O error.
+    let loader_special = FileSystemLoader::new(tmpdir.path()).with_special_files(true);
+    assert_eq!(loader_special.get_source("adir").unwrap(), None);
+    assert_eq!(loader_special.get_source(".").unwrap(), None);
+    assert_eq!(loader_special.get_source("").unwrap(), None);
+}
+/// By default it is false (only regular files are read).
+#[test]
+fn test_filesystem_loader_special_files_flag() {
+    use tempfile::TempDir;
+
+    let tmpdir = TempDir::new().unwrap();
+
+    // Create a loader with the default setting (allow_special_files = false)
+    let loader_default = FileSystemLoader::new(tmpdir.path());
+    assert!(!loader_default.allows_special_files(), "special files should be blocked by default");
+
+    // Create a loader with special files allowed
+    let loader_with_special = FileSystemLoader::new(tmpdir.path()).with_special_files(true);
+    assert!(loader_with_special.allows_special_files(), "special files should be allowed after with_special_files(true)");
+
+    // Verify it can be toggled back
+    let loader_back_to_default = loader_with_special.with_special_files(false);
+    assert!(!loader_back_to_default.allows_special_files(), "special files should be blocked after with_special_files(false)");
 }
 
 #[test]

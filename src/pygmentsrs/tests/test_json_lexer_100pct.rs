@@ -99,7 +99,6 @@ fn string_unicode_escape_valid() {
 #[test]
 fn string_unicode_escape_4_digits() {
     // Exactly 4 hex digits after \u
-    let result = lex("\"\\uffff\"");
     let tokens = lex_repr("\"\\uffff\"");
     // Should tokenize as single STRING_DOUBLE token
     assert!(tokens.iter().any(|(t, v)| t == "Token.Literal.String.Double" && v == "\"\\uffff\""),
@@ -283,7 +282,7 @@ fn number_float_exponent_e() {
 }
 
 #[test]
-fn number_float_exponent_E() {
+fn number_float_exponent_e_uppercase() {
     // is_float('E') → in_float=true
     let result = lex("1E10");
     assert!(result.iter().any(|(t, v)| *t == NUMBER_FLOAT && v == "1E10"),

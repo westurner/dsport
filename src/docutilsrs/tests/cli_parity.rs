@@ -1,9 +1,65 @@
+//! CLI Parity Tests
+//!
+//! Compares the command-line interface of the Rust implementations against the Python originals.
+//!
+//! ## Environment Variables
+//!
+//! - `DOCUTILS_TEST_WORKSPACE_ROOT`: Override the computed workspace root path.
+//!   Default: Auto-detected from `CARGO_MANIFEST_DIR`.
+//!
+//! - `DOCUTILS_TEST_PYTHON_BIN`: Override the Python binary path.
+//!   Default: Auto-detected from `VIRTUAL_ENV/bin/python`, or falls back to `python3`.
+//!
+//! Example usage:
+//!   ```sh
+//!   DOCUTILS_TEST_WORKSPACE_ROOT=/path/to/wsroot DOCUTILS_TEST_PYTHON_BIN=/usr/bin/python3 \
+//!   cargo test -p docutilsrs --test cli_parity
+//!   ```
+
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::process::Command;
+
+fn workspace_root() -> PathBuf {
+    // Allow override via DOCUTILS_TEST_WORKSPACE_ROOT environment variable
+    if let Ok(ws_root) = std::env::var("DOCUTILS_TEST_WORKSPACE_ROOT") {
+        return PathBuf::from(ws_root);
+    }
+
+    // CARGO_MANIFEST_DIR is set by cargo to the package directory (src/docutilsrs).
+    // The workspace root is two levels up: src/docutilsrs -> src -> workspace root.
+    let manifest_dir =
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    PathBuf::from(manifest_dir)
+        .parent()
+        .expect("src/docutilsrs has no parent")
+        .parent()
+        .expect("src has no parent")
+        .to_path_buf()
+}
+
+fn python_bin_path() -> String {
+    // Allow override via DOCUTILS_TEST_PYTHON_BIN environment variable
+    if let Ok(python_bin) = std::env::var("DOCUTILS_TEST_PYTHON_BIN") {
+        return python_bin;
+    }
+
+    // Try to detect Python from VIRTUAL_ENV environment variable
+    if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+        let venv_python = PathBuf::from(&venv).join("bin").join("python");
+        if venv_python.exists() {
+            return venv_python.to_string_lossy().to_string();
+        }
+    }
+
+    // Fall back to python3
+    "python3".to_string()
+}
 
 fn get_rust_help(bin: &str) -> String {
     let output = Command::new("cargo")
         .args(["run", "-q", "--bin", bin, "--", "--help"])
+        .current_dir(workspace_root())
         .output()
         .expect("Failed to execute command");
     String::from_utf8_lossy(&output.stdout).to_string()
@@ -15,7 +71,7 @@ fn get_python_help(bin_name: &str) -> String {
         bin_name,
         bin_name.replace("-rs", "")
     );
-    let output = Command::new("python3")
+    let output = Command::new(python_bin_path())
         .env("PYTHONPATH", "../docutils/docutils")
         .args(["-c", &python_cmd])
         .output()

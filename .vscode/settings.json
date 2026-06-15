@@ -1,3 +1,63 @@
 {
-    "git.repositoryScanMaxDepth": 2
+    "git.repositoryScanMaxDepth": 2,
+    "editor.semanticHighlighting.enabled": true,
+    "[rust]": {
+        "editor.semanticHighlighting.enabled": true
+    },
+    "editor.semanticTokenColorCustomizations": {
+        "[GitHub Dark Colorblind OLED]": {
+            "enabled": true,
+            "rules": {
+                // Differentiate references vs declarations
+                "*.declaration": {
+                    "fontStyle": "bold"
+                },
+                // Leave "keyword" blank or generic so it falls back to your TextMate colors above
+                "keyword": {},
+                // Clear color separation for Rust types
+                "struct": "#58a6ff", // Distinct accessible blue
+                "enum": "#ff7b72", // Distinct accessible coral/red
+                "trait": "#79c0ff", // Bright ice blue
+                "typeAlias": "#1f6feb",
+                // Keep functions and variables easily readable
+                "function": "#d2a8ff", // Accessible lavender
+                "method": "#d2a8ff",
+                "variable": "#43a62d", // Off-white text
+                // Highlight dangerous/mutating structures
+                "variable.mutable": {
+                    "fontStyle": "bold underline",
+                    "foreground": "#43a62d" // 
+                },
+                // Instantly catch macros (e.g., println!, vec!)
+                "macro": {
+                    "fontStyle": "italic",
+                    "foreground": "#ff9a55" // Accessible distinct orange
+                },
+                // Highlight lifetime symbols (e.g., 'a)
+                "lifetime": "#7ee787" // Accessible green
+            }
+        }
+    },
+    "editor.tokenColorCustomizations": {
+        "[GitHub Dark Colorblind]": {
+            "textMateRules": [
+                {
+                    "name": "Rust let keyword",
+                    "scope": "keyword.other.rust",
+                    "settings": {
+                        "foreground": "#ff7b72", // Accessible GitHub coral/red
+                        "fontStyle": "bold"
+                    }
+                },
+                {
+                    "name": "Rust mut keyword",
+                    "scope": "storage.modifier.mut.rust",
+                    "settings": {
+                        "foreground": "#43a62d", // High-contrast accessible gold
+                        "fontStyle": "bold underline" // Extra visual indicator for mutation
+                    }
+                }
+            ]
+        }
+    }
 }

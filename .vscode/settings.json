@@ -59,5 +59,6 @@
                 }
             ]
         }
-    }
+    },
+    "editor.bracketPairColorization.enabled": true
 }

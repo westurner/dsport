@@ -48,7 +48,12 @@ resource-limits = ["nix/process"]
 # (useful for migration from Python Jinja2).
 python-callable-warnings = ["tracing"]
 
+# Enable Django template compatibility mode.
+# Registers Django-specific filters and the app-directory loader.
+django = []
+
 [dependencies]
+markupsafers = { path = "../markupsafers" }
 pyo3 = { workspace = true, features = ["auto-initialize"] }
 minijinja = { path = "../minijinja/minijinja", features = [
     "builtins",

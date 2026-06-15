@@ -10,6 +10,9 @@
 //! - `wordwrap` — wrap text at specified width
 //! - `xmlattr` — escape string as XML attribute value
 //! - `urlencode` — URL-encode a string or dict
+//!
+//! Django-specific filters are in [`django`].
+pub mod django;
 
 use minijinja::Value;
 

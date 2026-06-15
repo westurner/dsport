@@ -356,7 +356,98 @@ impl ChoiceLoader {
     }
 }
 
-#[cfg(test)]
+// ── DjangoAppDirectoryLoader ──────────────────────────────────────────────────
+
+/// Django-style app-directory template loader.
+///
+/// Mirrors the `django.template.loaders.app_directories.Loader` which searches
+/// for templates inside a `templates/` subdirectory of each registered
+/// app directory.
+///
+/// Search order: directories are tried in the order they were added.  The
+/// first matching `<dir>/templates/<name>` wins.
+///
+/// # Security
+///
+/// Uses the same path-traversal defences as [`FileSystemLoader`]:
+/// NUL-byte rejection, `canonicalize`-and-confirm, regular-files-only by
+/// default.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use jinja2rs::loaders::DjangoAppDirectoryLoader;
+/// use std::path::PathBuf;
+///
+/// let loader = DjangoAppDirectoryLoader::new(vec![
+///     PathBuf::from("/myproject/accounts"),
+///     PathBuf::from("/myproject/posts"),
+///     PathBuf::from("/myproject/common"),
+/// ]);
+/// // Searches:
+/// //   /myproject/accounts/templates/<name>
+/// //   /myproject/posts/templates/<name>
+/// //   /myproject/common/templates/<name>
+/// ```
+pub struct DjangoAppDirectoryLoader {
+    /// The raw app directories (without the `templates/` suffix).
+    app_dirs: Vec<PathBuf>,
+}
+
+impl DjangoAppDirectoryLoader {
+    /// Create a loader from a list of app directories.
+    pub fn new(app_dirs: Vec<PathBuf>) -> Self {
+        DjangoAppDirectoryLoader { app_dirs }
+    }
+
+    /// Add a single app directory.
+    pub fn add_app_dir(&mut self, path: impl Into<PathBuf>) {
+        self.app_dirs.push(path.into());
+    }
+
+    /// Return the list of registered app directories.
+    pub fn app_dirs(&self) -> &[PathBuf] {
+        &self.app_dirs
+    }
+
+    /// Derive the full search-root list (`<app_dir>/templates/` for each).
+    fn template_roots(&self) -> Vec<PathBuf> {
+        self.app_dirs
+            .iter()
+            .map(|d| d.join("templates"))
+            .collect()
+    }
+
+    /// Load a template source by name.
+    ///
+    /// Returns `Ok(Some(source))` on success, `Ok(None)` when the template
+    /// does not exist in any app directory.
+    pub fn get_source(&self, name: &str) -> Result<Option<String>, Jinja2Error> {
+        let roots = self.template_roots();
+        load_from_paths(&roots, name)
+    }
+
+    /// Return a minijinja-compatible loader closure.
+    ///
+    /// ```rust,ignore
+    /// use jinja2rs::loaders::DjangoAppDirectoryLoader;
+    /// use std::path::PathBuf;
+    ///
+    /// let loader = DjangoAppDirectoryLoader::new(vec![PathBuf::from("/app")]);
+    /// let env = minijinja::Environment::new();
+    /// // env.set_loader(loader.into_minijinja_loader());
+    /// ```
+    pub fn into_minijinja_loader(
+        self,
+    ) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
+        let roots: Arc<Vec<PathBuf>> = Arc::new(self.template_roots());
+        move |name: &str| {
+            Ok(load_from_paths(&roots, name).ok().flatten())
+        }
+    }
+}
+
+
 mod tests {
     use super::*;
 
@@ -394,5 +485,49 @@ mod tests {
         assert_eq!(choice.get_source("builtin.html").ok().flatten(), Some("BUILTIN".to_string()));
         // not in either
         assert_eq!(choice.get_source("missing.html").ok().flatten(), None);
+    }
+
+    #[test]
+    fn test_django_app_directory_loader_not_found() {
+        let loader = DjangoAppDirectoryLoader::new(vec![]);
+        assert_eq!(loader.get_source("any.html").unwrap(), None);
+    }
+
+    #[test]
+    fn test_django_app_directory_loader_with_tempdir() {
+        use std::fs;
+        let tmp = tempfile::tempdir().unwrap();
+        let templates_dir = tmp.path().join("templates");
+        fs::create_dir_all(&templates_dir).unwrap();
+        fs::write(templates_dir.join("hello.html"), "Hello!").unwrap();
+
+        let loader = DjangoAppDirectoryLoader::new(vec![tmp.path().to_path_buf()]);
+        assert_eq!(
+            loader.get_source("hello.html").unwrap(),
+            Some("Hello!".to_string())
+        );
+        assert_eq!(loader.get_source("missing.html").unwrap(), None);
+    }
+
+    #[test]
+    fn test_django_app_directory_precedence() {
+        use std::fs;
+        let tmp1 = tempfile::tempdir().unwrap();
+        let tmp2 = tempfile::tempdir().unwrap();
+
+        // template exists in both — first dir wins
+        fs::create_dir_all(tmp1.path().join("templates")).unwrap();
+        fs::write(tmp1.path().join("templates").join("base.html"), "FIRST").unwrap();
+        fs::create_dir_all(tmp2.path().join("templates")).unwrap();
+        fs::write(tmp2.path().join("templates").join("base.html"), "SECOND").unwrap();
+
+        let loader = DjangoAppDirectoryLoader::new(vec![
+            tmp1.path().to_path_buf(),
+            tmp2.path().to_path_buf(),
+        ]);
+        assert_eq!(
+            loader.get_source("base.html").unwrap(),
+            Some("FIRST".to_string())
+        );
     }
 }

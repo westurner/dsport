@@ -1,0 +1,45 @@
+[package]
+name = "markupsafers"
+version = "0.1.0"
+edition.workspace = true
+license = "BSD-3-Clause"
+rust-version.workspace = true
+description = "Rust port of Python MarkupSafe — safe HTML/XML markup strings with efficient escaping"
+keywords = ["html", "escape", "markup", "safe", "jinja2"]
+categories = ["text-processing", "template-engine", "web-programming"]
+homepage = "https://github.com/westurner/dsport/tree/main/src/markupsafers"
+repository = "https://github.com/westurner/dsport"
+# Upstream MarkupSafe:
+#   homepage = "https://markupsafe.palletsprojects.com/"
+#   repository = "https://github.com/pallets/markupsafe"
+#   license = "BSD-3-Clause"
+
+[lib]
+name = "markupsafers"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+
+# Enable PyO3 Python extension module (drop-in MarkupSafe replacement).
+extension-module = ["pyo3/extension-module"]
+
+# Enable minijinja integration (Markup values participate in auto-escape).
+minijinja = ["dep:minijinja"]
+
+[dependencies]
+# Python extension (optional — only when building the PyO3 wheel).
+pyo3 = { workspace = true, optional = true, features = [] }
+
+# minijinja integration (optional).
+minijinja = { path = "../minijinja/minijinja", optional = true, features = [
+    "serde",
+] }
+
+# Serde support for serialising Markup values through contexts.
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+rstest = { workspace = true }
+serde_json = "1"
+tempfile = "3"

@@ -61,12 +61,12 @@ pub mod kubernetes_inventory;
 
 mod bridge;
 
-pub use compat::{CompatMode, AnsibleMode, AnsibleInventorySource};
+pub use compat::{CompatMode, AnsibleMode, AnsibleInventorySource, DjangoMode, DjangoAutoEscape};
 pub use environment::Environment;
 pub use errors::Jinja2Error;
 pub use sandbox::SandboxedEnvironment;
 pub use sandbox_config::SandboxedEnvironmentBuilder;
-pub use loaders::{DictLoader, ChoiceLoader, FileSystemLoader, SphinxFileSystemLoader, Loader};
+pub use loaders::{DictLoader, ChoiceLoader, FileSystemLoader, SphinxFileSystemLoader, Loader, DjangoAppDirectoryLoader};
 
 /// Crate version string. Mirrors `Cargo.toml` `[package].version`.
 pub fn version() -> &'static str {
@@ -108,6 +108,36 @@ pub fn features() -> &'static [&'static str] {
         "bridge:sandboxed_environment",
         "bridge:template",
         "bridge:exceptions",
+        // Django mode
+        "django:filters:upper",
+        "django:filters:lower",
+        "django:filters:capfirst",
+        "django:filters:title",
+        "django:filters:slugify",
+        "django:filters:truncatewords",
+        "django:filters:truncatechars",
+        "django:filters:wordcount",
+        "django:filters:wordwrap",
+        "django:filters:add",
+        "django:filters:floatformat",
+        "django:filters:pluralize",
+        "django:filters:first",
+        "django:filters:last",
+        "django:filters:join",
+        "django:filters:length",
+        "django:filters:length_is",
+        "django:filters:yesno",
+        "django:filters:default",
+        "django:filters:default_if_none",
+        "django:filters:escape",
+        "django:filters:force_escape",
+        "django:filters:safe",
+        "django:filters:striptags",
+        "django:filters:linebreaks",
+        "django:filters:linebreaksbr",
+        "django:filters:urlencode",
+        "django:loaders:app_directories",
+        "django:auto_escape:html",
     ]
 }
 

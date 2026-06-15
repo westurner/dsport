@@ -1,6 +1,6 @@
 //! `jinja2rs::compat` — Jinja2 vs minijinja compatibility modes.
 //!
-//! This module provides configuration for three compatibility modes:
+//! This module provides configuration for four compatibility modes:
 //!
 //! - **Jinja2 mode** (default): Drop-in compatible with Python Jinja2. Enables
 //!   Python method syntax like `obj.items()`, `obj.values()`, `dict.get()`,
@@ -15,6 +15,12 @@
 //!   - Inventory support (hosts, groups, hostvars)
 //!   - YAML validation for playbooks and inventories
 //!   - Composable method syntax (can combine with Jinja2 or filter-based approach)
+//!
+//! - **Django mode**: Drop-in compatible with Django's template language.
+//!   - Django-specific filters: `slugify`, `truncatewords`, `floatformat`, `pluralize`, etc.
+//!   - App-directory template loading convention (`templates/` subdirectory)
+//!   - HTML auto-escaping enabled by default (matches Django behavior)
+//!   - Context processor support
 
 use std::path::PathBuf;
 
@@ -224,6 +230,144 @@ impl KubernetesMode {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Django mode
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Auto-escaping strategy for Django mode.
+///
+/// Matches the Django `django.template.backends.jinja2` auto-escape defaults.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DjangoAutoEscape {
+    /// Escape `.html`, `.htm`, `.xml` templates (Django default).
+    Html,
+    /// Always escape all templates.
+    Always,
+    /// Never auto-escape (opt-in safety).
+    Never,
+}
+
+impl Default for DjangoAutoEscape {
+    fn default() -> Self {
+        DjangoAutoEscape::Html
+    }
+}
+
+/// Django template language compatibility mode.
+///
+/// Configures `jinja2rs` to render templates written for the Django template
+/// engine with high fidelity:
+///
+/// - Django-specific filters (`slugify`, `truncatewords`, `floatformat`, …)
+/// - App-directory loader: searches `<app_dir>/templates/` by convention.
+/// - HTML auto-escaping on by default (matching Django's safe-by-default policy).
+/// - Context processors: callables that inject variables into every render.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use jinja2rs::compat::{CompatMode, DjangoMode};
+/// use jinja2rs::Environment;
+/// use std::path::PathBuf;
+///
+/// let mut env = Environment::new();
+/// env.set_compat_mode(CompatMode::Django(
+///     DjangoMode::default()
+///         .with_app_directory("/myapp")
+///         .with_timezone("UTC"),
+/// ));
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct DjangoMode {
+    /// Directories searched for templates using the app-directory convention.
+    ///
+    /// Each directory is searched as `<dir>/templates/<name>`.  Directories are
+    /// tried in the order they are listed; the first match wins.
+    pub app_directories: Vec<PathBuf>,
+
+    /// Auto-escape strategy (default: `Html` — escape `.html`/`.htm`/`.xml`).
+    pub auto_escape: DjangoAutoEscape,
+
+    /// Default timezone name used by date/time filters (e.g. `"UTC"`, `"Europe/Paris"`).
+    pub timezone: String,
+
+    /// BCP-47 locale tag used by i18n-aware filters (e.g. `"en-US"`, `"fr-FR"`).
+    pub locale: String,
+
+    /// Enable URL resolution for `{% url %}` tag.
+    ///
+    /// When `false`, the `{% url %}` tag will render as an empty string rather
+    /// than attempting reverse URL lookup.
+    pub enable_url_resolution: bool,
+}
+
+impl Default for DjangoMode {
+    fn default() -> Self {
+        DjangoMode {
+            app_directories: Vec::new(),
+            auto_escape: DjangoAutoEscape::Html,
+            timezone: "UTC".to_string(),
+            locale: "en-US".to_string(),
+            enable_url_resolution: false,
+        }
+    }
+}
+
+impl DjangoMode {
+    /// Create a Django mode with all features enabled and empty search paths.
+    pub fn new() -> Self {
+        DjangoMode::default()
+    }
+
+    /// Create a minimal Django mode (no app directories, no URL resolution).
+    pub fn minimal() -> Self {
+        DjangoMode {
+            app_directories: Vec::new(),
+            auto_escape: DjangoAutoEscape::Html,
+            timezone: "UTC".to_string(),
+            locale: "en-US".to_string(),
+            enable_url_resolution: false,
+        }
+    }
+
+    /// Append an app directory to the search path.
+    ///
+    /// The directory will be searched as `<dir>/templates/<template_name>`.
+    pub fn with_app_directory(mut self, path: impl Into<PathBuf>) -> Self {
+        self.app_directories.push(path.into());
+        self
+    }
+
+    /// Set the auto-escape strategy.
+    pub fn with_auto_escape(mut self, strategy: DjangoAutoEscape) -> Self {
+        self.auto_escape = strategy;
+        self
+    }
+
+    /// Set the default timezone name.
+    pub fn with_timezone(mut self, tz: impl Into<String>) -> Self {
+        self.timezone = tz.into();
+        self
+    }
+
+    /// Set the locale tag.
+    pub fn with_locale(mut self, locale: impl Into<String>) -> Self {
+        self.locale = locale.into();
+        self
+    }
+
+    /// Enable or disable URL resolution for `{% url %}`.
+    pub fn with_url_resolution(mut self, enable: bool) -> Self {
+        self.enable_url_resolution = enable;
+        self
+    }
+
+    /// Return `true` if this mode uses HTML auto-escaping.
+    pub fn html_auto_escape(&self) -> bool {
+        !matches!(self.auto_escape, DjangoAutoEscape::Never)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum CompatMode {
     /// Jinja2 compatibility mode (default).
@@ -299,6 +443,22 @@ pub enum CompatMode {
     /// )
     /// ```
     Kubernetes(KubernetesMode),
+
+    /// Django template language compatibility mode.
+    ///
+    /// Enables Django-specific filters, app-directory template loading, and
+    /// HTML auto-escaping by default.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// CompatMode::Django(
+    ///     DjangoMode::default()
+    ///         .with_app_directory("/myproject/myapp")
+    ///         .with_timezone("Europe/London")
+    /// )
+    /// ```
+    Django(DjangoMode),
 }
 
 impl Default for CompatMode {
@@ -345,18 +505,33 @@ impl CompatMode {
         }
     }
 
+    /// Returns true if this is Django compatibility mode.
+    pub fn is_django(&self) -> bool {
+        matches!(self, CompatMode::Django(_))
+    }
+
+    /// Get the Django mode configuration if this is Django mode.
+    pub fn as_django(&self) -> Option<&DjangoMode> {
+        match self {
+            CompatMode::Django(cfg) => Some(cfg),
+            _ => None,
+        }
+    }
+
     /// Check if this mode supports Python method syntax.
     ///
     /// Returns true for:
     /// - Jinja2 mode (always has method syntax)
     /// - Ansible mode with `method_syntax: true`
     /// - Kubernetes mode with `method_syntax: true`
+    /// - Django mode uses dot-notation access but not Python method calls.
     pub fn has_method_syntax(&self) -> bool {
         match self {
             CompatMode::Jinja2 => true,
             CompatMode::Minijinja => false,
             CompatMode::Ansible(cfg) => cfg.method_syntax,
             CompatMode::Kubernetes(cfg) => cfg.method_syntax,
+            CompatMode::Django(_) => false,
         }
     }
 }
@@ -435,5 +610,60 @@ mod tests {
 
         let mode = CompatMode::Jinja2;
         assert!(mode.as_ansible().is_none());
+    }
+
+    #[test]
+    fn test_django_mode_default() {
+        let mode = DjangoMode::default();
+        assert!(mode.app_directories.is_empty());
+        assert_eq!(mode.timezone, "UTC");
+        assert_eq!(mode.locale, "en-US");
+        assert!(!mode.enable_url_resolution);
+        assert!(mode.html_auto_escape());
+    }
+
+    #[test]
+    fn test_django_mode_builder() {
+        let mode = DjangoMode::default()
+            .with_app_directory("/app/myapp")
+            .with_timezone("Europe/London")
+            .with_locale("en-GB")
+            .with_url_resolution(true);
+        assert_eq!(mode.app_directories.len(), 1);
+        assert_eq!(mode.timezone, "Europe/London");
+        assert_eq!(mode.locale, "en-GB");
+        assert!(mode.enable_url_resolution);
+    }
+
+    #[test]
+    fn test_django_mode_multiple_app_dirs() {
+        let mode = DjangoMode::default()
+            .with_app_directory("/app/accounts")
+            .with_app_directory("/app/posts")
+            .with_app_directory("/app/common");
+        assert_eq!(mode.app_directories.len(), 3);
+    }
+
+    #[test]
+    fn test_compat_mode_is_django() {
+        let mode = CompatMode::Django(DjangoMode::default());
+        assert!(mode.is_django());
+        assert!(!mode.is_jinja2());
+        assert!(!mode.is_ansible());
+    }
+
+    #[test]
+    fn test_compat_mode_as_django() {
+        let mode = CompatMode::Django(DjangoMode::default());
+        assert!(mode.as_django().is_some());
+
+        let mode = CompatMode::Jinja2;
+        assert!(mode.as_django().is_none());
+    }
+
+    #[test]
+    fn test_django_mode_no_method_syntax() {
+        let mode = CompatMode::Django(DjangoMode::default());
+        assert!(!mode.has_method_syntax());
     }
 }

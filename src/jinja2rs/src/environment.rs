@@ -16,7 +16,7 @@ use crate::errors::Jinja2Error;
 use crate::filters;
 use crate::globals;
 use crate::i18n;
-use crate::loaders::FileSystemLoader;
+use crate::loaders::{FileSystemLoader, DjangoAppDirectoryLoader};
 
 /// Template handle returned by [`Environment::get_template`].
 pub struct Template<'env> {
@@ -90,6 +90,108 @@ impl Environment {
             Ok(FileSystemLoader::load_source(&paths, name))
         });
         env
+    }
+
+    /// Create an environment pre-configured for Django template compatibility.
+    ///
+    /// Registers all Phase 1 Django filters (`upper`, `lower`, `slugify`,
+    /// `truncatewords`, `truncatechars`, `wordcount`, `wordwrap`, `add`,
+    /// `floatformat`, `pluralize`, `first`, `last`, `join`, `length`,
+    /// `length_is`, `yesno`, `default`, `default_if_none`, `escape`,
+    /// `force_escape`, `safe`, `striptags`, `linebreaks`, `linebreaksbr`,
+    /// `urlencode`) and configures HTML auto-escaping on `.html`/`.htm` files.
+    ///
+    /// If `config.app_directories` is non-empty, installs a
+    /// [`DjangoAppDirectoryLoader`] that searches `<dir>/templates/` for
+    /// each directory in the list.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use jinja2rs::Environment;
+    /// use jinja2rs::compat::DjangoMode;
+    /// use serde_json::json;
+    ///
+    /// let env = Environment::with_django_mode(
+    ///     DjangoMode::default().with_app_directory("/myproject/myapp"),
+    /// );
+    /// let html = env.render_str("{{ title|slugify }}", json!({"title": "Hello World"})).unwrap();
+    /// assert_eq!(html, "hello-world");
+    /// ```
+    pub fn with_django_mode(config: crate::compat::DjangoMode) -> Self {
+        let mut env = Self::new();
+
+        // ── Auto-escape ───────────────────────────────────────────────────────
+        use crate::compat::DjangoAutoEscape;
+        match &config.auto_escape {
+            DjangoAutoEscape::Html => {
+                env.inner.set_auto_escape_callback(|name| {
+                    if name.ends_with(".html") || name.ends_with(".htm") || name.ends_with(".xml") {
+                        minijinja::AutoEscape::Html
+                    } else {
+                        minijinja::AutoEscape::None
+                    }
+                });
+            }
+            DjangoAutoEscape::Always => {
+                env.inner
+                    .set_auto_escape_callback(|_| minijinja::AutoEscape::Html);
+            }
+            DjangoAutoEscape::Never => {
+                env.inner
+                    .set_auto_escape_callback(|_| minijinja::AutoEscape::None);
+            }
+        }
+
+        // ── Django filters ────────────────────────────────────────────────────
+        env.register_django_filters();
+
+        // ── Template loader ───────────────────────────────────────────────────
+        if !config.app_directories.is_empty() {
+            let loader = DjangoAppDirectoryLoader::new(config.app_directories.clone());
+            env.inner
+                .set_loader(loader.into_minijinja_loader());
+        }
+
+        env
+    }
+
+    /// Register all Django built-in filters.
+    fn register_django_filters(&mut self) {
+        use filters::django as d;
+        // String
+        self.inner.add_filter("upper",         d::upper);
+        self.inner.add_filter("lower",         d::lower);
+        self.inner.add_filter("capfirst",      d::capfirst);
+        self.inner.add_filter("title",         d::title);
+        self.inner.add_filter("slugify",       d::slugify);
+        self.inner.add_filter("truncatewords", |val: Value, n: i64| d::truncatewords(val, n));
+        self.inner.add_filter("truncatechars", |val: Value, n: i64| d::truncatechars(val, n));
+        self.inner.add_filter("wordcount",     d::wordcount);
+        self.inner.add_filter("wordwrap",      |val: Value, w: i64| d::wordwrap(val, w));
+        // Numeric
+        self.inner.add_filter("add",           |val: Value, n: i64| d::add(val, n));
+        self.inner.add_filter("floatformat",   |val: Value, digits: Option<i64>| d::floatformat(val, digits));
+        self.inner.add_filter("pluralize",     |val: Value, suf: Option<String>| d::pluralize(val, suf));
+        // List
+        self.inner.add_filter("first",         d::first);
+        self.inner.add_filter("last",          d::last);
+        self.inner.add_filter("join",          |val: Value, sep: Option<String>| d::join(val, sep));
+        self.inner.add_filter("length",        d::length);
+        self.inner.add_filter("length_is",     |val: Value, n: i64| d::length_is(val, n));
+        // Boolean / fallback
+        self.inner.add_filter("yesno",         |val: Value, m: Option<String>| d::yesno(val, m));
+        self.inner.add_filter("default",       |val: Value, fb: String| d::default(val, fb));
+        self.inner.add_filter("default_if_none", |val: Value, fb: String| d::default_if_none(val, fb));
+        // HTML / escaping
+        self.inner.add_filter("escape",        d::escape);
+        self.inner.add_filter("e",             d::escape);
+        self.inner.add_filter("force_escape",  d::force_escape);
+        self.inner.add_filter("safe",          d::safe);
+        self.inner.add_filter("striptags",     d::striptags);
+        self.inner.add_filter("linebreaks",    d::linebreaks);
+        self.inner.add_filter("linebreaksbr",  d::linebreaksbr);
+        self.inner.add_filter("urlencode",     d::urlencode);
     }
 
     /// Add a named template from a string (mirrors `env.add_template()`).
@@ -195,6 +297,13 @@ impl Environment {
                 
                 // TODO: Add manifest support when cfg.manifest_source is Some
                 // TODO: Add YAML validation when cfg.enable_validation is true
+            }
+            CompatMode::Django(_cfg) => {
+                // Register Django filters (no Python method syntax — dot-notation only)
+                self.register_django_filters();
+                self.enable_minijinja_compat();
+                // Auto-escape is not changed here; use with_django_mode() for
+                // full Django environment construction including auto-escape.
             }
         }
     }

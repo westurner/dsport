@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "src/docutilsrs",
     "src/jinja2rs",
+    "src/markupsafers",
     "src/mathrenderrs",
     "src/myst-md-rs",
     "src/pygmentsrs",

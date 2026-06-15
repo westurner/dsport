@@ -1,5 +1,9 @@
 {
+    // git
     "git.repositoryScanMaxDepth": 2,
+
+    // syntax highlighting
+    "editor.bracketPairColorization.enabled": true,
     "editor.semanticHighlighting.enabled": true,
     "[rust]": {
         "editor.semanticHighlighting.enabled": true
@@ -60,5 +64,4 @@
             ]
         }
     },
-    "editor.bracketPairColorization.enabled": true
 }

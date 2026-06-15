@@ -30,7 +30,8 @@
 				"vadimcn.vscode-lldb",
 				"lextudio.restructuredtext",
 				"charliermarsh.ruff",
-				"ms-python.isort"
+				"ms-python.isort",
+				"samuelcolvin.jinjahtml"
 			],
 			"settings": {
 				"terminal.integrated.defaultProfile.linux": "bash",

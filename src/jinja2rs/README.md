@@ -100,12 +100,24 @@ For Django, Jinja2, minijinja:
                   Source: \url{https://github.com/pallets/jinja}},
 }
 
+@software{markupsafe,
+  author       = {Armin Ronacher and contributors},
+  title        = {MarkupSafe: Safely Convert Markup to Bytes},
+  year         = {2010},
+  url          = {https://markupsafe.palletsprojects.com/},
+  note         = {BSD-3-Clause license.
+                  Source: \url{https://github.com/pallets/markupsafe}.
+                  Provides safe HTML string handling and auto-escaping.
+                  jinja2rs includes \texttt{markupsafers}, a Rust port of MarkupSafe.},
+}
+
 @software{minijinja,
   author       = {Armin Ronacher},
   title        = {MiniJinja: Jinja2 Template Engine for Rust},
   year         = {2021},
   url          = {https://github.com/mitsuhiko/minijinja},
-  note         = {Apache-2.0 license},
+  note         = {Apache-2.0 license.
+                  jinja2rs is built on minijinja and minijinja python compat.},
 }
 ```
 

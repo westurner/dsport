@@ -24,15 +24,21 @@
 		"vscode": {
 			"extensions": [
 				"rust-lang.rust-analyzer",
-				"tamasfe.even-better-toml",
+				"vadimcn.vscode-lldb",
 				"ms-python.python",
 				"ms-python.vscode-pylance",
-				"vadimcn.vscode-lldb",
-				"lextudio.restructuredtext",
 				"charliermarsh.ruff",
 				"ms-python.isort",
-				"samuelcolvin.jinjahtml"
 			],
+			// "recommendedExtensions": [
+			// 	"tamasfe.even-better-toml",
+			// 	"samuelcolvin.jinjahtml",
+			// 	"lextudio.restructuredtext",
+			// 	"trond-snekvik.simple-rst",
+			// 	"ExecutableBookProject.myst-highlight",
+			// 	"yzhang.markdown-all-in-one",
+			// 	"goessner.mdmath"
+			// ],
 			"settings": {
 				"terminal.integrated.defaultProfile.linux": "bash",
 				"rust-analyzer.cargo.features": "all"

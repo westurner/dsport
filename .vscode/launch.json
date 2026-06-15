@@ -1,0 +1,71 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug Rust Tests",
+			"cargo": {
+				"args": [
+					"test",
+					"--package",
+					"jinja2rs",
+					"--lib",
+					"--",
+					"--nocapture"
+				],
+				"filter": {
+					"name": "jinja2rs",
+					"kind": "lib"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}",
+			"stopOnEntry": false,
+			"console": "integratedTerminal"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug Loaders Tests",
+			"cargo": {
+				"args": [
+					"test",
+					"--package",
+					"jinja2rs",
+					"loaders::tests",
+					"--lib",
+					"--",
+					"--nocapture"
+				],
+				"filter": {
+					"name": "jinja2rs",
+					"kind": "lib"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}",
+			"stopOnEntry": false,
+			"console": "integratedTerminal"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug All Tests",
+			"cargo": {
+				"args": [
+					"test",
+					"--",
+					"--nocapture"
+				],
+				"filter": {
+					"kind": "lib"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}",
+			"stopOnEntry": false,
+			"console": "integratedTerminal"
+		}
+	]
+}

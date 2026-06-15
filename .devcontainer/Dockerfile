@@ -10,7 +10,7 @@ RUN dnf -y install \
 		git make gcc gcc-c++ clang lld \
 		pkgconf-pkg-config openssl-devel \
 		python3 python3-pip python3-devel python3-virtualenv \
-		libffi-devel zlib-devel \
+		libffi-devel zlib-devel xz-devel \
 		libseccomp-devel \
 		ca-certificates curl which findutils \
 		procps-ng tar gzip xz \
@@ -23,7 +23,7 @@ RUN if ! getent group ${USER_GID} >/dev/null; then groupadd -g ${USER_GID} ${USE
 		useradd -m -u ${USER_UID} -g ${USER_GID} -s /bin/bash ${USERNAME}; \
 	   fi \
 	&& echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/${USERNAME} \
-	&& chmod 0440 /etc/sudoers.d/${USERNAME}
+	&& chmod 0440 /etc/sudoers.d/${USERNAME} \
 	&& mkdir -p /workspaces && chown ${USER_UID}:${USER_GID} /workspaces
 
 USER ${USERNAME}

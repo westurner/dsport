@@ -1,6 +1,6 @@
 
-build/
-build/tests
+/build/
+/build/tests
 src/sphinxdocrs/build/tests/
 #math-demo/sphinxdocrs/imgmath.txt
 .pytest_cache
@@ -14,6 +14,6 @@ src/cov.xml
 src/coverage.md
 src/pytest-results.xml
 src/pygmentsrs/fuzz/target/
-target/
+/target/
 
-tmp/
+/tmp/

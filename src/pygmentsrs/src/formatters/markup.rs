@@ -100,7 +100,7 @@ impl PangoMarkupFormatter {
             if !attrs.is_empty() {
                 out.push_str("<span ");
                 out.push_str(&attrs.join(" "));
-                out.push_str(">");
+                out.push('>');
             }
 
             // Escape XML entities
@@ -154,10 +154,10 @@ impl LatexFormatter {
                 }
 
                 if style.italic {
-                    out.push_str("}");
+                    out.push('}');
                 }
                 if style.bold {
-                    out.push_str("}");
+                    out.push('}');
                 }
             } else {
                 out.push_str(&escaped);
@@ -220,8 +220,8 @@ impl RtfFormatter {
         for (ttype, _) in tokens {
             let style = Style::from_token(*ttype);
             if let Some((r, g, b)) = style.fg_color {
-                if !color_map.contains_key(&(r, g, b)) {
-                    color_map.insert((r, g, b), self.color_table.len());
+                if let std::collections::hash_map::Entry::Vacant(e) = color_map.entry((r, g, b)) {
+                    e.insert(self.color_table.len());
                     self.color_table.push((r, g, b));
                 }
             }

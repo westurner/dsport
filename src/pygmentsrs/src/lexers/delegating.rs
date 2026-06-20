@@ -80,7 +80,7 @@ fn merge_tokens(
         if insertion_idx < insertions.len() && insertions[insertion_idx].0 < pos + token_len {
             let insert_offset = insertions[insertion_idx].0 - pos;
             if insert_offset > 0 {
-                result.push((token_type.clone(), value[..insert_offset].to_string()));
+                result.push((token_type, value[..insert_offset].to_string()));
             }
             for lang_token in &insertions[insertion_idx].1 {
                 result.push(lang_token.clone());

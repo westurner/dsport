@@ -15,3 +15,5 @@ src/coverage.md
 src/pytest-results.xml
 src/pygmentsrs/fuzz/target/
 target/
+
+tmp/

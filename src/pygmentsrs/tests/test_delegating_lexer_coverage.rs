@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! DelegatingLexer tests - covering lexer composition and token merging
 //! Target: 25-30 tests for lexers/delegating.rs branch coverage
 //!

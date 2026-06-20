@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Byte-parity tests comparing Rust formatters against upstream Pygments
 
 use pygmentsrs::formatters::registry::format_native;
@@ -228,8 +227,8 @@ fn test_all_native_formatters_registered() {
     let test_tokens = vec![(KEYWORD, "test".to_string())];
 
     for fmt in formatters.iter() {
-        let result =
-            format_native(fmt, &test_tokens).unwrap_or_else(|| panic!("Formatter '{}' failed", fmt));
+        let result = format_native(fmt, &test_tokens)
+            .unwrap_or_else(|| panic!("Formatter '{}' failed", fmt));
         assert!(!result.is_empty(), "Formatter '{}' returned empty", fmt);
     }
 }

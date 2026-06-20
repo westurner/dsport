@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! 100% Branch Coverage Tests for Markup Formatters
 //!
 //! This test suite provides comprehensive branch coverage for all formatters in
@@ -22,7 +21,8 @@ use pygmentsrs::token::*;
 
 /// Format tokens with a specific formatter, returning output or panic on error
 fn format_tokens(formatter: &str, tokens: Vec<(TokenType, String)>) -> String {
-    format_native(formatter, &tokens).unwrap_or_else(|| panic!("Failed to format with {}", formatter))
+    format_native(formatter, &tokens)
+        .unwrap_or_else(|| panic!("Failed to format with {}", formatter))
 }
 
 /// Format a single token with inline helper

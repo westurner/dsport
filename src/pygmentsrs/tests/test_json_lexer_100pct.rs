@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! 100% Branch Coverage Tests for JSON Lexer
 //!
 //! Comprehensive tests for src/pygmentsrs/src/lexers/json.rs

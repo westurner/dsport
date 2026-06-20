@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! CLI integration tests for bin/pygmentize.rs
 //! Target: 10-15 tests covering subprocess invocation and argument handling
 //!

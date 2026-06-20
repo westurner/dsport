@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Comprehensive branch coverage tests for formatters and colors.
 //!
 //! This file targets specific uncovered branches to reach 100% Rust branch coverage.

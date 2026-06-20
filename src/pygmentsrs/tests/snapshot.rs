@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Phase 0 — prove the `insta` snapshot loop works on `pygmentsrs`.
 //! Phase 1 adds real lexer-output snapshots.
 

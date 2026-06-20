@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! PyO3 bridge tests — 100% branch coverage for Python ↔ Rust FFI boundary
 //!
 //! Tests the `pygmentsrs::bridge` module which provides fallback access to

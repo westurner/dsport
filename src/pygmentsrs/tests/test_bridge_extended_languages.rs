@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Extended language coverage for PyO3 bridge
 //!
 //! Tests additional lexer/formatter combinations and error recovery patterns:

@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Lexer engine state machine and action dispatch tests
 //! Target: Cover state transitions, action types, edge cases in lexer/engine.rs
 //!

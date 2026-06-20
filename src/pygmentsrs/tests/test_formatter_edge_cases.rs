@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 /// Edge case tests to improve branch coverage on formatters
 /// These tests target uncovered branches identified by llvm-cov
 use pygmentsrs::formatters::registry::format_native;

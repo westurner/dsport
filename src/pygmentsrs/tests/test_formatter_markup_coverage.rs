@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Comprehensive branch coverage tests for formatter markup
 //! Target: Cover LaTeX, RTF, SVG, Pango escape sequences and edge cases
 //!

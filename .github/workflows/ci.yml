@@ -20,13 +20,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt, clippy
+      # - uses: dtolnay/rust-toolchain@nightly
+      #   with:
+      #     components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src
-      - run: cargo +nightly fmt --all --check
+      #- run: cargo +nightly fmt --all --check
+      - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 

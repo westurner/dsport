@@ -5,7 +5,6 @@
 //! - `sphinx/tests/test_util/test_util_rst.py`
 //! - `sphinx/tests/test_util/test_util.py` (osutil subset)
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 
 use rstest::*;

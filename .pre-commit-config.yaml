@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: cargo-test
         name: cargo test
-        entry: cargo test --all
+        entry: bash -c 'cargo test --all-targets && cargo test --doc'
         language: system
         stages: [commit]
         pass_filenames: false

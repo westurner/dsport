@@ -3,15 +3,11 @@
 //! Mirrors `sphinx/tests/test_addnodes.py`.
 
 use sphinxdocrs::addnodes::{
-    Acks, Centered, CompactParagraph, Desc, DescAddname, DescAnnotation, DescContent, DescInline,
-    DescName, DescOptional, DescParameter, DescParameterList, DescReturns, DescSigElement,
-    DescSigKeyword, DescSigKeywordType, DescSigLiteralChar, DescSigLiteralNumber,
-    DescSigLiteralString, DescSigName, DescSigOperator, DescSigPunctuation, DescSigSpace,
-    DescSignature, DescSignatureLine, DescType, DescTypeParameter, DescTypeParameterList,
-    DownloadReference, Glossary, HighlightLang, Hlist, HlistCol, Index, LiteralEmphasis,
-    LiteralStrong, Manpage, NotSmartquotable, NumberReference, Only, PendingXref,
-    PendingXrefCondition, Production, ProductionList, SIG_ELEMENTS, SeeAlso, StartOfFile,
-    TabularColSpec, Toctree, Translatable, VersionModified,
+    DescOptional, DescReturns, DescSigKeyword, DescSigKeywordType, DescSigLiteralChar,
+    DescSigLiteralNumber, DescSigLiteralString, DescSigName, DescSigOperator, DescSigPunctuation,
+    DescSigSpace, HighlightLang, Index, LiteralEmphasis, LiteralStrong, Manpage, NotSmartquotable,
+    Only, PendingXref, PendingXrefCondition, SIG_ELEMENTS, StartOfFile, Toctree, Translatable,
+    VersionModified,
 };
 
 // ── SIG_ELEMENTS ──────────────────────────────────────────────────────────────

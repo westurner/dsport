@@ -2,8 +2,6 @@
 //!
 //! Mirrors `sphinx/tests/test_environment/` (pure-algorithm subset).
 
-use std::collections::HashMap;
-
 use sphinxdocrs::config::SphinxConfig;
 use sphinxdocrs::environment::{
     BuildEnvironment, CONFIG_CHANGED, CONFIG_EXTENSIONS_CHANGED, CONFIG_NEW, CONFIG_OK,

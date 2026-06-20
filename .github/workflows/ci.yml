@@ -14,11 +14,12 @@ jobs:
     steps:
       - run: git config --global core.checkRoundtrip false
         working-directory: .
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@v1
         with:
+          toolchain: stable
           components: rustfmt, clippy
       # - uses: dtolnay/rust-toolchain@nightly
       #   with:
@@ -39,20 +40,35 @@ jobs:
     steps:
       - run: git config --global core.checkRoundtrip false
         working-directory: .
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src
       - run: python -m venv .venv
-      - run: ${{ github.workspace }}/src/.venv/bin/python -m pip install maturin pytest
+      - run: ${{ github.workspace }}/src/.venv/bin/python -m pip install maturin pytest pytest-cov
+      #- run: ${{ github.workspace }}/src/.venv/bin/python -m pip install -r requirements.txt
       - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
         working-directory: src/docutilsrs
       - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
         working-directory: src/sphinxdocrs
-      - run: ${{ github.workspace }}/src/.venv/bin/pytest tests/ -q
+      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
+        working-directory: src/pygmentsrs
+      - run: >-
+          ${{ github.workspace }}/src/.venv/bin/pytest -l tests/ -q
+          --cov=. --cov-branch --cov-report=xml:cov.xml
+          --junitxml=pytest-results.xml tests/
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: python-test-artifacts
+          path: |
+            ${{ github.workspace }}/src/cov.xml
+            ${{ github.workspace }}/src/pytest-results.xml

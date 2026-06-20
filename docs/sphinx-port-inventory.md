@@ -16,7 +16,7 @@ not yet ported — keep as parity probes only.
 | `project.py` | `sphinxdocrs::project` | **P1** | **mirrored** — `path2doc`/`doc2path`/`discover` landed in `src/sphinxdocrs/src/project.rs`; `discover()` uses Rust `util_matching` for glob exclusion (`EXCLUDE_PATHS` parity) |
 | `addnodes.py` | n/a (Python re-export) | **P1** | extends docutils.nodes — keep as Python shim that imports vendored `sphinx.addnodes` until our doctree gains Sphinx-specific node types |
 | `extension.py` | `sphinxdocrs::extension` | **P2** | **mirrored** — `Extension` wrapper + `verify_needs_extensions` landed in `src/sphinxdocrs/src/extension.rs`; gated by `tests/test_sphinxdocrs_extension.py` |
-| `registry.py` | `sphinxdocrs::registry` | **P2** | builder/parser/transform/translator registries; depends on extension + events |
+| `registry.py` | `sphinxdocrs::registry` | **P2** | **partial** — P2 subset ported: `SphinxComponentRegistry` struct with source-suffix/parser, transforms/post-transforms, CSS/JS/static assets, LaTeX packages, HTML themes; 32 unit tests + 32 integration tests; P3-dependent builder/domain/translator/math-renderer methods deferred |
 | `config.py` | `sphinxdocrs::config` | **P2** | depends on `util.typing`, complex value coercion; port `Config` after util |
 | `cmd/quickstart.py` | `sphinxdocrs::quickstart` | **C1** | **mirrored** — all 7 validators, `ask_user`, `generate`, `valid_dir`, full clap parser in `src/sphinxdocrs/src/quickstart/`; 50 Rust-side integration tests; `sphinx-quickstart-rs` binary native by default |
 | `cmd/build.py` + `cmd/make_mode.py` | `sphinxdocrs::build` | **C2** | **partial** — arg parser, all `_parse_*` helpers, `jobs_argument`, `MakeMode` (`build_clean`, `build_help`, `run_generic_build`, full `BUILDERS` table, target dispatch) ported in `src/sphinxdocrs/src/build/`; 35 Rust-side integration tests; `sphinx-build -M` runs natively; `sphinx-build -b` delegates to Python until builders land |
@@ -52,7 +52,7 @@ underlying subsystem is ported.
 | `test_domains/` | domains | P3 | deferred |
 | `test_environment/` | environment | P3 | deferred |
 | `test_ext_*` | extensions | P3 | deferred (run as-is against vendored sphinx) |
-| `test_extensions/` | extension loader | P2 | deferred |
+| `test_extensions/` | extension loader | P2 | **partial** — `SphinxComponentRegistry` P2 surface (source-suffix/parser, transforms, assets, LaTeX, HTML themes) mirrored; 32 integration tests in `tests/registry.rs`; `load_extension` and builder/domain registration deferred to P3 |
 | `test_highlighting.py` | highlighting | P3 | depends on Pygments port (`pygmentsrs`) |
 | `test_intl/` | intl | P3 | deferred |
 | `test_markup/` | markup | P3 | depends on docutils converter |
@@ -116,6 +116,7 @@ underlying subsystem is ported.
 | `src/sphinxdocrs/src/autogen/templates.rs` | `AutosummaryRenderer` | `underline` + `_` identity filters; 3 vendored stub templates in `assets/autosummary/` |
 | `src/sphinxdocrs/src/autogen/parser.rs` | `sphinx.ext.autosummary.generate.get_parser` | `AutogenArgs`; all 6 flags including `--respect-module-all`, `--imported-members` |
 | `src/sphinxdocrs/src/autogen/generate.rs` | `generate_autosummary_docs` (stub writing) | `ObjType`, `infer_obj_type`, `split_fqn`, `StubContext`, `generate_stub`, `generate_stubs`; heuristic type detection; `--remove-old` support |
+| `src/sphinxdocrs/src/registry.rs` | `sphinx.registry.SphinxComponentRegistry` | P2 subset: `source_suffix`, `source_parsers`, `transforms`, `post_transforms`, `css_files`, `js_files`, `static_dirs`, `latex_packages`, `html_themes`; `RegistryError`; `add_source_suffix`, `add_source_parser`, `get_source_parser`, `add_transform`, `get_transforms`, `add_post_transform`, `get_post_transforms`, `add_css_file`, `add_js_file`, `add_static_dir`, `add_latex_package`, `has_latex_package`, `add_html_theme` |
 | `src/sphinxdocrs/assets/quickstart/` | `sphinx/templates/quickstart/` | 4 vendored Jinja templates embedded via `include_str!` |
 | `src/sphinxdocrs/assets/apidoc/` | `sphinx/templates/apidoc/` | 3 vendored Jinja templates; `package.rst.jinja` patched: `heading(2)` → `heading2` filter |
 | `src/sphinxdocrs/assets/autosummary/` | `sphinx/ext/autosummary/templates/autosummary/` | 3 vendored RST stub templates embedded via `include_str!` |

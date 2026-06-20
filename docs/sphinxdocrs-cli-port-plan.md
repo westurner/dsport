@@ -7,7 +7,7 @@ native Rust in [`src/sphinxdocrs`](../src/sphinxdocrs). Target binaries:
 | --- | --- | --- | --- | --- |
 | `sphinx-quickstart` | `sphinx-quickstart-rs` | `sphinx.cmd.quickstart` | **C1** | **done** |
 | `sphinx-build`      | `sphinx-build-rs`      | `sphinx.cmd.build` + `sphinx.cmd.make_mode` | **C2** | **partial** (make-mode native; direct-mode delegates to Python) |
-| `sphinx-apidoc`     | `sphinx-apidoc-rs`     | `sphinx.ext.apidoc` | **C3** | **partial** (module generation native; `--full` delegates to Python) |
+| `sphinx-apidoc`     | `sphinx-apidoc-rs`     | `sphinx.ext.apidoc` | **C3** | **done** (module generation + `--full` native; parity verified vs Python 9.1.0) |
 | `sphinx-autogen`    | `sphinx-autogen-rs`    | `sphinx.ext.autosummary.generate` | **C4** | **done** (RST scan + arg-parse + native stub generation; Python fallback on `--use-python-impl`) |
 
 ~~Current state: all four binaries in
@@ -19,8 +19,8 @@ Current state (post C1/C2a/C2b/C3):
   `--use-python-impl` / `SPHINXDOCRS_PY_FALLBACK=1`.
 - `sphinx-build-rs` — **make-mode (`-M`) native**; direct mode (`-b`)
   validates args natively then delegates to Python `Sphinx`.
-- `sphinx-apidoc-rs` — **module/package generation native**; `--full`
-  delegates to Python quickstart bridge (builder dep).
+- `sphinx-apidoc-rs` — **fully native**: module/package/TOC generation and
+  `--full` quickstart; Python fallback only on `--use-python-impl` / `SPHINXDOCRS_PY_FALLBACK=1`.
 - `sphinx-autogen-rs` — **fully native**: RST scan, arg-parse, and stub file
   generation; Python fallback only on `--use-python-impl` / `SPHINXDOCRS_PY_FALLBACK=1`.
 
@@ -75,11 +75,12 @@ assets/autosummary/
   module.rst
 ```
 
-Test suites (all green, 235 total):
+Test suites (all green, 325 total):
 
 | suite | tests | covers |
 | --- | --- | --- |
-| lib (unit) | 109 | existing + inline tests in `cli/io.rs`, `quickstart/validate.rs`, `build/args.rs`, `build/make_mode.rs`, `build/logging.rs`, `apidoc/generate.rs`, `apidoc/parser.rs`, `autogen/scan.rs`, `autogen/parser.rs`, `autogen/generate.rs` |
+| lib (unit) | 136 | existing + inline tests in `cli/io.rs`, `quickstart/validate.rs`, `build/args.rs`, `build/make_mode.rs`, `build/logging.rs`, `apidoc/generate.rs`, `apidoc/parser.rs`, `autogen/scan.rs`, `autogen/parser.rs`, `autogen/generate.rs`, `registry.rs` |
+| `tests/registry.rs` | 32 | `add_source_suffix` (3, incl. `#[case]` suffix variants), `add_source_parser`/`get_source_parser`/`get_source_parsers` (6), `add_transform`/`get_transforms` (5), `add_post_transform`/`get_post_transforms` (2), CSS assets (3), JS assets (2), static dirs (2), LaTeX packages (7), HTML themes (2), empty registry (1) |
 | `tests/autogen.rs` | 32 | parser flags (7 incl. 3 `#[case]`), `find_autosummary_in_lines` (7 cases), `find_autosummary_in_files` (1), template/help snapshots (2), `infer_obj_type` (5 `#[case]`), `split_fqn` (2), `generate_stub` (5), `generate_stubs` (2), stub content snapshots (2) |
 | `tests/apidoc.rs` | 24 | parser flags (8), `is_initpy` (4 `#[case]`), `module_join` (4 `#[case]`), `is_excluded` (1), `recurse_tree` basic/no-private/with-private (3), module/TOC/help snapshots (3) |
 | `tests/quickstart.rs` | 50 | validators (11 `#[case]` tables), parser (8), `valid_dir` (4), tree-layout snapshots (4), `conf_py_snapshot`, newline modes (2), `ask_user` scripted-terminal, help-text snapshot |
@@ -212,7 +213,7 @@ Two entry modes share the binary:
 
 ## 4. Commands: `sphinx-apidoc` (C3) & `sphinx-autogen` (C4)
 
-### 4.1 `sphinx-apidoc` (C3) — ⚠️ PARTIAL
+### 4.1 `sphinx-apidoc` (C3) — ✅ DONE
 
 File-generator with no builder/environment dependency. Implementation
 status:
@@ -223,14 +224,14 @@ status:
 | `_generate.py` helpers | `apidoc::generate` | ✅ `is_initpy`, `module_join`, `is_excluded`, `is_skipped_package/module`, `walk`, `recurse_tree`, `create_module_file`, `create_package_file`, `create_modules_toc_file`, `remove_old_files` |
 | RST templates | `assets/apidoc/*.jinja` | ✅ all 3 vendored; `heading(2)` call patched to `heading2` filter |
 | `_cli.get_parser()` | `apidoc::parser` | ✅ full clap grammar, all flags incl. `--ext-*`, `SPHINX_APIDOC_OPTIONS` env |
-| `--full` mode | delegates to Python | ⏳ calls Python quickstart bridge until quickstart `generate()` is wired |
-| exclude regex compilation | `fnmatch_to_regex` in binary | ✅ simplified fnmatch→regex (full glob lib can replace if needed) |
+| `--full` mode | `run_full_quickstart` in binary | ✅ wired to `quickstart::generate` natively |
+| exclude regex compilation | `fnmatch_to_regex` in binary | ✅ simplified fnmatch→regex |
 
-Definition of done (C3) — ⚠️ PARTIAL:
-- ✅ `recurse_tree` generates correct package/module `.rst` layout (tested with synthetic Python packages).
+Definition of done (C3) — ✅ DONE:
+- ✅ `recurse_tree` generates correct package/module `.rst` layout.
 - ✅ 24 passing tests in `tests/apidoc.rs`.
-- ⏳ `--full` native: wire `apidoc::generate::_full_quickstart` to `quickstart::generate` (reuse existing quickstart module).
-- ⏳ Parity harness (`tests/parity.rs`, `feature = "parity"`): compare Python and Rust output trees.
+- ✅ `--full` wired to `quickstart::generate` natively (`run_full_quickstart`).
+- ✅ Parity vs Python 9.1.0 (`apidoc_parity_basic` passes; snapshot committed).
 
 ### 4.2 `sphinx-autogen` (C4) — ✅ DONE
 
@@ -387,7 +388,7 @@ term.expect_print().returning(|_| ());
 quickstart::ask_user(&mut settings, &term);
 ```
 
-### 5.5 Cross-language parity harness — ⚠️ SCAFFOLDED
+### 5.5 Cross-language parity harness — ✅ DONE
 
 Integration tests in `tests/parity.rs` gated behind
 `cfg(feature = "parity")`:
@@ -396,9 +397,8 @@ Integration tests in `tests/parity.rs` gated behind
 - `apidoc_parity_basic`: runs Python `sphinx-apidoc` and
   `sphinx-apidoc-rs` on a synthetic Python package, diffs file trees.
 
-Both skip gracefully when Python/sphinx is unavailable.
-First run records the Python side into an insta snapshot; CI replays
-from the committed snapshot so Python is not required every run.
+Both **pass** against Python 9.1.0. Reference snapshots committed in
+`tests/snapshots/parity__*.snap`.
 
 Enable with:
 ```
@@ -441,6 +441,10 @@ validator error paths are mandatory-covered.
     (CamelCase→class, else→module), `StubContext`, `generate_stub`/`generate_stubs`;
     15 new integration tests; `sphinx-autogen-rs` now fully native by default.
     32 passing tests in `tests/autogen.rs`; 266 total (0 failures, 0 clippy warnings).
+12. ✅ **P2.1 Registry** Port `SphinxComponentRegistry` P2 subset: source-suffix/parser
+    registration, transforms, CSS/JS/static asset tracking, LaTeX packages, HTML
+    theme registry. `RegistryError` for duplicate/not-found conditions. 27 inline
+    unit tests + 32 integration tests in `tests/registry.rs`; 325 total.
 
 Each step is independently shippable: the binary keeps working via the
 shim fallback until its native path passes the parity harness.

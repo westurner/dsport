@@ -26,6 +26,7 @@ pub mod events;
 pub mod extension;
 pub mod project;
 pub mod quickstart;
+pub mod registry;
 pub mod util_console;
 pub mod util_matching;
 

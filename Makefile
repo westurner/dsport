@@ -41,13 +41,13 @@ test:
 	} 2>&1 | tee build.log
 
 test2:
-	@set -o pipefail; set -x; \
+	@bash -c 'set -o pipefail; set -x; \
 	{ \
 		$(TEST2_CARGO_CMD); \
 		$(TEST2_PYTHON_CMD); \
 	} 2>&1 | tee build.log.ansi; \
-	sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' build.log.ansi > build.log && \
-	rm -f build.log.ansi
+	sed -E '"'"'s/\x1B\[[0-9;]*[[:alpha:]]//g'"'"' build.log.ansi > build.log && \
+	rm -f build.log.ansi'
 
 test3:
 	@bash -lc 'set -o pipefail; set -x; { $(TEST2_CARGO_CMD); $(TEST2_PYTHON_CMD); } 2>&1 | tee >(sed -E "s/\x1B\[[0-9;]*[[:alpha:]]//g" > build.log)'

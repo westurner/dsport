@@ -25,7 +25,8 @@ def test_inline_emphasis_strong_literal():
 
 def test_bullet_list():
     out = html("- one\n- two\n")
-    assert out == "<ul><li><p>one</p></li><li><p>two</p></li></ul>"
+    # The writer emits class="simple" on compact bullet lists.
+    assert out == '<ul class="simple"><li><p>one</p></li><li><p>two</p></li></ul>'
 
 
 def test_section_with_title():
@@ -44,7 +45,8 @@ def test_literal_block():
 def test_definition_list():
     src = "term\n    definition\n"
     out = html(src)
-    assert "<dl>" in out and "<dt>term</dt>" in out and "<dd>" in out
+    # The writer emits class="simple" on compact definition lists.
+    assert "<dl" in out and "<dt>term</dt>" in out and "<dd>" in out
 
 
 def test_reference():

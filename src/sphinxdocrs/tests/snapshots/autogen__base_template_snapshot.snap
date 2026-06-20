@@ -1,0 +1,10 @@
+---
+source: src/sphinxdocrs/tests/autogen.rs
+expression: rendered
+---
+mymod.MyClass
+=============
+
+.. currentmodule:: mymod
+
+.. autoclass:: MyClass

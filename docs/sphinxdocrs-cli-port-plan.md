@@ -8,7 +8,7 @@ native Rust in [`src/sphinxdocrs`](../src/sphinxdocrs). Target binaries:
 | `sphinx-quickstart` | `sphinx-quickstart-rs` | `sphinx.cmd.quickstart` | **C1** | **done** |
 | `sphinx-build`      | `sphinx-build-rs`      | `sphinx.cmd.build` + `sphinx.cmd.make_mode` | **C2** | **partial** (make-mode native; direct-mode delegates to Python) |
 | `sphinx-apidoc`     | `sphinx-apidoc-rs`     | `sphinx.ext.apidoc` | **C3** | **partial** (module generation native; `--full` delegates to Python) |
-| `sphinx-autogen`    | `sphinx-autogen-rs`    | `sphinx.ext.autosummary.generate` | **C4** | not started |
+| `sphinx-autogen`    | `sphinx-autogen-rs`    | `sphinx.ext.autosummary.generate` | **C4** | **partial** (RST scan + arg-parse native; stub generation delegates to Python) |
 
 ~~Current state: all four binaries in
 [src/sphinxdocrs/src/bin](../src/sphinxdocrs/src/bin) are **PyO3
@@ -21,7 +21,8 @@ Current state (post C1/C2a/C2b/C3):
   validates args natively then delegates to Python `Sphinx`.
 - `sphinx-apidoc-rs` — **module/package generation native**; `--full`
   delegates to Python quickstart bridge (builder dep).
-- `sphinx-autogen-rs` — still Python shell-out shim.
+- `sphinx-autogen-rs` — **RST scanning + arg-parse native**; stub generation
+  delegates to Python (`autodoc` import machinery required).
 
 New modules in `src/sphinxdocrs/src/`:
 
@@ -51,6 +52,12 @@ apidoc/
                     create_module_file, create_package_file,
                     create_modules_toc_file, remove_old_files
   parser.rs       — clap parser, parse_args (full flag grammar + --ext-*)
+autogen/
+  mod.rs
+  scan.rs         — AutosummaryEntry, find_autosummary_in_lines,
+                    find_autosummary_in_files
+  templates.rs    — AutogenTemplates (underline filter; 3 vendored stub templates)
+  parser.rs       — AutogenArgs, build_parser, parse_args
 assets/quickstart/
   conf.py.jinja   — vendored from sphinx/templates/quickstart/
   root_doc.rst.jinja
@@ -60,13 +67,18 @@ assets/apidoc/
   module.rst.jinja  — vendored from sphinx/templates/apidoc/
   package.rst.jinja — (patched: heading(2) → heading2 filter)
   toc.rst.jinja
+assets/autosummary/
+  base.rst        — vendored from sphinx/ext/autosummary/templates/autosummary/
+  class.rst
+  module.rst
 ```
 
-Test suites (all green, 206 total):
+Test suites (all green, 235 total):
 
 | suite | tests | covers |
 | --- | --- | --- |
-| lib (unit) | 81 | existing + inline tests in `cli/io.rs`, `quickstart/validate.rs`, `build/args.rs`, `build/make_mode.rs`, `build/logging.rs`, `apidoc/generate.rs`, `apidoc/parser.rs` |
+| lib (unit) | 93 | existing + inline tests in `cli/io.rs`, `quickstart/validate.rs`, `build/args.rs`, `build/make_mode.rs`, `build/logging.rs`, `apidoc/generate.rs`, `apidoc/parser.rs`, `autogen/scan.rs`, `autogen/parser.rs` |
+| `tests/autogen.rs` | 17 | parser flags (7 incl. 3 `#[case]`), `find_autosummary_in_lines` (7 cases), `find_autosummary_in_files` (1), template/help snapshots (2) |
 | `tests/apidoc.rs` | 24 | parser flags (8), `is_initpy` (4 `#[case]`), `module_join` (4 `#[case]`), `is_excluded` (1), `recurse_tree` basic/no-private/with-private (3), module/TOC/help snapshots (3) |
 | `tests/quickstart.rs` | 50 | validators (11 `#[case]` tables), parser (8), `valid_dir` (4), tree-layout snapshots (4), `conf_py_snapshot`, newline modes (2), `ask_user` scripted-terminal, help-text snapshot |
 | `tests/build.rs` | 35 | `jobs_argument` (6), `parse_confdir` (4), `parse_doctreedir` (2), `validate_filenames` (2), `parse_confoverrides` (5), `parse_color` (3), `build_clean` safety (4), `run_generic_build` (2), dispatch (2), `run_make_mode` (1), BUILDERS completeness (1), help snapshot |
@@ -218,12 +230,23 @@ Definition of done (C3) — ⚠️ PARTIAL:
 - ⏳ `--full` native: wire `apidoc::generate::_full_quickstart` to `quickstart::generate` (reuse existing quickstart module).
 - ⏳ Parity harness (`tests/parity.rs`, `feature = "parity"`): compare Python and Rust output trees.
 
-### 4.2 `sphinx-autogen` (C4) — ⏳ NOT STARTED
+### 4.2 `sphinx-autogen` (C4) — ⚠️ PARTIAL
 
 Scans sources for `autosummary` directives and emits stub `.rst` files.
-Heaviest dependency on autodoc import machinery → likely keeps a Python
-bridge for the actual object import/introspection step while the CLI scan
-and template rendering go native.
+Architecture split:
+
+| layer | status | notes |
+| --- | --- | --- |
+| RST scan (`find_autosummary_in_lines`) | ✅ native | regex-based parser matching upstream exactly; 7 parametrized test cases |
+| Argument parser | ✅ native | full clap grammar; `--imported-members`, `--respect-module-all`, `--remove-old`, `--templates` |
+| Stub templates | ✅ vendored | `base.rst`, `class.rst`, `module.rst` in `assets/autosummary/`; `underline` filter registered |
+| Stub generation | ⏳ Python bridge | needs `autodoc` import machinery — `generate_autosummary_docs` stays Python |
+
+Definition of done (C4) — ⚠️ PARTIAL:
+- ✅ `find_autosummary_in_lines` / `find_autosummary_in_files` ported and tested.
+- ✅ 17 passing tests in `tests/autogen.rs`.
+- ⏳ Native stub generation: introspection stub without `autodoc` (requires
+  Python FFI for live object import). Track as C4.2.
 
 ---
 
@@ -405,10 +428,14 @@ validator error paths are mandatory-covered.
 7. ✅ **C3.1** Port apidoc `settings`, `templates` (heading/heading2/repr filters),
    `generate` (walk, recurse_tree, create_*_file, remove_old_files),
    `parser` (full clap grammar); 24 passing integration tests.
-8. ⏳ **C3.2** Wire `--full` to `quickstart::generate` (native quickstart bridge).
-9. ⏳ **C3.3** Parity harness first run: commit Python-side apidoc insta snapshot.
-10. ⏳ **C4** `sphinx-autogen` — CLI scan + template rendering native; object
-    introspection keeps Python bridge.
+8. ✅ **C3.2** Wire `--full` to `quickstart::generate` natively
+   (`run_full_quickstart` in `sphinx_apidoc.rs`).
+9. ✅ **C4.1** Port autogen `scan` (`find_autosummary_in_lines` + `find_autosummary_in_files`),
+   `templates` (`underline` filter, 3 vendored stubs), `parser` (full clap grammar);
+   17 passing integration tests; `sphinx-autogen-rs` native scan + Python stub generation.
+10. ⏳ **C3.3 / C4.3** Parity harness first run: commit Python-side insta snapshots.
+11. ⏳ **C4.2** Native stub generation: introspect Python objects via PyO3 to
+    replace the Python `generate_autosummary_docs` call.
 
 Each step is independently shippable: the binary keeps working via the
 shim fallback until its native path passes the parity harness.

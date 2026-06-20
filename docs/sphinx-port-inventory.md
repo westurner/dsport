@@ -21,7 +21,7 @@ not yet ported — keep as parity probes only.
 | `cmd/quickstart.py` | `sphinxdocrs::quickstart` | **C1** | **mirrored** — all 7 validators, `ask_user`, `generate`, `valid_dir`, full clap parser in `src/sphinxdocrs/src/quickstart/`; 50 Rust-side integration tests; `sphinx-quickstart-rs` binary native by default |
 | `cmd/build.py` + `cmd/make_mode.py` | `sphinxdocrs::build` | **C2** | **partial** — arg parser, all `_parse_*` helpers, `jobs_argument`, `MakeMode` (`build_clean`, `build_help`, `run_generic_build`, full `BUILDERS` table, target dispatch) ported in `src/sphinxdocrs/src/build/`; 35 Rust-side integration tests; `sphinx-build -M` runs natively; `sphinx-build -b` delegates to Python until builders land |
 | `ext/apidoc.py` | `sphinxdocrs::apidoc` | **C3** | **partial** — `ApidocOptions`, `recurse_tree`, `create_{module,package,modules_toc}_file`, `remove_old_files`, full clap parser in `src/sphinxdocrs/src/apidoc/`; 24 Rust-side integration tests; `sphinx-apidoc-rs` native by default; `--full` delegates to Python |
-| `ext/autosummary/generate.py` | `sphinxdocrs::autogen` | **C4** | deferred — CLI scan + template rendering native; object introspection stays Python |
+| `ext/autosummary/generate.py` | `sphinxdocrs::autogen` | **C4** | **partial** — RST scan (`find_autosummary_in_lines/files`), full clap parser, `underline` filter + 3 vendored stub templates in `src/sphinxdocrs/src/autogen/`; 17 Rust-side tests; `sphinx-autogen-rs` native scan; stub generation delegates to Python |
 | `roles.py` / `directives/` | `sphinxdocrs::roles` etc | **P3** | needs the doctree converter (already in `docutilsrs::python`) and the directive/role registry |
 | `domains/` | `sphinxdocrs::domains` | **P3** | each domain is a substantial subsystem (`py`, `c`, `cpp`, `js`, `rst`, `std`) |
 | `environment/` | `sphinxdocrs::environment` | **P3** | the build environment, large and stateful |
@@ -67,7 +67,8 @@ underlying subsystem is ported.
 | `test_writers/` | writers | P3 | deferred (one writer at a time) |
 | `test_builders/` | builders | P3 | deferred (one builder at a time) |
 | `test_ext_autodoc/`, `test_ext_autosummary/`, `test_ext_imgconverter/`, `test_ext_intersphinx/`, `test_ext_napoleon/` | extensions | P3 | deferred — these run against vendored Python sphinx |
-| `test_ext_apidoc/` | apidoc | **C3** | **partial** — `recurse_tree` + file generators ported; 24 Rust-side tests in `tests/apidoc.rs`; `--full` mode deferred |
+| `test_ext_apidoc/` | apidoc | **C3** | **mirrored** — `recurse_tree` + file generators ported; 24 Rust-side tests in `tests/apidoc.rs`; `--full` now wired to `quickstart::generate` |
+| `test_ext_autosummary/` | autosummary/autogen | **C4** | **partial** — RST scan ported; 17 Rust-side tests in `tests/autogen.rs`; stub generation deferred |
 | `js/` | search JS | n/a | external |
 
 ## Exit criteria for Phase 4 (incremental)
@@ -90,8 +91,8 @@ underlying subsystem is ported.
 | **C2b** `sphinx-build -M` make-mode | `sphinxdocrs::build::make_mode` | **done** — `build_clean` safety checks, `build_help`, `run_generic_build`, `BUILDERS` table, target dispatch all ported and tested via `CapturingRunner` |
 | **C2c** `sphinx-build -b` direct mode | delegates to Python `Sphinx` | pending builders |
 | **C2.3** parity harness scaffold | `tests/parity.rs` | **scaffolded** — `#[cfg(feature="parity")]`; quickstart + apidoc harnesses written; skip-without-python guard |
-| **C3** `sphinx-apidoc` | `sphinxdocrs::apidoc` | **partial** — 24 tests green; `recurse_tree`, all file generators, full parser native; `--full` delegates to Python |
-| **C4** `sphinx-autogen` | `sphinxdocrs::autogen` | not started |
+| **C3** `sphinx-apidoc` | `sphinxdocrs::apidoc` | **partial** — 24 tests green; `recurse_tree`, all file generators, full parser native; `--full` wired to `quickstart::generate` |
+| **C4** `sphinx-autogen` | `sphinxdocrs::autogen` | **partial** — 17 tests green; RST scan + parser native; stub generation delegates to Python |
 
 ### New modules landed (C-phase)
 
@@ -111,6 +112,10 @@ underlying subsystem is ported.
 | `src/sphinxdocrs/src/apidoc/templates.rs` | `ReSTRenderer` in apidoc | `heading`/`heading2`/`repr` filters; 3 vendored templates in `assets/apidoc/` |
 | `src/sphinxdocrs/src/apidoc/generate.rs` | `sphinx.ext.apidoc._generate` | `is_initpy`, `module_join`, `is_excluded`, `is_skipped_package/module`, `walk`, `recurse_tree`, `create_module_file`, `create_package_file`, `create_modules_toc_file`, `remove_old_files` |
 | `src/sphinxdocrs/src/apidoc/parser.rs` | `sphinx.ext.apidoc._cli.get_parser` | full clap grammar; `--ext-*` flags; `SPHINX_APIDOC_OPTIONS` env |
+| `src/sphinxdocrs/src/autogen/scan.rs` | `sphinx.ext.autosummary.generate.find_autosummary_in_lines` | `AutosummaryEntry`, `find_autosummary_in_lines`, `find_autosummary_in_files` |
+| `src/sphinxdocrs/src/autogen/templates.rs` | `AutosummaryRenderer` | `underline` filter; 3 vendored stub templates in `assets/autosummary/` |
+| `src/sphinxdocrs/src/autogen/parser.rs` | `sphinx.ext.autosummary.generate.get_parser` | `AutogenArgs`; all 6 flags including `--respect-module-all`, `--imported-members` |
 | `src/sphinxdocrs/assets/quickstart/` | `sphinx/templates/quickstart/` | 4 vendored Jinja templates embedded via `include_str!` |
 | `src/sphinxdocrs/assets/apidoc/` | `sphinx/templates/apidoc/` | 3 vendored Jinja templates; `package.rst.jinja` patched: `heading(2)` → `heading2` filter |
+| `src/sphinxdocrs/assets/autosummary/` | `sphinx/ext/autosummary/templates/autosummary/` | 3 vendored RST stub templates embedded via `include_str!` |
 | `src/sphinxdocrs/tests/parity.rs` | — | Cross-language parity harness; `#[cfg(feature="parity")]`; skips without Python |

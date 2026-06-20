@@ -1,0 +1,22 @@
+---
+source: src/sphinxdocrs/tests/autogen.rs
+expression: cmd.render_help().to_string()
+---
+Generate ReStructuredText using autosummary directives.
+
+sphinx-autogen is a frontend to sphinx.ext.autosummary.generate. It generates the reStructuredText files from the autosummary directives contained in the given input files.
+
+Usage: sphinx-autogen [OPTIONS] <SOURCE_FILE>...
+
+Arguments:
+  <SOURCE_FILE>...  source files to generate rST files for
+
+Options:
+  -o, --output-dir <OUTPUT_DIR>  directory to place all output in
+  -s, --suffix <SUFFIX>          default suffix for files (default: rst) [default: rst]
+  -t, --templates <TEMPLATES>    custom template directory (default: None)
+  -i, --imported-members         document imported members (default: false)
+  -a, --respect-module-all       document exactly the members in module __all__ attribute. (default: false)
+      --remove-old               Remove existing files in the output directory that were not generated
+      --use-python-impl          delegate to the upstream Python sphinx-autogen
+  -h, --help                     Print help

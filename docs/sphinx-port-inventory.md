@@ -28,7 +28,7 @@ not yet ported — keep as parity probes only.
 | `environment/` | `sphinxdocrs::environment` | **P3** | the build environment, large and stateful |
 | `builders/` | `sphinxdocrs::builders` | **P3** | one builder at a time (`html`, `latex`, `epub`, ...) |
 | `ext/*` | n/a (Python plugins) | **P3** | keep as Python; loaded via `Extension` registry |
-| `util/*` | `sphinxdocrs::util::*` | **P2** | **mirrored (matching + console + rst + osutil)** — `compile_matchers` / `Matcher` / `get_matching_files` → `util_matching.rs`; `sphinx.util.console` colour/escape (22 codes, `colourise`, `strip_escape_sequences`, `terminal_safe`) → `util_console.rs`; `sphinx.util.rst` (`escape`, `textwidth`, `heading`, `SECTIONING_CHARS`) → `util_rst.rs`; `sphinx.util.osutil` (`SEP`, `os_path`, `canon_path`, `path_stabilize`, `relative_uri`, `ensuredir`, `make_filename`, `make_filename_from_project`, `FileAvoidWrite`) → `util_osutil.rs`; `_prepend_prologue`/`_append_epilogue`/`default_role` deferred (docutils dep) |
+| `util/*` | `sphinxdocrs::util::*` | **P2** | **mirrored (matching + console + rst + osutil + uri + lines + docstrings)** — `util_matching.rs` (glob), `util_console.rs` (22 ANSI codes), `util_rst.rs` (`escape`/`textwidth`/`heading`), `util_osutil.rs` (`SEP`/`canon_path`/`relative_uri`/`ensuredir`/`make_filename`/`FileAvoidWrite`), `util_uri.rs` (`encode_uri`/`is_url`), `util_lines.rs` (`parse_line_num_spec`), `util_docstrings.rs` (`prepare_docstring`/`prepare_commentdoc`/`separate_metadata`); `_prepend_prologue`/`_append_epilogue`/`default_role`/`copyfile` deferred (docutils dep) |
 | `theming.py` | n/a | **P3** | jinja2-bound; keep Python until templating story decided |
 | `search/` | n/a | **P3** | indexer + JS bridge; keep Python |
 
@@ -63,7 +63,7 @@ underlying subsystem is ported.
 | `test_search.py` | search | P3 | deferred |
 | `test_theming/` | theming | P3 | deferred |
 | `test_transforms/` | transforms | P3 | deferred (per-transform port) |
-| `test_util/` | util | P2 | **partial** — matching + console mirrored in Python tests; `test_util_rst.py` and `test_util.py` (osutil subset) mirrored in `tests/util_rst_osutil.rs` (52 integration tests covering `escape`, `textwidth`, `heading`, `relative_uri`, `ensuredir`, `make_filename`, `FileAvoidWrite`); `_prepend_prologue`/`_append_epilogue`/`default_role`/`copyfile` deferred (docutils/SphinxApp dep) |
+| `test_util/` | util | P2 | **partial** — matching + console in Python tests; `test_util_rst.py` + `test_util.py` (osutil) in `tests/util_rst_osutil.rs` (52 tests); `test_util_uri.py` + `test_util_lines.py` + `test_util_docstrings.py` in `tests/util_extra.rs` (35 tests); `_prepend_prologue`/`_append_epilogue`/`default_role`/`copyfile` deferred (docutils/SphinxApp dep) |
 | `test_versioning.py` | versioning | P2 | **partial** — pure algorithm tests (`get_ratio`, `add_uids`, `merge_doctrees` for modified/added/deleted/deleted_end/insert/insert_beginning/insert_similar) mirrored in `tests/versioning.rs`; 29 integration tests; `SphinxTestApp` fixture tests deferred (builder dep) |
 | `test_writers/` | writers | P3 | deferred (one writer at a time) |
 | `test_builders/` | builders | P3 | deferred (one builder at a time) |
@@ -121,6 +121,9 @@ underlying subsystem is ported.
 | `src/sphinxdocrs/src/versioning.rs` | `sphinx.versioning` | `VERSIONING_RATIO`, `VersionableNode` trait, `levenshtein_distance`, `get_ratio`, `add_uids`, `merge_doctrees`; `UIDTransform` deferred |
 | `src/sphinxdocrs/src/util_rst.rs` | `sphinx.util.rst` | `SECTIONING_CHARS`, `WIDECHARS_DEFAULT`, `WIDECHARS_JA`, `escape`, `textwidth`, `heading`; `_prepend_prologue`/`_append_epilogue`/`default_role` deferred |
 | `src/sphinxdocrs/src/util_osutil.rs` | `sphinx.util.osutil` | `SEP`, `os_path`, `canon_path`, `path_stabilize`, `relative_uri`, `ensuredir`, `make_filename`, `make_filename_from_project`, `FileAvoidWrite`; `copyfile`/`relpath`/`rmtree` deferred |
+| `src/sphinxdocrs/src/util_uri.rs` | `sphinx.util._uri` | `is_url`, `encode_uri` (percent-encode path + decode-then-reencode query + IDNA netloc) |
+| `src/sphinxdocrs/src/util_lines.rs` | `sphinx.util._lines` | `parse_line_num_spec` — half-open ranges, comma lists, error messages matching upstream |
+| `src/sphinxdocrs/src/util_docstrings.rs` | `sphinx.util.docstrings` | `prepare_docstring` (strip common indent, leading blanks), `prepare_commentdoc` (`#:` extraction), `separate_metadata` (`:meta …:` field list split) |
 | `src/sphinxdocrs/assets/quickstart/` | `sphinx/templates/quickstart/` | 4 vendored Jinja templates embedded via `include_str!` |
 | `src/sphinxdocrs/assets/apidoc/` | `sphinx/templates/apidoc/` | 3 vendored Jinja templates; `package.rst.jinja` patched: `heading(2)` → `heading2` filter |
 | `src/sphinxdocrs/assets/autosummary/` | `sphinx/ext/autosummary/templates/autosummary/` | 3 vendored RST stub templates embedded via `include_str!` |

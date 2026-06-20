@@ -13,6 +13,7 @@ jobs:
         working-directory: src
     steps:
       - run: git config --global core.checkRoundtrip false
+        working-directory: .
       - uses: actions/checkout@v5
         with:
           submodules: recursive
@@ -36,6 +37,7 @@ jobs:
         working-directory: src
     steps:
       - run: git config --global core.checkRoundtrip false
+        working-directory: .
       - uses: actions/checkout@v5
         with:
           submodules: recursive

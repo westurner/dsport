@@ -27,8 +27,29 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src
+
       #- run: cargo +nightly fmt --all --check
       - run: cargo fmt --all --check
+        working-directory: src/docutilsrs
+      - run: cargo fmt --all --check
+        working-directory: src/jinja2rs
+      - run: cargo fmt --all --check
+        working-directory: src/markupsafers
+      - run: cargo fmt --all --check
+        working-directory: src/mathrenderrs
+      #- run: cargo fmt --all --check
+      #  working-directory: src/minijinja
+      - run: cargo fmt --all --check
+        working-directory: src/myst-md-rs
+      #- run: cargo fmt --all --check
+      #  working-directory: src/pulldown-cmark
+      - run: cargo fmt --all --check
+        working-directory: src/pygmentsrs
+      # - run: cargo fmt --all --check
+      #   working-directory: src/RaTeX
+      - run: cargo fmt --all --check
+        working-directory: src/sphinxdocrs
+
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 

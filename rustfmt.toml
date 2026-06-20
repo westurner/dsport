@@ -1,6 +1,6 @@
+## rustfmt.toml
 
-
-# skip due to upstream cargo fmt errors
-ignore = [
-    "src/RaTeX",
-]
+## skip due to upstream cargo fmt errors
+#ignore = [
+#    "src/RaTeX",
+#]

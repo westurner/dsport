@@ -128,3 +128,101 @@ underlying subsystem is ported.
 | `src/sphinxdocrs/assets/apidoc/` | `sphinx/templates/apidoc/` | 3 vendored Jinja templates; `package.rst.jinja` patched: `heading(2)` → `heading2` filter |
 | `src/sphinxdocrs/assets/autosummary/` | `sphinx/ext/autosummary/templates/autosummary/` | 3 vendored RST stub templates embedded via `include_str!` |
 | `src/sphinxdocrs/tests/parity.rs` | — | Cross-language parity harness; `#[cfg(feature="parity")]`; skips without Python |
+
+## Completion plan for `partial` / `deferred` items
+
+This section sequences the remaining work to flip every **partial** and
+**deferred** row above to **mirrored** / **done**. Order is by dependency
+depth, not by table row: three leaf tasks close most `partial` rows
+immediately, then the rest unlock in a strict chain
+(**full `Config` → `BuildEnvironment` → roles/directives → one builder →
+domains/writers**).
+
+Grounding facts that shape the order:
+
+- `docutilsrs` already provides a doctree, parser, transforms, a Python
+  bridge (`python.rs`), and writers (`html5_writer`, `latex_writer`,
+  `manpage_writer`, `odt_writer`, `zip_writer`). The doctree foundation
+  most P3 items need **already exists**.
+- `src/sphinxdocrs/src/config.rs` exists but covers only the **math-options
+  subset**, not the full `Config`. The `deferred` status for `config.py`
+  is therefore accurate.
+- The remaining work splits into **leaf items** (finishable now) and
+  **subsystem items** gated behind `config` → `environment` → `builders`.
+
+### Dependency graph
+
+```mermaid
+graph TD
+    A[G1: util leaf fns] --> Z[leaf partials closed]
+    B[G2: addnodes] --> R
+    C[G3: full Config] --> ENV
+    ENV[G4: BuildEnvironment] --> R[G5: roles/directives]
+    ENV --> REG[registry P3 methods]
+    ENV --> UID[versioning UIDTransform]
+    R --> DOM[G6: domains]
+    R --> B1[G7: html builder]
+    B1 --> APP[G8: full Sphinx app]
+    APP --> CLI[build -b native]
+    B1 --> W[G9: remaining writers]
+    DOM --> HL[highlighting via pygmentsrs]
+```
+
+### Tier 0 — leaf items (no new subsystem required)
+
+| id | task | file(s) | closes row | gate |
+| --- | --- | --- | --- | --- |
+| **G1** | Port remaining `util/*` fns: `copyfile` (pure FS → `util_osutil`), `_prepend_prologue` / `_append_epilogue` (operate on a line-list shim). `default_role` stays deferred to **G5** (needs role registry) and becomes the only remaining util gap. | `util_osutil.rs`, `util_rst.rs` | `test_util/` → mirrored | extend `tests/util_rst_osutil.rs`, `tests/util_extra.rs` with upstream `test_util.py` cases |
+| **G2** | Port `addnodes.py` natively: add Sphinx-specific node types (`toctree`, `pending_xref`, `desc`, `index`, `seealso`, …) as `sphinxdocrs::addnodes` extending `docutilsrs::doctree`. Prerequisite for roles/directives/domains. | new `src/addnodes.rs` | `test_addnodes.py` → mirrored | mirror `test_addnodes.py` |
+
+### Tier 1 — full `Config` (unblocks the whole chain)
+
+| id | task | closes row | gate |
+| --- | --- | --- | --- |
+| **G3** | Promote `config.rs` from the math subset to the full `sphinx.config.Config`: `ConfigValue` registry, `add()`, default/`rebuild` metadata, `setup()` hook, `init_values`, `convert_overrides`, `pre_init_values`, env-var overrides, value coercion (`bool`/`int`/`list`/`Any`). Keep PyO3 `exec()` of `conf.py`, but read **all** values. | `config.py` → mirrored | mirror `test_config/` parametrized suites |
+
+### Tier 2 — environment + role/directive registry
+
+| id | task | closes row | gate |
+| --- | --- | --- | --- |
+| **G4** | `BuildEnvironment` skeleton: docname tracking, `temp_data`, `metadata`, `titles`, `toc_num_entries`, `dependencies`, domain-data dict, `found_docs`. Depends on **G3** + `Project` (done). | `environment/` → in progress | env unit tests |
+| **G4a** | registry P3 methods now unblocked: `add_builder` / `add_domain` / `add_translator` / math-renderer registration. | `registry.py` partial → done; `test_extensions/` partial → done | `tests/registry.rs` + `load_extension` cases |
+| **G4b** | versioning `UIDTransform` (needs env). | `versioning.py` partial → done | `test_versioning.py` `SphinxTestApp` cases |
+| **G5** | Port `roles.py` + `directives/` against `docutilsrs` role/directive registry + `addnodes` (G2). Completes `util::default_role` from G1. | `test_roles.py`, `test_directives/` → mirrored | `test_roles.py`, `test_directives/` |
+
+### Tier 3 — first builder + full app
+
+| id | task | closes row | gate |
+| --- | --- | --- | --- |
+| **G7** | `html` builder minimal path: read env, run `docutilsrs::html5_writer`, emit pages + assets via registry CSS/JS plumbing (already present). | `builders/` (html) → in progress | slice of `test_builders/test_build_html.py` |
+| **G8** | Full `Sphinx` application wiring `Config` (G3) + `EventManager` (done) + `registry` (G4a) + `environment` (G4) + html builder (G7). Closes **C2c** native `sphinx-build -b html`. | `test_application.py`, `test_command_line.py`, `test__cli/` → mirrored; **C2c** → done | `test_command_line.py`, `test__cli/` |
+| **G9** | Remaining writers/builders one at a time (`latex`, `manpage`, `epub`, `text`); several `docutilsrs` writers already exist. | `builders/`, `writers/` → incremental | per-builder `test_builders/` + `test_writers/` slice |
+
+### Tier 4 — domains, highlighting, long tail
+
+| id | task | closes row | gate |
+| --- | --- | --- | --- |
+| **G6** | Port `domains/` by payoff: `std` → `py` → `rst` → `js` → `c` → `cpp`. | `domains/` → incremental | `test_domains/` per domain |
+| **G10** | Wire `sphinx.highlighting` to `pygmentsrs` once lexer coverage is sufficient (see `port-pygments-lexer` skill). | `test_highlighting.py` → mirrored | `test_highlighting.py` |
+
+### Keep-as-Python (parity probes only, no Rust port)
+
+`ext/*`, `theming.py` (jinja2-bound), `search/`, `test_intl/`,
+`test_pycode/`, `test_markup/` remain on the Python bridge and are
+revisited only after Tier 3, if at all.
+
+### Suggested execution order
+
+| step | items | rationale |
+| --- | --- | --- |
+| 1 | G1, G2 | leaf wins; G2 unblocks roles/domains |
+| 2 | G3 | single highest-leverage task; unblocks everything |
+| 3 | G4, G4a, G4b | env + close registry/versioning partials |
+| 4 | G5 | roles/directives; finishes `default_role` |
+| 5 | G7 | first builder |
+| 6 | G8 | full app + native `build -b` + cli rows |
+| 7 | G9, G6, G10 | writers, domains, highlighting |
+
+Each step keeps the existing parity discipline: port the upstream test →
+implement → gate on `pytest -q` and `cargo test` → flip the row status in
+this inventory from *partial* / *deferred* to *mirrored* / *done*.

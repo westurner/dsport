@@ -232,7 +232,7 @@ fn debug_wraps_in_markup() {
 #[test]
 fn deref_to_str() {
     let m = Markup::from_safe("hello");
-    let s: &str = &*m;
+    let s: &str = &m;
     assert_eq!(s, "hello");
 }
 
@@ -272,7 +272,7 @@ fn escape_writer_basic() {
     use std::fmt::Write as _;
 
     let mut w = MarkupEscapeWriter::new();
-    write!(w, "{}", "<em>hello</em>").unwrap();
+    write!(w, "<em>hello</em>").unwrap();
     assert_eq!(w.into_markup().as_str(), "&lt;em&gt;hello&lt;/em&gt;");
 }
 
@@ -282,8 +282,8 @@ fn escape_writer_multiple_writes() {
     use std::fmt::Write as _;
 
     let mut w = MarkupEscapeWriter::new();
-    write!(w, "{}", "<a>").unwrap();
-    write!(w, "{}", "&").unwrap();
-    write!(w, "{}", "</a>").unwrap();
+    write!(w, "<a>").unwrap();
+    write!(w, "&").unwrap();
+    write!(w, "</a>").unwrap();
     assert_eq!(w.into_markup().as_str(), "&lt;a&gt;&amp;&lt;/a&gt;");
 }

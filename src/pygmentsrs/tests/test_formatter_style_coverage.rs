@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 //! Style formatter tests - covering token type to style mapping
 //! Target: 20-25 tests for formatters/style.rs branch coverage
 //!

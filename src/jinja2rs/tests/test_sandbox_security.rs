@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 //! Sandbox security tests for Phase 5.
 //!
 //! Port of relevant cases from `src/jinja2/tests/test_security.py` and additional
@@ -292,12 +295,11 @@ fn test_bracket_dunder_access_blocked(sandbox_env: SandboxedEnvironment) {
         json!({"obj": {"__class__": "fake"}}),
     );
     // minijinja may allow dict access via brackets, but the actual dunder should be empty/error
-    match result {
-        Ok(out) => assert!(
+    if let Ok(out) = result {
+        assert!(
             out.is_empty() || !out.contains("class"),
             "bracket dunder access should be safe"
-        ),
-        Err(_) => {} // Expected to error
+        )
     }
 }
 

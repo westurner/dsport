@@ -524,7 +524,6 @@ use clap::Parser;
 use jinja2rs::ansible_inventory::{Inventory, InventorySource};
 use jinja2rs::compat::KubernetesInventorySource;
 use jinja2rs::kubernetes_inventory::KubernetesManifest;
-use serde_yaml;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -532,8 +531,10 @@ use std::str::FromStr;
 
 /// Compatibility mode for template rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 enum Mode {
     /// Drop-in compatible with Python Jinja2 (default)
+    #[default]
     Jinja2,
     /// Native minijinja filter-based approach
     Minijinja,
@@ -543,12 +544,6 @@ enum Mode {
     Kubernetes,
     /// Specialized mode for Docker Compose files with container filters
     DockerCompose,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Jinja2
-    }
 }
 
 impl FromStr for Mode {
@@ -582,20 +577,15 @@ impl std::fmt::Display for Mode {
 }
 
 /// Merge strategy for combining multiple sources
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum MergeStrategy {
     /// First source wins, later sources are ignored
     FirstWins,
     /// Last source wins, later sources override earlier ones (default)
+    #[default]
     LastWins,
     /// Merge arrays and objects recursively
     MergeLists,
-}
-
-impl Default for MergeStrategy {
-    fn default() -> Self {
-        MergeStrategy::LastWins
-    }
 }
 
 impl FromStr for MergeStrategy {
@@ -887,8 +877,8 @@ struct Args {
     /// - first-wins: First source is used, later sources are ignored
     /// - last-wins (default): Last source wins, later sources override earlier ones
     /// - merge-lists: Recursively merge objects and arrays from all sources
-    /// Used when multiple --data-file, --manifest, --inventory, or --compose sources are provided
-    /// Example: --merge-strategy last-wins
+    ///   Used when multiple --data-file, --manifest, --inventory, or --compose sources are provided
+    ///   Example: --merge-strategy last-wins
     #[arg(long, value_name = "STRATEGY", default_value = "last-wins")]
     merge_strategy: MergeStrategy,
 
@@ -905,7 +895,7 @@ struct Args {
 /// - FirstWins: Never modifies base, other is ignored
 /// - LastWins: other overwrites base
 /// - MergeLists: Merges arrays and objects recursively
-/// Returns diff information if merge_diff_log is enabled
+    ///   Returns diff information if merge_diff_log is enabled
 fn merge_json_values_with_strategy(
     base: &mut serde_json::Value,
     other: serde_json::Value,
@@ -1707,12 +1697,10 @@ fn main() {
                     .inventory
                     .first()
                     .map(|p| jinja2rs::compat::AnsibleInventorySource::File(PathBuf::from(p)))
-                    .or_else(|| {
-                        if args.inventory_stdin {
-                            Some(jinja2rs::compat::AnsibleInventorySource::Stdin)
-                        } else {
-                            None
-                        }
+                    .or(if args.inventory_stdin {
+                        Some(jinja2rs::compat::AnsibleInventorySource::Stdin)
+                    } else {
+                        None
                     })
                     .or_else(|| {
                         args.inventory_inline
@@ -1735,12 +1723,10 @@ fn main() {
                     .manifest
                     .first()
                     .map(|p| jinja2rs::compat::KubernetesInventorySource::File(PathBuf::from(p)))
-                    .or_else(|| {
-                        if args.manifest_stdin {
-                            Some(jinja2rs::compat::KubernetesInventorySource::Stdin)
-                        } else {
-                            None
-                        }
+                    .or(if args.manifest_stdin {
+                        Some(jinja2rs::compat::KubernetesInventorySource::Stdin)
+                    } else {
+                        None
                     })
                     .or_else(|| {
                         args.manifest_inline

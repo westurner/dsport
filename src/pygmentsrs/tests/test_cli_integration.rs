@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 //! CLI integration tests for bin/pygmentize.rs
 //! Target: 10-15 tests covering subprocess invocation and argument handling
 //!
@@ -157,7 +160,7 @@ fn test_cli_with_output_format() {
     assert_eq!(code, 0, "LaTeX formatting should exit with code 0");
     assert!(!stdout.is_empty(), "LaTeX output should not be empty");
     // LaTeX output might contain escape sequences or control sequences
-    assert!(stdout.len() > 0, "Output should be generated");
+    assert!(!stdout.is_empty(), "Output should be generated");
 }
 
 #[test]
@@ -269,7 +272,7 @@ fn test_cli_exit_code_failure() {
 #[test]
 fn test_cli_multiple_lexer_formats() {
     // Test: multiple lexer/format combinations
-    let test_cases = vec![
+    let test_cases = [
         ("python", "html"),
         ("python", "latex"),
         ("python", "rst"),

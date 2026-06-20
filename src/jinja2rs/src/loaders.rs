@@ -54,11 +54,8 @@ fn load_from_paths_impl(
     }
 
     // Also try legacy Sphinx `_t` suffix when the template ends in `.jinja`.
-    let legacy_name: Option<String> = if name.ends_with(".jinja") {
-        Some(format!("{}_t", &name[..name.len() - 6]))
-    } else {
-        None
-    };
+    let legacy_name: Option<String> = name.strip_suffix(".jinja")
+        .map(|stripped| format!("{}_t", stripped));
 
     for base in paths {
         // Canonicalize the base once per search root.  Skip roots that cannot
@@ -456,6 +453,7 @@ impl DjangoAppDirectoryLoader {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

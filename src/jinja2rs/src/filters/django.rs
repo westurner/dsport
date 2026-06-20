@@ -108,11 +108,9 @@ pub fn slugify(value: Value) -> String {
         if c.is_ascii_alphanumeric() {
             slug.push(c);
             last_was_hyphen = false;
-        } else if c == '-' || c.is_whitespace() || c == '_' {
-            if !last_was_hyphen {
-                slug.push('-');
-                last_was_hyphen = true;
-            }
+        } else if (c == '-' || c.is_whitespace() || c == '_') && !last_was_hyphen {
+            slug.push('-');
+            last_was_hyphen = true;
         }
         // all other chars are dropped
     }
@@ -306,7 +304,7 @@ pub fn last(value: Value) -> Value {
 
 /// `{{ list|join:", " }}` — Join list items with a separator.
 pub fn join(value: Value, separator: Option<String>) -> String {
-    let sep = separator.unwrap_or_else(|| "".to_string());
+    let sep = separator.unwrap_or_default();
     if let Ok(iter) = value.try_iter() {
         iter.map(|v| v.to_string()).collect::<Vec<_>>().join(&sep)
     } else {
@@ -553,6 +551,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_floatformat_default() {
         // default (-1): round to 1 decimal place, strip trailing zeros
         // Mirrors Django: {{ 3.14159|floatformat }} → "3.1"
@@ -562,6 +561,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_floatformat_fixed() {
         assert_eq!(
             floatformat(Value::from(3.14159_f64), Some(2)).unwrap(),
@@ -570,6 +570,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_floatformat_strip() {
         assert_eq!(
             floatformat(Value::from(3.14000_f64), Some(-2)).unwrap(),

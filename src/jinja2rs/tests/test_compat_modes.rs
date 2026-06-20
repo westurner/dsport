@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 #[cfg(test)]
 mod compat_mode_tests {
     use jinja2rs::{CompatMode, Environment};

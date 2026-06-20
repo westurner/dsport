@@ -200,7 +200,7 @@ impl BBCodeFormatter {
             if style.bold {
                 out.push_str("[/b]");
             }
-            if let Some(_) = style.fg_color {
+            if style.fg_color.is_some() {
                 out.push_str("[/color]");
             }
         }

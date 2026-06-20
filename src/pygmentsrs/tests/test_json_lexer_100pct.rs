@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 //! 100% Branch Coverage Tests for JSON Lexer
 //!
 //! Comprehensive tests for src/pygmentsrs/src/lexers/json.rs
@@ -955,6 +958,7 @@ fn edge_many_comments() {
     );
 }
 
+#[allow(clippy::len_zero)]
 #[test]
 fn edge_empty_input() {
     let result = lex("");

@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 //! Comprehensive branch coverage tests for formatters and colors.
 //!
 //! This file targets specific uncovered branches to reach 100% Rust branch coverage.
@@ -154,21 +157,21 @@ fn test_rgb_to_ansi256_color_cube() {
     // Test RGB cube (6×6×6 for colors that are not grayscale)
     let idx_red = rgb_to_ansi256(255, 0, 0);
     assert!(
-        idx_red >= 16 && idx_red < 232,
+        (16..232).contains(&idx_red),
         "Red cube index {} out of range",
         idx_red
     );
 
     let idx_green = rgb_to_ansi256(0, 255, 0);
     assert!(
-        idx_green >= 16 && idx_green < 232,
+        (16..232).contains(&idx_green),
         "Green cube index {} out of range",
         idx_green
     );
 
     let idx_blue = rgb_to_ansi256(0, 0, 255);
     assert!(
-        idx_blue >= 16 && idx_blue < 232,
+        (16..232).contains(&idx_blue),
         "Blue cube index {} out of range",
         idx_blue
     );
@@ -371,7 +374,7 @@ fn test_style_attribute_combinations() {
     for (token_type, _name) in test_cases {
         let tokens = vec![(token_type, "test".to_string())];
         // Just verify formatters can handle all token types
-        if let Some(_) = format_native("html", &tokens) {
+        if format_native("html", &tokens).is_some() {
             // Success - token type is supported
         }
     }

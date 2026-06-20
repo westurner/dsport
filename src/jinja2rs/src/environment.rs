@@ -473,3 +473,9 @@ impl Environment {
         // This is a no-op since minijinja doesn't support unknown methods by default
     }
 }
+
+impl Default for Environment {
+    fn default() -> Self {
+        Self::new()
+    }
+}

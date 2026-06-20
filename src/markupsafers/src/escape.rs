@@ -214,7 +214,7 @@ mod tests {
     fn markup_escape_writer() {
         use std::fmt::Write as _;
         let mut w = MarkupEscapeWriter::new();
-        write!(w, "{}", "<a> & </a>").unwrap();
+        write!(w, "<a> & </a>").unwrap();
         assert_eq!(w.into_markup().as_str(), "&lt;a&gt; &amp; &lt;/a&gt;");
     }
 

@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 use jinja2rs::Environment;
 use rstest::{fixture, rstest};
 use serde_json::json;

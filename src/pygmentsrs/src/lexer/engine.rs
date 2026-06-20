@@ -345,8 +345,7 @@ pub fn tokenize_with_stack<T: StateTable>(
                     // Lex the matched substring with the same state table,
                     // starting in the specified state (or root).
                     let init = state
-                        .as_ref()
-                        .map(|v| v.clone())
+                        .clone()
                         .unwrap_or_else(|| vec!["root"]);
                     let nested = tokenize_with_stack(table, matched, init);
                     for (nt, nv) in nested {
@@ -374,8 +373,7 @@ pub fn tokenize_with_stack<T: StateTable>(
                                     }
                                     GroupAction::UsingThis { state } => {
                                         let init = state
-                                            .as_ref()
-                                            .map(|v| v.clone())
+                                            .clone()
                                             .unwrap_or_else(|| vec!["root"]);
                                         let nested = tokenize_with_stack(table, s, init);
                                         for (nt, nv) in nested {

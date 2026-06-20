@@ -167,7 +167,7 @@ impl KubernetesManifest {
                             // Index by kind and name
                             resources
                                 .entry(kind.to_string())
-                                .or_insert_with(HashMap::new)
+                                .or_default()
                                 .insert(name.clone(), resource.clone());
 
                             // Also populate convenience accessors

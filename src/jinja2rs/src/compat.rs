@@ -237,20 +237,15 @@ impl KubernetesMode {
 /// Auto-escaping strategy for Django mode.
 ///
 /// Matches the Django `django.template.backends.jinja2` auto-escape defaults.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum DjangoAutoEscape {
     /// Escape `.html`, `.htm`, `.xml` templates (Django default).
     Html,
     /// Always escape all templates.
     Always,
     /// Never auto-escape (opt-in safety).
+    #[default]
     Never,
-}
-
-impl Default for DjangoAutoEscape {
-    fn default() -> Self {
-        DjangoAutoEscape::Html
-    }
 }
 
 /// Django template language compatibility mode.

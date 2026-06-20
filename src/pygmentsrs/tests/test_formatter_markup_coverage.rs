@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 //! Comprehensive branch coverage tests for formatter markup
 //! Target: Cover LaTeX, RTF, SVG, Pango escape sequences and edge cases
 //!
@@ -325,15 +328,15 @@ fn test_groff_special_sequences() {
 
 #[test]
 fn test_formatter_empty_input() {
-    let output = format_with("latex", "");
+    let _output = format_with("latex", "");
     // Empty input should still produce valid output (preamble, etc.)
-    assert!(!output.is_empty() || true); // Some formatters may output nothing
+    // Some formatters may output nothing
 }
 
 #[test]
 fn test_formatter_only_whitespace() {
-    let output = format_with("latex", "   \n  \t  ");
-    assert!(!output.is_empty() || true);
+    let _output = format_with("latex", "   \n  \t  ");
+    // Some formatters may output nothing
 }
 
 #[test]
@@ -371,8 +374,7 @@ fn test_formatter_mixed_content() {
 fn test_formatter_null_bytes() {
     // Should handle or skip special characters gracefully
     let with_special = "before-after";
-    let output = format_with("latex", with_special);
-    assert!(!output.is_empty() || true);
+    let _output = format_with("latex", with_special);
 }
 
 #[test]

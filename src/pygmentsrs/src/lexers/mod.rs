@@ -117,11 +117,8 @@ fn do_insertions(
         let mut oldi = 0usize;
 
         // Drain all insertions whose byte index falls within this token.
-        loop {
-            let next_index = match ins_iter.peek() {
-                Some((idx, _)) => *idx,
-                None => break,
-            };
+        while let Some((idx, _)) = ins_iter.peek() {
+            let next_index = *idx;
             if current_offset + (v_len - oldi) < next_index - current_offset + oldi {
                 break;
             }

@@ -79,7 +79,7 @@ impl I18nProvider {
             // (This is a simplification; full i18n would use CLDR plural rules)
             return if n == 1 {
                 forms
-                    .get(0)
+                    .first()
                     .cloned()
                     .unwrap_or_else(|| singular.to_string())
             } else {

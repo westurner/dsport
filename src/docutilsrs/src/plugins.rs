@@ -9,6 +9,8 @@
 //! implementations, falling back to a Python plugin (if registered)
 //! before degrading to the comment-swallow default.
 
+#![allow(clippy::type_complexity)]
+
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 

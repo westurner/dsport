@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 //! Performance testing for PyO3 bridge vs native Rust implementations
 //!
 //! Benchmarks bridge lex/format operations against native implementations to:

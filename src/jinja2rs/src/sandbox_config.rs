@@ -1624,7 +1624,7 @@ mod tests {
         let builder = SandboxedEnvironmentBuilder::new()
             .with_read_path("/templates")
             .and_then(|b| b.with_write_path("/output"))
-            .and_then(|b| Ok(b.allow_symlinks(false)));
+            .map(|b| b.allow_symlinks(false));
 
         assert!(builder.is_ok());
         let env = builder.unwrap().build();
@@ -1643,7 +1643,7 @@ mod tests {
         let result = SandboxedEnvironmentBuilder::new()
             .with_read_path("/var/templates")
             .and_then(|b| b.with_write_path("/tmp/output"))
-            .and_then(|b| Ok(b.allow_symlinks(false)));
+            .map(|b| b.allow_symlinks(false));
 
         assert!(result.is_ok());
         let env = result.unwrap().build();

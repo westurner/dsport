@@ -34,10 +34,8 @@ pub fn tobool(val: Value) -> bool {
 pub fn toint(val: Value) -> i64 {
     if let Some(s) = val.as_str() {
         s.parse::<i64>().unwrap_or(0)
-    } else if let Ok(n) = i64::try_from(val.clone()) {
-        n
     } else {
-        0
+        i64::try_from(val.clone()).unwrap_or(0)
     }
 }
 
@@ -103,7 +101,7 @@ pub fn slice_index(values: Value, slices: usize) -> Value {
     let items_per_slice = if total == 0 {
         1
     } else {
-        (total + slices - 1) / slices
+        total.div_ceil(slices)
     };
     let mut result: Vec<Value> = Vec::with_capacity(slices);
     let mut offset = 0usize;

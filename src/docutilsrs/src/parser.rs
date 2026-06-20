@@ -8,6 +8,7 @@
     clippy::needless_range_loop,
     clippy::collapsible_if,
     clippy::enum_variant_names,
+    clippy::type_complexity,
     dead_code
 )]
 

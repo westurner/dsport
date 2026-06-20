@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 /// Edge case tests to improve branch coverage on formatters
 /// These tests target uncovered branches identified by llvm-cov
 use pygmentsrs::formatters::registry::format_native;
@@ -76,7 +79,7 @@ fn test_formatter_with_long_lines() {
             assert!(!output.is_empty(), "{} should handle long lines", formatter);
             // Output should still be valid (not malformed)
             assert!(
-                output.len() > 0,
+                !output.is_empty(),
                 "{} produced empty output for long tokens",
                 formatter
             );

@@ -66,9 +66,9 @@ pub fn rgb_to_ansi16(r: u8, g: u8, b: u8) -> u8 {
     let mut best_dist = u32::MAX;
 
     for (idx, &(cr, cg, cb)) in ANSI_16.iter().enumerate() {
-        let dr = (r as i32 - cr as i32).abs() as u32;
-        let dg = (g as i32 - cg as i32).abs() as u32;
-        let db = (b as i32 - cb as i32).abs() as u32;
+        let dr = (r as i32 - cr as i32).unsigned_abs();
+        let dg = (g as i32 - cg as i32).unsigned_abs();
+        let db = (b as i32 - cb as i32).unsigned_abs();
         let dist = dr * dr + dg * dg + db * db;
 
         if dist < best_dist {
@@ -133,9 +133,9 @@ pub fn rgb_to_mirc(r: u8, g: u8, b: u8) -> u8 {
     let mut best_dist = u32::MAX;
 
     for (idx, &(cr, cg, cb)) in MIRC_COLORS.iter().enumerate() {
-        let dr = (r as i32 - cr as i32).abs() as u32;
-        let dg = (g as i32 - cg as i32).abs() as u32;
-        let db = (b as i32 - cb as i32).abs() as u32;
+        let dr = (r as i32 - cr as i32).unsigned_abs();
+        let dg = (g as i32 - cg as i32).unsigned_abs();
+        let db = (b as i32 - cb as i32).unsigned_abs();
         let dist = dr * dr + dg * dg + db * db;
 
         if dist < best_dist {

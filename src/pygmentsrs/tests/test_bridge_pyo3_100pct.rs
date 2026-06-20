@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 //! PyO3 bridge tests — 100% branch coverage for Python ↔ Rust FFI boundary
 //!
 //! Tests the `pygmentsrs::bridge` module which provides fallback access to
@@ -337,7 +340,7 @@ mod bridge_tests {
         );
         // HTML formatter typically produces <div> wrapper
         assert!(
-            output.contains("<") || output.len() > 0,
+            output.contains("<") || !output.is_empty(),
             "html output should have markup or content"
         );
     }

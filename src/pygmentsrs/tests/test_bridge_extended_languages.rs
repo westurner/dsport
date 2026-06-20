@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 //! Extended language coverage for PyO3 bridge
 //!
 //! Tests additional lexer/formatter combinations and error recovery patterns:
@@ -117,8 +120,7 @@ class Program {
 }
 "#;
         let result = bridge::lex("csharp", code);
-        if result.is_some() {
-            let tokens = result.unwrap();
+        if let Some(tokens) = result {
             assert!(!tokens.is_empty(), "C# code should produce tokens");
         }
     }
@@ -135,8 +137,7 @@ greet("PHP");
 ?>
 "#;
         let result = bridge::lex("php", code);
-        if result.is_some() {
-            let tokens = result.unwrap();
+        if let Some(tokens) = result {
             assert!(!tokens.is_empty(), "PHP code should produce tokens");
         }
     }
@@ -188,8 +189,7 @@ interface Container<T> {
 }
 "#;
         let result = bridge::lex("typescript", code);
-        if result.is_some() {
-            let tokens = result.unwrap();
+        if let Some(tokens) = result {
             assert!(!tokens.is_empty());
         }
     }
@@ -209,8 +209,7 @@ const char* max(const char* a, const char* b) {
 }
 "#;
         let result = bridge::lex("cpp", code);
-        assert!(result.is_some());
-        let tokens = result.unwrap();
+        let tokens = result.expect("cpp lexing should succeed");
         assert!(!tokens.is_empty());
     }
 
@@ -227,8 +226,7 @@ HAVING COUNT(o.id) > 5
 ORDER BY order_count DESC;
 "#;
         let result = bridge::lex("sql", code);
-        if result.is_some() {
-            let tokens = result.unwrap();
+        if let Some(tokens) = result {
             assert!(!tokens.is_empty());
         }
     }
@@ -244,8 +242,7 @@ def func(x:
 "#;
         let result = bridge::lex("python", incomplete);
         // Should still tokenize despite syntax error
-        assert!(result.is_some());
-        let tokens = result.unwrap();
+        let tokens = result.expect("python lexing should succeed");
         assert!(!tokens.is_empty());
     }
 
@@ -255,8 +252,7 @@ def func(x:
         let code = r#"x = "unclosed string"#;
         let result = bridge::lex("python", code);
         // Should still tokenize
-        assert!(result.is_some());
-        let tokens = result.unwrap();
+        let tokens = result.expect("python lexing should succeed");
         assert!(!tokens.is_empty());
     }
 
@@ -265,8 +261,7 @@ def func(x:
         skip_if_needed!();
         let json = r#"{"key": "value""#;
         let result = bridge::lex("json", json);
-        assert!(result.is_some());
-        let tokens = result.unwrap();
+        let tokens = result.expect("json lexing should succeed");
         assert!(!tokens.is_empty());
     }
 
@@ -275,8 +270,7 @@ def func(x:
         skip_if_needed!();
         let html = r#"<div><p>Content</div>"#;
         let result = bridge::lex("html", html);
-        if result.is_some() {
-            let tokens = result.unwrap();
+        if let Some(tokens) = result {
             assert!(!tokens.is_empty());
         }
     }
@@ -297,8 +291,7 @@ def hello():
 More text
 "#;
         let result = bridge::lex("markdown", markdown);
-        if result.is_some() {
-            let tokens = result.unwrap();
+        if let Some(tokens) = result {
             assert!(!tokens.is_empty());
         }
     }
@@ -316,8 +309,7 @@ function onClick() {
 </html>
 "#;
         let result = bridge::lex("html", html);
-        if result.is_some() {
-            let tokens = result.unwrap();
+        if let Some(tokens) = result {
             assert!(!tokens.is_empty());
         }
     }
@@ -334,8 +326,7 @@ function onClick() {
 </root>
 "#;
         let result = bridge::lex("xml", xml);
-        if result.is_some() {
-            let tokens = result.unwrap();
+        if let Some(tokens) = result {
             assert!(!tokens.is_empty());
         }
     }
@@ -374,8 +365,7 @@ function onClick() {
             ("Token.String".to_string(), r#""test""#.to_string()),
         ];
         let result = bridge::format("terminal16", &tokens);
-        if result.is_some() {
-            let output = result.unwrap();
+        if let Some(output) = result {
             assert!(!output.is_empty());
         }
     }

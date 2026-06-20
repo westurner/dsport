@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 //! Fuzz testing for PyO3 bridge with property-based tests
 //!
 //! Uses quickcheck to generate random inputs and verify:

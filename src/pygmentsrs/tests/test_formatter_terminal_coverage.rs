@@ -1,3 +1,6 @@
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+
 //! Terminal formatter tests - covering ANSI attributes and color codes
 //! Target: 15-20 tests for formatters/terminal.rs branch coverage
 //!

@@ -171,7 +171,7 @@ fn is_iri_like(s: &str) -> bool {
         || s.starts_with("doi:")
         || (s.contains(':')
             && !s.contains(' ')
-            && s.chars().next().map_or(false, |c| c.is_alphabetic()))
+            && s.chars().next().is_some_and(|c| c.is_alphabetic()))
 }
 
 // ── Token type for IRI values ───────────────────────────────────────────────
@@ -386,14 +386,14 @@ fn find_plain_key_colon(s: &str) -> Option<usize> {
     // A mapping key's `:` must be followed by space or end-of-line.
     let bytes = s.as_bytes();
     for i in 0..bytes.len() {
-        if bytes[i] == b':' {
-            if i + 1 >= bytes.len() || bytes[i + 1] == b' ' || bytes[i + 1] == b'\n' {
-                // Exclude URLs: if we already passed `://`, skip
-                if i >= 3 && &bytes[i - 2..i + 1] == b"://" {
-                    continue;
-                }
-                return Some(i);
+        if bytes[i] == b':'
+            && (i + 1 >= bytes.len() || bytes[i + 1] == b' ' || bytes[i + 1] == b'\n')
+        {
+            // Exclude URLs: if we already passed `://`, skip
+            if i >= 3 && &bytes[i - 2..i + 1] == b"://" {
+                continue;
             }
+            return Some(i);
         }
     }
     None
@@ -616,7 +616,7 @@ fn tokenize_flow_collection(s: &str, out: &mut Vec<(TokenType, String)>) {
 fn split_inline_comment(s: &str) -> (&str, Option<&str>) {
     // A YAML inline comment starts with ` # ` (space hash space).
     if let Some(pos) = find_inline_comment(s) {
-        (&s[..pos].trim_end(), Some(&s[pos..]))
+        (s[..pos].trim_end(), Some(&s[pos..]))
     } else {
         (s, None)
     }

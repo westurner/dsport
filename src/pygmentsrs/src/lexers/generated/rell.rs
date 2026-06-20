@@ -1,3 +1,5 @@
+#![allow(clippy::invisible_characters)]
+
 //! AUTO-GENERATED from `pygments.pygments.lexers.rell:RellLexer`.
 //!
 //! Do not edit by hand. Regenerate with:

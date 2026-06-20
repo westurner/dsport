@@ -1,3 +1,5 @@
+#![allow(clippy::invisible_characters)]
+
 //! AUTO-GENERATED lexers transpiled from vendored Pygments.
 //!
 //! Each submodule is produced by `tools/gen_lexer.py` and must not be

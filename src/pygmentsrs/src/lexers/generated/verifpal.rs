@@ -1,3 +1,5 @@
+#![allow(clippy::invisible_characters)]
+
 //! AUTO-GENERATED from `pygments.pygments.lexers.verifpal:VerifpalLexer`.
 //!
 //! Do not edit by hand. Regenerate with:

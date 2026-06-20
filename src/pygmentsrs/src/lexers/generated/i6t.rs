@@ -1,3 +1,5 @@
+#![allow(clippy::invisible_characters)]
+
 //! AUTO-GENERATED from `pygments.pygments.lexers.int_fiction:Inform6TemplateLexer`.
 //!
 //! Do not edit by hand. Regenerate with:

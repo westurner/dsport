@@ -1,3 +1,5 @@
+#![allow(clippy::invisible_characters)]
+
 //! AUTO-GENERATED from `pygments.pygments.lexers.macaulay2:Macaulay2Lexer`.
 //!
 //! Do not edit by hand. Regenerate with:

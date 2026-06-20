@@ -1,3 +1,5 @@
+#![allow(clippy::invisible_characters)]
+
 //! AUTO-GENERATED from `pygments.pygments.lexers.meson:MesonLexer`.
 //!
 //! Do not edit by hand. Regenerate with:

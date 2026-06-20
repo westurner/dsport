@@ -1,3 +1,5 @@
+#![allow(clippy::invisible_characters)]
+
 //! AUTO-GENERATED from `pygments.pygments.lexers.lean:Lean3Lexer`.
 //!
 //! Do not edit by hand. Regenerate with:

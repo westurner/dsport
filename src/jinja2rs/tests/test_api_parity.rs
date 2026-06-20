@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Parity tests for jinja2rs API against upstream Jinja2
 //!
 //! Tests the public API: Environment, template rendering, globals, etc.
@@ -17,28 +16,38 @@ use std::collections::HashMap;
 #[test]
 fn test_environment_creation_exact() {
     let env = Environment::new();
-    
+
     // Verify crate-level features are available
     assert!(!jinja2rs::features().is_empty());
-    
+
     // Verify environment can render a simple template
     let result = env.render_str("test", &json!({})).unwrap();
     assert_eq!(result, "test");
-    
+
     // Verify filters are registered: test basic upper filter
     let result = env.render_str("{{ 'hello' | upper }}", &json!({})).unwrap();
     assert_eq!(result, "HELLO");
-    
+
     // Verify globals are available: test cycler global
-    let result = env.render_str("{% for i in [1,2] %}{{ cycler('a', 'b') }}{% endfor %}", &json!({})).unwrap();
+    let result = env
+        .render_str(
+            "{% for i in [1,2] %}{{ cycler('a', 'b') }}{% endfor %}",
+            &json!({}),
+        )
+        .unwrap();
     assert!(result.contains("a") || result.contains("b"));
-    
+
     // Verify Sphinx-specific filters work: tobool
     let result = env.render_str("{{ 'true' | tobool }}", &json!({})).unwrap();
     assert_eq!(result, "true");
-    
+
     // Verify joiner global is available
-    let result = env.render_str("{% set j = joiner() %}{{ j(' ') }}{{ j('a') }}{{ j('b') }}", &json!({})).unwrap();
+    let result = env
+        .render_str(
+            "{% set j = joiner() %}{{ j(' ') }}{{ j('a') }}{{ j('b') }}",
+            &json!({}),
+        )
+        .unwrap();
     assert!(result.contains("a") && result.contains("b"));
 }
 

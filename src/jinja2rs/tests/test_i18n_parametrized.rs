@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Parametrized i18n (Phase 6) tests with rstest.
 //!
 //! Tests for gettext/ngettext translation globals.

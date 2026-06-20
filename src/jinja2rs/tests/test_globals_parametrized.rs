@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Parametrized global and utility tests with rstest fixtures and mocks.
 //!
 //! Demonstrates:

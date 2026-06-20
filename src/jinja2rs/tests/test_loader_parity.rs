@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Parity tests for jinja2rs loaders against upstream Jinja2
 //!
 //! Tests filesystem loading, dict loading, choice loading, and related functionality.

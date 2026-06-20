@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Sandbox security tests for Phase 5.
 //!
 //! Port of relevant cases from `src/jinja2/tests/test_security.py` and additional

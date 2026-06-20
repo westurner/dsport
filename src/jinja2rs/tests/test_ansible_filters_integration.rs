@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Integration tests for Ansible template rendering with filters.
 //!
 //! Tests real-world Ansible use cases combining inventory, filters, and templates.

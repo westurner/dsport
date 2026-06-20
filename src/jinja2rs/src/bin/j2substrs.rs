@@ -530,8 +530,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 /// Compatibility mode for template rendering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Mode {
     /// Drop-in compatible with Python Jinja2 (default)
     #[default]
@@ -895,7 +894,7 @@ struct Args {
 /// - FirstWins: Never modifies base, other is ignored
 /// - LastWins: other overwrites base
 /// - MergeLists: Merges arrays and objects recursively
-    ///   Returns diff information if merge_diff_log is enabled
+///   Returns diff information if merge_diff_log is enabled
 fn merge_json_values_with_strategy(
     base: &mut serde_json::Value,
     other: serde_json::Value,

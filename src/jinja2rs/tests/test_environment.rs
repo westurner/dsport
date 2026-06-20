@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Integration snapshot tests for jinja2rs.
 //!
 //! Each test renders a template and asserts the output against an insta

@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Integration tests for Django template compatibility mode.
 //!
 //! These tests verify that `Environment::with_django_mode` renders Django
@@ -100,8 +99,11 @@ fn django_add_filter() {
 fn django_floatformat_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ pi|floatformat(2) }}", json!({"pi": std::f64::consts::PI}))
-            .unwrap(),
+        env.render_str(
+            "{{ pi|floatformat(2) }}",
+            json!({"pi": std::f64::consts::PI})
+        )
+        .unwrap(),
         "3.14"
     );
 }

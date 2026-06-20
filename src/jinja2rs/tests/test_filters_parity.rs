@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Parity tests for jinja2rs filters against upstream Jinja2
 //!
 //! These tests verify that jinja2rs filters produce equivalent output to Python Jinja2.

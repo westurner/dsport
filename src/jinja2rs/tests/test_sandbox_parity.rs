@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Parity tests for jinja2rs sandbox security against upstream Jinja2
 //!
 //! Tests the SandboxedEnvironment and security features that prevent

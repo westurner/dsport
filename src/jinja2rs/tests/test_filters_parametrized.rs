@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Parametrized filter tests with rstest.
 //!
 //! Demonstrates comprehensive filter testing with:

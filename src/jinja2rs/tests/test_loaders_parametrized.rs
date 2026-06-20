@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-
 //! Parametrized loader tests using rstest fixtures and mocking.
 //!
 //! Demonstrates best practices for:

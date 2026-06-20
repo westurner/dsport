@@ -54,7 +54,8 @@ fn load_from_paths_impl(
     }
 
     // Also try legacy Sphinx `_t` suffix when the template ends in `.jinja`.
-    let legacy_name: Option<String> = name.strip_suffix(".jinja")
+    let legacy_name: Option<String> = name
+        .strip_suffix(".jinja")
         .map(|stripped| format!("{}_t", stripped));
 
     for base in paths {

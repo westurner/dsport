@@ -24,3 +24,35 @@ repos:
         stages: [commit]
         pass_filenames: false
         always_run: true
+
+      - id: python-develop-pygmentsrs
+        name: python develop pygmentsrs (maturin develop)
+        entry: bash -c 'cd src && .venv/bin/maturin develop --release --manifest-path pygmentsrs/Cargo.toml'
+        language: system
+        stages: [commit]
+        pass_filenames: false
+        always_run: true
+
+      - id: python-develop-docutilsrs
+        name: python develop docutilsrs (maturin develop)
+        entry: bash -c 'cd src && .venv/bin/maturin develop --release --manifest-path docutilsrs/Cargo.toml'
+        language: system
+        stages: [commit]
+        pass_filenames: false
+        always_run: true
+
+      - id: python-develop-sphinxdocrs
+        name: python develop sphinxdocrs (maturin develop)
+        entry: bash -c 'cd src && .venv/bin/maturin develop --release --manifest-path sphinxdocrs/Cargo.toml'
+        language: system
+        stages: [commit]
+        pass_filenames: false
+        always_run: true
+
+      - id: python-test
+        name: python test (pytest)
+        entry: bash -c 'cd src && .venv/bin/pytest -l tests/ -q --cov=. --cov-branch --cov-report=xml:cov.xml --junitxml=pytest-results.xml tests/'
+        language: system
+        stages: [commit]
+        pass_filenames: false
+        always_run: true

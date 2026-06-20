@@ -1,4 +1,6 @@
-# Ignore vendored upstream sources pulled in as path dependencies.
-ignore = [
-    "RaTeX",
-]
+## rustfmt.toml
+
+## skip due to upstream cargo fmt errors
+#ignore = [
+#    "src/RaTeX",
+#]

@@ -25,26 +25,52 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?ms)[^{]+", OTHER),
-        Rule::bygroups(r"(?ms)(\{)(\*.*?\*)(\})", vec![Some(COMMENT_PREPROC), Some(COMMENT), Some(COMMENT_PREPROC)]),
-        Rule::bygroups_g(r"(?ms)(\{php\})(.*?)(\{/php\})", vec![Some(GroupAction::Token(COMMENT_PREPROC)), Some(GroupAction::UsingLexer { alias: "php", state: None }), Some(GroupAction::Token(COMMENT_PREPROC))]),
-        Rule::bygroups_to(r"(?ms)(\{)(/?[a-zA-Z_]\w*)(\s*)", vec![Some(COMMENT_PREPROC), Some(NAME_FUNCTION), Some(TEXT)], NewState::Push(vec![r"smarty"])),
-        Rule::token_to(r"(?ms)\{", COMMENT_PREPROC, NewState::Push(vec![r"smarty"])),
-    ]);
-    m.insert(r"smarty", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token_to(r"(?ms)\{", COMMENT_PREPROC, NewState::PushSame),
-        Rule::token_to(r"(?ms)\}", COMMENT_PREPROC, NewState::Pop(1)),
-        Rule::token(r"(?ms)#[a-zA-Z_]\w*#", NAME_VARIABLE),
-        Rule::token(r"(?ms)\$[a-zA-Z_]\w*(\.\w+)*", NAME_VARIABLE),
-        Rule::token(r"(?ms)[~!%^&*()+=|\[\]:;,.<>/?@-]", OPERATOR),
-        Rule::token(r"(?ms)(true|false|null)\b", KEYWORD_CONSTANT),
-        Rule::token(r"(?ms)[0-9](\.[0-9]*)?(eE[+-][0-9])?[flFLdD]?|0[xX][0-9a-fA-F]+[Ll]?", NUMBER),
-        Rule::token(r#"(?ms)"(\\\\|\\[^\\]|[^"\\])*""#, STRING_DOUBLE),
-        Rule::token(r"(?ms)'(\\\\|\\[^\\]|[^'\\])*'", STRING_SINGLE),
-        Rule::token(r"(?ms)[a-zA-Z_]\w*", NAME_ATTRIBUTE),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?ms)[^{]+", OTHER),
+            Rule::bygroups(
+                r"(?ms)(\{)(\*.*?\*)(\})",
+                vec![Some(COMMENT_PREPROC), Some(COMMENT), Some(COMMENT_PREPROC)],
+            ),
+            Rule::bygroups_g(
+                r"(?ms)(\{php\})(.*?)(\{/php\})",
+                vec![
+                    Some(GroupAction::Token(COMMENT_PREPROC)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "php",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(COMMENT_PREPROC)),
+                ],
+            ),
+            Rule::bygroups_to(
+                r"(?ms)(\{)(/?[a-zA-Z_]\w*)(\s*)",
+                vec![Some(COMMENT_PREPROC), Some(NAME_FUNCTION), Some(TEXT)],
+                NewState::Push(vec![r"smarty"]),
+            ),
+            Rule::token_to(r"(?ms)\{", COMMENT_PREPROC, NewState::Push(vec![r"smarty"])),
+        ],
+    );
+    m.insert(
+        r"smarty",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token_to(r"(?ms)\{", COMMENT_PREPROC, NewState::PushSame),
+            Rule::token_to(r"(?ms)\}", COMMENT_PREPROC, NewState::Pop(1)),
+            Rule::token(r"(?ms)#[a-zA-Z_]\w*#", NAME_VARIABLE),
+            Rule::token(r"(?ms)\$[a-zA-Z_]\w*(\.\w+)*", NAME_VARIABLE),
+            Rule::token(r"(?ms)[~!%^&*()+=|\[\]:;,.<>/?@-]", OPERATOR),
+            Rule::token(r"(?ms)(true|false|null)\b", KEYWORD_CONSTANT),
+            Rule::token(
+                r"(?ms)[0-9](\.[0-9]*)?(eE[+-][0-9])?[flFLdD]?|0[xX][0-9a-fA-F]+[Ll]?",
+                NUMBER,
+            ),
+            Rule::token(r#"(?ms)"(\\\\|\\[^\\]|[^"\\])*""#, STRING_DOUBLE),
+            Rule::token(r"(?ms)'(\\\\|\\[^\\]|[^'\\])*'", STRING_SINGLE),
+            Rule::token(r"(?ms)[a-zA-Z_]\w*", NAME_ATTRIBUTE),
+        ],
+    );
     Table(m)
 }
 

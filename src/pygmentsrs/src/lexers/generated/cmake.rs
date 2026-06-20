@@ -35,11 +35,14 @@ fn build_table() -> Table {
     m.insert(r"keywords", vec![
         Rule::token(r"(?m)\b(WIN32|UNIX|APPLE|CYGWIN|BORLAND|MINGW|MSVC|MSVC_IDE|MSVC60|MSVC70|MSVC71|MSVC80|MSVC90)\b", KEYWORD),
     ]);
-    m.insert(r"ws", vec![
-        Rule::token(r"(?m)[ \t]+", WHITESPACE),
-        Rule::token(r"(?m)#\[(?P<level>=*)\[[\w\W]*?\](?P=level)\]", COMMENT),
-        Rule::token(r"(?m)#.*\n", COMMENT),
-    ]);
+    m.insert(
+        r"ws",
+        vec![
+            Rule::token(r"(?m)[ \t]+", WHITESPACE),
+            Rule::token(r"(?m)#\[(?P<level>=*)\[[\w\W]*?\](?P=level)\]", COMMENT),
+            Rule::token(r"(?m)#.*\n", COMMENT),
+        ],
+    );
     m.insert(r"args", vec![
         Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::PushSame),
         Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
@@ -56,8 +59,7 @@ fn build_table() -> Table {
         Rule::token(r"(?m)#\[(?P<level>=*)\[[\w\W]*?\](?P=level)\]", COMMENT),
         Rule::token(r"(?m)#.*\n", COMMENT),
     ]);
-    m.insert(r"string", vec![
-    ]);
+    m.insert(r"string", vec![]);
     Table(m)
 }
 

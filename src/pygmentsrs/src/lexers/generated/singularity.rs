@@ -34,9 +34,15 @@ fn build_table() -> Table {
         Rule::token(r"(?ims)[ \t]+", WHITESPACE),
         Rule::token(r"(?ims)(?!^\s*%).", TEXT),
     ]);
-    m.insert(r"script", vec![
-        Rule::using_lexer_to(r"(?ims)(.+?(?=^\s*%))|(.*)", "bash", None, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"script",
+        vec![Rule::using_lexer_to(
+            r"(?ims)(.+?(?=^\s*%))|(.*)",
+            "bash",
+            None,
+            NewState::Pop(1),
+        )],
+    );
     Table(m)
 }
 

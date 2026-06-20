@@ -25,32 +25,76 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token_to(r"(?ims)^#![ \S]+lasso9\b", COMMENT_PREPROC, NewState::Push(vec![r"lasso"])),
-        Rule::token_to(r"(?ims)(?=\[|<)", OTHER, NewState::Push(vec![r"delimiters"])),
-        Rule::token(r"(?ims)\s+", WHITESPACE),
-        Rule::default(NewState::Push(vec![r"delimiters", r"lassofile"])),
-    ]);
-    m.insert(r"delimiters", vec![
-        Rule::token_to(r"(?ims)\[no_square_brackets\]", COMMENT_PREPROC, NewState::Push(vec![r"nosquarebrackets"])),
-        Rule::token_to(r"(?ims)\[noprocess\]", COMMENT_PREPROC, NewState::Push(vec![r"noprocess"])),
-        Rule::token_to(r"(?ims)\[", COMMENT_PREPROC, NewState::Push(vec![r"squarebrackets"])),
-        Rule::token_to(r"(?ims)<\?(lasso(script)?|=)", COMMENT_PREPROC, NewState::Push(vec![r"anglebrackets"])),
-        Rule::token(r"(?ims)<(!--.*?-->)?", OTHER),
-        Rule::token(r"(?ims)[^\[<]+", OTHER),
-    ]);
-    m.insert(r"nosquarebrackets", vec![
-        Rule::token_to(r"(?ims)\[noprocess\]", COMMENT_PREPROC, NewState::Push(vec![r"noprocess"])),
-        Rule::token(r"(?ims)\[", OTHER),
-        Rule::token_to(r"(?ims)<\?(lasso(script)?|=)", COMMENT_PREPROC, NewState::Push(vec![r"anglebrackets"])),
-        Rule::token(r"(?ims)<(!--.*?-->)?", OTHER),
-        Rule::token(r"(?ims)[^\[<]+", OTHER),
-    ]);
-    m.insert(r"noprocess", vec![
-        Rule::token_to(r"(?ims)\[/noprocess\]", COMMENT_PREPROC, NewState::Pop(1)),
-        Rule::token(r"(?ims)\[", OTHER),
-        Rule::token(r"(?ims)[^\[]", OTHER),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token_to(
+                r"(?ims)^#![ \S]+lasso9\b",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"lasso"]),
+            ),
+            Rule::token_to(
+                r"(?ims)(?=\[|<)",
+                OTHER,
+                NewState::Push(vec![r"delimiters"]),
+            ),
+            Rule::token(r"(?ims)\s+", WHITESPACE),
+            Rule::default(NewState::Push(vec![r"delimiters", r"lassofile"])),
+        ],
+    );
+    m.insert(
+        r"delimiters",
+        vec![
+            Rule::token_to(
+                r"(?ims)\[no_square_brackets\]",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"nosquarebrackets"]),
+            ),
+            Rule::token_to(
+                r"(?ims)\[noprocess\]",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"noprocess"]),
+            ),
+            Rule::token_to(
+                r"(?ims)\[",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"squarebrackets"]),
+            ),
+            Rule::token_to(
+                r"(?ims)<\?(lasso(script)?|=)",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"anglebrackets"]),
+            ),
+            Rule::token(r"(?ims)<(!--.*?-->)?", OTHER),
+            Rule::token(r"(?ims)[^\[<]+", OTHER),
+        ],
+    );
+    m.insert(
+        r"nosquarebrackets",
+        vec![
+            Rule::token_to(
+                r"(?ims)\[noprocess\]",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"noprocess"]),
+            ),
+            Rule::token(r"(?ims)\[", OTHER),
+            Rule::token_to(
+                r"(?ims)<\?(lasso(script)?|=)",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"anglebrackets"]),
+            ),
+            Rule::token(r"(?ims)<(!--.*?-->)?", OTHER),
+            Rule::token(r"(?ims)[^\[<]+", OTHER),
+        ],
+    );
+    m.insert(
+        r"noprocess",
+        vec![
+            Rule::token_to(r"(?ims)\[/noprocess\]", COMMENT_PREPROC, NewState::Pop(1)),
+            Rule::token(r"(?ims)\[", OTHER),
+            Rule::token(r"(?ims)[^\[]", OTHER),
+        ],
+    );
     m.insert(r"squarebrackets", vec![
         Rule::token_to(r"(?ims)\]", COMMENT_PREPROC, NewState::Pop(1)),
         Rule::token(r"(?ims)\s+", WHITESPACE),
@@ -138,12 +182,18 @@ fn build_table() -> Table {
         Rule::token(r"(?ims):=|[-+*/%=<>&|!?\\]+", OPERATOR),
         Rule::token(r"(?ims)[{}():;,@^]", PUNCTUATION),
     ]);
-    m.insert(r"whitespacecomments", vec![
-        Rule::token(r"(?ims)\s+", WHITESPACE),
-        Rule::bygroups(r"(?ims)(//.*?)(\s*)$", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)]),
-        Rule::token(r"(?ims)/\*\*!.*?\*/", STRING_DOC),
-        Rule::token(r"(?ims)/\*.*?\*/", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"whitespacecomments",
+        vec![
+            Rule::token(r"(?ims)\s+", WHITESPACE),
+            Rule::bygroups(
+                r"(?ims)(//.*?)(\s*)$",
+                vec![Some(COMMENT_SINGLE), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?ims)/\*\*!.*?\*/", STRING_DOC),
+            Rule::token(r"(?ims)/\*.*?\*/", COMMENT_MULTILINE),
+        ],
+    );
     m.insert(r"anglebrackets", vec![
         Rule::token_to(r"(?ims)\?>", COMMENT_PREPROC, NewState::Pop(1)),
         Rule::token(r"(?ims)\s+", WHITESPACE),
@@ -339,29 +389,58 @@ fn build_table() -> Table {
         Rule::token(r"(?ims):=|[-+*/%=<>&|!?\\]+", OPERATOR),
         Rule::token(r"(?ims)[{}():;,@^]", PUNCTUATION),
     ]);
-    m.insert(r"requiresection", vec![
-        Rule::token_to(r"(?ims)(([a-z_][\w.]*=?|[-+*/%])(?=\s*\())", NAME, NewState::Push(vec![r"requiresignature"])),
-        Rule::token(r"(?ims)(([a-z_][\w.]*=?|[-+*/%])(?=(\s*::\s*[\w.]+)?\s*,))", NAME),
-        Rule::token_to(r"(?ims)[a-z_][\w.]*=?|[-+*/%]", NAME, NewState::Pop(1)),
-        Rule::bygroups(r"(?ims)(::)(\s*)([a-z_][\w.]*)", vec![Some(PUNCTUATION), Some(WHITESPACE), Some(NAME_LABEL)]),
-        Rule::token(r"(?ims),", PUNCTUATION),
-        Rule::token(r"(?ims)\s+", WHITESPACE),
-        Rule::bygroups(r"(?ims)(//.*?)(\s*)$", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)]),
-        Rule::token(r"(?ims)/\*\*!.*?\*/", STRING_DOC),
-        Rule::token(r"(?ims)/\*.*?\*/", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"requiresignature", vec![
-        Rule::token_to(r"(?ims)(\)(?=(\s*::\s*[\w.]+)?\s*,))", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?ims)\)", PUNCTUATION, NewState::Pop(2)),
-        Rule::token(r"(?ims)-?[a-z_][\w.]*", NAME_ATTRIBUTE),
-        Rule::bygroups(r"(?ims)(::)(\s*)([a-z_][\w.]*)", vec![Some(PUNCTUATION), Some(WHITESPACE), Some(NAME_LABEL)]),
-        Rule::token(r"(?ims)\.\.\.", NAME_BUILTIN_PSEUDO),
-        Rule::token(r"(?ims)[(,]", PUNCTUATION),
-        Rule::token(r"(?ims)\s+", WHITESPACE),
-        Rule::bygroups(r"(?ims)(//.*?)(\s*)$", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)]),
-        Rule::token(r"(?ims)/\*\*!.*?\*/", STRING_DOC),
-        Rule::token(r"(?ims)/\*.*?\*/", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"requiresection",
+        vec![
+            Rule::token_to(
+                r"(?ims)(([a-z_][\w.]*=?|[-+*/%])(?=\s*\())",
+                NAME,
+                NewState::Push(vec![r"requiresignature"]),
+            ),
+            Rule::token(
+                r"(?ims)(([a-z_][\w.]*=?|[-+*/%])(?=(\s*::\s*[\w.]+)?\s*,))",
+                NAME,
+            ),
+            Rule::token_to(r"(?ims)[a-z_][\w.]*=?|[-+*/%]", NAME, NewState::Pop(1)),
+            Rule::bygroups(
+                r"(?ims)(::)(\s*)([a-z_][\w.]*)",
+                vec![Some(PUNCTUATION), Some(WHITESPACE), Some(NAME_LABEL)],
+            ),
+            Rule::token(r"(?ims),", PUNCTUATION),
+            Rule::token(r"(?ims)\s+", WHITESPACE),
+            Rule::bygroups(
+                r"(?ims)(//.*?)(\s*)$",
+                vec![Some(COMMENT_SINGLE), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?ims)/\*\*!.*?\*/", STRING_DOC),
+            Rule::token(r"(?ims)/\*.*?\*/", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"requiresignature",
+        vec![
+            Rule::token_to(
+                r"(?ims)(\)(?=(\s*::\s*[\w.]+)?\s*,))",
+                PUNCTUATION,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(r"(?ims)\)", PUNCTUATION, NewState::Pop(2)),
+            Rule::token(r"(?ims)-?[a-z_][\w.]*", NAME_ATTRIBUTE),
+            Rule::bygroups(
+                r"(?ims)(::)(\s*)([a-z_][\w.]*)",
+                vec![Some(PUNCTUATION), Some(WHITESPACE), Some(NAME_LABEL)],
+            ),
+            Rule::token(r"(?ims)\.\.\.", NAME_BUILTIN_PSEUDO),
+            Rule::token(r"(?ims)[(,]", PUNCTUATION),
+            Rule::token(r"(?ims)\s+", WHITESPACE),
+            Rule::bygroups(
+                r"(?ims)(//.*?)(\s*)$",
+                vec![Some(COMMENT_SINGLE), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?ims)/\*\*!.*?\*/", STRING_DOC),
+            Rule::token(r"(?ims)/\*.*?\*/", COMMENT_MULTILINE),
+        ],
+    );
     m.insert(r"commamember", vec![
         Rule::token_to(r"(?ims)(([a-z_][\w.]*=?|[-+*/%])(?=\s*(\(([^()]*\([^()]*\))*[^)]*\)\s*)?(::[\w.\s]+)?=>))", NAME_FUNCTION, NewState::Push(vec![r"signature"])),
         Rule::token(r"(?ims)\s+", WHITESPACE),

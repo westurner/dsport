@@ -59,44 +59,71 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[A-Z]\w*\b", NAME_FUNCTION),
         Rule::token(r"(?m)[a-z_]\w*\b", NAME_VARIABLE),
     ]);
-    m.insert(r"funcname", vec![
-        Rule::token(r"(?m)(?i)[A-Z]\w*\b", NAME_FUNCTION),
-        Rule::token_to(r"(?m):", PUNCTUATION, NewState::Push(vec![r"classname"])),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"variables"])),
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"classname", vec![
-        Rule::token(r"(?m)[a-z0-9_]*\.", NAME_NAMESPACE),
-        Rule::token(r"(?m)(?:Int|Float|String|Bool|Object|Array|Void)\b", KEYWORD_TYPE),
-        Rule::token(r"(?m)[A-Z]\w*\b", NAME_CLASS),
-        Rule::bygroups(r"(?m)(\[)(\s*)(\d*)(\s*)(\])", vec![Some(PUNCTUATION), Some(WHITESPACE), Some(NUMBER_INTEGER), Some(WHITESPACE), Some(PUNCTUATION)]),
-        Rule::token_to(r"(?m)\s+(?!<)", WHITESPACE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)<", PUNCTUATION, NewState::PushSame),
-        Rule::token_to(r"(?m)>", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"variables", vec![
-        Rule::token(r"(?m)[A-Z_][A-Z0-9_]*\b", NAME_CONSTANT),
-        Rule::token(r"(?m)[a-z_]\w*\b", NAME_VARIABLE),
-        Rule::token(r"(?m)[?%#$]", KEYWORD_TYPE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r"(?m):", PUNCTUATION, NewState::Push(vec![r"classname"])),
-        Rule::token_to(r"(?m),", PUNCTUATION, NewState::PushSame),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^"~]+"#, STRING_DOUBLE),
-        Rule::token(r"(?m)~q|~n|~r|~t|~z|~~", STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token_to(r"(?m)(?i)^#rem.*?", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)(?i)^#end.*?", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)\n", COMMENT_MULTILINE),
-        Rule::token(r"(?m).+", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"funcname",
+        vec![
+            Rule::token(r"(?m)(?i)[A-Z]\w*\b", NAME_FUNCTION),
+            Rule::token_to(r"(?m):", PUNCTUATION, NewState::Push(vec![r"classname"])),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"variables"])),
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"classname",
+        vec![
+            Rule::token(r"(?m)[a-z0-9_]*\.", NAME_NAMESPACE),
+            Rule::token(
+                r"(?m)(?:Int|Float|String|Bool|Object|Array|Void)\b",
+                KEYWORD_TYPE,
+            ),
+            Rule::token(r"(?m)[A-Z]\w*\b", NAME_CLASS),
+            Rule::bygroups(
+                r"(?m)(\[)(\s*)(\d*)(\s*)(\])",
+                vec![
+                    Some(PUNCTUATION),
+                    Some(WHITESPACE),
+                    Some(NUMBER_INTEGER),
+                    Some(WHITESPACE),
+                    Some(PUNCTUATION),
+                ],
+            ),
+            Rule::token_to(r"(?m)\s+(?!<)", WHITESPACE, NewState::Pop(1)),
+            Rule::token_to(r"(?m)<", PUNCTUATION, NewState::PushSame),
+            Rule::token_to(r"(?m)>", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"variables",
+        vec![
+            Rule::token(r"(?m)[A-Z_][A-Z0-9_]*\b", NAME_CONSTANT),
+            Rule::token(r"(?m)[a-z_]\w*\b", NAME_VARIABLE),
+            Rule::token(r"(?m)[?%#$]", KEYWORD_TYPE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(r"(?m):", PUNCTUATION, NewState::Push(vec![r"classname"])),
+            Rule::token_to(r"(?m),", PUNCTUATION, NewState::PushSame),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^"~]+"#, STRING_DOUBLE),
+            Rule::token(r"(?m)~q|~n|~r|~t|~z|~~", STRING_ESCAPE),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token_to(r"(?m)(?i)^#rem.*?", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)(?i)^#end.*?", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)\n", COMMENT_MULTILINE),
+            Rule::token(r"(?m).+", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

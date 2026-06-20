@@ -43,9 +43,13 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[+-]?\d+\.\d*(e[-+]?\d+)?(_[a-z]\w+)?", NUMBER_FLOAT),
         Rule::token(r"(?m)[\s]+", TEXT),
     ]);
-    m.insert(r"strings", vec![
-        Rule::token(r#"(?m)(?s)"(\\\\|\\[0-7]+|\\.|[^"\\])*""#, STRING_DOUBLE),
-    ]);
+    m.insert(
+        r"strings",
+        vec![Rule::token(
+            r#"(?m)(?s)"(\\\\|\\[0-7]+|\\.|[^"\\])*""#,
+            STRING_DOUBLE,
+        )],
+    );
     m.insert(r"core", vec![
         Rule::token(r"(?m)\b(False|Missing|Q(?:UIT|uit)|True|_Missing|b(?:egin|reak)|c(?:(?:ontinu|reat)e)|d(?:efaultapp|o)|e(?:lse|nd|x(?:it|ternal))|f(?:ile|unction)|g(?:etvalues|r(?:aphic|oup))|if|l(?:ist|o(?:ad|cal))|n(?:ew|oparent)|procedure|quit|re(?:cord|turn)|s(?:etvalues|top)|then|while)\s*\b", KEYWORD),
         Rule::token(r"(?m)\b(byte|character|double|enumeric|float|int(?:64|eger)|lo(?:gical|ng)|numeric|s(?:hort|numeric|tring)|u(?:byte|int(?:(?:64)?)|long|short))\s*\b", KEYWORD_TYPE),
@@ -57,11 +61,14 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\.(True|False)\.", NAME_BUILTIN),
         Rule::token(r"(?m)\.(eq|ne|lt|le|gt|ge|not|and|or|xor)\.", OPERATOR_WORD),
     ]);
-    m.insert(r"nums", vec![
-        Rule::token(r"(?m)\d+(?![.e])(_[a-z]\w+)?", NUMBER_INTEGER),
-        Rule::token(r"(?m)[+-]?\d*\.\d+(e[-+]?\d+)?(_[a-z]\w+)?", NUMBER_FLOAT),
-        Rule::token(r"(?m)[+-]?\d+\.\d*(e[-+]?\d+)?(_[a-z]\w+)?", NUMBER_FLOAT),
-    ]);
+    m.insert(
+        r"nums",
+        vec![
+            Rule::token(r"(?m)\d+(?![.e])(_[a-z]\w+)?", NUMBER_INTEGER),
+            Rule::token(r"(?m)[+-]?\d*\.\d+(e[-+]?\d+)?(_[a-z]\w+)?", NUMBER_FLOAT),
+            Rule::token(r"(?m)[+-]?\d+\.\d*(e[-+]?\d+)?(_[a-z]\w+)?", NUMBER_FLOAT),
+        ],
+    );
     Table(m)
 }
 

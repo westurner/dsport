@@ -36,39 +36,61 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[^#@=:$\w\s]+", TEXT),
         Rule::token(r"(?m)\s+", WHITESPACE),
     ]);
-    m.insert(r"type", vec![
-        Rule::token(r"(?m)[^\]\[=;,(){}$]+", NAME_CLASS),
-        Rule::token_to(r"(?m)[\[(]", NAME_CLASS, NewState::Push(vec![r"parentype"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"parentype", vec![
-        Rule::token(r"(?m)[^\]\[;()]+", NAME_CLASS),
-        Rule::token_to(r"(?m)[\[(]", NAME_CLASS, NewState::PushSame),
-        Rule::token_to(r"(?m)[\])]", NAME_CLASS, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"expression", vec![
-        Rule::token(r"(?m)[^\]\[;,(){}$]+", LITERAL),
-        Rule::token_to(r"(?m)[\[(]", LITERAL, NewState::Push(vec![r"parenexp"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"parenexp", vec![
-        Rule::token(r"(?m)[^\]\[;()]+", LITERAL),
-        Rule::token_to(r"(?m)[\[(]", LITERAL, NewState::PushSame),
-        Rule::token_to(r"(?m)[\])]", LITERAL, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"annotation", vec![
-        Rule::token(r"(?m)[^\]\[;,(){}=:]+", NAME_ATTRIBUTE),
-        Rule::token_to(r"(?m)[\[(]", NAME_ATTRIBUTE, NewState::Push(vec![r"annexp"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"annexp", vec![
-        Rule::token(r"(?m)[^\]\[;()]+", NAME_ATTRIBUTE),
-        Rule::token_to(r"(?m)[\[(]", NAME_ATTRIBUTE, NewState::PushSame),
-        Rule::token_to(r"(?m)[\])]", NAME_ATTRIBUTE, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"type",
+        vec![
+            Rule::token(r"(?m)[^\]\[=;,(){}$]+", NAME_CLASS),
+            Rule::token_to(r"(?m)[\[(]", NAME_CLASS, NewState::Push(vec![r"parentype"])),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"parentype",
+        vec![
+            Rule::token(r"(?m)[^\]\[;()]+", NAME_CLASS),
+            Rule::token_to(r"(?m)[\[(]", NAME_CLASS, NewState::PushSame),
+            Rule::token_to(r"(?m)[\])]", NAME_CLASS, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"expression",
+        vec![
+            Rule::token(r"(?m)[^\]\[;,(){}$]+", LITERAL),
+            Rule::token_to(r"(?m)[\[(]", LITERAL, NewState::Push(vec![r"parenexp"])),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"parenexp",
+        vec![
+            Rule::token(r"(?m)[^\]\[;()]+", LITERAL),
+            Rule::token_to(r"(?m)[\[(]", LITERAL, NewState::PushSame),
+            Rule::token_to(r"(?m)[\])]", LITERAL, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"annotation",
+        vec![
+            Rule::token(r"(?m)[^\]\[;,(){}=:]+", NAME_ATTRIBUTE),
+            Rule::token_to(
+                r"(?m)[\[(]",
+                NAME_ATTRIBUTE,
+                NewState::Push(vec![r"annexp"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"annexp",
+        vec![
+            Rule::token(r"(?m)[^\]\[;()]+", NAME_ATTRIBUTE),
+            Rule::token_to(r"(?m)[\[(]", NAME_ATTRIBUTE, NewState::PushSame),
+            Rule::token_to(r"(?m)[\])]", NAME_ATTRIBUTE, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

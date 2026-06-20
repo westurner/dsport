@@ -25,9 +25,7 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::default(NewState::Push(vec![r"body"])),
-    ]);
+    m.insert(r"root", vec![Rule::default(NewState::Push(vec![r"body"]))]);
     m.insert(r"body", vec![
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token(r"(?m);.*$", COMMENT_SINGLE),
@@ -59,14 +57,20 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"body"])),
         Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
     ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^"\\`]+"#, STRING),
-        Rule::token(r"(?m)`((?:\\.|[\w!$%&*+-/<=>?@^{}~|])(?:\\.|[\w!$%&*+-/<=>?@^{}~|]|[#.:])*)\'", STRING_SYMBOL),
-        Rule::token(r"(?m)`", STRING),
-        Rule::token(r"(?m)\\.", STRING),
-        Rule::token(r"(?m)\\\n", STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^"\\`]+"#, STRING),
+            Rule::token(
+                r"(?m)`((?:\\.|[\w!$%&*+-/<=>?@^{}~|])(?:\\.|[\w!$%&*+-/<=>?@^{}~|]|[#.:])*)\'",
+                STRING_SYMBOL,
+            ),
+            Rule::token(r"(?m)`", STRING),
+            Rule::token(r"(?m)\\.", STRING),
+            Rule::token(r"(?m)\\\n", STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

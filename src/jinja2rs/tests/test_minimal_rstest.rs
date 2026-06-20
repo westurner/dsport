@@ -1,5 +1,5 @@
-use rstest::{rstest, fixture};
 use jinja2rs::Environment;
+use rstest::{fixture, rstest};
 use serde_json::json;
 
 #[fixture]

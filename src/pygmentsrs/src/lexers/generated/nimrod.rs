@@ -54,86 +54,136 @@ fn build_table() -> Table {
         Rule::token(r"(?im)\s+", WHITESPACE),
         Rule::token(r"(?im).+$", ERROR),
     ]);
-    m.insert(r"chars", vec![
-        Rule::token(r#"(?im)\\([\\abcefnrtvl"\']|x[a-f0-9]{2}|[0-9]{1,3})"#, STRING_ESCAPE),
-        Rule::token_to(r"(?im)'", STRING_CHAR, NewState::Pop(1)),
-        Rule::token(r"(?im).", STRING_CHAR),
-    ]);
-    m.insert(r"strings", vec![
-        Rule::token(r"(?im)(?<!\$)\$(\d+|#|\w+)+", STRING_INTERPOL),
-        Rule::token(r#"(?im)[^\\\'"$\n]+"#, STRING),
-        Rule::token(r#"(?im)[\'"\\]"#, STRING),
-        Rule::token(r"(?im)\$", STRING),
-    ]);
-    m.insert(r"doccomment", vec![
-        Rule::token(r"(?im)[^\]#]+", STRING_DOC),
-        Rule::token_to(r"(?im)##\[", STRING_DOC, NewState::PushSame),
-        Rule::token_to(r"(?im)\]##", STRING_DOC, NewState::Pop(1)),
-        Rule::token(r"(?im)[\]#]", STRING_DOC),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?im)[^\]#]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?im)#\[", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?im)\]#", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?im)[\]#]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"dqs", vec![
-        Rule::token(r#"(?im)\\([\\abcefnrtvl"\']|\n|x[a-f0-9]{2}|[0-9]{1,3})"#, STRING_ESCAPE),
-        Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
-        Rule::token(r"(?im)(?<!\$)\$(\d+|#|\w+)+", STRING_INTERPOL),
-        Rule::token(r#"(?im)[^\\\'"$\n]+"#, STRING),
-        Rule::token(r#"(?im)[\'"\\]"#, STRING),
-        Rule::token(r"(?im)\$", STRING),
-    ]);
-    m.insert(r"rdqs", vec![
-        Rule::token_to(r#"(?im)"(?!")"#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?im)"""#, STRING_ESCAPE),
-        Rule::token(r"(?im)(?<!\$)\$(\d+|#|\w+)+", STRING_INTERPOL),
-        Rule::token(r#"(?im)[^\\\'"$\n]+"#, STRING),
-        Rule::token(r#"(?im)[\'"\\]"#, STRING),
-        Rule::token(r"(?im)\$", STRING),
-    ]);
-    m.insert(r"tdqs", vec![
-        Rule::token_to(r#"(?im)""""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r"(?im)(?<!\$)\$(\d+|#|\w+)+", STRING_INTERPOL),
-        Rule::token(r#"(?im)[^\\\'"$\n]+"#, STRING),
-        Rule::token(r#"(?im)[\'"\\]"#, STRING),
-        Rule::token(r"(?im)\$", STRING),
-        Rule::token(r"(?im)\n", STRING_DOUBLE),
-    ]);
-    m.insert(r"funcname", vec![
-        Rule::token_to(r"(?im)((?![\d_])\w)(((?!_)\w)|(_(?!_)\w))*", NAME_FUNCTION, NewState::Pop(1)),
-        Rule::token_to(r"(?im)`.+`", NAME_FUNCTION, NewState::Pop(1)),
-    ]);
-    m.insert(r"nl", vec![
-        Rule::token(r"(?im)\n", STRING),
-    ]);
-    m.insert(r"float-number", vec![
-        Rule::token(r"(?im)\.(?!\.)[0-9_]*[f]*", NUMBER_FLOAT),
-        Rule::token(r"(?im)e[+-]?[0-9][0-9_]*", NUMBER_FLOAT),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"float-suffix", vec![
-        Rule::token(r"(?im)\'f(32|64)", NUMBER_FLOAT),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"int-suffix", vec![
-        Rule::token(r"(?im)\'i(32|64)", TokenType::new(&["Literal", "Number", "Integer", "Long"])),
-        Rule::token(r"(?im)\'i(8|16)", NUMBER_INTEGER),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"casebranch", vec![
-        Rule::token(r"(?im),", PUNCTUATION),
-        Rule::token(r"(?im)[\n ]+", WHITESPACE),
-        Rule::token_to(r"(?im):", OPERATOR, NewState::Pop(1)),
-        Rule::token(r"(?im)\w+|[^:]", NAME_LABEL),
-    ]);
-    m.insert(r"pragma", vec![
-        Rule::token(r"(?im)[:,]", TEXT),
-        Rule::token(r"(?im)[\n ]+", WHITESPACE),
-        Rule::token_to(r"(?im)\.\}", STRING_OTHER, NewState::Pop(1)),
-        Rule::token(r"(?im)\w+|\W+|[^.}]", STRING_OTHER),
-    ]);
+    m.insert(
+        r"chars",
+        vec![
+            Rule::token(
+                r#"(?im)\\([\\abcefnrtvl"\']|x[a-f0-9]{2}|[0-9]{1,3})"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token_to(r"(?im)'", STRING_CHAR, NewState::Pop(1)),
+            Rule::token(r"(?im).", STRING_CHAR),
+        ],
+    );
+    m.insert(
+        r"strings",
+        vec![
+            Rule::token(r"(?im)(?<!\$)\$(\d+|#|\w+)+", STRING_INTERPOL),
+            Rule::token(r#"(?im)[^\\\'"$\n]+"#, STRING),
+            Rule::token(r#"(?im)[\'"\\]"#, STRING),
+            Rule::token(r"(?im)\$", STRING),
+        ],
+    );
+    m.insert(
+        r"doccomment",
+        vec![
+            Rule::token(r"(?im)[^\]#]+", STRING_DOC),
+            Rule::token_to(r"(?im)##\[", STRING_DOC, NewState::PushSame),
+            Rule::token_to(r"(?im)\]##", STRING_DOC, NewState::Pop(1)),
+            Rule::token(r"(?im)[\]#]", STRING_DOC),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?im)[^\]#]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?im)#\[", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?im)\]#", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?im)[\]#]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"dqs",
+        vec![
+            Rule::token(
+                r#"(?im)\\([\\abcefnrtvl"\']|\n|x[a-f0-9]{2}|[0-9]{1,3})"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
+            Rule::token(r"(?im)(?<!\$)\$(\d+|#|\w+)+", STRING_INTERPOL),
+            Rule::token(r#"(?im)[^\\\'"$\n]+"#, STRING),
+            Rule::token(r#"(?im)[\'"\\]"#, STRING),
+            Rule::token(r"(?im)\$", STRING),
+        ],
+    );
+    m.insert(
+        r"rdqs",
+        vec![
+            Rule::token_to(r#"(?im)"(?!")"#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?im)"""#, STRING_ESCAPE),
+            Rule::token(r"(?im)(?<!\$)\$(\d+|#|\w+)+", STRING_INTERPOL),
+            Rule::token(r#"(?im)[^\\\'"$\n]+"#, STRING),
+            Rule::token(r#"(?im)[\'"\\]"#, STRING),
+            Rule::token(r"(?im)\$", STRING),
+        ],
+    );
+    m.insert(
+        r"tdqs",
+        vec![
+            Rule::token_to(r#"(?im)""""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(r"(?im)(?<!\$)\$(\d+|#|\w+)+", STRING_INTERPOL),
+            Rule::token(r#"(?im)[^\\\'"$\n]+"#, STRING),
+            Rule::token(r#"(?im)[\'"\\]"#, STRING),
+            Rule::token(r"(?im)\$", STRING),
+            Rule::token(r"(?im)\n", STRING_DOUBLE),
+        ],
+    );
+    m.insert(
+        r"funcname",
+        vec![
+            Rule::token_to(
+                r"(?im)((?![\d_])\w)(((?!_)\w)|(_(?!_)\w))*",
+                NAME_FUNCTION,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(r"(?im)`.+`", NAME_FUNCTION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(r"nl", vec![Rule::token(r"(?im)\n", STRING)]);
+    m.insert(
+        r"float-number",
+        vec![
+            Rule::token(r"(?im)\.(?!\.)[0-9_]*[f]*", NUMBER_FLOAT),
+            Rule::token(r"(?im)e[+-]?[0-9][0-9_]*", NUMBER_FLOAT),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"float-suffix",
+        vec![
+            Rule::token(r"(?im)\'f(32|64)", NUMBER_FLOAT),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"int-suffix",
+        vec![
+            Rule::token(
+                r"(?im)\'i(32|64)",
+                TokenType::new(&["Literal", "Number", "Integer", "Long"]),
+            ),
+            Rule::token(r"(?im)\'i(8|16)", NUMBER_INTEGER),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"casebranch",
+        vec![
+            Rule::token(r"(?im),", PUNCTUATION),
+            Rule::token(r"(?im)[\n ]+", WHITESPACE),
+            Rule::token_to(r"(?im):", OPERATOR, NewState::Pop(1)),
+            Rule::token(r"(?im)\w+|[^:]", NAME_LABEL),
+        ],
+    );
+    m.insert(
+        r"pragma",
+        vec![
+            Rule::token(r"(?im)[:,]", TEXT),
+            Rule::token(r"(?im)[\n ]+", WHITESPACE),
+            Rule::token_to(r"(?im)\.\}", STRING_OTHER, NewState::Pop(1)),
+            Rule::token(r"(?im)\w+|\W+|[^.}]", STRING_OTHER),
+        ],
+    );
     Table(m)
 }
 

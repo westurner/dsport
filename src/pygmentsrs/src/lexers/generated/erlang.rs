@@ -57,11 +57,36 @@ fn build_table() -> Table {
         Rule::token(r#"(?m)[^"\\~]+"#, STRING),
         Rule::token(r"(?m)~", STRING),
     ]);
-    m.insert(r"directive", vec![
-        Rule::bygroups_to(r"(?m)(define)(\s*)(\()((?:(?:[A-Z_]\w*)|(?:[a-z]\w*|'[^\n']*[^\\]')))", vec![Some(NAME_ENTITY), Some(WHITESPACE), Some(PUNCTUATION), Some(NAME_CONSTANT)], NewState::Pop(1)),
-        Rule::bygroups_to(r"(?m)(record)(\s*)(\()((?:(?:[A-Z_]\w*)|(?:[a-z]\w*|'[^\n']*[^\\]')))", vec![Some(NAME_ENTITY), Some(WHITESPACE), Some(PUNCTUATION), Some(NAME_LABEL)], NewState::Pop(1)),
-        Rule::token_to(r"(?m)(?:[a-z]\w*|'[^\n']*[^\\]')", NAME_ENTITY, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"directive",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)(define)(\s*)(\()((?:(?:[A-Z_]\w*)|(?:[a-z]\w*|'[^\n']*[^\\]')))",
+                vec![
+                    Some(NAME_ENTITY),
+                    Some(WHITESPACE),
+                    Some(PUNCTUATION),
+                    Some(NAME_CONSTANT),
+                ],
+                NewState::Pop(1),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(record)(\s*)(\()((?:(?:[A-Z_]\w*)|(?:[a-z]\w*|'[^\n']*[^\\]')))",
+                vec![
+                    Some(NAME_ENTITY),
+                    Some(WHITESPACE),
+                    Some(PUNCTUATION),
+                    Some(NAME_LABEL),
+                ],
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)(?:[a-z]\w*|'[^\n']*[^\\]')",
+                NAME_ENTITY,
+                NewState::Pop(1),
+            ),
+        ],
+    );
     m.insert(r"map_key", vec![
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::bygroups(r"(?m)(%.*)(\n)", vec![Some(COMMENT), Some(WHITESPACE)]),

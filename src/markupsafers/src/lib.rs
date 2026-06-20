@@ -38,8 +38,8 @@
 //! assert_eq!(result.as_str(), "<b>bold</b> &amp; &lt;entities&gt;");
 //! ```
 
-pub mod markup;
 pub mod escape;
+pub mod markup;
 
 #[cfg(feature = "minijinja")]
 pub mod minijinja_compat;
@@ -47,5 +47,5 @@ pub mod minijinja_compat;
 #[cfg(feature = "extension-module")]
 mod bridge;
 
+pub use escape::{MarkupEscapeWriter, escape, escape_silent, escape_value, soft_str};
 pub use markup::Markup;
-pub use escape::{escape, escape_silent, escape_value, soft_str, MarkupEscapeWriter};

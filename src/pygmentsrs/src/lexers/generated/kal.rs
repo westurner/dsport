@@ -25,25 +25,54 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"commentsandwhitespace", vec![
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::token(r"(?ms)###[^#].*?###", COMMENT_MULTILINE),
-        Rule::bygroups(r"(?ms)(#(?!##[^#]).*?)(\n)", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)]),
-    ]);
-    m.insert(r"functiondef", vec![
-        Rule::bygroups_to(r"(?ms)([$a-zA-Z_][\w$]*)(\s*)", vec![Some(NAME_FUNCTION), Some(WHITESPACE)], NewState::Pop(1)),
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::token(r"(?ms)###[^#].*?###", COMMENT_MULTILINE),
-        Rule::bygroups(r"(?ms)(#(?!##[^#]).*?)(\n)", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)]),
-    ]);
-    m.insert(r"classdef", vec![
-        Rule::bygroups(r"(?ms)\b(inherits)(\s+)(from)\b", vec![Some(KEYWORD), Some(WHITESPACE), Some(KEYWORD)]),
-        Rule::token_to(r"(?ms)([$a-zA-Z_][\w$]*)(?=\s*\n)", NAME_CLASS, NewState::Pop(1)),
-        Rule::token(r"(?ms)[$a-zA-Z_][\w$]*\b", NAME_CLASS),
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::token(r"(?ms)###[^#].*?###", COMMENT_MULTILINE),
-        Rule::bygroups(r"(?ms)(#(?!##[^#]).*?)(\n)", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)]),
-    ]);
+    m.insert(
+        r"commentsandwhitespace",
+        vec![
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::token(r"(?ms)###[^#].*?###", COMMENT_MULTILINE),
+            Rule::bygroups(
+                r"(?ms)(#(?!##[^#]).*?)(\n)",
+                vec![Some(COMMENT_SINGLE), Some(WHITESPACE)],
+            ),
+        ],
+    );
+    m.insert(
+        r"functiondef",
+        vec![
+            Rule::bygroups_to(
+                r"(?ms)([$a-zA-Z_][\w$]*)(\s*)",
+                vec![Some(NAME_FUNCTION), Some(WHITESPACE)],
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::token(r"(?ms)###[^#].*?###", COMMENT_MULTILINE),
+            Rule::bygroups(
+                r"(?ms)(#(?!##[^#]).*?)(\n)",
+                vec![Some(COMMENT_SINGLE), Some(WHITESPACE)],
+            ),
+        ],
+    );
+    m.insert(
+        r"classdef",
+        vec![
+            Rule::bygroups(
+                r"(?ms)\b(inherits)(\s+)(from)\b",
+                vec![Some(KEYWORD), Some(WHITESPACE), Some(KEYWORD)],
+            ),
+            Rule::token_to(
+                r"(?ms)([$a-zA-Z_][\w$]*)(?=\s*\n)",
+                NAME_CLASS,
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?ms)[$a-zA-Z_][\w$]*\b", NAME_CLASS),
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::token(r"(?ms)###[^#].*?###", COMMENT_MULTILINE),
+            Rule::bygroups(
+                r"(?ms)(#(?!##[^#]).*?)(\n)",
+                vec![Some(COMMENT_SINGLE), Some(WHITESPACE)],
+            ),
+        ],
+    );
     m.insert(r"listcomprehension", vec![
         Rule::token_to(r"(?ms)\]", PUNCTUATION, NewState::Pop(1)),
         Rule::token(r"(?ms)\b(property|value)\b", KEYWORD),
@@ -147,9 +176,7 @@ fn build_table() -> Table {
         Rule::token_to(r#"(?ms)""#, STRING, NewState::Push(vec![r"dqs"])),
         Rule::token_to(r"(?ms)'", STRING, NewState::Push(vec![r"sqs"])),
     ]);
-    m.insert(r"strings", vec![
-        Rule::token(r#"(?ms)[^#\\\'"]+"#, STRING),
-    ]);
+    m.insert(r"strings", vec![Rule::token(r#"(?ms)[^#\\\'"]+"#, STRING)]);
     m.insert(r"interpoling_string", vec![
         Rule::token_to(r"(?ms)\}", STRING_INTERPOL, NewState::Pop(1)),
         Rule::token(r"(?ms)\s+", WHITESPACE),
@@ -184,28 +211,48 @@ fn build_table() -> Table {
         Rule::token_to(r#"(?ms)""#, STRING, NewState::Push(vec![r"dqs"])),
         Rule::token_to(r"(?ms)'", STRING, NewState::Push(vec![r"sqs"])),
     ]);
-    m.insert(r"dqs", vec![
-        Rule::token_to(r#"(?ms)""#, STRING, NewState::Pop(1)),
-        Rule::token(r"(?ms)\\.|\'", STRING),
-        Rule::token_to(r"(?ms)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpoling_string"])),
-        Rule::token(r#"(?ms)[^#\\\'"]+"#, STRING),
-    ]);
-    m.insert(r"sqs", vec![
-        Rule::token_to(r"(?ms)'", STRING, NewState::Pop(1)),
-        Rule::token(r#"(?ms)#|\\.|""#, STRING),
-        Rule::token(r#"(?ms)[^#\\\'"]+"#, STRING),
-    ]);
-    m.insert(r"tdqs", vec![
-        Rule::token_to(r#"(?ms)""""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?ms)\\.|\'|""#, STRING),
-        Rule::token_to(r"(?ms)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpoling_string"])),
-        Rule::token(r#"(?ms)[^#\\\'"]+"#, STRING),
-    ]);
-    m.insert(r"tsqs", vec![
-        Rule::token_to(r"(?ms)'''", STRING, NewState::Pop(1)),
-        Rule::token(r#"(?ms)#|\\.|\'|""#, STRING),
-        Rule::token(r#"(?ms)[^#\\\'"]+"#, STRING),
-    ]);
+    m.insert(
+        r"dqs",
+        vec![
+            Rule::token_to(r#"(?ms)""#, STRING, NewState::Pop(1)),
+            Rule::token(r"(?ms)\\.|\'", STRING),
+            Rule::token_to(
+                r"(?ms)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpoling_string"]),
+            ),
+            Rule::token(r#"(?ms)[^#\\\'"]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"sqs",
+        vec![
+            Rule::token_to(r"(?ms)'", STRING, NewState::Pop(1)),
+            Rule::token(r#"(?ms)#|\\.|""#, STRING),
+            Rule::token(r#"(?ms)[^#\\\'"]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"tdqs",
+        vec![
+            Rule::token_to(r#"(?ms)""""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?ms)\\.|\'|""#, STRING),
+            Rule::token_to(
+                r"(?ms)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpoling_string"]),
+            ),
+            Rule::token(r#"(?ms)[^#\\\'"]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"tsqs",
+        vec![
+            Rule::token_to(r"(?ms)'''", STRING, NewState::Pop(1)),
+            Rule::token(r#"(?ms)#|\\.|\'|""#, STRING),
+            Rule::token(r#"(?ms)[^#\\\'"]+"#, STRING),
+        ],
+    );
     Table(m)
 }
 

@@ -25,32 +25,58 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?ms)[^<&]+", TEXT),
-        Rule::token(r"(?ms)&\S*?;", NAME_ENTITY),
-        Rule::bygroups_g(r"(?ms)(\<\!\[CDATA\[)(.*?)(\]\]\>)", vec![Some(GroupAction::Token(STRING)), Some(GroupAction::UsingLexer { alias: "actionscript3", state: None }), Some(GroupAction::Token(STRING))]),
-        Rule::token_to(r"(?ms)<!--", COMMENT, NewState::Push(vec![r"comment"])),
-        Rule::token(r"(?ms)<\?.*?\?>", COMMENT_PREPROC),
-        Rule::token(r"(?ms)<![^>]*>", COMMENT_PREPROC),
-        Rule::token_to(r"(?ms)<\s*[\w:.-]+", NAME_TAG, NewState::Push(vec![r"tag"])),
-        Rule::token(r"(?ms)<\s*/\s*[\w:.-]+\s*>", NAME_TAG),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?ms)[^-]+", COMMENT),
-        Rule::token_to(r"(?ms)-->", COMMENT, NewState::Pop(1)),
-        Rule::token(r"(?ms)-", COMMENT),
-    ]);
-    m.insert(r"tag", vec![
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::token_to(r"(?ms)[\w.:-]+\s*=", NAME_ATTRIBUTE, NewState::Push(vec![r"attr"])),
-        Rule::token_to(r"(?ms)/?\s*>", NAME_TAG, NewState::Pop(1)),
-    ]);
-    m.insert(r"attr", vec![
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::token_to(r#"(?ms)".*?""#, STRING, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)'.*?'", STRING, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)[^\s>]+", STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?ms)[^<&]+", TEXT),
+            Rule::token(r"(?ms)&\S*?;", NAME_ENTITY),
+            Rule::bygroups_g(
+                r"(?ms)(\<\!\[CDATA\[)(.*?)(\]\]\>)",
+                vec![
+                    Some(GroupAction::Token(STRING)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "actionscript3",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(STRING)),
+                ],
+            ),
+            Rule::token_to(r"(?ms)<!--", COMMENT, NewState::Push(vec![r"comment"])),
+            Rule::token(r"(?ms)<\?.*?\?>", COMMENT_PREPROC),
+            Rule::token(r"(?ms)<![^>]*>", COMMENT_PREPROC),
+            Rule::token_to(r"(?ms)<\s*[\w:.-]+", NAME_TAG, NewState::Push(vec![r"tag"])),
+            Rule::token(r"(?ms)<\s*/\s*[\w:.-]+\s*>", NAME_TAG),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?ms)[^-]+", COMMENT),
+            Rule::token_to(r"(?ms)-->", COMMENT, NewState::Pop(1)),
+            Rule::token(r"(?ms)-", COMMENT),
+        ],
+    );
+    m.insert(
+        r"tag",
+        vec![
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::token_to(
+                r"(?ms)[\w.:-]+\s*=",
+                NAME_ATTRIBUTE,
+                NewState::Push(vec![r"attr"]),
+            ),
+            Rule::token_to(r"(?ms)/?\s*>", NAME_TAG, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"attr",
+        vec![
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::token_to(r#"(?ms)".*?""#, STRING, NewState::Pop(1)),
+            Rule::token_to(r"(?ms)'.*?'", STRING, NewState::Pop(1)),
+            Rule::token_to(r"(?ms)[^\s>]+", STRING, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

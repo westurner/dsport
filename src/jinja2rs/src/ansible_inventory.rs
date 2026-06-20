@@ -37,7 +37,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
@@ -102,10 +102,8 @@ impl Inventory {
     /// - Inventory structure is malformed
     pub fn from_source(source: InventorySource) -> Result<Self, Box<dyn std::error::Error>> {
         let raw_data = match source {
-            InventorySource::File(path) => {
-                fs::read_to_string(&path)
-                    .map_err(|e| format!("Failed to read inventory file: {}", e))?
-            }
+            InventorySource::File(path) => fs::read_to_string(&path)
+                .map_err(|e| format!("Failed to read inventory file: {}", e))?,
             InventorySource::Stdin => {
                 let mut buf = String::new();
                 std::io::stdin()
@@ -125,9 +123,8 @@ impl Inventory {
         let json_value = if let Ok(parsed) = serde_yaml::from_str::<JsonValue>(data) {
             parsed
         } else {
-            serde_json::from_str(data).map_err(|e| {
-                format!("Failed to parse inventory as YAML or JSON: {}", e)
-            })?
+            serde_json::from_str(data)
+                .map_err(|e| format!("Failed to parse inventory as YAML or JSON: {}", e))?
         };
 
         Self::from_parsed_data(json_value)
@@ -203,12 +200,7 @@ impl Inventory {
             if let Some(children_map) = children.as_object() {
                 for (child_name, child_data) in children_map {
                     group_info.children.push(child_name.clone());
-                    Self::parse_group(
-                        child_data,
-                        child_name,
-                        hosts,
-                        groups,
-                    )?;
+                    Self::parse_group(child_data, child_name, hosts, groups)?;
                 }
             }
         }

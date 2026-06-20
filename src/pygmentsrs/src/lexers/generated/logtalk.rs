@@ -110,20 +110,32 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)'", STRING, NewState::Push(vec![r"quoted_atom"])),
         Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"double_quoted_term"])),
     ]);
-    m.insert(r"quoted_atom", vec![
-        Rule::token(r"(?m)''", STRING),
-        Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\([\\abfnrtv"\']|(x[a-fA-F0-9]+|[0-7]+)\\)"#, STRING_ESCAPE),
-        Rule::token(r"(?m)[^\\'\n]+", STRING),
-        Rule::token(r"(?m)\\", STRING),
-    ]);
-    m.insert(r"double_quoted_term", vec![
-        Rule::token(r#"(?m)"""#, STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\([\\abfnrtv"\']|(x[a-fA-F0-9]+|[0-7]+)\\)"#, STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\"\n]+"#, STRING),
-        Rule::token(r"(?m)\\", STRING),
-    ]);
+    m.insert(
+        r"quoted_atom",
+        vec![
+            Rule::token(r"(?m)''", STRING),
+            Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
+            Rule::token(
+                r#"(?m)\\([\\abfnrtv"\']|(x[a-fA-F0-9]+|[0-7]+)\\)"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token(r"(?m)[^\\'\n]+", STRING),
+            Rule::token(r"(?m)\\", STRING),
+        ],
+    );
+    m.insert(
+        r"double_quoted_term",
+        vec![
+            Rule::token(r#"(?m)"""#, STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(
+                r#"(?m)\\([\\abfnrtv"\']|(x[a-fA-F0-9]+|[0-7]+)\\)"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token(r#"(?m)[^\\"\n]+"#, STRING),
+            Rule::token(r"(?m)\\", STRING),
+        ],
+    );
     m.insert(r"directive", vec![
         Rule::token_to(r"(?m)(el)?if(?=[(])", KEYWORD, NewState::Push(vec![r"root"])),
         Rule::token_to(r"(?m)(e(lse|ndif))(?=[.])", KEYWORD, NewState::Push(vec![r"root"])),
@@ -139,25 +151,35 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)[a-z][a-zA-Z0-9_]*(?=[(])", TEXT, NewState::Push(vec![r"root"])),
         Rule::token_to(r"(?m)[a-z][a-zA-Z0-9_]*(?=[.])", TEXT, NewState::Push(vec![r"root"])),
     ]);
-    m.insert(r"entityrelations", vec![
-        Rule::token(r"(?m)(complements|extends|i(nstantiates|mp(lements|orts))|specializes)(?=[(])", KEYWORD),
-        Rule::token(r"(?m)0'[\\]?.", NUMBER),
-        Rule::token(r"(?m)0b[01]+", NUMBER_BIN),
-        Rule::token(r"(?m)0o[0-7]+", NUMBER_OCT),
-        Rule::token(r"(?m)0x[0-9a-fA-F]+", NUMBER_HEX),
-        Rule::token(r"(?m)\d+\.?\d*((e|E)(\+|-)?\d+)?", NUMBER),
-        Rule::token(r"(?m)([A-Z_][a-zA-Z0-9_]*)", NAME_VARIABLE),
-        Rule::token(r"(?m)[a-z][a-zA-Z0-9_]*", TEXT),
-        Rule::token_to(r"(?m)'", STRING, NewState::Push(vec![r"quoted_atom"])),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"double_quoted_term"])),
-        Rule::token_to(r"(?m)([)]\.)", TEXT, NewState::Push(vec![r"root"])),
-        Rule::token(r"(?m)(::)", OPERATOR),
-        Rule::token(r"(?m)[()\[\],.|]", TEXT),
-        Rule::token(r"(?m)%.*?\n", COMMENT),
-        Rule::token(r"(?m)/\*(.|\n)*?\*/", COMMENT),
-        Rule::token(r"(?m)\n", TEXT),
-        Rule::token(r"(?m)\s+", TEXT),
-    ]);
+    m.insert(
+        r"entityrelations",
+        vec![
+            Rule::token(
+                r"(?m)(complements|extends|i(nstantiates|mp(lements|orts))|specializes)(?=[(])",
+                KEYWORD,
+            ),
+            Rule::token(r"(?m)0'[\\]?.", NUMBER),
+            Rule::token(r"(?m)0b[01]+", NUMBER_BIN),
+            Rule::token(r"(?m)0o[0-7]+", NUMBER_OCT),
+            Rule::token(r"(?m)0x[0-9a-fA-F]+", NUMBER_HEX),
+            Rule::token(r"(?m)\d+\.?\d*((e|E)(\+|-)?\d+)?", NUMBER),
+            Rule::token(r"(?m)([A-Z_][a-zA-Z0-9_]*)", NAME_VARIABLE),
+            Rule::token(r"(?m)[a-z][a-zA-Z0-9_]*", TEXT),
+            Rule::token_to(r"(?m)'", STRING, NewState::Push(vec![r"quoted_atom"])),
+            Rule::token_to(
+                r#"(?m)""#,
+                STRING,
+                NewState::Push(vec![r"double_quoted_term"]),
+            ),
+            Rule::token_to(r"(?m)([)]\.)", TEXT, NewState::Push(vec![r"root"])),
+            Rule::token(r"(?m)(::)", OPERATOR),
+            Rule::token(r"(?m)[()\[\],.|]", TEXT),
+            Rule::token(r"(?m)%.*?\n", COMMENT),
+            Rule::token(r"(?m)/\*(.|\n)*?\*/", COMMENT),
+            Rule::token(r"(?m)\n", TEXT),
+            Rule::token(r"(?m)\s+", TEXT),
+        ],
+    );
     Table(m)
 }
 

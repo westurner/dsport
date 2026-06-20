@@ -25,20 +25,23 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)[0-9a-f]", NUMBER),
-        Rule::token(r"(?m)[+*/%!`-]", OPERATOR),
-        Rule::token(r"(?m)[<>^v?\[\]rxjk]", NAME_VARIABLE),
-        Rule::token(r"(?m)[:\\$.,n]", NAME_BUILTIN),
-        Rule::token(r"(?m)[|_mw]", KEYWORD),
-        Rule::token(r"(?m)[{}]", NAME_TAG),
-        Rule::token(r#"(?m)".*?""#, STRING_DOUBLE),
-        Rule::token(r"(?m)\'.", STRING_SINGLE),
-        Rule::token(r"(?m)[#;]", COMMENT),
-        Rule::token(r"(?m)[pg&~=@iotsy]", KEYWORD),
-        Rule::token(r"(?m)[()A-Z]", COMMENT),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)[0-9a-f]", NUMBER),
+            Rule::token(r"(?m)[+*/%!`-]", OPERATOR),
+            Rule::token(r"(?m)[<>^v?\[\]rxjk]", NAME_VARIABLE),
+            Rule::token(r"(?m)[:\\$.,n]", NAME_BUILTIN),
+            Rule::token(r"(?m)[|_mw]", KEYWORD),
+            Rule::token(r"(?m)[{}]", NAME_TAG),
+            Rule::token(r#"(?m)".*?""#, STRING_DOUBLE),
+            Rule::token(r"(?m)\'.", STRING_SINGLE),
+            Rule::token(r"(?m)[#;]", COMMENT),
+            Rule::token(r"(?m)[pg&~=@iotsy]", KEYWORD),
+            Rule::token(r"(?m)[()A-Z]", COMMENT),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+        ],
+    );
     Table(m)
 }
 

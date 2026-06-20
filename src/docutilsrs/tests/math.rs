@@ -28,7 +28,11 @@ fn math_directive_pseudoxml() {
 fn math_role_html5_uses_ratex_default() {
     let src = ":math:`x^2`\n";
     let tree = parse_rst(src);
-    let out = html5(&tree, &docutilsrs::cli::Html5Options::default(), &docutilsrs::cli::CommonOptions::default());
+    let out = html5(
+        &tree,
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
     assert!(
         out.contains("data-renderer=\"ratex\""),
         "expected RaTeX default backend in: {out}"
@@ -40,7 +44,11 @@ fn math_role_html5_uses_ratex_default() {
 fn math_directive_html5_uses_ratex_default() {
     let src = ".. math::\n\n   \\int_0^1 x\\,dx\n";
     let tree = parse_rst(src);
-    let out = html5(&tree, &docutilsrs::cli::Html5Options::default(), &docutilsrs::cli::CommonOptions::default());
+    let out = html5(
+        &tree,
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
     assert!(
         out.contains("data-renderer=\"ratex\""),
         "expected RaTeX default backend in: {out}"

@@ -50,17 +50,30 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)[0-9]+L?", NUMBER_INTEGER),
         Rule::token(r"(?ms)\n", WHITESPACE),
     ]);
-    m.insert(r"class", vec![
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"import", vec![
-        Rule::token_to(r"(?ms)[\w.]+\*?", NAME_NAMESPACE, NewState::Pop(1)),
-    ]);
-    m.insert(r"template", vec![
-        Rule::token_to(r"(?ms)'''", STRING, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\u00AB", STRING, NewState::Pop(1)),
-        Rule::token(r"(?ms).", STRING),
-    ]);
+    m.insert(
+        r"class",
+        vec![Rule::token_to(
+            r"(?ms)[a-zA-Z_]\w*",
+            NAME_CLASS,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"import",
+        vec![Rule::token_to(
+            r"(?ms)[\w.]+\*?",
+            NAME_NAMESPACE,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"template",
+        vec![
+            Rule::token_to(r"(?ms)'''", STRING, NewState::Pop(1)),
+            Rule::token_to(r"(?ms)\u00AB", STRING, NewState::Pop(1)),
+            Rule::token(r"(?ms).", STRING),
+        ],
+    );
     Table(m)
 }
 

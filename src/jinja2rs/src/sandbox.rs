@@ -82,7 +82,9 @@ impl SandboxedEnvironment {
     /// Internal use; prefer `SandboxedEnvironmentBuilder`.
     pub(crate) fn with_config(mut environment: Environment, config: SandboxConfig) -> Self {
         use minijinja::UndefinedBehavior;
-        environment.inner.set_undefined_behavior(UndefinedBehavior::Strict);
+        environment
+            .inner
+            .set_undefined_behavior(UndefinedBehavior::Strict);
         Self {
             inner: environment,
             config,
@@ -104,12 +106,19 @@ impl SandboxedEnvironment {
     }
 
     /// Add a named template from a string.
-    pub fn add_template(&mut self, name: &'static str, source: &'static str) -> Result<(), Jinja2Error> {
+    pub fn add_template(
+        &mut self,
+        name: &'static str,
+        source: &'static str,
+    ) -> Result<(), Jinja2Error> {
         self.inner.add_template(name, source)
     }
 
     /// Retrieve a template by name.
-    pub fn get_template(&self, name: &str) -> Result<crate::environment::Template<'_>, Jinja2Error> {
+    pub fn get_template(
+        &self,
+        name: &str,
+    ) -> Result<crate::environment::Template<'_>, Jinja2Error> {
         self.inner.get_template(name)
     }
 
@@ -127,8 +136,9 @@ impl SandboxedEnvironment {
     pub fn render_str<S: Serialize>(&self, source: &str, ctx: S) -> Result<String, Jinja2Error> {
         // Validate context if Python callable warnings are enabled
         if self.config.enable_python_warnings {
-            let val = serde_json::to_value(&ctx)
-                .map_err(|e| Jinja2Error::TemplateRuntimeError(format!("Failed to serialize context: {}", e)))?;
+            let val = serde_json::to_value(&ctx).map_err(|e| {
+                Jinja2Error::TemplateRuntimeError(format!("Failed to serialize context: {}", e))
+            })?;
             crate::sandbox_config::validate_context_for_python_callables(&val);
         }
 
@@ -174,7 +184,10 @@ mod tests {
         // Strict mode: accessing an undefined variable should error.
         let env = SandboxedEnvironment::new();
         let result = env.render_str("{{ missing_var }}", serde_json::json!({}));
-        assert!(result.is_err(), "expected error for undefined variable in strict mode");
+        assert!(
+            result.is_err(),
+            "expected error for undefined variable in strict mode"
+        );
     }
 
     #[test]

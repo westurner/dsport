@@ -37,8 +37,6 @@
 //! - `register_lexer()` and `unregister_lexer()` acquire a write lock
 //! - Safe for concurrent use across threads
 
-use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
 use crate::lexer::Lexer;
 use crate::lexers::delegating::*;
 use crate::lexers::diff::DiffLexer;
@@ -49,6 +47,8 @@ use crate::lexers::python::PythonLexer;
 use crate::lexers::text::TextLexer;
 use crate::lexers::yaml_ld::YamlLdLexer;
 use phf::{self, phf_map};
+use std::collections::HashMap;
+use std::sync::{OnceLock, RwLock};
 
 type LexerConstructor = fn() -> Box<dyn Lexer>;
 
@@ -864,14 +864,14 @@ pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
     if let Some(constructor) = LEXER_MAP.get(alias) {
         return Some(constructor());
     }
-    
+
     // Fallback: check runtime registry for dynamically registered lexers
     if let Ok(registry) = get_runtime_registry().read() {
         if let Some(constructor) = registry.get(alias) {
             return Some(constructor());
         }
     }
-    
+
     None
 }
 
@@ -911,15 +911,19 @@ pub fn get_lexer_by_name(alias: &str) -> Option<Box<dyn Lexer>> {
 /// // Now it's available
 /// let lexer = get_lexer_by_name("my-lang")?;
 /// ```
-pub fn register_lexer(name: &'static str, constructor: LexerConstructor) -> Result<(), &'static str> {
+pub fn register_lexer(
+    name: &'static str,
+    constructor: LexerConstructor,
+) -> Result<(), &'static str> {
     // Prevent runtime registration from shadowing built-ins
     if LEXER_MAP.contains_key(name) {
         return Err("Cannot override built-in lexer");
     }
-    
-    let mut registry = get_runtime_registry().write()
+
+    let mut registry = get_runtime_registry()
+        .write()
         .map_err(|_| "Failed to acquire write lock on lexer registry")?;
-    
+
     registry.insert(name, constructor);
     Ok(())
 }
@@ -1759,12 +1763,12 @@ pub fn native_aliases() -> Vec<&'static str> {
         "zsh",
         "🔥",
     ];
-    
+
     // Include any dynamically registered aliases
     if let Ok(registry) = get_runtime_registry().read() {
         aliases.extend(registry.keys().copied());
     }
-    
+
     aliases
 }
 
@@ -1810,7 +1814,10 @@ mod tests {
 
         // Should now be findable
         let lexer = get_lexer_by_name("test-mock-lang");
-        assert!(lexer.is_some(), "Dynamically registered lexer should be found");
+        assert!(
+            lexer.is_some(),
+            "Dynamically registered lexer should be found"
+        );
 
         // Cleanup
         unregister_lexer("test-mock-lang");
@@ -1859,7 +1866,10 @@ mod tests {
     fn test_unregister_nonexistent_lexer() {
         // Unregistering a non-existent lexer should return None
         let result = unregister_lexer("definitely-not-registered-xyz");
-        assert!(result.is_none(), "Unregistering non-existent lexer should return None");
+        assert!(
+            result.is_none(),
+            "Unregistering non-existent lexer should return None"
+        );
     }
 
     #[test]

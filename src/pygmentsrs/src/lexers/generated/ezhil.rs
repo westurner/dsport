@@ -42,14 +42,21 @@ fn build_table() -> Table {
     m.insert(r"keywords", vec![
         Rule::token(r"(?m)பதிப்பி|தேர்ந்தெடு|தேர்வு|ஏதேனில்|ஆனால்|இல்லைஆனால்|இல்லை|ஆக|ஒவ்வொன்றாக|இல்|வரை|செய்|முடியேனில்|பின்கொடு|முடி|நிரல்பாகம்|தொடர்|நிறுத்து|நிரல்பாகம்", KEYWORD),
     ]);
-    m.insert(r"identifier", vec![
-        Rule::token(r"(?m)(?:[a-zA-Z_]|[஀-௿])(?:[0-9]|[a-zA-Z_]|[஀-௿])*", NAME),
-    ]);
-    m.insert(r"literal", vec![
-        Rule::token(r#"(?m)".*?""#, STRING),
-        Rule::token(r"(?m)\d+((\.\d*)?[eE][+-]?\d+|\.\d*)", NUMBER_FLOAT),
-        Rule::token(r"(?m)\d+", NUMBER_INTEGER),
-    ]);
+    m.insert(
+        r"identifier",
+        vec![Rule::token(
+            r"(?m)(?:[a-zA-Z_]|[஀-௿])(?:[0-9]|[a-zA-Z_]|[஀-௿])*",
+            NAME,
+        )],
+    );
+    m.insert(
+        r"literal",
+        vec![
+            Rule::token(r#"(?m)".*?""#, STRING),
+            Rule::token(r"(?m)\d+((\.\d*)?[eE][+-]?\d+|\.\d*)", NUMBER_FLOAT),
+            Rule::token(r"(?m)\d+", NUMBER_INTEGER),
+        ],
+    );
     Table(m)
 }
 

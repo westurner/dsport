@@ -5,10 +5,10 @@
 //! `LatexFormatter` — LaTeX macros
 //! `RtfFormatter` — Rich Text Format
 
-use std::collections::HashMap;
-use crate::token::TokenType;
 use super::color::rgb_to_hex;
 use super::style::Style;
+use crate::token::TokenType;
+use std::collections::HashMap;
 
 pub struct GroffFormatter {
     color_map: HashMap<String, usize>,
@@ -26,34 +26,39 @@ impl GroffFormatter {
     pub fn format(&mut self, tokens: &[(TokenType, String)]) -> String {
         let mut out = String::new();
         out.push_str(".nf\n"); // no-fill mode (preserve formatting)
-        
+
         for (ttype, value) in tokens {
             let style = Style::from_token(*ttype);
-            
+
             if let Some((r, g, b)) = style.fg_color {
                 let hex = rgb_to_hex(r, g, b);
                 if !self.color_map.contains_key(&hex) {
                     let id = self.next_color_id;
                     self.color_map.insert(hex.clone(), id);
                     self.next_color_id += 1;
-                    out.push_str(&format!(".defcolor {} rgb {} {} {}\n",
-                        id, r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0));
+                    out.push_str(&format!(
+                        ".defcolor {} rgb {} {} {}\n",
+                        id,
+                        r as f32 / 255.0,
+                        g as f32 / 255.0,
+                        b as f32 / 255.0
+                    ));
                 }
                 let color_id = self.color_map[&hex];
                 out.push_str(&format!(".mcolor {}\n", color_id));
             }
-            
+
             if style.bold {
                 out.push_str(".ft B\n");
             }
-            
+
             out.push_str(value);
-            
+
             if style.bold || style.fg_color.is_some() {
                 out.push_str(".ft R\n");
             }
         }
-        
+
         out.push_str(".fi\n");
         out
     }
@@ -70,34 +75,34 @@ pub struct PangoMarkupFormatter;
 impl PangoMarkupFormatter {
     pub fn format(&self, tokens: &[(TokenType, String)]) -> String {
         let mut out = String::new();
-        
+
         for (ttype, value) in tokens {
             let style = Style::from_token(*ttype);
             let mut attrs = Vec::new();
-            
+
             if let Some((r, g, b)) = style.fg_color {
                 let hex = rgb_to_hex(r, g, b);
                 attrs.push(format!("foreground='{}'", hex));
             }
-            
+
             if style.bold {
                 attrs.push("weight='bold'".to_string());
             }
-            
+
             if style.italic {
                 attrs.push("style='italic'".to_string());
             }
-            
+
             if style.underline {
                 attrs.push("underline='single'".to_string());
             }
-            
+
             if !attrs.is_empty() {
                 out.push_str("<span ");
                 out.push_str(&attrs.join(" "));
                 out.push_str(">");
             }
-            
+
             // Escape XML entities
             for c in value.chars() {
                 match c {
@@ -109,12 +114,12 @@ impl PangoMarkupFormatter {
                     _ => out.push(c),
                 }
             }
-            
+
             if !attrs.is_empty() {
                 out.push_str("</span>");
             }
         }
-        
+
         out
     }
 }
@@ -128,11 +133,11 @@ impl LatexFormatter {
         out.push_str("\\usepackage{listings}\n");
         out.push_str("\\begin{document}\n");
         out.push_str("\\begin{lstlisting}\n");
-        
+
         for (ttype, value) in tokens {
             let style = Style::from_token(*ttype);
             let escaped = Self::escape_latex(value);
-            
+
             if style.bold || style.italic || style.fg_color.is_some() {
                 if style.bold {
                     out.push_str("\\textbf{");
@@ -140,14 +145,14 @@ impl LatexFormatter {
                 if style.italic {
                     out.push_str("\\textit{");
                 }
-                
+
                 if let Some((r, g, b)) = style.fg_color {
                     let hex = rgb_to_hex(r, g, b);
                     out.push_str(&format!("\\textcolor{{{}}}{{{}}}", hex, escaped));
                 } else {
                     out.push_str(&escaped);
                 }
-                
+
                 if style.italic {
                     out.push_str("}");
                 }
@@ -158,7 +163,7 @@ impl LatexFormatter {
                 out.push_str(&escaped);
             }
         }
-        
+
         out.push_str("\\end{lstlisting}\n");
         out.push_str("\\end{document}\n");
         out
@@ -205,11 +210,11 @@ impl RtfFormatter {
 
     pub fn format(&mut self, tokens: &[(TokenType, String)]) -> String {
         let mut out = String::new();
-        
+
         // RTF header
         out.push_str("{\\rtf1\\ansi\\ansicpg1252\n");
         out.push_str("{\\colortbl;");
-        
+
         // Collect all colors first
         let mut color_map = HashMap::new();
         for (ttype, _) in tokens {
@@ -221,22 +226,22 @@ impl RtfFormatter {
                 }
             }
         }
-        
+
         // Write color table
         for (r, g, b) in &self.color_table {
             out.push_str(&format!("\\red{}\\green{}\\blue{};", r, g, b));
         }
         out.push_str("}\n");
-        
+
         // Font table
         out.push_str("{\\fonttbl{\\f0\\fmodern Courier New;}}\n");
-        
+
         // Body
         out.push_str("\\f0\\fs20\n");
-        
+
         for (ttype, value) in tokens {
             let style = Style::from_token(*ttype);
-            
+
             if style.bold {
                 out.push_str("\\b ");
             }
@@ -246,13 +251,13 @@ impl RtfFormatter {
             if style.underline {
                 out.push_str("\\ul ");
             }
-            
+
             if let Some(color) = style.fg_color {
                 if let Some(&color_idx) = color_map.get(&color) {
                     out.push_str(&format!("\\cf{} ", color_idx + 1)); // +1 because RTF is 1-indexed
                 }
             }
-            
+
             // Escape RTF special chars and control chars
             for c in value.chars() {
                 match c {
@@ -260,7 +265,7 @@ impl RtfFormatter {
                     '{' => out.push_str("\\{"),
                     '}' => out.push_str("\\}"),
                     '\n' => out.push_str("\\par\n"),
-                    '\r' => {},
+                    '\r' => {}
                     // Escape control chars (0x00-0x1F, except newline/carriage return already handled)
                     c if c.is_control() => {
                         // RTF hex escape: \'HH
@@ -270,7 +275,7 @@ impl RtfFormatter {
                     _ => out.push(c),
                 }
             }
-            
+
             if style.underline {
                 out.push_str("\\ul0 ");
             }
@@ -281,7 +286,7 @@ impl RtfFormatter {
                 out.push_str("\\b0 ");
             }
         }
-        
+
         out.push_str("}\n");
         out
     }

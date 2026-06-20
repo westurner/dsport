@@ -34,26 +34,22 @@ pub fn replicas(value: Value) -> Value {
 /// ```
 pub fn container_image(value: Value) -> Value {
     match value.get_item(&Value::from("spec")) {
-        Ok(spec) => {
-            match spec.get_item(&Value::from("containers")) {
-                Ok(containers) => {
-                    if containers.len().unwrap_or(0) > 0 {
-                        match containers.get_item(&Value::from(0)) {
-                            Ok(container) => {
-                                match container.get_item(&Value::from("image")) {
-                                    Ok(image) => image,
-                                    Err(_) => Value::from(""),
-                                }
-                            }
+        Ok(spec) => match spec.get_item(&Value::from("containers")) {
+            Ok(containers) => {
+                if containers.len().unwrap_or(0) > 0 {
+                    match containers.get_item(&Value::from(0)) {
+                        Ok(container) => match container.get_item(&Value::from("image")) {
+                            Ok(image) => image,
                             Err(_) => Value::from(""),
-                        }
-                    } else {
-                        Value::from("")
+                        },
+                        Err(_) => Value::from(""),
                     }
+                } else {
+                    Value::from("")
                 }
-                Err(_) => Value::from(""),
             }
-        }
+            Err(_) => Value::from(""),
+        },
         Err(_) => Value::from(""),
     }
 }
@@ -68,17 +64,13 @@ pub fn container_image(value: Value) -> Value {
 pub fn label(value: Value, key: Value) -> Value {
     let key_str = key.to_string();
     match value.get_item(&Value::from("metadata")) {
-        Ok(metadata) => {
-            match metadata.get_item(&Value::from("labels")) {
-                Ok(labels) => {
-                    match labels.get_item(&Value::from(&key_str)) {
-                        Ok(label_value) => label_value,
-                        Err(_) => Value::from(""),
-                    }
-                }
+        Ok(metadata) => match metadata.get_item(&Value::from("labels")) {
+            Ok(labels) => match labels.get_item(&Value::from(&key_str)) {
+                Ok(label_value) => label_value,
                 Err(_) => Value::from(""),
-            }
-        }
+            },
+            Err(_) => Value::from(""),
+        },
         Err(_) => Value::from(""),
     }
 }
@@ -93,17 +85,13 @@ pub fn label(value: Value, key: Value) -> Value {
 pub fn annotation(value: Value, key: Value) -> Value {
     let key_str = key.to_string();
     match value.get_item(&Value::from("metadata")) {
-        Ok(metadata) => {
-            match metadata.get_item(&Value::from("annotations")) {
-                Ok(annotations) => {
-                    match annotations.get_item(&Value::from(&key_str)) {
-                        Ok(annot_value) => annot_value,
-                        Err(_) => Value::from(""),
-                    }
-                }
+        Ok(metadata) => match metadata.get_item(&Value::from("annotations")) {
+            Ok(annotations) => match annotations.get_item(&Value::from(&key_str)) {
+                Ok(annot_value) => annot_value,
                 Err(_) => Value::from(""),
-            }
-        }
+            },
+            Err(_) => Value::from(""),
+        },
         Err(_) => Value::from(""),
     }
 }
@@ -131,12 +119,10 @@ pub fn k8s_kind(value: Value) -> Value {
 /// ```
 pub fn k8s_name(value: Value) -> Value {
     match value.get_item(&Value::from("metadata")) {
-        Ok(metadata) => {
-            match metadata.get_item(&Value::from("name")) {
-                Ok(name) => name,
-                Err(_) => Value::from(""),
-            }
-        }
+        Ok(metadata) => match metadata.get_item(&Value::from("name")) {
+            Ok(name) => name,
+            Err(_) => Value::from(""),
+        },
         Err(_) => Value::from(""),
     }
 }
@@ -169,12 +155,10 @@ pub fn k8s_namespace(value: Value) -> Value {
 /// ```
 pub fn k8s_labels(value: Value) -> Value {
     match value.get_item(&Value::from("metadata")) {
-        Ok(metadata) => {
-            match metadata.get_item(&Value::from("labels")) {
-                Ok(labels) => labels,
-                Err(_) => Value::from(BTreeMap::<&str, Value>::new()),
-            }
-        }
+        Ok(metadata) => match metadata.get_item(&Value::from("labels")) {
+            Ok(labels) => labels,
+            Err(_) => Value::from(BTreeMap::<&str, Value>::new()),
+        },
         Err(_) => Value::from(BTreeMap::<&str, Value>::new()),
     }
 }
@@ -188,12 +172,10 @@ pub fn k8s_labels(value: Value) -> Value {
 /// ```
 pub fn k8s_annotations(value: Value) -> Value {
     match value.get_item(&Value::from("metadata")) {
-        Ok(metadata) => {
-            match metadata.get_item(&Value::from("annotations")) {
-                Ok(annotations) => annotations,
-                Err(_) => Value::from(BTreeMap::<&str, Value>::new()),
-            }
-        }
+        Ok(metadata) => match metadata.get_item(&Value::from("annotations")) {
+            Ok(annotations) => annotations,
+            Err(_) => Value::from(BTreeMap::<&str, Value>::new()),
+        },
         Err(_) => Value::from(BTreeMap::<&str, Value>::new()),
     }
 }
@@ -208,12 +190,10 @@ pub fn k8s_annotations(value: Value) -> Value {
 pub fn k8s_in_namespace(value: Value, namespace: Value) -> Value {
     let ns_str = namespace.to_string();
     match value.get_item(&Value::from("metadata")) {
-        Ok(metadata) => {
-            match metadata.get_item(&Value::from("namespace")) {
-                Ok(ns) => Value::from(ns.to_string() == ns_str),
-                Err(_) => Value::from("default" == ns_str),
-            }
-        }
+        Ok(metadata) => match metadata.get_item(&Value::from("namespace")) {
+            Ok(ns) => Value::from(ns.to_string() == ns_str),
+            Err(_) => Value::from("default" == ns_str),
+        },
         Err(_) => Value::from("default" == ns_str),
     }
 }
@@ -229,17 +209,13 @@ pub fn k8s_has_label(value: Value, key: Value, expected_val: Value) -> Value {
     let key_str = key.to_string();
     let expected = expected_val.to_string();
     match value.get_item(&Value::from("metadata")) {
-        Ok(metadata) => {
-            match metadata.get_item(&Value::from("labels")) {
-                Ok(labels) => {
-                    match labels.get_item(&Value::from(&key_str)) {
-                        Ok(label_value) => Value::from(label_value.to_string() == expected),
-                        Err(_) => Value::from(false),
-                    }
-                }
+        Ok(metadata) => match metadata.get_item(&Value::from("labels")) {
+            Ok(labels) => match labels.get_item(&Value::from(&key_str)) {
+                Ok(label_value) => Value::from(label_value.to_string() == expected),
                 Err(_) => Value::from(false),
-            }
-        }
+            },
+            Err(_) => Value::from(false),
+        },
         Err(_) => Value::from(false),
     }
 }
@@ -263,13 +239,13 @@ mod tests {
         let mut container = BTreeMap::new();
         container.insert("image", Value::from("myapp:1.0"));
         container.insert("name", Value::from("app"));
-        
+
         let mut spec = BTreeMap::new();
         spec.insert("containers", Value::from(vec![Value::from(container)]));
-        
+
         let mut pod = BTreeMap::new();
         pod.insert("spec", Value::from(spec));
-        
+
         let result = container_image(Value::from(pod));
         assert_eq!(result.to_string(), "myapp:1.0");
     }

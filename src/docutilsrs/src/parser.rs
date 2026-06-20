@@ -2137,7 +2137,9 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             let attribution_text = match children.last() {
                 Some(Block::Paragraph { text, .. }) => {
                     let t = text.trim_start();
-                    t.strip_prefix("--- ").or_else(|| t.strip_prefix("-- ")).map(|rest| rest.to_string())
+                    t.strip_prefix("--- ")
+                        .or_else(|| t.strip_prefix("-- "))
+                        .map(|rest| rest.to_string())
                 }
                 _ => None,
             };

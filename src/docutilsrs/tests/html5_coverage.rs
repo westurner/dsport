@@ -1,6 +1,6 @@
 mod common;
 
-use docutilsrs::{html5, cli::Html5Options};
+use docutilsrs::{cli::Html5Options, html5};
 
 #[test]
 fn test_html5_coverage() {

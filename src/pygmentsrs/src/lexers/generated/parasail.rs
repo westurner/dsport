@@ -47,14 +47,17 @@ fn build_table() -> Table {
         Rule::token(r"(?m)(<|>|\[|\]|\(|\)|\||:|;|,|.|\{|\}|->)", PUNCTUATION),
         Rule::token(r"(?m)\n+", TEXT),
     ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?m)\d[0-9_]*#[0-9a-fA-F][0-9a-fA-F_]*#", NUMBER_HEX),
-        Rule::token(r"(?m)0[xX][0-9a-fA-F][0-9a-fA-F_]*", NUMBER_HEX),
-        Rule::token(r"(?m)0[bB][01][01_]*", NUMBER_BIN),
-        Rule::token(r"(?m)\d[0-9_]*\.\d[0-9_]*[eE][+-]\d[0-9_]*", NUMBER_FLOAT),
-        Rule::token(r"(?m)\d[0-9_]*\.\d[0-9_]*", NUMBER_FLOAT),
-        Rule::token(r"(?m)\d[0-9_]*", NUMBER_INTEGER),
-    ]);
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(r"(?m)\d[0-9_]*#[0-9a-fA-F][0-9a-fA-F_]*#", NUMBER_HEX),
+            Rule::token(r"(?m)0[xX][0-9a-fA-F][0-9a-fA-F_]*", NUMBER_HEX),
+            Rule::token(r"(?m)0[bB][01][01_]*", NUMBER_BIN),
+            Rule::token(r"(?m)\d[0-9_]*\.\d[0-9_]*[eE][+-]\d[0-9_]*", NUMBER_FLOAT),
+            Rule::token(r"(?m)\d[0-9_]*\.\d[0-9_]*", NUMBER_FLOAT),
+            Rule::token(r"(?m)\d[0-9_]*", NUMBER_INTEGER),
+        ],
+    );
     Table(m)
 }
 

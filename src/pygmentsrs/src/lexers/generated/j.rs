@@ -52,18 +52,27 @@ fn build_table() -> Table {
         Rule::token(r"(?m)_?\d+x", TokenType::new(&["Literal", "Number", "Integer", "Long"])),
         Rule::token(r"(?m)_?\d+", NUMBER_INTEGER),
     ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?m)\b_{1,2}\b", NUMBER),
-        Rule::token(r"(?m)_?\d+(\.\d+)?(\s*[ejr]\s*)_?\d+(\.?=\d+)?", NUMBER),
-        Rule::token(r"(?m)_?\d+\.(?=\d+)", NUMBER_FLOAT),
-        Rule::token(r"(?m)_?\d+x", TokenType::new(&["Literal", "Number", "Integer", "Long"])),
-        Rule::token(r"(?m)_?\d+", NUMBER_INTEGER),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^)]", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)^\)", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[)]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(r"(?m)\b_{1,2}\b", NUMBER),
+            Rule::token(r"(?m)_?\d+(\.\d+)?(\s*[ejr]\s*)_?\d+(\.?=\d+)?", NUMBER),
+            Rule::token(r"(?m)_?\d+\.(?=\d+)", NUMBER_FLOAT),
+            Rule::token(
+                r"(?m)_?\d+x",
+                TokenType::new(&["Literal", "Number", "Integer", "Long"]),
+            ),
+            Rule::token(r"(?m)_?\d+", NUMBER_INTEGER),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^)]", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)^\)", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[)]", COMMENT_MULTILINE),
+        ],
+    );
     m.insert(r"explicitDefinition", vec![
         Rule::token(r"(?m)\b[nmuvxy]\b", NAME_DECORATOR),
         Rule::token(r"(?m)#!.*$", COMMENT_PREPROC),
@@ -95,11 +104,14 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)^\)", NAME_LABEL, NewState::Pop(1)),
         Rule::token(r"(?m)[)]", NAME),
     ]);
-    m.insert(r"nounDefinition", vec![
-        Rule::token(r"(?m)[^)]+", STRING),
-        Rule::token_to(r"(?m)^\)", NAME_LABEL, NewState::Pop(1)),
-        Rule::token(r"(?m)[)]", STRING),
-    ]);
+    m.insert(
+        r"nounDefinition",
+        vec![
+            Rule::token(r"(?m)[^)]+", STRING),
+            Rule::token_to(r"(?m)^\)", NAME_LABEL, NewState::Pop(1)),
+            Rule::token(r"(?m)[)]", STRING),
+        ],
+    );
     m.insert(r"parentheses", vec![
         Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
         Rule::token(r"(?m)\b[nmuvxy]\b", NAME_DECORATOR),
@@ -157,11 +169,14 @@ fn build_table() -> Table {
         Rule::token(r"(?m)_?\d+x", TokenType::new(&["Literal", "Number", "Integer", "Long"])),
         Rule::token(r"(?m)_?\d+", NUMBER_INTEGER),
     ]);
-    m.insert(r"singlequote", vec![
-        Rule::token(r"(?m)[^']+", STRING),
-        Rule::token(r"(?m)''", STRING),
-        Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"singlequote",
+        vec![
+            Rule::token(r"(?m)[^']+", STRING),
+            Rule::token(r"(?m)''", STRING),
+            Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

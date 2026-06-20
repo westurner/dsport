@@ -193,27 +193,70 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\\\n", STRING),
         Rule::token(r"(?m)\\", STRING),
     ]);
-    m.insert(r"macro", vec![
-        Rule::bygroups_g(r#"(?m)(\s*(?:/[*].*?[*]/\s*)?)(include)(\s*(?:/[*].*?[*]/\s*)?)("[^"]+")([^\n]*)"#, vec![Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(COMMENT_PREPROC)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(COMMENT_PREPROCFILE)), Some(GroupAction::Token(COMMENT_SINGLE))]),
-        Rule::bygroups_g(r"(?m)(\s*(?:/[*].*?[*]/\s*)?)(include)(\s*(?:/[*].*?[*]/\s*)?)(<[^>]+>)([^\n]*)", vec![Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(COMMENT_PREPROC)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(COMMENT_PREPROCFILE)), Some(GroupAction::Token(COMMENT_SINGLE))]),
-        Rule::token(r"(?m)[^/\n]+", COMMENT_PREPROC),
-        Rule::token(r"(?m)/[*](.|\n)*?[*]/", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)//.*?\n", COMMENT_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?m)/", COMMENT_PREPROC),
-        Rule::token(r"(?m)(?<=\\)\n", COMMENT_PREPROC),
-        Rule::token_to(r"(?m)\n", COMMENT_PREPROC, NewState::Pop(1)),
-    ]);
-    m.insert(r"if0", vec![
-        Rule::token_to(r"(?m)^\s*#if.*?(?<!\\)\n", COMMENT_PREPROC, NewState::PushSame),
-        Rule::token_to(r"(?m)^\s*#el(?:se|if).*\n", COMMENT_PREPROC, NewState::Pop(1)),
-        Rule::token_to(r"(?m)^\s*#endif.*?(?<!\\)\n", COMMENT_PREPROC, NewState::Pop(1)),
-        Rule::token(r"(?m).*?\n", COMMENT),
-    ]);
-    m.insert(r"classname", vec![
-        Rule::token_to(r"(?m)(?!\d)(?:[\w$]|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})+", NAME_CLASS, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\s*(?=>)", TEXT, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"macro",
+        vec![
+            Rule::bygroups_g(
+                r#"(?m)(\s*(?:/[*].*?[*]/\s*)?)(include)(\s*(?:/[*].*?[*]/\s*)?)("[^"]+")([^\n]*)"#,
+                vec![
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(COMMENT_PREPROC)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(COMMENT_PREPROCFILE)),
+                    Some(GroupAction::Token(COMMENT_SINGLE)),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?m)(\s*(?:/[*].*?[*]/\s*)?)(include)(\s*(?:/[*].*?[*]/\s*)?)(<[^>]+>)([^\n]*)",
+                vec![
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(COMMENT_PREPROC)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(COMMENT_PREPROCFILE)),
+                    Some(GroupAction::Token(COMMENT_SINGLE)),
+                ],
+            ),
+            Rule::token(r"(?m)[^/\n]+", COMMENT_PREPROC),
+            Rule::token(r"(?m)/[*](.|\n)*?[*]/", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)//.*?\n", COMMENT_SINGLE, NewState::Pop(1)),
+            Rule::token(r"(?m)/", COMMENT_PREPROC),
+            Rule::token(r"(?m)(?<=\\)\n", COMMENT_PREPROC),
+            Rule::token_to(r"(?m)\n", COMMENT_PREPROC, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"if0",
+        vec![
+            Rule::token_to(
+                r"(?m)^\s*#if.*?(?<!\\)\n",
+                COMMENT_PREPROC,
+                NewState::PushSame,
+            ),
+            Rule::token_to(
+                r"(?m)^\s*#el(?:se|if).*\n",
+                COMMENT_PREPROC,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)^\s*#endif.*?(?<!\\)\n",
+                COMMENT_PREPROC,
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m).*?\n", COMMENT),
+        ],
+    );
+    m.insert(
+        r"classname",
+        vec![
+            Rule::token_to(
+                r"(?m)(?!\d)(?:[\w$]|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})+",
+                NAME_CLASS,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(r"(?m)\s*(?=>)", TEXT, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     m.insert(r"case-value", vec![
         Rule::token_to(r"(?m)(?<!:)(:)(?!:)", PUNCTUATION, NewState::Pop(1)),
         Rule::token(r"(?m)(?!\d)(?:[\w$]|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})+", NAME_CONSTANT),

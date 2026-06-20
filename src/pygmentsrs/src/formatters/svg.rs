@@ -3,18 +3,18 @@
 //! Renders tokens to SVG with monospace layout.
 //! Assumes fixed-width font and line height.
 
-use crate::token::TokenType;
 use super::style::Style;
+use crate::token::TokenType;
 
 pub struct SvgFormatter {
-    font_width: f32,     // pixels per character (monospace)
-    line_height: f32,    // pixels per line
+    font_width: f32,  // pixels per character (monospace)
+    line_height: f32, // pixels per line
 }
 
 impl SvgFormatter {
     pub fn new() -> Self {
         Self {
-            font_width: 7.2,   // Courier New, typical
+            font_width: 7.2, // Courier New, typical
             line_height: 14.0,
         }
     }
@@ -24,7 +24,7 @@ impl SvgFormatter {
         let mut max_width: f32 = 0.0;
         let mut line_count = 1;
         let mut col = 0.0;
-        
+
         for (_, value) in tokens {
             for c in value.chars() {
                 if c == '\n' {
@@ -36,22 +36,22 @@ impl SvgFormatter {
                 }
             }
         }
-        
-        let width = max_width + 20.0;  // padding
+
+        let width = max_width + 20.0; // padding
         let height = (line_count as f32 * self.line_height) + 20.0;
-        
+
         let mut out = String::new();
         out.push_str(&format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {} {}\" width=\"{}\" height=\"{}\">\n",
             width as u32, height as u32, width as u32, height as u32
         ));
-        
+
         // Background
         out.push_str(&format!(
             "<rect width=\"{}\" height=\"{}\" fill=\"white\"/>\n",
             width as u32, height as u32
         ));
-        
+
         // CSS styles
         out.push_str("<style>\n");
         out.push_str("text { font-family: 'Courier New', monospace; font-size: 12px; }\n");
@@ -60,14 +60,14 @@ impl SvgFormatter {
         out.push_str(".tok-comment { fill: #969696; }\n");
         out.push_str(".tok-number { fill: #8b4513; }\n");
         out.push_str("</style>\n");
-        
+
         // Render tokens
         let mut x = 10.0;
-        let mut y = 10.0 + self.line_height * 0.8;  // baseline
-        
+        let mut y = 10.0 + self.line_height * 0.8; // baseline
+
         for (ttype, value) in tokens {
             let style = Style::from_token(*ttype);
-            
+
             // Split text at newlines to handle multi-line tokens
             for (line_idx, line) in value.split('\n').enumerate() {
                 if line_idx > 0 {
@@ -75,11 +75,11 @@ impl SvgFormatter {
                     x = 10.0;
                     y += self.line_height;
                 }
-                
+
                 if line.is_empty() {
                     continue;
                 }
-                
+
                 // Start text element with color
                 if let Some((r, g, b)) = style.fg_color {
                     let hex = format!("#{:02x}{:02x}{:02x}", r, g, b);
@@ -90,7 +90,7 @@ impl SvgFormatter {
                 } else {
                     out.push_str(&format!("<text x=\"{}\" y=\"{}\">", x as u32, y as u32));
                 }
-                
+
                 // Apply text decorations
                 if style.bold {
                     out.push_str("<tspan style=\"font-weight: bold;\">");
@@ -101,7 +101,7 @@ impl SvgFormatter {
                 if style.underline {
                     out.push_str("<tspan style=\"text-decoration: underline;\">");
                 }
-                
+
                 // Escape XML entities
                 for c in line.chars() {
                     match c {
@@ -112,7 +112,7 @@ impl SvgFormatter {
                         _ => out.push(c),
                     }
                 }
-                
+
                 // Close decorations and text
                 if style.underline {
                     out.push_str("</tspan>");
@@ -123,14 +123,14 @@ impl SvgFormatter {
                 if style.bold {
                     out.push_str("</tspan>");
                 }
-                
+
                 out.push_str("</text>\n");
-                
+
                 // Update x position for next character
                 x += line.len() as f32 * self.font_width;
             }
         }
-        
+
         out.push_str("</svg>\n");
         out
     }
@@ -164,10 +164,7 @@ mod tests {
     #[test]
     fn test_svg_with_newline() {
         let formatter = SvgFormatter::new();
-        let tokens = vec![
-            (KEYWORD, "let\n".to_string()),
-            (NAME, "x".to_string()),
-        ];
+        let tokens = vec![(KEYWORD, "let\n".to_string()), (NAME, "x".to_string())];
         let result = formatter.format(&tokens);
         assert!(result.contains("</text>"));
         assert!(result.contains("<text"));

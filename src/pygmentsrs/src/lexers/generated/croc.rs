@@ -44,12 +44,15 @@ fn build_table() -> Table {
         Rule::token(r"(?m)(~=|\^=|%=|\*=|==|!=|>>>=|>>>|>>=|>>|>=|<=>|\?=|-\>|<<=|<<|<=|\+\+|\+=|--|-=|\|\||\|=|&&|&=|\.\.|/=)|[-/.&$@|\+<>!()\[\]{}?,;:=*%^~#\\]", PUNCTUATION),
         Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
     ]);
-    m.insert(r"nestedcomment", vec![
-        Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"nestedcomment",
+        vec![
+            Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

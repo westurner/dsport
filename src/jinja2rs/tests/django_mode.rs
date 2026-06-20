@@ -4,7 +4,7 @@
 //! templates identically to (or deliberately close to) the Python Django
 //! template engine output.
 
-use jinja2rs::{Environment, DjangoMode};
+use jinja2rs::{DjangoMode, Environment};
 use serde_json::json;
 
 // ── Filter smoke tests ────────────────────────────────────────────────────────
@@ -13,7 +13,8 @@ use serde_json::json;
 fn django_upper_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ text|upper }}", json!({"text": "hello world"})).unwrap(),
+        env.render_str("{{ text|upper }}", json!({"text": "hello world"}))
+            .unwrap(),
         "HELLO WORLD"
     );
 }
@@ -22,7 +23,8 @@ fn django_upper_filter() {
 fn django_lower_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ text|lower }}", json!({"text": "HELLO"})).unwrap(),
+        env.render_str("{{ text|lower }}", json!({"text": "HELLO"}))
+            .unwrap(),
         "hello"
     );
 }
@@ -31,7 +33,8 @@ fn django_lower_filter() {
 fn django_capfirst_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ text|capfirst }}", json!({"text": "hello world"})).unwrap(),
+        env.render_str("{{ text|capfirst }}", json!({"text": "hello world"}))
+            .unwrap(),
         "Hello world"
     );
 }
@@ -40,7 +43,8 @@ fn django_capfirst_filter() {
 fn django_title_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ text|title }}", json!({"text": "hello world"})).unwrap(),
+        env.render_str("{{ text|title }}", json!({"text": "hello world"}))
+            .unwrap(),
         "Hello World"
     );
 }
@@ -49,7 +53,8 @@ fn django_title_filter() {
 fn django_slugify_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ title|slugify }}", json!({"title": "Hello, World!"})).unwrap(),
+        env.render_str("{{ title|slugify }}", json!({"title": "Hello, World!"}))
+            .unwrap(),
         "hello-world"
     );
 }
@@ -57,20 +62,24 @@ fn django_slugify_filter() {
 #[test]
 fn django_truncatewords_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
-    let result = env.render_str(
-        "{{ text|truncatewords(2) }}",
-        json!({"text": "one two three four five"}),
-    ).unwrap();
+    let result = env
+        .render_str(
+            "{{ text|truncatewords(2) }}",
+            json!({"text": "one two three four five"}),
+        )
+        .unwrap();
     assert_eq!(result, "one two\u{2026}");
 }
 
 #[test]
 fn django_truncatechars_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
-    let result = env.render_str(
-        "{{ text|truncatechars(6) }}",
-        json!({"text": "Hello, World!"}),
-    ).unwrap();
+    let result = env
+        .render_str(
+            "{{ text|truncatechars(6) }}",
+            json!({"text": "Hello, World!"}),
+        )
+        .unwrap();
     assert_eq!(result, "Hello\u{2026}");
 }
 
@@ -78,7 +87,8 @@ fn django_truncatechars_filter() {
 fn django_add_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ count|add(5) }}", json!({"count": 10})).unwrap(),
+        env.render_str("{{ count|add(5) }}", json!({"count": 10}))
+            .unwrap(),
         "15"
     );
 }
@@ -87,7 +97,8 @@ fn django_add_filter() {
 fn django_floatformat_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ pi|floatformat(2) }}", json!({"pi": 3.14159_f64})).unwrap(),
+        env.render_str("{{ pi|floatformat(2) }}", json!({"pi": 3.14159_f64}))
+            .unwrap(),
         "3.14"
     );
 }
@@ -96,17 +107,13 @@ fn django_floatformat_filter() {
 fn django_pluralize_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str(
-            "{{ n }} comment{{ n|pluralize }}",
-            json!({"n": 1}),
-        ).unwrap(),
+        env.render_str("{{ n }} comment{{ n|pluralize }}", json!({"n": 1}),)
+            .unwrap(),
         "1 comment"
     );
     assert_eq!(
-        env.render_str(
-            "{{ n }} comment{{ n|pluralize }}",
-            json!({"n": 5}),
-        ).unwrap(),
+        env.render_str("{{ n }} comment{{ n|pluralize }}", json!({"n": 5}),)
+            .unwrap(),
         "5 comments"
     );
 }
@@ -115,11 +122,13 @@ fn django_pluralize_filter() {
 fn django_first_last_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ items|first }}", json!({"items": [1, 2, 3]})).unwrap(),
+        env.render_str("{{ items|first }}", json!({"items": [1, 2, 3]}))
+            .unwrap(),
         "1"
     );
     assert_eq!(
-        env.render_str("{{ items|last }}", json!({"items": [1, 2, 3]})).unwrap(),
+        env.render_str("{{ items|last }}", json!({"items": [1, 2, 3]}))
+            .unwrap(),
         "3"
     );
 }
@@ -131,7 +140,8 @@ fn django_join_filter() {
         env.render_str(
             r#"{{ items|join(", ") }}"#,
             json!({"items": ["a", "b", "c"]}),
-        ).unwrap(),
+        )
+        .unwrap(),
         "a, b, c"
     );
 }
@@ -140,7 +150,8 @@ fn django_join_filter() {
 fn django_length_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ items|length }}", json!({"items": [1, 2, 3, 4]})).unwrap(),
+        env.render_str("{{ items|length }}", json!({"items": [1, 2, 3, 4]}))
+            .unwrap(),
         "4"
     );
 }
@@ -153,7 +164,8 @@ fn django_yesno_filter() {
         "yes"
     );
     assert_eq!(
-        env.render_str("{{ v|yesno }}", json!({"v": false})).unwrap(),
+        env.render_str("{{ v|yesno }}", json!({"v": false}))
+            .unwrap(),
         "no"
     );
 }
@@ -162,11 +174,16 @@ fn django_yesno_filter() {
 fn django_default_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str(r#"{{ name|default("Anonymous") }}"#, json!({"name": ""})).unwrap(),
+        env.render_str(r#"{{ name|default("Anonymous") }}"#, json!({"name": ""}))
+            .unwrap(),
         "Anonymous"
     );
     assert_eq!(
-        env.render_str(r#"{{ name|default("Anonymous") }}"#, json!({"name": "Alice"})).unwrap(),
+        env.render_str(
+            r#"{{ name|default("Anonymous") }}"#,
+            json!({"name": "Alice"})
+        )
+        .unwrap(),
         "Alice"
     );
 }
@@ -175,7 +192,8 @@ fn django_default_filter() {
 fn django_striptags_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ html|striptags }}", json!({"html": "<b>bold</b>"})).unwrap(),
+        env.render_str("{{ html|striptags }}", json!({"html": "<b>bold</b>"}))
+            .unwrap(),
         "bold"
     );
 }
@@ -184,7 +202,8 @@ fn django_striptags_filter() {
 fn django_urlencode_filter() {
     let env = Environment::with_django_mode(DjangoMode::default());
     assert_eq!(
-        env.render_str("{{ s|urlencode }}", json!({"s": "hello world"})).unwrap(),
+        env.render_str("{{ s|urlencode }}", json!({"s": "hello world"}))
+            .unwrap(),
         "hello%20world"
     );
 }
@@ -194,10 +213,12 @@ fn django_urlencode_filter() {
 #[test]
 fn django_for_loop() {
     let env = Environment::with_django_mode(DjangoMode::default());
-    let result = env.render_str(
-        "{% for item in items %}{{ item }}{% if not loop.last %}, {% endif %}{% endfor %}",
-        json!({"items": ["a", "b", "c"]}),
-    ).unwrap();
+    let result = env
+        .render_str(
+            "{% for item in items %}{{ item }}{% if not loop.last %}, {% endif %}{% endfor %}",
+            json!({"items": ["a", "b", "c"]}),
+        )
+        .unwrap();
     assert_eq!(result, "a, b, c");
 }
 
@@ -205,15 +226,9 @@ fn django_for_loop() {
 fn django_if_elif_else() {
     let env = Environment::with_django_mode(DjangoMode::default());
     let tmpl = "{% if n > 10 %}big{% elif n > 5 %}medium{% else %}small{% endif %}";
-    assert_eq!(
-        env.render_str(tmpl, json!({"n": 15})).unwrap(), "big"
-    );
-    assert_eq!(
-        env.render_str(tmpl, json!({"n": 7})).unwrap(), "medium"
-    );
-    assert_eq!(
-        env.render_str(tmpl, json!({"n": 2})).unwrap(), "small"
-    );
+    assert_eq!(env.render_str(tmpl, json!({"n": 15})).unwrap(), "big");
+    assert_eq!(env.render_str(tmpl, json!({"n": 7})).unwrap(), "medium");
+    assert_eq!(env.render_str(tmpl, json!({"n": 2})).unwrap(), "small");
 }
 
 // ── Template inheritance ──────────────────────────────────────────────────────
@@ -225,14 +240,20 @@ fn django_template_inheritance() {
         "base.html",
         "<html><head><title>{% block title %}Default{% endblock %}</title></head>\
          <body>{% block content %}{% endblock %}</body></html>",
-    ).unwrap();
+    )
+    .unwrap();
     env.add_template(
         "child.html",
         "{% extends \"base.html\" %}{% block title %}My Page{% endblock %}\
          {% block content %}<p>Hello!</p>{% endblock %}",
-    ).unwrap();
+    )
+    .unwrap();
 
-    let result = env.get_template("child.html").unwrap().render(json!({})).unwrap();
+    let result = env
+        .get_template("child.html")
+        .unwrap()
+        .render(json!({}))
+        .unwrap();
     assert!(result.contains("<title>My Page</title>"));
     assert!(result.contains("<p>Hello!</p>"));
 }
@@ -296,10 +317,10 @@ fn django_app_directory_loader_integration() {
     fs::write(
         tmpl_dir.join("greeting.html"),
         "Hello, {{ name|capfirst }}!",
-    ).unwrap();
+    )
+    .unwrap();
 
-    let mode = DjangoMode::default()
-        .with_app_directory(tmp.path().to_path_buf());
+    let mode = DjangoMode::default().with_app_directory(tmp.path().to_path_buf());
     let env = Environment::with_django_mode(mode);
 
     let result = env

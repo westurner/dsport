@@ -40,11 +40,14 @@ fn build_table() -> Table {
         Rule::token(r"(?im)[,;()]", PUNCTUATION),
         Rule::token(r"(?im)\s+", WHITESPACE),
     ]);
-    m.insert(r"string-literal", vec![
-        Rule::token(r#"(?im)\\[tnrfbae"\\]"#, STRING_ESCAPE),
-        Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?im)[^\\"]+"#, STRING),
-    ]);
+    m.insert(
+        r"string-literal",
+        vec![
+            Rule::token(r#"(?im)\\[tnrfbae"\\]"#, STRING_ESCAPE),
+            Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?im)[^\\"]+"#, STRING),
+        ],
+    );
     Table(m)
 }
 

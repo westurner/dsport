@@ -38,7 +38,7 @@ fn test_delegating_basic_html() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div>content</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -47,7 +47,7 @@ fn test_delegating_html_with_tag() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<html><body>text</body></html>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -56,7 +56,7 @@ fn test_delegating_html_with_style() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<style>body { color: red; }</style>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -65,7 +65,7 @@ fn test_delegating_html_with_script() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<script>var x = 42;</script>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -74,7 +74,7 @@ fn test_delegating_empty_content() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "";
     let tokens = lexer.get_tokens(src);
-    
+
     // Empty should produce empty or minimal tokens
     assert!(tokens.is_empty() || tokens.len() <= 1);
 }
@@ -85,7 +85,7 @@ fn test_delegating_only_html_tags() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div></div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -94,7 +94,7 @@ fn test_delegating_nested_tags() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div><div><div>text</div></div></div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -103,7 +103,7 @@ fn test_delegating_attributes() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = r#"<div id="test" class="container">content</div>"#;
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -112,7 +112,7 @@ fn test_delegating_doctype() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<!DOCTYPE html><html><body>Test</body></html>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -121,7 +121,7 @@ fn test_delegating_comments() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<!-- comment --><div>content</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -130,7 +130,7 @@ fn test_delegating_entities() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div>&lt; &gt; &amp;</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -139,7 +139,7 @@ fn test_delegating_unquoted_attributes() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div id=test class=container>content</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -148,7 +148,7 @@ fn test_delegating_single_quoted_attributes() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div id='test' class='container'>content</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -158,7 +158,7 @@ fn test_delegating_malformed_html() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div><span>content</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     // Should still tokenize gracefully
     assert!(!tokens.is_empty());
 }
@@ -168,7 +168,7 @@ fn test_delegating_unclosed_tags() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div>content";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -177,7 +177,7 @@ fn test_delegating_self_closing_tags() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<br/><hr/><img src='test.jpg'/>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -187,7 +187,7 @@ fn test_delegating_multiple_root_content() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div>one</div><div>two</div><div>three</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -199,7 +199,7 @@ fn test_delegating_large_document() {
         src.push_str(&format!("<div id='item-{}'>{}</div>\n", i, i));
     }
     let tokens = lexer.get_tokens(&src);
-    
+
     // Should handle large input
     assert!(tokens.len() > 100);
 }
@@ -210,7 +210,7 @@ fn test_delegating_very_long_line() {
     let long_content = "x".repeat(500);
     let src = format!("<div>{}</div>", long_content);
     let tokens = lexer.get_tokens(&src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -226,7 +226,7 @@ fn test_delegating_deeply_nested() {
         src.push_str("</div>");
     }
     let tokens = lexer.get_tokens(&src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -235,7 +235,7 @@ fn test_delegating_mixed_case_tags() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<DIV>content</DIV><Span>text</Span>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -244,7 +244,7 @@ fn test_delegating_whitespace_preservation() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div>\n    content\n    more\n</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -253,7 +253,7 @@ fn test_delegating_special_characters_in_content() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div>&<>\"'</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -262,7 +262,7 @@ fn test_delegating_unicode_content() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div>Hello 世界</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -271,7 +271,7 @@ fn test_delegating_emoji_content() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<div>😀🎉✨</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -284,7 +284,7 @@ fn test_delegating_form_elements() {
         <button type="submit">Login</button>
     </form>"#;
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }
 
@@ -318,7 +318,7 @@ fn test_delegating_complex_real_world() {
     </body>
     </html>"#;
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(tokens.len() > 50);
 }
 
@@ -328,7 +328,7 @@ fn test_delegating_queue_ordering() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<a>x</a><b>y</b><c>z</c>";
     let tokens = lexer.get_tokens(src);
-    
+
     // Check that we have tokens and they're non-empty
     assert!(tokens.len() > 3);
 }
@@ -338,7 +338,7 @@ fn test_delegating_cdata_section() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<![CDATA[some data]]>";
     let tokens = lexer.get_tokens(src);
-    
+
     // Should handle CDATA gracefully
     assert!(!tokens.is_empty() || tokens.is_empty());
 }
@@ -348,6 +348,6 @@ fn test_delegating_processing_instruction() {
     let lexer = get_lexer_by_name("html").expect("HTML lexer not found");
     let src = "<?xml version='1.0'?><div>content</div>";
     let tokens = lexer.get_tokens(src);
-    
+
     assert!(!tokens.is_empty());
 }

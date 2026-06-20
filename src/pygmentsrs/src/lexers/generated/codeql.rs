@@ -41,12 +41,15 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[A-Z][a-zA-Z0-9_]*", NAME_CLASS),
         Rule::token(r"(?m)[a-z][a-zA-Z0-9_]*", NAME_VARIABLE),
     ]);
-    m.insert(r"multiline-comments", vec![
-        Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"multiline-comments",
+        vec![
+            Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

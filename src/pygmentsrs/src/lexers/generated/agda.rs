@@ -44,33 +44,60 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[^\s(){}]+", TEXT),
         Rule::token(r"(?m)\s+?", WHITESPACE),
     ]);
-    m.insert(r"hole", vec![
-        Rule::token(r"(?m)[^!{}]+", TokenType::new(&["Comment", "Directive"])),
-        Rule::token_to(r"(?m)\{!", TokenType::new(&["Comment", "Directive"]), NewState::PushSame),
-        Rule::token_to(r"(?m)!\}", TokenType::new(&["Comment", "Directive"]), NewState::Pop(1)),
-        Rule::token(r"(?m)[!{}]", TokenType::new(&["Comment", "Directive"])),
-    ]);
-    m.insert(r"module", vec![
-        Rule::token_to(r"(?m)\{-", COMMENT_MULTILINE, NewState::Push(vec![r"comment"])),
-        Rule::token_to(r"(?m)[a-zA-Z][\w.\']*", NAME, NewState::Pop(1)),
-        Rule::token(r"(?m)[\W0-9_]+", TEXT),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^-{}]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)\{-", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)-\}", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[-{}]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"character", vec![
-        Rule::token_to(r"(?m)[^\\']'", STRING_CHAR, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
-        Rule::token_to(r"(?m)'", STRING_CHAR, NewState::Pop(1)),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-        Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"hole",
+        vec![
+            Rule::token(r"(?m)[^!{}]+", TokenType::new(&["Comment", "Directive"])),
+            Rule::token_to(
+                r"(?m)\{!",
+                TokenType::new(&["Comment", "Directive"]),
+                NewState::PushSame,
+            ),
+            Rule::token_to(
+                r"(?m)!\}",
+                TokenType::new(&["Comment", "Directive"]),
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)[!{}]", TokenType::new(&["Comment", "Directive"])),
+        ],
+    );
+    m.insert(
+        r"module",
+        vec![
+            Rule::token_to(
+                r"(?m)\{-",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"comment"]),
+            ),
+            Rule::token_to(r"(?m)[a-zA-Z][\w.\']*", NAME, NewState::Pop(1)),
+            Rule::token(r"(?m)[\W0-9_]+", TEXT),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^-{}]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)\{-", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)-\}", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[-{}]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"character",
+        vec![
+            Rule::token_to(r"(?m)[^\\']'", STRING_CHAR, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
+            Rule::token_to(r"(?m)'", STRING_CHAR, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+            Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"escape", vec![
         Rule::token_to(r#"(?m)[abfnrtv"\'&\\]"#, STRING_ESCAPE, NewState::Pop(1)),
         Rule::token_to(r"(?m)\^[\]\[A-ZÀ-ÖØ-ÞĀĂĄĆĈĊČĎĐĒĔĖĘĚĜĞĠĢĤĦĨĪĬĮİĲĴĶĹĻĽĿŁŃŅŇŊŌŎŐŒŔŖŘŚŜŞŠŢŤŦŨŪŬŮŰŲŴŶŸ-ŹŻŽƁ-ƂƄƆ-ƇƉ-ƋƎ-ƑƓ-ƔƖ-ƘƜ-ƝƟ-ƠƢƤƦ-ƧƩƬƮ-ƯƱ-ƳƵƷ-ƸƼǄǇǊǍǏǑǓǕǗǙǛǞǠǢǤǦǨǪǬǮǱǴǶ-ǸǺǼǾȀȂȄȆȈȊȌȎȐȒȔȖȘȚȜȞȠȢȤȦȨȪȬȮȰȲȺ-ȻȽ-ȾɁɃ-ɆɈɊɌɎͰͲͶͿΆΈ-ΊΌΎ-ΏΑ-ΡΣ-ΫϏϒ-ϔϘϚϜϞϠϢϤϦϨϪϬϮϴϷϹ-ϺϽ-ЯѠѢѤѦѨѪѬѮѰѲѴѶѸѺѼѾҀҊҌҎҐҒҔҖҘҚҜҞҠҢҤҦҨҪҬҮҰҲҴҶҸҺҼҾӀ-ӁӃӅӇӉӋӍӐӒӔӖӘӚӜӞӠӢӤӦӨӪӬӮӰӲӴӶӸӺӼӾԀԂԄԆԈԊԌԎԐԒԔԖԘԚԜԞԠԢԤԦԨԪԬԮԱ-ՖႠ-ჅჇჍᎠ-ᏵᲐ-ᲺᲽ-ᲿḀḂḄḆḈḊḌḎḐḒḔḖḘḚḜḞḠḢḤḦḨḪḬḮḰḲḴḶḸḺḼḾṀṂṄṆṈṊṌṎṐṒṔṖṘṚṜṞṠṢṤṦṨṪṬṮṰṲṴṶṸṺṼṾẀẂẄẆẈẊẌẎẐẒẔẞẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲỴỶỸỺỼỾἈ-ἏἘ-ἝἨ-ἯἸ-ἿὈ-ὍὙὛὝὟὨ-ὯᾸ-ΆῈ-ΉῘ-ΊῨ-ῬῸ-Ώℂℇℋ-ℍℐ-ℒℕℙ-ℝℤΩℨK-ℭℰ-ℳℾ-ℿⅅↃⰀ-ⰮⱠⱢ-ⱤⱧⱩⱫⱭ-ⱰⱲⱵⱾ-ⲀⲂⲄⲆⲈⲊⲌⲎⲐⲒⲔⲖⲘⲚⲜⲞⲠⲢⲤⲦⲨⲪⲬⲮⲰⲲⲴⲶⲸⲺⲼⲾⳀⳂⳄⳆⳈⳊⳌⳎⳐⳒⳔⳖⳘⳚⳜⳞⳠⳢⳫⳭⳲꙀꙂꙄꙆꙈꙊꙌꙎꙐꙒꙔꙖꙘꙚꙜꙞꙠꙢꙤꙦꙨꙪꙬꚀꚂꚄꚆꚈꚊꚌꚎꚐꚒꚔꚖꚘꚚꜢꜤꜦꜨꜪꜬꜮꜲꜴꜶꜸꜺꜼꜾꝀꝂꝄꝆꝈꝊꝌꝎꝐꝒꝔꝖꝘꝚꝜꝞꝠꝢꝤꝦꝨꝪꝬꝮꝹꝻꝽ-ꝾꞀꞂꞄꞆꞋꞍꞐꞒꞖꞘꞚꞜꞞꞠꞢꞤꞦꞨꞪ-ꞮꞰ-ꞴꞶꞸＡ-Ｚ𐐀-𐐧𐒰-𐓓𐲀-𐲲𑢠-𑢿𖹀-𖹟𝐀-𝐙𝐴-𝑍𝑨-𝒁𝒜𝒞-𝒟𝒢𝒥-𝒦𝒩-𝒬𝒮-𝒵𝓐-𝓩𝔄-𝔅𝔇-𝔊𝔍-𝔔𝔖-𝔜𝔸-𝔹𝔻-𝔾𝕀-𝕄𝕆𝕊-𝕐𝕬-𝖅𝖠-𝖹𝗔-𝗭𝘈-𝘡𝘼-𝙕𝙰-𝚉𝚨-𝛀𝛢-𝛺𝜜-𝜴𝝖-𝝮𝞐-𝞨𝟊𞤀-𞤡@^_]", STRING_ESCAPE, NewState::Pop(1)),

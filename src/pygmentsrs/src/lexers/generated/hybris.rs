@@ -49,12 +49,22 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)[0-9]+L?", NUMBER_INTEGER),
         Rule::token(r"(?ms)\n", TEXT),
     ]);
-    m.insert(r"class", vec![
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"import", vec![
-        Rule::token_to(r"(?ms)[\w.]+\*?", NAME_NAMESPACE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"class",
+        vec![Rule::token_to(
+            r"(?ms)[a-zA-Z_]\w*",
+            NAME_CLASS,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"import",
+        vec![Rule::token_to(
+            r"(?ms)[\w.]+\*?",
+            NAME_NAMESPACE,
+            NewState::Pop(1),
+        )],
+    );
     Table(m)
 }
 

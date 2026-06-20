@@ -1,5 +1,5 @@
 //! 100% Branch Coverage Tests for Markup Formatters
-//! 
+//!
 //! This test suite provides comprehensive branch coverage for all formatters in
 //! src/pygmentsrs/src/formatters/markup.rs:
 //! - GroffFormatter: Color management, bold styling, output structure
@@ -19,8 +19,7 @@ use pygmentsrs::token::*;
 
 /// Format tokens with a specific formatter, returning output or panic on error
 fn format_tokens(formatter: &str, tokens: Vec<(TokenType, String)>) -> String {
-    format_native(formatter, &tokens)
-        .expect(&format!("Failed to format with {}", formatter))
+    format_native(formatter, &tokens).expect(&format!("Failed to format with {}", formatter))
 }
 
 /// Format a single token with inline helper
@@ -34,7 +33,7 @@ fn fmt(formatter: &str, ttype: TokenType, text: &str) -> String {
 // Branches to cover:
 // - color_map.contains_key() -> true/false
 // - next_color_id assignment & increment
-// - style.bold -> true/false  
+// - style.bold -> true/false
 // - style.fg_color.is_some() -> true/false
 // - Bold + color combination
 
@@ -63,10 +62,7 @@ fn groff_keyword_has_style() {
 #[test]
 fn groff_multiple_keywords_color_reuse() {
     // When second keyword has same color, color_map should contain_key=true
-    let tokens = vec![
-        (KEYWORD, "if".to_string()),
-        (KEYWORD, "else".to_string()),
-    ];
+    let tokens = vec![(KEYWORD, "if".to_string()), (KEYWORD, "else".to_string())];
     let output = format_tokens("groff", tokens);
     assert!(output.contains("if"), "First keyword missing");
     assert!(output.contains("else"), "Second keyword missing");
@@ -81,7 +77,10 @@ fn groff_different_colors_new_entry() {
     ];
     let output = format_tokens("groff", tokens);
     // .defcolor should appear if colors are different
-    assert!(output.contains("key") && output.contains("str"), "Content missing");
+    assert!(
+        output.contains("key") && output.contains("str"),
+        "Content missing"
+    );
 }
 
 #[test]
@@ -111,7 +110,11 @@ fn groff_no_color_no_bold() {
 #[test]
 fn pango_xml_escape_ampersand() {
     let output = fmt("pango", TEXT, "&");
-    assert!(output.contains("&amp;"), "Ampersand not escaped: {}", output);
+    assert!(
+        output.contains("&amp;"),
+        "Ampersand not escaped: {}",
+        output
+    );
 }
 
 #[test]
@@ -123,19 +126,31 @@ fn pango_xml_escape_less_than() {
 #[test]
 fn pango_xml_escape_greater_than() {
     let output = fmt("pango", TEXT, ">");
-    assert!(output.contains("&gt;"), "Greater-than not escaped: {}", output);
+    assert!(
+        output.contains("&gt;"),
+        "Greater-than not escaped: {}",
+        output
+    );
 }
 
 #[test]
 fn pango_xml_escape_double_quote() {
     let output = fmt("pango", TEXT, "\"");
-    assert!(output.contains("&quot;"), "Double quote not escaped: {}", output);
+    assert!(
+        output.contains("&quot;"),
+        "Double quote not escaped: {}",
+        output
+    );
 }
 
 #[test]
 fn pango_xml_escape_single_quote() {
     let output = fmt("pango", TEXT, "'");
-    assert!(output.contains("&apos;"), "Single quote not escaped: {}", output);
+    assert!(
+        output.contains("&apos;"),
+        "Single quote not escaped: {}",
+        output
+    );
 }
 
 #[test]
@@ -216,7 +231,11 @@ fn latex_header_footer() {
 #[test]
 fn latex_escape_backslash() {
     let output = fmt("latex", TEXT, "\\");
-    assert!(output.contains("\\textbackslash"), "Backslash not escaped: {}", output);
+    assert!(
+        output.contains("\\textbackslash"),
+        "Backslash not escaped: {}",
+        output
+    );
 }
 
 #[test]
@@ -228,7 +247,11 @@ fn latex_escape_left_brace() {
 #[test]
 fn latex_escape_right_brace() {
     let output = fmt("latex", TEXT, "}");
-    assert!(output.contains("\\}"), "Right brace not escaped: {}", output);
+    assert!(
+        output.contains("\\}"),
+        "Right brace not escaped: {}",
+        output
+    );
 }
 
 #[test]
@@ -270,13 +293,21 @@ fn latex_escape_caret() {
 #[test]
 fn latex_escape_tilde() {
     let output = fmt("latex", TEXT, "~");
-    assert!(output.contains("\\textasciitilde"), "Tilde not escaped: {}", output);
+    assert!(
+        output.contains("\\textasciitilde"),
+        "Tilde not escaped: {}",
+        output
+    );
 }
 
 #[test]
 fn latex_escape_backtick() {
     let output = fmt("latex", TEXT, "`");
-    assert!(output.contains("\\textasciigrave"), "Backtick not escaped: {}", output);
+    assert!(
+        output.contains("\\textasciigrave"),
+        "Backtick not escaped: {}",
+        output
+    );
 }
 
 #[test]
@@ -290,7 +321,10 @@ fn latex_escape_control_chars() {
     // Test control character handling
     let output = fmt("latex", TEXT, "\x01\x02\x1f");
     // Should have hex representations [01], [02], [1F]
-    assert!(output.contains("[01]") || output.contains("01"), "Control char \\x01 not escaped");
+    assert!(
+        output.contains("[01]") || output.contains("01"),
+        "Control char \\x01 not escaped"
+    );
 }
 
 #[test]
@@ -369,7 +403,10 @@ fn rtf_header_structure() {
 fn rtf_color_table_initialization() {
     // First color should be black
     let output = fmt("rtf", TEXT, "");
-    assert!(output.contains("\\red0\\green0\\blue0"), "Black color not in table");
+    assert!(
+        output.contains("\\red0\\green0\\blue0"),
+        "Black color not in table"
+    );
 }
 
 #[test]
@@ -395,13 +432,21 @@ fn rtf_escape_left_brace() {
 #[test]
 fn rtf_escape_right_brace() {
     let output = fmt("rtf", TEXT, "}");
-    assert!(output.contains("\\}"), "Right brace not escaped: {}", output);
+    assert!(
+        output.contains("\\}"),
+        "Right brace not escaped: {}",
+        output
+    );
 }
 
 #[test]
 fn rtf_escape_newline() {
     let output = fmt("rtf", TEXT, "\n");
-    assert!(output.contains("\\par"), "Newline not escaped as \\par: {}", output);
+    assert!(
+        output.contains("\\par"),
+        "Newline not escaped as \\par: {}",
+        output
+    );
 }
 
 #[test]
@@ -409,14 +454,21 @@ fn rtf_discard_carriage_return() {
     // \r should be skipped/discarded
     let tokens = vec![(TEXT, "line1\rline2".to_string())];
     let output = format_tokens("rtf", tokens);
-    assert!(output.contains("line1") && output.contains("line2"), "Content missing");
+    assert!(
+        output.contains("line1") && output.contains("line2"),
+        "Content missing"
+    );
 }
 
 #[test]
 fn rtf_escape_control_char() {
     // Control chars like \x01 -> \'01
     let output = fmt("rtf", TEXT, "\x01");
-    assert!(output.contains("\\'01"), "Control char not hex-escaped: {}", output);
+    assert!(
+        output.contains("\\'01"),
+        "Control char not hex-escaped: {}",
+        output
+    );
 }
 
 #[test]
@@ -468,7 +520,10 @@ fn rtf_color_lookup_found() {
     ];
     let output = format_tokens("rtf", tokens);
     // Both should format successfully
-    assert!(output.contains("first") && output.contains("second"), "Content missing");
+    assert!(
+        output.contains("first") && output.contains("second"),
+        "Content missing"
+    );
 }
 
 #[test]
@@ -507,11 +562,15 @@ fn all_formatters_multitoken() {
         (TEXT, " ".to_string()),
         (NUMBER, "42".to_string()),
     ];
-    
+
     for fmt_name in &["groff", "pango", "latex", "rtf"] {
         let output = format_tokens(fmt_name, tokens.clone());
         assert!(!output.is_empty(), "{} format failed", fmt_name);
-        assert!(output.contains("if") || output.contains("42"), "Content missing in {}", fmt_name);
+        assert!(
+            output.contains("if") || output.contains("42"),
+            "Content missing in {}",
+            fmt_name
+        );
     }
 }
 
@@ -528,8 +587,10 @@ fn latex_nested_escapes() {
 fn pango_deeply_nested_xml() {
     // Ensure XML escaping handles complex cases
     let output = fmt("pango", TEXT, "<a attr=\"val\" & \"val2\" >");
-    let escaped = output.contains("&lt;") && output.contains("&gt;") 
-                   && output.contains("&quot;") && output.contains("&amp;");
+    let escaped = output.contains("&lt;")
+        && output.contains("&gt;")
+        && output.contains("&quot;")
+        && output.contains("&amp;");
     assert!(escaped, "XML escaping incomplete: {}", output);
 }
 
@@ -580,7 +641,10 @@ fn edge_case_null_replacement() {
 #[test]
 fn edge_case_only_special_chars() {
     let output = fmt("latex", TEXT, r"\_{^}&%$#{~}`|");
-    assert!(output.contains("\\textbackslash"), "Special char processing broken");
+    assert!(
+        output.contains("\\textbackslash"),
+        "Special char processing broken"
+    );
 }
 
 #[test]
@@ -623,7 +687,11 @@ fn stability_formatter_switching() {
     let text = vec![(TEXT, "switch".to_string())];
     for fmt_name in &["groff", "pango", "latex", "rtf"] {
         let output = format_tokens(fmt_name, text.clone());
-        assert!(output.contains("switch"), "Formatter switch failed for {}", fmt_name);
+        assert!(
+            output.contains("switch"),
+            "Formatter switch failed for {}",
+            fmt_name
+        );
     }
 }
 
@@ -631,11 +699,20 @@ fn stability_formatter_switching() {
 fn stability_token_type_coverage() {
     // Try many token types
     let token_types = vec![
-        KEYWORD, NAME, STRING_DOUBLE, COMMENT, NUMBER, 
-        OPERATOR, PUNCTUATION, WHITESPACE, ERROR,
-        NAME_BUILTIN, NAME_FUNCTION, NAME_CLASS,
+        KEYWORD,
+        NAME,
+        STRING_DOUBLE,
+        COMMENT,
+        NUMBER,
+        OPERATOR,
+        PUNCTUATION,
+        WHITESPACE,
+        ERROR,
+        NAME_BUILTIN,
+        NAME_FUNCTION,
+        NAME_CLASS,
     ];
-    
+
     for ttype in token_types {
         let output = fmt("latex", ttype, "content");
         assert!(!output.is_empty(), "Failed for token type {:?}", ttype);

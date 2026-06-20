@@ -25,13 +25,14 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?m)\s+", TEXT),
-    ]);
-    m.insert(r"comments", vec![
-        Rule::token(r"(?m)(?s)/\*.*?\*/", COMMENT_MULTILINE),
-        Rule::token(r"(?m)(//|#).*$", COMMENT_SINGLE),
-    ]);
+    m.insert(r"whitespace", vec![Rule::token(r"(?m)\s+", TEXT)]);
+    m.insert(
+        r"comments",
+        vec![
+            Rule::token(r"(?m)(?s)/\*.*?\*/", COMMENT_MULTILINE),
+            Rule::token(r"(?m)(//|#).*$", COMMENT_SINGLE),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token(r#"(?m)"[^"]*""#, STRING),
         Rule::token(r"(?m)(?s)/\*.*?\*/", COMMENT_MULTILINE),

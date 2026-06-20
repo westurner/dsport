@@ -56,22 +56,43 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[:;,.?()\[\]{}]", PUNCTUATION),
         Rule::token(r"(?m)[a-zA-Z_][\w$]*", NAME_OTHER),
     ]);
-    m.insert(r"classname", vec![
-        Rule::token_to(r"(?m)[a-zA-Z_][\w$]*", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"procname", vec![
-        Rule::token_to(r"(?m)([a-zA-Z_][.\w$]*|\~[a-zA-Z_][.\w$]*|[+*/!~%<>=&^|\-:]{1,2})", NAME_FUNCTION, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"receivertype"])),
-        Rule::token(r"(?m)\)+\.", PUNCTUATION),
-    ]);
+    m.insert(
+        r"classname",
+        vec![Rule::token_to(
+            r"(?m)[a-zA-Z_][\w$]*",
+            NAME_CLASS,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"procname",
+        vec![
+            Rule::token_to(
+                r"(?m)([a-zA-Z_][.\w$]*|\~[a-zA-Z_][.\w$]*|[+*/!~%<>=&^|\-:]{1,2})",
+                NAME_FUNCTION,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"receivertype"]),
+            ),
+            Rule::token(r"(?m)\)+\.", PUNCTUATION),
+        ],
+    );
     m.insert(r"receivertype", vec![
         Rule::token(r"(?m)(atomic|borrowed|owned|s(?:hared|ingle|ync)|unmanaged)\b", KEYWORD),
         Rule::token(r"(?m)(b(?:ool|ytes)|complex|i(?:mag|nt)|locale|nothing|opaque|r(?:ange|eal)|string|uint|void)\b", KEYWORD_TYPE),
         Rule::token_to(r"(?m)[^()]*", NAME_OTHER, NewState::Pop(1)),
     ]);
-    m.insert(r"attributename", vec![
-        Rule::token_to(r"(?m)[a-zA-Z_][.\w$]*", NAME_DECORATOR, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"attributename",
+        vec![Rule::token_to(
+            r"(?m)[a-zA-Z_][.\w$]*",
+            NAME_DECORATOR,
+            NewState::Pop(1),
+        )],
+    );
     Table(m)
 }
 

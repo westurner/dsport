@@ -7,7 +7,9 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::lexer::Lexer;
-use crate::lexer::engine::{DispatchCodeBlockSpec, GroupAction, GroupEmit, NewState, Rule, StateTable, tokenize};
+use crate::lexer::engine::{
+    DispatchCodeBlockSpec, GroupAction, GroupEmit, NewState, Rule, StateTable, tokenize,
+};
 use crate::token::*;
 
 /// Aliases: restructuredtext, rst, rest
@@ -63,25 +65,44 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[^\\\n\[*`:]+", TEXT),
         Rule::token(r"(?m).", TEXT),
     ]);
-    m.insert(r"inline", vec![
-        Rule::token(r"(?m)\\.", TEXT),
-        Rule::token_to(r"(?m)``", STRING, NewState::Push(vec![r"literal"])),
-        Rule::bygroups(r"(?m)(`.+?)(<.+?>)(`__?)", vec![Some(STRING), Some(STRING_INTERPOL), Some(STRING)]),
-        Rule::token(r"(?m)`.+?`__?", STRING),
-        Rule::bygroups(r"(?m)(`.+?`)(:[a-zA-Z0-9:-]+?:)?", vec![Some(NAME_VARIABLE), Some(NAME_ATTRIBUTE)]),
-        Rule::bygroups(r"(?m)(:[a-zA-Z0-9:-]+?:)(`.+?`)", vec![Some(NAME_ATTRIBUTE), Some(NAME_VARIABLE)]),
-        Rule::token(r"(?m)\*\*.+?\*\*", GENERIC_STRONG),
-        Rule::token(r"(?m)\*.+?\*", GENERIC_EMPH),
-        Rule::token(r"(?m)\[.*?\]_", STRING),
-        Rule::token(r"(?m)<.+?>", NAME_TAG),
-        Rule::token(r"(?m)[^\\\n\[*`:]+", TEXT),
-        Rule::token(r"(?m).", TEXT),
-    ]);
-    m.insert(r"literal", vec![
-        Rule::token(r"(?m)[^`]+", STRING),
-        Rule::token_to(r#"(?m)``((?=$)|(?=[-/:.,; \n\x00‐‑‒–— '"\)\]\}>’”»!\?]))"#, STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)`", STRING),
-    ]);
+    m.insert(
+        r"inline",
+        vec![
+            Rule::token(r"(?m)\\.", TEXT),
+            Rule::token_to(r"(?m)``", STRING, NewState::Push(vec![r"literal"])),
+            Rule::bygroups(
+                r"(?m)(`.+?)(<.+?>)(`__?)",
+                vec![Some(STRING), Some(STRING_INTERPOL), Some(STRING)],
+            ),
+            Rule::token(r"(?m)`.+?`__?", STRING),
+            Rule::bygroups(
+                r"(?m)(`.+?`)(:[a-zA-Z0-9:-]+?:)?",
+                vec![Some(NAME_VARIABLE), Some(NAME_ATTRIBUTE)],
+            ),
+            Rule::bygroups(
+                r"(?m)(:[a-zA-Z0-9:-]+?:)(`.+?`)",
+                vec![Some(NAME_ATTRIBUTE), Some(NAME_VARIABLE)],
+            ),
+            Rule::token(r"(?m)\*\*.+?\*\*", GENERIC_STRONG),
+            Rule::token(r"(?m)\*.+?\*", GENERIC_EMPH),
+            Rule::token(r"(?m)\[.*?\]_", STRING),
+            Rule::token(r"(?m)<.+?>", NAME_TAG),
+            Rule::token(r"(?m)[^\\\n\[*`:]+", TEXT),
+            Rule::token(r"(?m).", TEXT),
+        ],
+    );
+    m.insert(
+        r"literal",
+        vec![
+            Rule::token(r"(?m)[^`]+", STRING),
+            Rule::token_to(
+                r#"(?m)``((?=$)|(?=[-/:.,; \n\x00‐‑‒–— '"\)\]\}>’”»!\?]))"#,
+                STRING,
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)`", STRING),
+        ],
+    );
     Table(m)
 }
 

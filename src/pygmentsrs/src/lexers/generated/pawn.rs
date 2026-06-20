@@ -50,26 +50,46 @@ fn build_table() -> Table {
         Rule::token(r"(?m)(true|false)\b", KEYWORD_CONSTANT),
         Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
     ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\([\\abfnrtv"\']|x[a-fA-F0-9]{2,4}|[0-7]{1,3})"#, STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\"\n]+"#, STRING),
-        Rule::token(r"(?m)\\\n", STRING),
-        Rule::token(r"(?m)\\", STRING),
-    ]);
-    m.insert(r"macro", vec![
-        Rule::token(r"(?m)[^/\n]+", COMMENT_PREPROC),
-        Rule::token(r"(?m)/\*(.|\n)*?\*/", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)//.*?\n", COMMENT_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?m)/", COMMENT_PREPROC),
-        Rule::token(r"(?m)(?<=\\)\n", COMMENT_PREPROC),
-        Rule::token_to(r"(?m)\n", COMMENT_PREPROC, NewState::Pop(1)),
-    ]);
-    m.insert(r"if0", vec![
-        Rule::token_to(r"(?m)^\s*#if.*?(?<!\\)\n", COMMENT_PREPROC, NewState::PushSame),
-        Rule::token_to(r"(?m)^\s*#endif.*?(?<!\\)\n", COMMENT_PREPROC, NewState::Pop(1)),
-        Rule::token(r"(?m).*?\n", COMMENT),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(
+                r#"(?m)\\([\\abfnrtv"\']|x[a-fA-F0-9]{2,4}|[0-7]{1,3})"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token(r#"(?m)[^\\"\n]+"#, STRING),
+            Rule::token(r"(?m)\\\n", STRING),
+            Rule::token(r"(?m)\\", STRING),
+        ],
+    );
+    m.insert(
+        r"macro",
+        vec![
+            Rule::token(r"(?m)[^/\n]+", COMMENT_PREPROC),
+            Rule::token(r"(?m)/\*(.|\n)*?\*/", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)//.*?\n", COMMENT_SINGLE, NewState::Pop(1)),
+            Rule::token(r"(?m)/", COMMENT_PREPROC),
+            Rule::token(r"(?m)(?<=\\)\n", COMMENT_PREPROC),
+            Rule::token_to(r"(?m)\n", COMMENT_PREPROC, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"if0",
+        vec![
+            Rule::token_to(
+                r"(?m)^\s*#if.*?(?<!\\)\n",
+                COMMENT_PREPROC,
+                NewState::PushSame,
+            ),
+            Rule::token_to(
+                r"(?m)^\s*#endif.*?(?<!\\)\n",
+                COMMENT_PREPROC,
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m).*?\n", COMMENT),
+        ],
+    );
     Table(m)
 }
 

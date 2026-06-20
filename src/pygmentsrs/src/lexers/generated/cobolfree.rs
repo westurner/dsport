@@ -25,9 +25,10 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"comment", vec![
-        Rule::token(r"(?im)(\*>.*\n|^\w*\*.*$)", COMMENT),
-    ]);
+    m.insert(
+        r"comment",
+        vec![Rule::token(r"(?im)(\*>.*\n|^\w*\*.*$)", COMMENT)],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?im)(\*>.*\n|^\w*\*.*$)", COMMENT),
         Rule::token(r#"(?im)"[^"\n]*("|\n)"#, STRING_DOUBLE),
@@ -48,10 +49,13 @@ fn build_table() -> Table {
         Rule::token(r"(?im)[a-z0-9]([\w\-]*[a-z0-9]+)?", NAME_VARIABLE),
         Rule::token(r"(?im)[ \t]+", WHITESPACE),
     ]);
-    m.insert(r"strings", vec![
-        Rule::token(r#"(?im)"[^"\n]*("|\n)"#, STRING_DOUBLE),
-        Rule::token(r"(?im)'[^'\n]*('|\n)", STRING_SINGLE),
-    ]);
+    m.insert(
+        r"strings",
+        vec![
+            Rule::token(r#"(?im)"[^"\n]*("|\n)"#, STRING_DOUBLE),
+            Rule::token(r"(?im)'[^'\n]*('|\n)", STRING_SINGLE),
+        ],
+    );
     m.insert(r"core", vec![
         Rule::token(r"(?im)(^|(?<=[^\w\-]))(ALL\s+)?((ZEROES)|(HIGH-VALUE|LOW-VALUE|QUOTE|SPACE|ZERO)(S)?)\s*($|(?=[^\w\-]))", NAME_CONSTANT),
         Rule::token(r"(?im)(^|(?<=[^\w\-]))(A(?:CCEPT|DD|LLOCATE)|C(?:A(?:(?:L|NCE)L)|LOSE|O(?:MPUTE|N(?:FIGURATION|TINUE)))|D(?:ATA|ELETE|I(?:SPLAY|VI(?:DE|SION)))|E(?:LSE|N(?:D(?:(?:\-(?:A(?:CCEPT|DD)|C(?:ALL|OMPUTE)|D(?:ELETE|I(?:SPLAY|VIDE))|EVALUATE|IF|MULTIPLY|OF\-PAGE|PERFORM|RE(?:AD|TURN|WRITE)|S(?:EARCH|T(?:ART|RING)|UBTRACT)|UNSTRING|WRITE))?)|VIRONMENT)|VALUATE|XIT)|F(?:D|ILE(?:(?:\-CONTROL)?)|OREVER|REE)|G(?:ENERATE|O(?:(?:BACK)?))|I(?:\-O\-CONTROL|DENTIFICATION|F|N(?:ITIA(?:(?:LIZ|T)E)|PUT\-OUTPUT|SPECT|VOKE))|L(?:(?:INK|OCAL\-STOR)AGE)|M(?:ERGE|OVE|ULTIPLY)|OPEN|P(?:ERFORM|RO(?:CEDURE|GRAM\-ID))|R(?:AISE|E(?:AD|LEASE|SUME|TURN|WRITE))|S(?:CREEN|D|E(?:ARCH|CTION|T)|ORT|T(?:ART|OP|RING)|U(?:BTRACT|PPRESS))|T(?:ERMINATE|HEN)|U(?:N(?:LOCK|STRING)|SE)|(?:VALIDAT|W(?:ORKING\-STORAG|RIT))E)\s*($|(?=[^\w\-]))", KEYWORD_RESERVED),
@@ -64,11 +68,14 @@ fn build_table() -> Table {
         Rule::token(r"(?im)(^|(?<=[^\w\-]))(true|false)\s*($|(?=[^\w\-]))", NAME_BUILTIN),
         Rule::token(r"(?im)(^|(?<=[^\w\-]))(equal|equals|ne|lt|le|gt|ge|greater|less|than|not|and|or)\s*($|(?=[^\w\-]))", OPERATOR_WORD),
     ]);
-    m.insert(r"nums", vec![
-        Rule::token(r"(?im)\d+(\s*|\.$|$)", NUMBER_INTEGER),
-        Rule::token(r"(?im)[+-]?\d*\.\d+(E[-+]?\d+)?", NUMBER_FLOAT),
-        Rule::token(r"(?im)[+-]?\d+\.\d*(E[-+]?\d+)?", NUMBER_FLOAT),
-    ]);
+    m.insert(
+        r"nums",
+        vec![
+            Rule::token(r"(?im)\d+(\s*|\.$|$)", NUMBER_INTEGER),
+            Rule::token(r"(?im)[+-]?\d*\.\d+(E[-+]?\d+)?", NUMBER_FLOAT),
+            Rule::token(r"(?im)[+-]?\d+\.\d*(E[-+]?\d+)?", NUMBER_FLOAT),
+        ],
+    );
     Table(m)
 }
 

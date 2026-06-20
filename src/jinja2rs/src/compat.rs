@@ -58,8 +58,8 @@ pub struct AnsibleMode {
 impl Default for AnsibleMode {
     fn default() -> Self {
         AnsibleMode {
-            method_syntax: true,      // Default to Jinja2-style methods
-            enable_validation: true,   // Validate by default
+            method_syntax: true,     // Default to Jinja2-style methods
+            enable_validation: true, // Validate by default
             inventory_source: None,
         }
     }
@@ -598,8 +598,7 @@ mod tests {
 
     #[test]
     fn test_ansible_mode_with_inventory() {
-        let mode = AnsibleMode::default()
-            .with_inventory_file("/etc/ansible/hosts");
+        let mode = AnsibleMode::default().with_inventory_file("/etc/ansible/hosts");
         assert!(mode.inventory_source.is_some());
     }
 

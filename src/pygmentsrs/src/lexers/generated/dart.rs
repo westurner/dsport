@@ -55,71 +55,194 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)\.\d+([eE][+-]?\d+)?", NUMBER),
         Rule::token(r"(?ms)\n", WHITESPACE),
     ]);
-    m.insert(r"string_literal", vec![
-        Rule::token(r#"(?ms)r"""([\w\W]*?)""""#, STRING_DOUBLE),
-        Rule::token(r"(?ms)r'''([\w\W]*?)'''", STRING_SINGLE),
-        Rule::token(r#"(?ms)r"(.*?)""#, STRING_DOUBLE),
-        Rule::token(r"(?ms)r'(.*?)'", STRING_SINGLE),
-        Rule::token_to(r#"(?ms)""""#, STRING_DOUBLE, NewState::Push(vec![r"string_double_multiline"])),
-        Rule::token_to(r"(?ms)'''", STRING_SINGLE, NewState::Push(vec![r"string_single_multiline"])),
-        Rule::token_to(r#"(?ms)""#, STRING_DOUBLE, NewState::Push(vec![r"string_double"])),
-        Rule::token_to(r"(?ms)'", STRING_SINGLE, NewState::Push(vec![r"string_single"])),
-    ]);
-    m.insert(r"class", vec![
-        Rule::token_to(r"(?ms)[a-zA-Z_$]\w*", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"import_decl", vec![
-        Rule::token(r#"(?ms)r"""([\w\W]*?)""""#, STRING_DOUBLE),
-        Rule::token(r"(?ms)r'''([\w\W]*?)'''", STRING_SINGLE),
-        Rule::token(r#"(?ms)r"(.*?)""#, STRING_DOUBLE),
-        Rule::token(r"(?ms)r'(.*?)'", STRING_SINGLE),
-        Rule::token_to(r#"(?ms)""""#, STRING_DOUBLE, NewState::Push(vec![r"string_double_multiline"])),
-        Rule::token_to(r"(?ms)'''", STRING_SINGLE, NewState::Push(vec![r"string_single_multiline"])),
-        Rule::token_to(r#"(?ms)""#, STRING_DOUBLE, NewState::Push(vec![r"string_double"])),
-        Rule::token_to(r"(?ms)'", STRING_SINGLE, NewState::Push(vec![r"string_single"])),
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::token(r"(?ms)\b(as|deferred|show|hide)\b", KEYWORD),
-        Rule::token(r"(?ms)[a-zA-Z_$]\w*", NAME),
-        Rule::token(r"(?ms)\,", PUNCTUATION),
-        Rule::token_to(r"(?ms)\;", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"string_common", vec![
-        Rule::token(r#"(?ms)\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\{[0-9A-Fa-f]*\}|[a-z'\"$\\])"#, STRING_ESCAPE),
-        Rule::bygroups(r"(?ms)(\$)([a-zA-Z_]\w*)", vec![Some(STRING_INTERPOL), Some(NAME)]),
-        Rule::bygroups_g(r"(?ms)(\$\{)(.*?)(\})", vec![Some(GroupAction::Token(STRING_INTERPOL)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(STRING_INTERPOL))]),
-    ]);
-    m.insert(r"string_double", vec![
-        Rule::token_to(r#"(?ms)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r#"(?ms)[^"$\\\n]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?ms)\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\{[0-9A-Fa-f]*\}|[a-z'\"$\\])"#, STRING_ESCAPE),
-        Rule::bygroups(r"(?ms)(\$)([a-zA-Z_]\w*)", vec![Some(STRING_INTERPOL), Some(NAME)]),
-        Rule::bygroups_g(r"(?ms)(\$\{)(.*?)(\})", vec![Some(GroupAction::Token(STRING_INTERPOL)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(STRING_INTERPOL))]),
-        Rule::token(r"(?ms)\$+", STRING_DOUBLE),
-    ]);
-    m.insert(r"string_double_multiline", vec![
-        Rule::token_to(r#"(?ms)""""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r#"(?ms)[^"$\\]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?ms)\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\{[0-9A-Fa-f]*\}|[a-z'\"$\\])"#, STRING_ESCAPE),
-        Rule::bygroups(r"(?ms)(\$)([a-zA-Z_]\w*)", vec![Some(STRING_INTERPOL), Some(NAME)]),
-        Rule::bygroups_g(r"(?ms)(\$\{)(.*?)(\})", vec![Some(GroupAction::Token(STRING_INTERPOL)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(STRING_INTERPOL))]),
-        Rule::token(r#"(?ms)(\$|\")+"#, STRING_DOUBLE),
-    ]);
-    m.insert(r"string_single", vec![
-        Rule::token_to(r"(?ms)'", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?ms)[^'$\\\n]+", STRING_SINGLE),
-        Rule::token(r#"(?ms)\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\{[0-9A-Fa-f]*\}|[a-z'\"$\\])"#, STRING_ESCAPE),
-        Rule::bygroups(r"(?ms)(\$)([a-zA-Z_]\w*)", vec![Some(STRING_INTERPOL), Some(NAME)]),
-        Rule::bygroups_g(r"(?ms)(\$\{)(.*?)(\})", vec![Some(GroupAction::Token(STRING_INTERPOL)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(STRING_INTERPOL))]),
-        Rule::token(r"(?ms)\$+", STRING_SINGLE),
-    ]);
-    m.insert(r"string_single_multiline", vec![
-        Rule::token_to(r"(?ms)'''", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?ms)[^\'$\\]+", STRING_SINGLE),
-        Rule::token(r#"(?ms)\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\{[0-9A-Fa-f]*\}|[a-z'\"$\\])"#, STRING_ESCAPE),
-        Rule::bygroups(r"(?ms)(\$)([a-zA-Z_]\w*)", vec![Some(STRING_INTERPOL), Some(NAME)]),
-        Rule::bygroups_g(r"(?ms)(\$\{)(.*?)(\})", vec![Some(GroupAction::Token(STRING_INTERPOL)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(STRING_INTERPOL))]),
-        Rule::token(r"(?ms)(\$|\')+", STRING_SINGLE),
-    ]);
+    m.insert(
+        r"string_literal",
+        vec![
+            Rule::token(r#"(?ms)r"""([\w\W]*?)""""#, STRING_DOUBLE),
+            Rule::token(r"(?ms)r'''([\w\W]*?)'''", STRING_SINGLE),
+            Rule::token(r#"(?ms)r"(.*?)""#, STRING_DOUBLE),
+            Rule::token(r"(?ms)r'(.*?)'", STRING_SINGLE),
+            Rule::token_to(
+                r#"(?ms)""""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"string_double_multiline"]),
+            ),
+            Rule::token_to(
+                r"(?ms)'''",
+                STRING_SINGLE,
+                NewState::Push(vec![r"string_single_multiline"]),
+            ),
+            Rule::token_to(
+                r#"(?ms)""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"string_double"]),
+            ),
+            Rule::token_to(
+                r"(?ms)'",
+                STRING_SINGLE,
+                NewState::Push(vec![r"string_single"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"class",
+        vec![Rule::token_to(
+            r"(?ms)[a-zA-Z_$]\w*",
+            NAME_CLASS,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"import_decl",
+        vec![
+            Rule::token(r#"(?ms)r"""([\w\W]*?)""""#, STRING_DOUBLE),
+            Rule::token(r"(?ms)r'''([\w\W]*?)'''", STRING_SINGLE),
+            Rule::token(r#"(?ms)r"(.*?)""#, STRING_DOUBLE),
+            Rule::token(r"(?ms)r'(.*?)'", STRING_SINGLE),
+            Rule::token_to(
+                r#"(?ms)""""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"string_double_multiline"]),
+            ),
+            Rule::token_to(
+                r"(?ms)'''",
+                STRING_SINGLE,
+                NewState::Push(vec![r"string_single_multiline"]),
+            ),
+            Rule::token_to(
+                r#"(?ms)""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"string_double"]),
+            ),
+            Rule::token_to(
+                r"(?ms)'",
+                STRING_SINGLE,
+                NewState::Push(vec![r"string_single"]),
+            ),
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::token(r"(?ms)\b(as|deferred|show|hide)\b", KEYWORD),
+            Rule::token(r"(?ms)[a-zA-Z_$]\w*", NAME),
+            Rule::token(r"(?ms)\,", PUNCTUATION),
+            Rule::token_to(r"(?ms)\;", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string_common",
+        vec![
+            Rule::token(
+                r#"(?ms)\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\{[0-9A-Fa-f]*\}|[a-z'\"$\\])"#,
+                STRING_ESCAPE,
+            ),
+            Rule::bygroups(
+                r"(?ms)(\$)([a-zA-Z_]\w*)",
+                vec![Some(STRING_INTERPOL), Some(NAME)],
+            ),
+            Rule::bygroups_g(
+                r"(?ms)(\$\{)(.*?)(\})",
+                vec![
+                    Some(GroupAction::Token(STRING_INTERPOL)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(STRING_INTERPOL)),
+                ],
+            ),
+        ],
+    );
+    m.insert(
+        r"string_double",
+        vec![
+            Rule::token_to(r#"(?ms)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(r#"(?ms)[^"$\\\n]+"#, STRING_DOUBLE),
+            Rule::token(
+                r#"(?ms)\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\{[0-9A-Fa-f]*\}|[a-z'\"$\\])"#,
+                STRING_ESCAPE,
+            ),
+            Rule::bygroups(
+                r"(?ms)(\$)([a-zA-Z_]\w*)",
+                vec![Some(STRING_INTERPOL), Some(NAME)],
+            ),
+            Rule::bygroups_g(
+                r"(?ms)(\$\{)(.*?)(\})",
+                vec![
+                    Some(GroupAction::Token(STRING_INTERPOL)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(STRING_INTERPOL)),
+                ],
+            ),
+            Rule::token(r"(?ms)\$+", STRING_DOUBLE),
+        ],
+    );
+    m.insert(
+        r"string_double_multiline",
+        vec![
+            Rule::token_to(r#"(?ms)""""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(r#"(?ms)[^"$\\]+"#, STRING_DOUBLE),
+            Rule::token(
+                r#"(?ms)\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\{[0-9A-Fa-f]*\}|[a-z'\"$\\])"#,
+                STRING_ESCAPE,
+            ),
+            Rule::bygroups(
+                r"(?ms)(\$)([a-zA-Z_]\w*)",
+                vec![Some(STRING_INTERPOL), Some(NAME)],
+            ),
+            Rule::bygroups_g(
+                r"(?ms)(\$\{)(.*?)(\})",
+                vec![
+                    Some(GroupAction::Token(STRING_INTERPOL)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(STRING_INTERPOL)),
+                ],
+            ),
+            Rule::token(r#"(?ms)(\$|\")+"#, STRING_DOUBLE),
+        ],
+    );
+    m.insert(
+        r"string_single",
+        vec![
+            Rule::token_to(r"(?ms)'", STRING_SINGLE, NewState::Pop(1)),
+            Rule::token(r"(?ms)[^'$\\\n]+", STRING_SINGLE),
+            Rule::token(
+                r#"(?ms)\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\{[0-9A-Fa-f]*\}|[a-z'\"$\\])"#,
+                STRING_ESCAPE,
+            ),
+            Rule::bygroups(
+                r"(?ms)(\$)([a-zA-Z_]\w*)",
+                vec![Some(STRING_INTERPOL), Some(NAME)],
+            ),
+            Rule::bygroups_g(
+                r"(?ms)(\$\{)(.*?)(\})",
+                vec![
+                    Some(GroupAction::Token(STRING_INTERPOL)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(STRING_INTERPOL)),
+                ],
+            ),
+            Rule::token(r"(?ms)\$+", STRING_SINGLE),
+        ],
+    );
+    m.insert(
+        r"string_single_multiline",
+        vec![
+            Rule::token_to(r"(?ms)'''", STRING_SINGLE, NewState::Pop(1)),
+            Rule::token(r"(?ms)[^\'$\\]+", STRING_SINGLE),
+            Rule::token(
+                r#"(?ms)\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\{[0-9A-Fa-f]*\}|[a-z'\"$\\])"#,
+                STRING_ESCAPE,
+            ),
+            Rule::bygroups(
+                r"(?ms)(\$)([a-zA-Z_]\w*)",
+                vec![Some(STRING_INTERPOL), Some(NAME)],
+            ),
+            Rule::bygroups_g(
+                r"(?ms)(\$\{)(.*?)(\})",
+                vec![
+                    Some(GroupAction::Token(STRING_INTERPOL)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(STRING_INTERPOL)),
+                ],
+            ),
+            Rule::token(r"(?ms)(\$|\')+", STRING_SINGLE),
+        ],
+    );
     Table(m)
 }
 

@@ -33,18 +33,14 @@ fn test_terminal_formatter_with_bold() {
 
 #[test]
 fn test_terminal_formatter_with_italic() {
-    let tokens = vec![
-        (COMMENT_SINGLE, "# comment".to_string()),
-    ];
+    let tokens = vec![(COMMENT_SINGLE, "# comment".to_string())];
     let output = format_native("terminal", &tokens).expect("Terminal formatter failed");
     assert!(!output.is_empty());
 }
 
 #[test]
 fn test_terminal_formatter_with_underline() {
-    let tokens = vec![
-        (STRING_DOUBLE, "\"test\"".to_string()),
-    ];
+    let tokens = vec![(STRING_DOUBLE, "\"test\"".to_string())];
     let output = format_native("terminal", &tokens).expect("Terminal formatter failed");
     assert!(!output.is_empty());
 }
@@ -139,18 +135,14 @@ fn test_terminal_many_tokens() {
 
 #[test]
 fn test_terminal_special_characters() {
-    let tokens = vec![
-        (TEXT, "< > & \" '".to_string()),
-    ];
+    let tokens = vec![(TEXT, "< > & \" '".to_string())];
     let output = format_native("terminal", &tokens).expect("Terminal formatter failed");
     assert!(!output.is_empty());
 }
 
 #[test]
 fn test_terminal_unicode_content() {
-    let tokens = vec![
-        (TEXT, "Hello 世界".to_string()),
-    ];
+    let tokens = vec![(TEXT, "Hello 世界".to_string())];
     let output = format_native("terminal", &tokens).expect("Terminal formatter failed");
     assert!(!output.is_empty());
 }
@@ -171,9 +163,7 @@ fn test_terminal_color_token_mapping() {
 
 #[test]
 fn test_terminal_decorator_token() {
-    let tokens = vec![
-        (NAME_DECORATOR, "@decorator".to_string()),
-    ];
+    let tokens = vec![(NAME_DECORATOR, "@decorator".to_string())];
     let output = format_native("terminal", &tokens).expect("Terminal formatter failed");
     assert!(!output.is_empty());
 }

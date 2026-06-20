@@ -23,8 +23,11 @@ mod bridge_tests {
     fn bridge_available() -> bool {
         use pyo3::prelude::*;
         Python::try_attach(|py| {
-            py.import("pygments").and_then(|_| py.import("pygments.lexers")).is_ok()
-        }).unwrap_or(false)
+            py.import("pygments")
+                .and_then(|_| py.import("pygments.lexers"))
+                .is_ok()
+        })
+        .unwrap_or(false)
     }
 
     /// Macro to conditionally skip test if bridge unavailable
@@ -134,7 +137,10 @@ mod bridge_tests {
 
         assert!(result.is_some(), "bridge::lex should handle comments");
         let tokens = result.unwrap();
-        assert!(!tokens.is_empty(), "code with comments should produce tokens");
+        assert!(
+            !tokens.is_empty(),
+            "code with comments should produce tokens"
+        );
     }
 
     #[test]
@@ -144,9 +150,15 @@ mod bridge_tests {
         let code = r#"s = "hello\"world""#;
         let result = bridge::lex("python", code);
 
-        assert!(result.is_some(), "bridge::lex should handle escaped strings");
+        assert!(
+            result.is_some(),
+            "bridge::lex should handle escaped strings"
+        );
         let tokens = result.unwrap();
-        assert!(!tokens.is_empty(), "code with escapes should produce tokens");
+        assert!(
+            !tokens.is_empty(),
+            "code with escapes should produce tokens"
+        );
     }
 
     #[test]
@@ -227,10 +239,7 @@ mod bridge_tests {
         let code = "x = 1\n".repeat(1000);
         let result = bridge::lex("python", &code);
 
-        assert!(
-            result.is_some(),
-            "bridge::lex should handle very long code"
-        );
+        assert!(result.is_some(), "bridge::lex should handle very long code");
         let tokens = result.unwrap();
         assert!(
             !tokens.is_empty(),
@@ -367,10 +376,7 @@ mod bridge_tests {
 
         assert!(result.is_some(), "bridge::format should succeed for latex");
         let output = result.unwrap();
-        assert!(
-            !output.is_empty(),
-            "latex formatter should produce output"
-        );
+        assert!(!output.is_empty(), "latex formatter should produce output");
     }
 
     #[test]
@@ -399,12 +405,12 @@ mod bridge_tests {
         let tokens = vec![("Token.Keyword".to_string(), "if".to_string())];
         let result = bridge::format("html", &tokens);
 
-        assert!(result.is_some(), "bridge::format should handle single token");
-        let output = result.unwrap();
         assert!(
-            !output.is_empty(),
-            "single token should produce output"
+            result.is_some(),
+            "bridge::format should handle single token"
         );
+        let output = result.unwrap();
+        assert!(!output.is_empty(), "single token should produce output");
     }
 
     #[test]
@@ -418,7 +424,10 @@ mod bridge_tests {
         let result2 = bridge::format("html", &without_prefix);
 
         assert!(result1.is_some(), "format with Token. prefix should work");
-        assert!(result2.is_some(), "format without Token. prefix should work");
+        assert!(
+            result2.is_some(),
+            "format without Token. prefix should work"
+        );
     }
 
     #[test]
@@ -436,10 +445,7 @@ mod bridge_tests {
             "bridge::format should escape special chars"
         );
         let output = result.unwrap();
-        assert!(
-            !output.is_empty(),
-            "special chars should produce output"
-        );
+        assert!(!output.is_empty(), "special chars should produce output");
     }
 
     #[test]
@@ -517,15 +523,9 @@ mod bridge_tests {
         }
         let result = bridge::format("html", &tokens);
 
-        assert!(
-            result.is_some(),
-            "bridge::format should handle many tokens"
-        );
+        assert!(result.is_some(), "bridge::format should handle many tokens");
         let output = result.unwrap();
-        assert!(
-            !output.is_empty(),
-            "many tokens should produce output"
-        );
+        assert!(!output.is_empty(), "many tokens should produce output");
     }
 
     // ========== TEST: formatter_is_known() — Formatter Discovery ==========
@@ -611,10 +611,7 @@ mod bridge_tests {
         let alias = "python";
         if bridge::alias_is_known(alias) {
             let result = bridge::lex(alias, "x = 1");
-            assert!(
-                result.is_some(),
-                "lex should succeed if alias was known"
-            );
+            assert!(result.is_some(), "lex should succeed if alias was known");
         }
     }
 
@@ -747,10 +744,7 @@ mod bridge_tests {
             }
         }
 
-        assert!(
-            succeeded > 0,
-            "at least some formatters should succeed"
-        );
+        assert!(succeeded > 0, "at least some formatters should succeed");
     }
 }
 

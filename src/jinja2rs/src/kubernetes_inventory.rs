@@ -46,11 +46,11 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
-use serde_json::{json, Value as JsonValue};
+use crate::compat::KubernetesInventorySource;
+use serde_json::{Value as JsonValue, json};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
-use crate::compat::KubernetesInventorySource;
 
 /// Kubernetes resource information (Pod, Deployment, Service, etc.).
 #[derive(Debug, Clone)]
@@ -86,7 +86,9 @@ pub struct KubernetesManifest {
 
 impl KubernetesManifest {
     /// Load Kubernetes manifests from a source.
-    pub fn from_source(source: KubernetesInventorySource) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_source(
+        source: KubernetesInventorySource,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let content = match source {
             KubernetesInventorySource::File(path) => fs::read_to_string(path)?,
             KubernetesInventorySource::Stdin => {
@@ -132,7 +134,9 @@ impl KubernetesManifest {
 
                             // Extract labels and annotations
                             let mut labels = HashMap::new();
-                            if let Some(meta_labels) = metadata.get("labels").and_then(|v| v.as_object()) {
+                            if let Some(meta_labels) =
+                                metadata.get("labels").and_then(|v| v.as_object())
+                            {
                                 for (k, v) in meta_labels {
                                     if let Some(val) = v.as_str() {
                                         labels.insert(k.clone(), val.to_string());
@@ -141,7 +145,9 @@ impl KubernetesManifest {
                             }
 
                             let mut annotations = HashMap::new();
-                            if let Some(meta_annotations) = metadata.get("annotations").and_then(|v| v.as_object()) {
+                            if let Some(meta_annotations) =
+                                metadata.get("annotations").and_then(|v| v.as_object())
+                            {
                                 for (k, v) in meta_annotations {
                                     if let Some(val) = v.as_str() {
                                         annotations.insert(k.clone(), val.to_string());
@@ -241,9 +247,7 @@ impl KubernetesManifest {
 
     /// Get a specific resource by kind and name.
     pub fn get_resource(&self, kind: &str, name: &str) -> Option<&KubernetesResource> {
-        self.resources
-            .get(kind)
-            .and_then(|items| items.get(name))
+        self.resources.get(kind).and_then(|items| items.get(name))
     }
 
     /// Get all resources of a specific kind.

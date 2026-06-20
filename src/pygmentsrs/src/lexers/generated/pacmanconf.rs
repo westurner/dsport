@@ -25,15 +25,27 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)#.*$", COMMENT_SINGLE),
-        Rule::bygroups(r"(?m)^(\s*)(\[.*?\])(\s*)$", vec![Some(WHITESPACE), Some(KEYWORD), Some(WHITESPACE)]),
-        Rule::bygroups(r"(?m)(\w+)(\s*)(=)", vec![Some(NAME_ATTRIBUTE), Some(WHITESPACE), Some(OPERATOR)]),
-        Rule::bygroups(r"(?m)^(\s*)(\w+)(\s*)$", vec![Some(WHITESPACE), Some(NAME_ATTRIBUTE), Some(WHITESPACE)]),
-        Rule::token(r"(?m)(\$(?:arch|repo)|%(?:[ou]))\b", NAME_VARIABLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m).", TEXT),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)#.*$", COMMENT_SINGLE),
+            Rule::bygroups(
+                r"(?m)^(\s*)(\[.*?\])(\s*)$",
+                vec![Some(WHITESPACE), Some(KEYWORD), Some(WHITESPACE)],
+            ),
+            Rule::bygroups(
+                r"(?m)(\w+)(\s*)(=)",
+                vec![Some(NAME_ATTRIBUTE), Some(WHITESPACE), Some(OPERATOR)],
+            ),
+            Rule::bygroups(
+                r"(?m)^(\s*)(\w+)(\s*)$",
+                vec![Some(WHITESPACE), Some(NAME_ATTRIBUTE), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?m)(\$(?:arch|repo)|%(?:[ou]))\b", NAME_VARIABLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m).", TEXT),
+        ],
+    );
     Table(m)
 }
 

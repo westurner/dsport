@@ -3,7 +3,7 @@
 //! Generated from pygments.lexers DelegatingLexer subclasses.
 
 use crate::lexer::Lexer;
-use crate::token::{TokenType, TEXT, OTHER};
+use crate::token::{OTHER, TEXT, TokenType};
 
 /// Implement DelegatingLexer semantics:
 /// 1. Tokenize with language_lexer
@@ -106,7 +106,6 @@ fn merge_tokens(
 
     result
 }
-
 
 // ===== Struct definitions (61 lexers) =====
 

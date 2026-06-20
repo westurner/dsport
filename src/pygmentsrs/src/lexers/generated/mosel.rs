@@ -43,15 +43,24 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)\'", STRING_SINGLE, NewState::Push(vec![r"single_quote"])),
         Rule::token(r"(?m)(\w+|(\.(?!\.)))", TEXT),
     ]);
-    m.insert(r"single_quote", vec![
-        Rule::token_to(r"(?m)\'", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?m)[^\']+", STRING_SINGLE),
-    ]);
-    m.insert(r"double_quote", vec![
-        Rule::token(r#"(?m)(\\"|\\[0-7]{1,3}\D|\\[abfnrtv]|\\\\)"#, STRING_ESCAPE),
-        Rule::token_to(r#"(?m)\""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r#"(?m)[^"\\]+"#, STRING_DOUBLE),
-    ]);
+    m.insert(
+        r"single_quote",
+        vec![
+            Rule::token_to(r"(?m)\'", STRING_SINGLE, NewState::Pop(1)),
+            Rule::token(r"(?m)[^\']+", STRING_SINGLE),
+        ],
+    );
+    m.insert(
+        r"double_quote",
+        vec![
+            Rule::token(
+                r#"(?m)(\\"|\\[0-7]{1,3}\D|\\[abfnrtv]|\\\\)"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token_to(r#"(?m)\""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(r#"(?m)[^"\\]+"#, STRING_DOUBLE),
+        ],
+    );
     Table(m)
 }
 

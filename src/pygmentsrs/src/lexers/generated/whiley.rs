@@ -52,13 +52,16 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[+\-*/%&|<>^!~@=:?\u2200\u2203\u2205\u2282\u2286\u2283\u2287\u222A\u2229\u2264\u2265\u2208\u2227\u2228]", OPERATOR),
         Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
     ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)\\[btnfr]", STRING_ESCAPE),
-        Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING),
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)\\[btnfr]", STRING_ESCAPE),
+            Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING),
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+        ],
+    );
     Table(m)
 }
 

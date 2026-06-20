@@ -25,12 +25,15 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"escape-sequence", vec![
-        Rule::token(r#"(?m)\\[\\"\'ntbrafv]"#, STRING_ESCAPE),
-        Rule::token(r"(?m)\\[0-9]{3}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\U[0-9a-fA-F]{8}", STRING_ESCAPE),
-    ]);
+    m.insert(
+        r"escape-sequence",
+        vec![
+            Rule::token(r#"(?m)\\[\\"\'ntbrafv]"#, STRING_ESCAPE),
+            Rule::token(r"(?m)\\[0-9]{3}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\U[0-9a-fA-F]{8}", STRING_ESCAPE),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token(r"(?m)\(\)|\[\]", NAME_BUILTIN_PSEUDO),
@@ -65,45 +68,60 @@ fn build_table() -> Table {
         Rule::token_to(r#"(?m)@?""#, STRING_DOUBLE, NewState::Push(vec![r"string"])),
         Rule::token(r"(?m)[~?][a-z][\w\']*:", NAME_VARIABLE),
     ]);
-    m.insert(r"dotted", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)\.", PUNCTUATION),
-        Rule::token(r"(?m)[A-Z][\w\']*(?=\s*\.)", NAME_NAMESPACE),
-        Rule::token_to(r"(?m)[A-Z][\w\']*", NAME, NewState::Pop(1)),
-        Rule::token_to(r"(?m)[a-z_][\w\']*", NAME, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r#"(?m)[^(*)@"]+"#, COMMENT),
-        Rule::token_to(r"(?m)\(\*", COMMENT, NewState::PushSame),
-        Rule::token_to(r"(?m)\*\)", COMMENT, NewState::Pop(1)),
-        Rule::token_to(r#"(?m)@""#, STRING, NewState::Push(vec![r"lstring"])),
-        Rule::token_to(r#"(?m)""""#, STRING, NewState::Push(vec![r"tqs"])),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
-        Rule::token(r"(?m)[(*)@]", COMMENT),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-        Rule::token(r#"(?m)\\[\\"\'ntbrafv]"#, STRING_ESCAPE),
-        Rule::token(r"(?m)\\[0-9]{3}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\U[0-9a-fA-F]{8}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\\n", STRING),
-        Rule::token(r"(?m)\n", STRING),
-        Rule::token_to(r#"(?m)"B?"#, STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"lstring", vec![
-        Rule::token(r#"(?m)[^"]+"#, STRING),
-        Rule::token(r"(?m)\n", STRING),
-        Rule::token(r#"(?m)"""#, STRING),
-        Rule::token_to(r#"(?m)"B?"#, STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"tqs", vec![
-        Rule::token(r#"(?m)[^"]+"#, STRING),
-        Rule::token(r"(?m)\n", STRING),
-        Rule::token_to(r#"(?m)"""B?"#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)""#, STRING),
-    ]);
+    m.insert(
+        r"dotted",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)\.", PUNCTUATION),
+            Rule::token(r"(?m)[A-Z][\w\']*(?=\s*\.)", NAME_NAMESPACE),
+            Rule::token_to(r"(?m)[A-Z][\w\']*", NAME, NewState::Pop(1)),
+            Rule::token_to(r"(?m)[a-z_][\w\']*", NAME, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r#"(?m)[^(*)@"]+"#, COMMENT),
+            Rule::token_to(r"(?m)\(\*", COMMENT, NewState::PushSame),
+            Rule::token_to(r"(?m)\*\)", COMMENT, NewState::Pop(1)),
+            Rule::token_to(r#"(?m)@""#, STRING, NewState::Push(vec![r"lstring"])),
+            Rule::token_to(r#"(?m)""""#, STRING, NewState::Push(vec![r"tqs"])),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
+            Rule::token(r"(?m)[(*)@]", COMMENT),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+            Rule::token(r#"(?m)\\[\\"\'ntbrafv]"#, STRING_ESCAPE),
+            Rule::token(r"(?m)\\[0-9]{3}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\U[0-9a-fA-F]{8}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\\n", STRING),
+            Rule::token(r"(?m)\n", STRING),
+            Rule::token_to(r#"(?m)"B?"#, STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"lstring",
+        vec![
+            Rule::token(r#"(?m)[^"]+"#, STRING),
+            Rule::token(r"(?m)\n", STRING),
+            Rule::token(r#"(?m)"""#, STRING),
+            Rule::token_to(r#"(?m)"B?"#, STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"tqs",
+        vec![
+            Rule::token(r#"(?m)[^"]+"#, STRING),
+            Rule::token(r"(?m)\n", STRING),
+            Rule::token_to(r#"(?m)"""B?"#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)""#, STRING),
+        ],
+    );
     Table(m)
 }
 

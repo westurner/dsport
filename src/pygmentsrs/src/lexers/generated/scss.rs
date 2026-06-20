@@ -25,32 +25,72 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?ims)\s+", WHITESPACE),
-        Rule::token(r"(?ims)//.*?\n", COMMENT_SINGLE),
-        Rule::token(r"(?ims)/\*.*?\*/", COMMENT_MULTILINE),
-        Rule::token_to(r"(?ims)@import", KEYWORD, NewState::Push(vec![r"value"])),
-        Rule::token_to(r"(?ims)@for", KEYWORD, NewState::Push(vec![r"for"])),
-        Rule::token_to(r"(?ims)@(debug|warn|if|while)", KEYWORD, NewState::Push(vec![r"value"])),
-        Rule::bygroups_to(r"(?ims)(@mixin)( [\w-]+)", vec![Some(KEYWORD), Some(NAME_FUNCTION)], NewState::Push(vec![r"value"])),
-        Rule::bygroups_to(r"(?ims)(@include)( [\w-]+)", vec![Some(KEYWORD), Some(NAME_DECORATOR)], NewState::Push(vec![r"value"])),
-        Rule::token_to(r"(?ims)@extend", KEYWORD, NewState::Push(vec![r"selector"])),
-        Rule::bygroups_to(r"(?ims)(@media)(\s+)", vec![Some(KEYWORD), Some(WHITESPACE)], NewState::Push(vec![r"value"])),
-        Rule::token_to(r"(?ims)@[\w-]+", KEYWORD, NewState::Push(vec![r"selector"])),
-        Rule::bygroups_to(r"(?ims)(\$[\w-]*\w)([ \t]*:)", vec![Some(NAME_VARIABLE), Some(OPERATOR)], NewState::Push(vec![r"value"])),
-        Rule::default(NewState::Push(vec![r"selector"])),
-    ]);
-    m.insert(r"attr", vec![
-        Rule::token(r#"(?ims)[^\s:="\[]+"#, NAME_ATTRIBUTE),
-        Rule::token_to(r"(?ims)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpolation"])),
-        Rule::token_to(r"(?ims)[ \t]*:", OPERATOR, NewState::Push(vec![r"value"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"inline-comment", vec![
-        Rule::token(r"(?ims)(\\#|#(?=[^{])|\*(?=[^/])|[^#*])+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?ims)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpolation"])),
-        Rule::token_to(r"(?ims)\*/", COMMENT, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?ims)\s+", WHITESPACE),
+            Rule::token(r"(?ims)//.*?\n", COMMENT_SINGLE),
+            Rule::token(r"(?ims)/\*.*?\*/", COMMENT_MULTILINE),
+            Rule::token_to(r"(?ims)@import", KEYWORD, NewState::Push(vec![r"value"])),
+            Rule::token_to(r"(?ims)@for", KEYWORD, NewState::Push(vec![r"for"])),
+            Rule::token_to(
+                r"(?ims)@(debug|warn|if|while)",
+                KEYWORD,
+                NewState::Push(vec![r"value"]),
+            ),
+            Rule::bygroups_to(
+                r"(?ims)(@mixin)( [\w-]+)",
+                vec![Some(KEYWORD), Some(NAME_FUNCTION)],
+                NewState::Push(vec![r"value"]),
+            ),
+            Rule::bygroups_to(
+                r"(?ims)(@include)( [\w-]+)",
+                vec![Some(KEYWORD), Some(NAME_DECORATOR)],
+                NewState::Push(vec![r"value"]),
+            ),
+            Rule::token_to(r"(?ims)@extend", KEYWORD, NewState::Push(vec![r"selector"])),
+            Rule::bygroups_to(
+                r"(?ims)(@media)(\s+)",
+                vec![Some(KEYWORD), Some(WHITESPACE)],
+                NewState::Push(vec![r"value"]),
+            ),
+            Rule::token_to(r"(?ims)@[\w-]+", KEYWORD, NewState::Push(vec![r"selector"])),
+            Rule::bygroups_to(
+                r"(?ims)(\$[\w-]*\w)([ \t]*:)",
+                vec![Some(NAME_VARIABLE), Some(OPERATOR)],
+                NewState::Push(vec![r"value"]),
+            ),
+            Rule::default(NewState::Push(vec![r"selector"])),
+        ],
+    );
+    m.insert(
+        r"attr",
+        vec![
+            Rule::token(r#"(?ims)[^\s:="\[]+"#, NAME_ATTRIBUTE),
+            Rule::token_to(
+                r"(?ims)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpolation"]),
+            ),
+            Rule::token_to(r"(?ims)[ \t]*:", OPERATOR, NewState::Push(vec![r"value"])),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"inline-comment",
+        vec![
+            Rule::token(
+                r"(?ims)(\\#|#(?=[^{])|\*(?=[^/])|[^#*])+",
+                COMMENT_MULTILINE,
+            ),
+            Rule::token_to(
+                r"(?ims)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpolation"]),
+            ),
+            Rule::token_to(r"(?ims)\*/", COMMENT, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"value", vec![
         Rule::token(r"(?ims)[ \t]+", WHITESPACE),
         Rule::token(r"(?ims)[!$][\w-]+", NAME_VARIABLE),
@@ -102,50 +142,111 @@ fn build_table() -> Table {
         Rule::token(r"(?ims)\n", WHITESPACE),
         Rule::token_to(r"(?ims)[;{}]", PUNCTUATION, NewState::Pop(1)),
     ]);
-    m.insert(r"selector", vec![
-        Rule::token(r"(?ims)[ \t]+", WHITESPACE),
-        Rule::token_to(r"(?ims)\:", NAME_DECORATOR, NewState::Push(vec![r"pseudo-class"])),
-        Rule::token_to(r"(?ims)\.", NAME_CLASS, NewState::Push(vec![r"class"])),
-        Rule::token_to(r"(?ims)\#", NAME_NAMESPACE, NewState::Push(vec![r"id"])),
-        Rule::token(r"(?ims)[\w-]+", NAME_TAG),
-        Rule::token_to(r"(?ims)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpolation"])),
-        Rule::token(r"(?ims)&", KEYWORD),
-        Rule::token(r"(?ims)[~^*!&\[\]()<>|+=@:;,./?-]", OPERATOR),
-        Rule::token_to(r#"(?ims)""#, STRING_DOUBLE, NewState::Push(vec![r"string-double"])),
-        Rule::token_to(r"(?ims)'", STRING_SINGLE, NewState::Push(vec![r"string-single"])),
-        Rule::token(r"(?ims)\n", WHITESPACE),
-        Rule::token_to(r"(?ims)[;{}]", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"string-double", vec![
-        Rule::token(r##"(?ims)(\\.|#(?=[^\n{])|[^\n"#])+"##, STRING_DOUBLE),
-        Rule::token_to(r"(?ims)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpolation"])),
-        Rule::token_to(r#"(?ims)""#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"string-single", vec![
-        Rule::token(r"(?ims)(\\.|#(?=[^\n{])|[^\n'#])+", STRING_SINGLE),
-        Rule::token_to(r"(?ims)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpolation"])),
-        Rule::token_to(r"(?ims)'", STRING_SINGLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"string-url", vec![
-        Rule::token(r"(?ims)(\\#|#(?=[^\n{])|[^\n#)])+", STRING_OTHER),
-        Rule::token_to(r"(?ims)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpolation"])),
-        Rule::token_to(r"(?ims)\)", STRING_OTHER, NewState::Pop(1)),
-    ]);
-    m.insert(r"pseudo-class", vec![
-        Rule::token(r"(?ims)[\w-]+", NAME_DECORATOR),
-        Rule::token_to(r"(?ims)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpolation"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"class", vec![
-        Rule::token(r"(?ims)[\w-]+", NAME_CLASS),
-        Rule::token_to(r"(?ims)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpolation"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"id", vec![
-        Rule::token(r"(?ims)[\w-]+", NAME_NAMESPACE),
-        Rule::token_to(r"(?ims)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpolation"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"selector",
+        vec![
+            Rule::token(r"(?ims)[ \t]+", WHITESPACE),
+            Rule::token_to(
+                r"(?ims)\:",
+                NAME_DECORATOR,
+                NewState::Push(vec![r"pseudo-class"]),
+            ),
+            Rule::token_to(r"(?ims)\.", NAME_CLASS, NewState::Push(vec![r"class"])),
+            Rule::token_to(r"(?ims)\#", NAME_NAMESPACE, NewState::Push(vec![r"id"])),
+            Rule::token(r"(?ims)[\w-]+", NAME_TAG),
+            Rule::token_to(
+                r"(?ims)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpolation"]),
+            ),
+            Rule::token(r"(?ims)&", KEYWORD),
+            Rule::token(r"(?ims)[~^*!&\[\]()<>|+=@:;,./?-]", OPERATOR),
+            Rule::token_to(
+                r#"(?ims)""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"string-double"]),
+            ),
+            Rule::token_to(
+                r"(?ims)'",
+                STRING_SINGLE,
+                NewState::Push(vec![r"string-single"]),
+            ),
+            Rule::token(r"(?ims)\n", WHITESPACE),
+            Rule::token_to(r"(?ims)[;{}]", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string-double",
+        vec![
+            Rule::token(r##"(?ims)(\\.|#(?=[^\n{])|[^\n"#])+"##, STRING_DOUBLE),
+            Rule::token_to(
+                r"(?ims)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpolation"]),
+            ),
+            Rule::token_to(r#"(?ims)""#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string-single",
+        vec![
+            Rule::token(r"(?ims)(\\.|#(?=[^\n{])|[^\n'#])+", STRING_SINGLE),
+            Rule::token_to(
+                r"(?ims)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpolation"]),
+            ),
+            Rule::token_to(r"(?ims)'", STRING_SINGLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string-url",
+        vec![
+            Rule::token(r"(?ims)(\\#|#(?=[^\n{])|[^\n#)])+", STRING_OTHER),
+            Rule::token_to(
+                r"(?ims)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpolation"]),
+            ),
+            Rule::token_to(r"(?ims)\)", STRING_OTHER, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"pseudo-class",
+        vec![
+            Rule::token(r"(?ims)[\w-]+", NAME_DECORATOR),
+            Rule::token_to(
+                r"(?ims)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpolation"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"class",
+        vec![
+            Rule::token(r"(?ims)[\w-]+", NAME_CLASS),
+            Rule::token_to(
+                r"(?ims)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpolation"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"id",
+        vec![
+            Rule::token(r"(?ims)[\w-]+", NAME_NAMESPACE),
+            Rule::token_to(
+                r"(?ims)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpolation"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     m.insert(r"for", vec![
         Rule::token(r"(?ims)(from|to|through)", OPERATOR_WORD),
         Rule::token(r"(?ims)[ \t]+", WHITESPACE),

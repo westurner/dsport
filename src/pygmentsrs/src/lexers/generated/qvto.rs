@@ -57,60 +57,104 @@ fn build_table() -> Table {
     m.insert(r"keywords", vec![
         Rule::token(r"(?m)(a(?:bstract|ccess|ny|ssert)|b(?:lackbox|reak)|c(?:ase|o(?:llect(?:(?:Nested|One|select(?:(?:One)?))?)|mp(?:oses|ute)|n(?:figuration|structor|tinue)))|d(?:atatype|e(?:fault|rived)|isjuncts|o)|e(?:l(?:if|se)|nd(?:(?:if)?)|x(?:cept|(?:ist|tend)s))|f(?:or(?:All|Each|One)|rom)|i(?:mplies|n(?:herits|it|out|termediate|vresolve(?:(?:In|one(?:(?:In)?))?))|(?:sUniqu|terat)e|[fn])|l(?:ate|et|iteral|og)|m(?:ap|erges|odeltype)|new|o(?:bject|ne|rdered|ut)|p(?:ackage|opulation|roperty)|r(?:aise|e(?:adonly|f(?:(?:erenc|in)es)|ject|solve(?:(?:In|one(?:(?:In)?))?)|turn))|s(?:elect(?:(?:One)?)|ortedBy|tatic|witch)|t(?:ag|hen|ry|ypedef)|u(?:nlimited|ses)|w(?:h(?:e(?:n|re)|ile)|ith)|x(?:collect|map|select))\b", KEYWORD),
     ]);
-    m.insert(r"stringescape", vec![
-        Rule::token(r#"(?m)\\([\\btnfr"\']|u[0-3][0-7]{2}|u[0-7]{1,2})"#, STRING_ESCAPE),
-    ]);
-    m.insert(r"dqs", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\\\|\\""#, STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\\'"\n]+"#, STRING),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING),
-    ]);
-    m.insert(r"strings", vec![
-        Rule::token(r#"(?m)[^\\\'"\n]+"#, STRING),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING),
-    ]);
-    m.insert(r"_tmp_0", vec![
-        Rule::token(r#"(?m)\\([\\btnfr"\']|u[0-3][0-7]{2}|u[0-7]{1,2})"#, STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\\\|\\""#, STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\\'"\n]+"#, STRING),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING),
-    ]);
-    m.insert(r"sqs", vec![
-        Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)\\\\|\\'", STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\\'"\n]+"#, STRING),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING),
-    ]);
-    m.insert(r"_tmp_1", vec![
-        Rule::token(r#"(?m)\\([\\btnfr"\']|u[0-3][0-7]{2}|u[0-7]{1,2})"#, STRING_ESCAPE),
-        Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)\\\\|\\'", STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\\'"\n]+"#, STRING),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING),
-    ]);
-    m.insert(r"name", vec![
-        Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
-    ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?m)(\d+\.\d*|\d*\.\d+)([eE][+-]?[0-9]+)?", NUMBER_FLOAT),
-        Rule::token(r"(?m)\d+[eE][+-]?[0-9]+", NUMBER_FLOAT),
-        Rule::token(r"(?m)\d+", NUMBER_INTEGER),
-    ]);
-    m.insert(r"fromimport", vec![
-        Rule::token(r"(?m)(?:[ \t]|\\\n)+", TEXT),
-        Rule::token(r"(?m)[a-zA-Z_][\w.]*", NAME_NAMESPACE),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"operation", vec![
-        Rule::token(r"(?m)::", TEXT),
-        Rule::bygroups_to(r"(?m)(.*::)([a-zA-Z_]\w*)([ \t]*)(\()", vec![Some(TEXT), Some(NAME_FUNCTION), Some(TEXT), Some(PUNCTUATION)], NewState::Pop(1)),
-    ]);
-    m.insert(r"assert", vec![
-        Rule::token_to(r"(?m)(warning|error|fatal)\b", KEYWORD, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"stringescape",
+        vec![Rule::token(
+            r#"(?m)\\([\\btnfr"\']|u[0-3][0-7]{2}|u[0-7]{1,2})"#,
+            STRING_ESCAPE,
+        )],
+    );
+    m.insert(
+        r"dqs",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)\\\\|\\""#, STRING_ESCAPE),
+            Rule::token(r#"(?m)[^\\\'"\n]+"#, STRING),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING),
+        ],
+    );
+    m.insert(
+        r"strings",
+        vec![
+            Rule::token(r#"(?m)[^\\\'"\n]+"#, STRING),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING),
+        ],
+    );
+    m.insert(
+        r"_tmp_0",
+        vec![
+            Rule::token(
+                r#"(?m)\\([\\btnfr"\']|u[0-3][0-7]{2}|u[0-7]{1,2})"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)\\\\|\\""#, STRING_ESCAPE),
+            Rule::token(r#"(?m)[^\\\'"\n]+"#, STRING),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING),
+        ],
+    );
+    m.insert(
+        r"sqs",
+        vec![
+            Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)\\\\|\\'", STRING_ESCAPE),
+            Rule::token(r#"(?m)[^\\\'"\n]+"#, STRING),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING),
+        ],
+    );
+    m.insert(
+        r"_tmp_1",
+        vec![
+            Rule::token(
+                r#"(?m)\\([\\btnfr"\']|u[0-3][0-7]{2}|u[0-7]{1,2})"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)\\\\|\\'", STRING_ESCAPE),
+            Rule::token(r#"(?m)[^\\\'"\n]+"#, STRING),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING),
+        ],
+    );
+    m.insert(r"name", vec![Rule::token(r"(?m)[a-zA-Z_]\w*", NAME)]);
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(r"(?m)(\d+\.\d*|\d*\.\d+)([eE][+-]?[0-9]+)?", NUMBER_FLOAT),
+            Rule::token(r"(?m)\d+[eE][+-]?[0-9]+", NUMBER_FLOAT),
+            Rule::token(r"(?m)\d+", NUMBER_INTEGER),
+        ],
+    );
+    m.insert(
+        r"fromimport",
+        vec![
+            Rule::token(r"(?m)(?:[ \t]|\\\n)+", TEXT),
+            Rule::token(r"(?m)[a-zA-Z_][\w.]*", NAME_NAMESPACE),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"operation",
+        vec![
+            Rule::token(r"(?m)::", TEXT),
+            Rule::bygroups_to(
+                r"(?m)(.*::)([a-zA-Z_]\w*)([ \t]*)(\()",
+                vec![
+                    Some(TEXT),
+                    Some(NAME_FUNCTION),
+                    Some(TEXT),
+                    Some(PUNCTUATION),
+                ],
+                NewState::Pop(1),
+            ),
+        ],
+    );
+    m.insert(
+        r"assert",
+        vec![
+            Rule::token_to(r"(?m)(warning|error|fatal)\b", KEYWORD, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

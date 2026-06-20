@@ -55,24 +55,38 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\$?[a-zA-Z_]\w*", NAME),
         Rule::token(r"(?m)\\(\S+)", NAME),
     ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\([\\abfnrtv"\']|x[a-fA-F0-9]{2,4}|[0-7]{1,3})"#, STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\"\n]+"#, STRING),
-        Rule::bygroups(r"(?m)(\\)(\n)", vec![Some(STRING_ESCAPE), Some(WHITESPACE)]),
-        Rule::token(r"(?m)\\", STRING),
-    ]);
-    m.insert(r"macro", vec![
-        Rule::token(r"(?m)[^/\n]+", COMMENT_PREPROC),
-        Rule::token(r"(?m)/[*](.|\n)*?[*]/", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)//.*?\n", COMMENT_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?m)/", COMMENT_PREPROC),
-        Rule::token(r"(?m)(?<=\\)\n", COMMENT_PREPROC),
-        Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
-    ]);
-    m.insert(r"import", vec![
-        Rule::token_to(r"(?m)[\w:]+\*?", NAME_NAMESPACE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(
+                r#"(?m)\\([\\abfnrtv"\']|x[a-fA-F0-9]{2,4}|[0-7]{1,3})"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token(r#"(?m)[^\\"\n]+"#, STRING),
+            Rule::bygroups(r"(?m)(\\)(\n)", vec![Some(STRING_ESCAPE), Some(WHITESPACE)]),
+            Rule::token(r"(?m)\\", STRING),
+        ],
+    );
+    m.insert(
+        r"macro",
+        vec![
+            Rule::token(r"(?m)[^/\n]+", COMMENT_PREPROC),
+            Rule::token(r"(?m)/[*](.|\n)*?[*]/", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)//.*?\n", COMMENT_SINGLE, NewState::Pop(1)),
+            Rule::token(r"(?m)/", COMMENT_PREPROC),
+            Rule::token(r"(?m)(?<=\\)\n", COMMENT_PREPROC),
+            Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"import",
+        vec![Rule::token_to(
+            r"(?m)[\w:]+\*?",
+            NAME_NAMESPACE,
+            NewState::Pop(1),
+        )],
+    );
     Table(m)
 }
 

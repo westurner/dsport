@@ -48,22 +48,32 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\n", WHITESPACE),
         Rule::token(r"(?m)\s+", WHITESPACE),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)#.*?\n", COMMENT),
-    ]);
-    m.insert(r"label", vec![
-        Rule::token(r"(?m):\w+", NAME_LABEL),
-    ]);
-    m.insert(r"field", vec![
-        Rule::bygroups(r"(?m)(\$?\b)([\w$]*)(:)", vec![Some(PUNCTUATION), Some(NAME_VARIABLE), Some(PUNCTUATION)]),
-    ]);
-    m.insert(r"method", vec![
-        Rule::token(r"(?m)<(?:cl)?init>", NAME_FUNCTION),
-        Rule::bygroups(r"(?m)(\$?\b)([\w$]*)(\()", vec![Some(PUNCTUATION), Some(NAME_FUNCTION), Some(PUNCTUATION)]),
-    ]);
-    m.insert(r"class", vec![
-        Rule::bygroups(r"(?m)(L)((?:[\w$]+/)*)([\w$]+)(;)", vec![Some(KEYWORD_TYPE), Some(TEXT), Some(NAME_CLASS), Some(TEXT)]),
-    ]);
+    m.insert(r"comment", vec![Rule::token(r"(?m)#.*?\n", COMMENT)]);
+    m.insert(r"label", vec![Rule::token(r"(?m):\w+", NAME_LABEL)]);
+    m.insert(
+        r"field",
+        vec![Rule::bygroups(
+            r"(?m)(\$?\b)([\w$]*)(:)",
+            vec![Some(PUNCTUATION), Some(NAME_VARIABLE), Some(PUNCTUATION)],
+        )],
+    );
+    m.insert(
+        r"method",
+        vec![
+            Rule::token(r"(?m)<(?:cl)?init>", NAME_FUNCTION),
+            Rule::bygroups(
+                r"(?m)(\$?\b)([\w$]*)(\()",
+                vec![Some(PUNCTUATION), Some(NAME_FUNCTION), Some(PUNCTUATION)],
+            ),
+        ],
+    );
+    m.insert(
+        r"class",
+        vec![Rule::bygroups(
+            r"(?m)(L)((?:[\w$]+/)*)([\w$]+)(;)",
+            vec![Some(KEYWORD_TYPE), Some(TEXT), Some(NAME_CLASS), Some(TEXT)],
+        )],
+    );
     m.insert(r"directive", vec![
         Rule::bygroups(r"(?m)^([ \t]*)(\.(?:class|super|implements|field|subannotation|annotation|enum|method|registers|locals|array-data|packed-switch|sparse-switch|catchall|catch|line|parameter|local|prologue|epilogue|source))", vec![Some(WHITESPACE), Some(KEYWORD)]),
         Rule::bygroups(r"(?m)^([ \t]*)(\.end)( )(field|subannotation|annotation|method|array-data|packed-switch|sparse-switch|parameter|local)", vec![Some(WHITESPACE), Some(KEYWORD), Some(WHITESPACE), Some(KEYWORD)]),
@@ -72,27 +82,43 @@ fn build_table() -> Table {
     m.insert(r"access-modifier", vec![
         Rule::token(r"(?m)(public|private|protected|static|final|synchronized|bridge|varargs|native|abstract|strictfp|synthetic|constructor|declared-synchronized|interface|enum|annotation|volatile|transient)", KEYWORD),
     ]);
-    m.insert(r"instruction", vec![
-        Rule::token(r"(?m)\b[vp]\d+\b", NAME_BUILTIN),
-        Rule::bygroups(r"(?m)(\b[a-z][A-Za-z0-9/-]+)(\s+)", vec![Some(TEXT), Some(WHITESPACE)]),
-    ]);
-    m.insert(r"literal", vec![
-        Rule::token(r#"(?m)".*""#, STRING),
-        Rule::token(r"(?m)0x[0-9A-Fa-f]+t?", NUMBER_HEX),
-        Rule::token(r"(?m)[0-9]*\.[0-9]+([eE][0-9]+)?[fd]?", NUMBER_FLOAT),
-        Rule::token(r"(?m)[0-9]+L?", NUMBER_INTEGER),
-    ]);
-    m.insert(r"punctuation", vec![
-        Rule::token(r"(?m)->", PUNCTUATION),
-        Rule::token(r"(?m)[{},():=.-]", PUNCTUATION),
-    ]);
-    m.insert(r"type", vec![
-        Rule::token(r"(?m)[ZBSCIJFDV\[]+", KEYWORD_TYPE),
-    ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-    ]);
+    m.insert(
+        r"instruction",
+        vec![
+            Rule::token(r"(?m)\b[vp]\d+\b", NAME_BUILTIN),
+            Rule::bygroups(
+                r"(?m)(\b[a-z][A-Za-z0-9/-]+)(\s+)",
+                vec![Some(TEXT), Some(WHITESPACE)],
+            ),
+        ],
+    );
+    m.insert(
+        r"literal",
+        vec![
+            Rule::token(r#"(?m)".*""#, STRING),
+            Rule::token(r"(?m)0x[0-9A-Fa-f]+t?", NUMBER_HEX),
+            Rule::token(r"(?m)[0-9]*\.[0-9]+([eE][0-9]+)?[fd]?", NUMBER_FLOAT),
+            Rule::token(r"(?m)[0-9]+L?", NUMBER_INTEGER),
+        ],
+    );
+    m.insert(
+        r"punctuation",
+        vec![
+            Rule::token(r"(?m)->", PUNCTUATION),
+            Rule::token(r"(?m)[{},():=.-]", PUNCTUATION),
+        ],
+    );
+    m.insert(
+        r"type",
+        vec![Rule::token(r"(?m)[ZBSCIJFDV\[]+", KEYWORD_TYPE)],
+    );
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+        ],
+    );
     Table(m)
 }
 

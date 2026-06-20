@@ -14,10 +14,16 @@ Footnote [1]_.
         ..Default::default()
     };
     let common = CommonOptions::default();
-    
+
     let html = html5(&tree, &options, &common);
-    assert!(html.contains("<a class=\"superscript\""), "Should contain superscript class");
-    assert!(!html.contains("<span class=\"fn-bracket\">[</span>"), "Should not contain bracket spans");
+    assert!(
+        html.contains("<a class=\"superscript\""),
+        "Should contain superscript class"
+    );
+    assert!(
+        !html.contains("<span class=\"fn-bracket\">[</span>"),
+        "Should not contain bracket spans"
+    );
 }
 
 #[test]
@@ -30,10 +36,16 @@ Footnote [1]_.
     let tree = parse_rst(rst);
     let options = Html5Options::default(); // default should fall back to brackets
     let common = CommonOptions::default();
-    
+
     let html = html5(&tree, &options, &common);
-    assert!(html.contains("<a class=\"brackets\""), "Should contain brackets class");
-    assert!(html.contains("<span class=\"fn-bracket\">[</span>"), "Should contain bracket spans");
+    assert!(
+        html.contains("<a class=\"brackets\""),
+        "Should contain brackets class"
+    );
+    assert!(
+        html.contains("<span class=\"fn-bracket\">[</span>"),
+        "Should contain bracket spans"
+    );
 }
 
 #[test]
@@ -47,10 +59,14 @@ fn test_html5_math_output_mathjax() {
         ..Default::default()
     };
     let common = docutilsrs::cli::CommonOptions::default();
-    
+
     let html = docutilsrs::html5(&tree, &options, &common);
     assert!(!html.contains("<svg"), "Should not contain SVG for MathJax");
-    assert!(html.contains("\\(x^2\\)"), "Should contain MathJax delimiter \\(..\\) for inline math output: {}", html);
+    assert!(
+        html.contains("\\(x^2\\)"),
+        "Should contain MathJax delimiter \\(..\\) for inline math output: {}",
+        html
+    );
 }
 
 #[test]
@@ -68,9 +84,13 @@ Col 1  Col 2
         ..Default::default()
     };
     let common = docutilsrs::cli::CommonOptions::default();
-    
+
     let html = docutilsrs::html5(&tree, &options, &common);
-    assert!(html.contains("<table class=\"borderless align-right\">"), "Should contain table with applied styles: {}", html);
+    assert!(
+        html.contains("<table class=\"borderless align-right\">"),
+        "Should contain table with applied styles: {}",
+        html
+    );
 }
 
 #[test]
@@ -84,29 +104,53 @@ fn test_html5_cloak_email_addresses() {
         ..Default::default()
     };
     let common = docutilsrs::cli::CommonOptions::default();
-    
+
     let html = docutilsrs::html5(&tree, &options, &common);
-    assert!(!html.contains("test@example.com"), "Should not contain cleartext email: {}", html);
-    assert!(html.contains("&#37;&#52;&#48;"), "Should contain cloaked @ in href: {}", html);
-    assert!(html.contains("&#64;"), "Should contain cloaked @ in text: {}", html);
+    assert!(
+        !html.contains("test@example.com"),
+        "Should not contain cleartext email: {}",
+        html
+    );
+    assert!(
+        html.contains("&#37;&#52;&#48;"),
+        "Should contain cloaked @ in href: {}",
+        html
+    );
+    assert!(
+        html.contains("&#64;"),
+        "Should contain cloaked @ in text: {}",
+        html
+    );
 }
 
 #[test]
 fn test_html5_compact_lists() {
     let rst = "* item 1\n* item 2\n";
     let tree = docutilsrs::parse_rst(rst);
-    
+
     // Default -> simple class added
-    let html = docutilsrs::html5(&tree, &docutilsrs::cli::Html5Options::default(), &docutilsrs::cli::CommonOptions::default());
-    assert!(html.contains("<ul class=\"simple\">"), "Should compact simple lists by default: {}", html);
-    
+    let html = docutilsrs::html5(
+        &tree,
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
+    assert!(
+        html.contains("<ul class=\"simple\">"),
+        "Should compact simple lists by default: {}",
+        html
+    );
+
     // --no-compact-lists
     let options = docutilsrs::cli::Html5Options {
         no_compact_lists: Some("true".to_string()),
         ..Default::default()
     };
-    let html_no_compact = docutilsrs::html5(&tree, &options, &docutilsrs::cli::CommonOptions::default());
-    assert!(!html_no_compact.contains("<ul class=\"simple\">"), "Should not compact if --no-compact-lists is used");
+    let html_no_compact =
+        docutilsrs::html5(&tree, &options, &docutilsrs::cli::CommonOptions::default());
+    assert!(
+        !html_no_compact.contains("<ul class=\"simple\">"),
+        "Should not compact if --no-compact-lists is used"
+    );
     assert!(html_no_compact.contains("<ul>"), "Should be plain ul");
 }
 
@@ -117,30 +161,53 @@ fn test_html5_compact_field_lists() {
 :Another: Value 2
 "#;
     let tree = docutilsrs::parse_rst(rst);
-    
+
     // Default -> simple class added
-    let html = docutilsrs::html5(&tree, &docutilsrs::cli::Html5Options::default(), &docutilsrs::cli::CommonOptions::default());
-    assert!(html.contains("<dl class=\"field-list simple\">"), "Should compact field lists by default: {}", html);
-    
+    let html = docutilsrs::html5(
+        &tree,
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
+    assert!(
+        html.contains("<dl class=\"field-list simple\">"),
+        "Should compact field lists by default: {}",
+        html
+    );
+
     // --no-compact-field-lists
     let options = docutilsrs::cli::Html5Options {
         no_compact_field_lists: Some("true".to_string()),
         ..Default::default()
     };
-    let html_no_compact = docutilsrs::html5(&tree, &options, &docutilsrs::cli::CommonOptions::default());
-    assert!(!html_no_compact.contains("simple"), "Should not compact field lists if --no-compact-field-lists is used");
-    assert!(html_no_compact.contains("<dl class=\"field-list\">"), "Should be normal dl");
+    let html_no_compact =
+        docutilsrs::html5(&tree, &options, &docutilsrs::cli::CommonOptions::default());
+    assert!(
+        !html_no_compact.contains("simple"),
+        "Should not compact field lists if --no-compact-field-lists is used"
+    );
+    assert!(
+        html_no_compact.contains("<dl class=\"field-list\">"),
+        "Should be normal dl"
+    );
 }
 
 #[test]
 fn test_html5_generator() {
     let rst = "Test\n";
     let tree = docutilsrs::parse_rst(rst);
-    
+
     // No generator by default
-    let html = docutilsrs::html5(&tree, &docutilsrs::cli::Html5Options::default(), &docutilsrs::cli::CommonOptions::default());
-    assert!(!html.contains("Generated by"), "Should not contain generator string if not requested: {}", html);
-    
+    let html = docutilsrs::html5(
+        &tree,
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
+    assert!(
+        !html.contains("Generated by"),
+        "Should not contain generator string if not requested: {}",
+        html
+    );
+
     // --generator
     let common = docutilsrs::cli::CommonOptions {
         generator: Some("true".to_string()),
@@ -154,12 +221,16 @@ fn test_html5_generator() {
 fn test_html5_datestamp() {
     let rst = "Test\n";
     let tree = docutilsrs::parse_rst(rst);
-    
+
     // --date
     let common = docutilsrs::cli::CommonOptions {
         date: Some("%Y-%m-%d".to_string()),
         ..Default::default()
     };
     let html_date = docutilsrs::html5(&tree, &docutilsrs::cli::Html5Options::default(), &common);
-    assert!(html_date.contains("Generated on: "), "Should contain Generated on: string. output: {}", html_date);
+    assert!(
+        html_date.contains("Generated on: "),
+        "Should contain Generated on: string. output: {}",
+        html_date
+    );
 }

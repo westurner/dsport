@@ -51,13 +51,17 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\d+", NUMBER_INTEGER),
         Rule::token(r"(?m)[=<>{}\[\]()*.,:;!]|x\b", PUNCTUATION),
     ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?m)(\n|\s)+", WHITESPACE),
-    ]);
-    m.insert(r"comments", vec![
-        Rule::token(r"(?m)/\*.*?\*/", COMMENT_MULTILINE),
-        Rule::token(r"(?m)//.*?\n", COMMENT_SINGLE),
-    ]);
+    m.insert(
+        r"whitespace",
+        vec![Rule::token(r"(?m)(\n|\s)+", WHITESPACE)],
+    );
+    m.insert(
+        r"comments",
+        vec![
+            Rule::token(r"(?m)/\*.*?\*/", COMMENT_MULTILINE),
+            Rule::token(r"(?m)//.*?\n", COMMENT_SINGLE),
+        ],
+    );
     m.insert(r"keyword", vec![
         Rule::token(r"(?m)kernarg_(u8x4|s8x4|u16x2|s16x2|u8x8|s8x8|u16x4|s16x4|u32x2|s32x2|u8x16|s8x16|u16x8|s16x8|u32x4|s32x4|u64x2|s64x2|f16x2|f16x4|f16x8|f32x2|f32x4|f64x2|u8|s8|u16|s16|u32|s32|u64|s64|b128|b8|b16|b32|b64|b1|f16|f32|f64|roimg|woimg|rwimg|samp|sig32|sig64)", KEYWORD_TYPE),
         Rule::token(r"(?m)\$(full|base|small|large|default|zero|near)", KEYWORD),

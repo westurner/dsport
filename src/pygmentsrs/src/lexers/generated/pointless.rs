@@ -40,18 +40,24 @@ fn build_table() -> Table {
         Rule::token(r"(?m)(export|import)\b", KEYWORD_NAMESPACE),
         Rule::token(r"(?m)[a-z][a-zA-Z0-9]*\b", NAME_VARIABLE),
     ]);
-    m.insert(r"multiString", vec![
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)""#, STRING),
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)\n", ERROR),
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-    ]);
+    m.insert(
+        r"multiString",
+        vec![
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)""#, STRING),
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)\n", ERROR),
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+        ],
+    );
     Table(m)
 }
 

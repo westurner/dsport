@@ -192,10 +192,10 @@ fn test_style_color_mapping_keyword() {
     // Keywords should get distinct color
     let tokens1 = vec![(KEYWORD, "if".to_string())];
     let tokens2 = vec![(TEXT, "text".to_string())];
-    
+
     let out1 = format_native("html", &tokens1).expect("Formatter failed");
     let out2 = format_native("html", &tokens2).expect("Formatter failed");
-    
+
     // Different token types might produce different styled output
     assert!(!out1.is_empty());
     assert!(!out2.is_empty());

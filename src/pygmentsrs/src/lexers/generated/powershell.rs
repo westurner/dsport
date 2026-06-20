@@ -74,20 +74,26 @@ fn build_table() -> Table {
         Rule::token(r"(?ims)\.(component|description|example|externalhelp|forwardhelpcategory|forwardhelptargetname|functionality|inputs|link|notes|outputs|parameter|remotehelprunspace|role|synopsis)", STRING_DOC),
         Rule::token(r"(?ims)[#&.]", COMMENT_MULTILINE),
     ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?ims)`[0abfnrtv'\"$`]"#, STRING_ESCAPE),
-        Rule::token(r#"(?ims)[^$`"]+"#, STRING_DOUBLE),
-        Rule::token_to(r"(?ims)\$\(", PUNCTUATION, NewState::Push(vec![r"child"])),
-        Rule::token(r#"(?ims)"""#, STRING_DOUBLE),
-        Rule::token(r"(?ims)[`$]", STRING_DOUBLE),
-        Rule::token_to(r#"(?ims)""#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"heredoc-double", vec![
-        Rule::token_to(r#"(?ims)\n"@"#, STRING_HEREDOC, NewState::Pop(1)),
-        Rule::token_to(r"(?ims)\$\(", PUNCTUATION, NewState::Push(vec![r"child"])),
-        Rule::token(r#"(?ims)[^@\n]+"]"#, STRING_HEREDOC),
-        Rule::token(r"(?ims).", STRING_HEREDOC),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?ims)`[0abfnrtv'\"$`]"#, STRING_ESCAPE),
+            Rule::token(r#"(?ims)[^$`"]+"#, STRING_DOUBLE),
+            Rule::token_to(r"(?ims)\$\(", PUNCTUATION, NewState::Push(vec![r"child"])),
+            Rule::token(r#"(?ims)"""#, STRING_DOUBLE),
+            Rule::token(r"(?ims)[`$]", STRING_DOUBLE),
+            Rule::token_to(r#"(?ims)""#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"heredoc-double",
+        vec![
+            Rule::token_to(r#"(?ims)\n"@"#, STRING_HEREDOC, NewState::Pop(1)),
+            Rule::token_to(r"(?ims)\$\(", PUNCTUATION, NewState::Push(vec![r"child"])),
+            Rule::token(r#"(?ims)[^@\n]+"]"#, STRING_HEREDOC),
+            Rule::token(r"(?ims).", STRING_HEREDOC),
+        ],
+    );
     Table(m)
 }
 

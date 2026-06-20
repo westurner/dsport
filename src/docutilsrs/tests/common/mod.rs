@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use docutilsrs::{parse_rst, Doctree, NodeKind, cli::CommonOptions};
+use docutilsrs::{Doctree, NodeKind, cli::CommonOptions, parse_rst};
 
 pub fn coverage_rst(raw_format: &str) -> String {
     format!(

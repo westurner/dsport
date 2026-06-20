@@ -25,20 +25,68 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::bygroups_to(r"(?m)(type)(\s+)([A-Z][a-zA-Z0-9]+)(\s+)(\{)", vec![Some(KEYWORD), Some(WHITESPACE), Some(NAME_CLASS), Some(WHITESPACE), Some(TEXT)], NewState::Push(vec![r"struct"])),
-        Rule::bygroups_to(r"(?m)(type)(\s+)([A-Z][a-zA-Z0-9]+)(\s+)(\()", vec![Some(KEYWORD), Some(WHITESPACE), Some(NAME_CLASS), Some(WHITESPACE), Some(TEXT)], NewState::Push(vec![r"union"])),
-        Rule::bygroups_to(r"(?m)(type)(\s+)([A-Z][a-zA-Z0-9]+)(\s+)", vec![Some(KEYWORD), Some(WHITESPACE), Some(NAME), Some(WHITESPACE)], NewState::Push(vec![r"typedef"])),
-        Rule::bygroups_to(r"(?m)(enum)(\s+)([A-Z][a-zA-Z0-9]+)(\s+\{)", vec![Some(KEYWORD), Some(WHITESPACE), Some(NAME_CLASS), Some(WHITESPACE)], NewState::Push(vec![r"enum"])),
-        Rule::token(r"(?m)#.*?$", COMMENT),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-    ]);
-    m.insert(r"struct", vec![
-        Rule::token_to(r"(?m)\{", TEXT, NewState::PushSame),
-        Rule::token_to(r"(?m)\}", TEXT, NewState::Pop(1)),
-        Rule::bygroups_to(r"(?m)([a-zA-Z0-9]+)(:)(\s*)", vec![Some(NAME_ATTRIBUTE), Some(TEXT), Some(WHITESPACE)], NewState::Push(vec![r"typedef"])),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)(type)(\s+)([A-Z][a-zA-Z0-9]+)(\s+)(\{)",
+                vec![
+                    Some(KEYWORD),
+                    Some(WHITESPACE),
+                    Some(NAME_CLASS),
+                    Some(WHITESPACE),
+                    Some(TEXT),
+                ],
+                NewState::Push(vec![r"struct"]),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(type)(\s+)([A-Z][a-zA-Z0-9]+)(\s+)(\()",
+                vec![
+                    Some(KEYWORD),
+                    Some(WHITESPACE),
+                    Some(NAME_CLASS),
+                    Some(WHITESPACE),
+                    Some(TEXT),
+                ],
+                NewState::Push(vec![r"union"]),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(type)(\s+)([A-Z][a-zA-Z0-9]+)(\s+)",
+                vec![
+                    Some(KEYWORD),
+                    Some(WHITESPACE),
+                    Some(NAME),
+                    Some(WHITESPACE),
+                ],
+                NewState::Push(vec![r"typedef"]),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(enum)(\s+)([A-Z][a-zA-Z0-9]+)(\s+\{)",
+                vec![
+                    Some(KEYWORD),
+                    Some(WHITESPACE),
+                    Some(NAME_CLASS),
+                    Some(WHITESPACE),
+                ],
+                NewState::Push(vec![r"enum"]),
+            ),
+            Rule::token(r"(?m)#.*?$", COMMENT),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"struct",
+        vec![
+            Rule::token_to(r"(?m)\{", TEXT, NewState::PushSame),
+            Rule::token_to(r"(?m)\}", TEXT, NewState::Pop(1)),
+            Rule::bygroups_to(
+                r"(?m)([a-zA-Z0-9]+)(:)(\s*)",
+                vec![Some(NAME_ATTRIBUTE), Some(TEXT), Some(WHITESPACE)],
+                NewState::Push(vec![r"typedef"]),
+            ),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+        ],
+    );
     m.insert(r"union", vec![
         Rule::token_to(r"(?m)\)", TEXT, NewState::Pop(1)),
         Rule::bygroups(r"(?m)(\s*)(\|)(\s*)", vec![Some(WHITESPACE), Some(TEXT), Some(WHITESPACE)]),
@@ -61,14 +109,20 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token(r"(?m)\d+", LITERAL),
     ]);
-    m.insert(r"enum", vec![
-        Rule::token_to(r"(?m)\{", TEXT, NewState::PushSame),
-        Rule::token_to(r"(?m)\}", TEXT, NewState::Pop(1)),
-        Rule::bygroups(r"(?m)([A-Z][A-Z0-9_]*)(\s*=\s*)(\d+)", vec![Some(NAME_ATTRIBUTE), Some(TEXT), Some(LITERAL)]),
-        Rule::bygroups(r"(?m)([A-Z][A-Z0-9_]*)", vec![Some(NAME_ATTRIBUTE)]),
-        Rule::token(r"(?m)#.*?$", COMMENT),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-    ]);
+    m.insert(
+        r"enum",
+        vec![
+            Rule::token_to(r"(?m)\{", TEXT, NewState::PushSame),
+            Rule::token_to(r"(?m)\}", TEXT, NewState::Pop(1)),
+            Rule::bygroups(
+                r"(?m)([A-Z][A-Z0-9_]*)(\s*=\s*)(\d+)",
+                vec![Some(NAME_ATTRIBUTE), Some(TEXT), Some(LITERAL)],
+            ),
+            Rule::bygroups(r"(?m)([A-Z][A-Z0-9_]*)", vec![Some(NAME_ATTRIBUTE)]),
+            Rule::token(r"(?m)#.*?$", COMMENT),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+        ],
+    );
     Table(m)
 }
 

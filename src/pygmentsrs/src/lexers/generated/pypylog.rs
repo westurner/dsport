@@ -25,16 +25,30 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token_to(r"(?m)\[\w+\] \{jit-log-.*?$", KEYWORD, NewState::Push(vec![r"jit-log"])),
-        Rule::token_to(r"(?m)\[\w+\] \{jit-backend-counts$", KEYWORD, NewState::Push(vec![r"jit-backend-counts"])),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)#.*?$", COMMENT),
-    ]);
-    m.insert(r"extra-stuff", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)#.*?$", COMMENT),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token_to(
+                r"(?m)\[\w+\] \{jit-log-.*?$",
+                KEYWORD,
+                NewState::Push(vec![r"jit-log"]),
+            ),
+            Rule::token_to(
+                r"(?m)\[\w+\] \{jit-backend-counts$",
+                KEYWORD,
+                NewState::Push(vec![r"jit-backend-counts"]),
+            ),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)#.*?$", COMMENT),
+        ],
+    );
+    m.insert(
+        r"extra-stuff",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)#.*?$", COMMENT),
+        ],
+    );
     m.insert(r"jit-log", vec![
         Rule::token_to(r"(?m)\[\w+\] jit-log-.*?}$", KEYWORD, NewState::Pop(1)),
         Rule::token(r"(?m)^\+\d+: ", COMMENT),
@@ -53,13 +67,20 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token(r"(?m)#.*?$", COMMENT),
     ]);
-    m.insert(r"jit-backend-counts", vec![
-        Rule::token_to(r"(?m)\[\w+\] jit-backend-counts}$", KEYWORD, NewState::Pop(1)),
-        Rule::token(r"(?m):", PUNCTUATION),
-        Rule::token(r"(?m)\d+", NUMBER),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)#.*?$", COMMENT),
-    ]);
+    m.insert(
+        r"jit-backend-counts",
+        vec![
+            Rule::token_to(
+                r"(?m)\[\w+\] jit-backend-counts}$",
+                KEYWORD,
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m):", PUNCTUATION),
+            Rule::token(r"(?m)\d+", NUMBER),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)#.*?$", COMMENT),
+        ],
+    );
     Table(m)
 }
 

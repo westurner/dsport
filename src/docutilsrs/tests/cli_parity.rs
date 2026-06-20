@@ -28,8 +28,7 @@ fn workspace_root() -> PathBuf {
 
     // CARGO_MANIFEST_DIR is set by cargo to the package directory (src/docutilsrs).
     // The workspace root is two levels up: src/docutilsrs -> src -> workspace root.
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     PathBuf::from(manifest_dir)
         .parent()
         .expect("src/docutilsrs has no parent")

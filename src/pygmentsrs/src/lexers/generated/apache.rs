@@ -25,14 +25,29 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?im)\s+", WHITESPACE),
-        Rule::token(r"(?im)#(.*\\\n)+.*$|(#.*?)$", COMMENT),
-        Rule::bygroups(r"(?im)(<[^\s>/][^\s>]*)(?:(\s+)(.*))?(>)", vec![Some(NAME_TAG), Some(WHITESPACE), Some(STRING), Some(NAME_TAG)]),
-        Rule::bygroups(r"(?im)(</[^\s>]+)(>)", vec![Some(NAME_TAG), Some(NAME_TAG)]),
-        Rule::token_to(r"(?im)[a-z]\w*", NAME_BUILTIN, NewState::Push(vec![r"value"])),
-        Rule::token(r"(?im)\.+", TEXT),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?im)\s+", WHITESPACE),
+            Rule::token(r"(?im)#(.*\\\n)+.*$|(#.*?)$", COMMENT),
+            Rule::bygroups(
+                r"(?im)(<[^\s>/][^\s>]*)(?:(\s+)(.*))?(>)",
+                vec![
+                    Some(NAME_TAG),
+                    Some(WHITESPACE),
+                    Some(STRING),
+                    Some(NAME_TAG),
+                ],
+            ),
+            Rule::bygroups(r"(?im)(</[^\s>]+)(>)", vec![Some(NAME_TAG), Some(NAME_TAG)]),
+            Rule::token_to(
+                r"(?im)[a-z]\w*",
+                NAME_BUILTIN,
+                NewState::Push(vec![r"value"]),
+            ),
+            Rule::token(r"(?im)\.+", TEXT),
+        ],
+    );
     m.insert(r"value", vec![
         Rule::token(r"(?im)\\\n", TEXT),
         Rule::token_to(r"(?im)\n+", WHITESPACE, NewState::Pop(1)),

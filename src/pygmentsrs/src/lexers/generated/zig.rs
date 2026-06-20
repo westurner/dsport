@@ -56,11 +56,17 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[+%=><|^!?/\-*&~:]", OPERATOR),
         Rule::token(r"(?m)[{}()\[\],.;]", PUNCTUATION),
     ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)\\(x[a-fA-F0-9]{2}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{6}|[nr\\t\'"])"#, STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\"\n]+"#, STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(
+                r#"(?m)\\(x[a-fA-F0-9]{2}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{6}|[nr\\t\'"])"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token(r#"(?m)[^\\"\n]+"#, STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

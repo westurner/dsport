@@ -56,16 +56,30 @@ fn build_table() -> Table {
         Rule::token(r"(?im)([(),.:])", PUNCTUATION),
         Rule::token(r"(?im).+(\n)?", ERROR),
     ]);
-    m.insert(r"dim_more", vec![
-        Rule::bygroups(r"(?im)(\s*)(,)(\s*)([a-z_][a-z0-9]*)", vec![Some(WHITESPACE), Some(PUNCTUATION), Some(WHITESPACE), Some(NAME_VARIABLE)]),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?im)[^"\n]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?im)\"\""#, STRING_DOUBLE),
-        Rule::token_to(r#"(?im)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token_to(r"(?im)\n", ERROR, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"dim_more",
+        vec![
+            Rule::bygroups(
+                r"(?im)(\s*)(,)(\s*)([a-z_][a-z0-9]*)",
+                vec![
+                    Some(WHITESPACE),
+                    Some(PUNCTUATION),
+                    Some(WHITESPACE),
+                    Some(NAME_VARIABLE),
+                ],
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?im)[^"\n]+"#, STRING_DOUBLE),
+            Rule::token(r#"(?im)\"\""#, STRING_DOUBLE),
+            Rule::token_to(r#"(?im)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token_to(r"(?im)\n", ERROR, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

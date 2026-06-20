@@ -46,11 +46,14 @@ fn build_table() -> Table {
         Rule::token(r"(?im)[{}()\[\],.;]", PUNCTUATION),
         Rule::token(r"(?im)[a-z_]\w*", NAME),
     ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?im)\s+", WHITESPACE),
-        Rule::token(r"(?im)\/\/.*", COMMENT_SINGLE),
-        Rule::token(r"(?im)/(\\\n)?\*(.|\n)*?\*(\\\n)?/", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::token(r"(?im)\s+", WHITESPACE),
+            Rule::token(r"(?im)\/\/.*", COMMENT_SINGLE),
+            Rule::token(r"(?im)/(\\\n)?\*(.|\n)*?\*(\\\n)?/", COMMENT_MULTILINE),
+        ],
+    );
     m.insert(r"statements", vec![
         Rule::token(r"(?im)(RECORD|END)\D", KEYWORD_DECLARATION),
         Rule::bygroups(r"(?im)((?:ASCII|BIG_ENDIAN|BOOLEAN|DATA|DECIMAL|EBCDIC|INTEGER|PATTERN|QSTRING|REAL|RECORD|RULE|SET OF|STRING|TOKEN|UDECIMAL|UNICODE|UNSIGNED|VARSTRING|VARUNICODE)\d*)(\s+)", vec![Some(KEYWORD_TYPE), Some(WHITESPACE)]),
@@ -80,14 +83,15 @@ fn build_table() -> Table {
     m.insert(r"functions", vec![
         Rule::token(r"(?im)(A(?:BS|COS|LLNODES|S(?:CII|IN|STRING)|TAN(?:(?:2)?)|VE)|C(?:ASE|HOOSE(?:(?:N|SETS)?)|LUSTERSIZE|O(?:MBINE|RRELATION|S(?:(?:H)?)|UNT|VARIANCE)|RON)|D(?:ATASET|E(?:DUP|(?:FIN|NORMALIZ)E)|ISTRIBUT(?:E(?:(?:D)?)|ION))|E(?:BCDIC|NTH|RROR|V(?:ALUATE|ENT(?:(?:EXTRA|NAME)?))|X(?:ISTS|P))|F(?:AIL(?:(?:COD|MESSAG)E)|ETCH|ROMUNICODE)|G(?:ETISVALID|LOBAL|R(?:APH|OUP))|HA(?:SH(?:(?:32|64|CRC|MD5)?)|VING)|I(?:F|N(?:DEX|TFORMAT)|SVALID|TERATE)|JOIN|KEYUNICODE|L(?:ENGTH|I(?:BRARY|MIT)|N|O(?:CAL|G|OP))|M(?:A(?:TCH(?:ED|LENGTH|POSITION|TEXT|UNICODE)|[PX])|ERGE(?:(?:JOIN)?)|IN)|NO(?:LOCAL|NEMPTY|RMALIZE)|P(?:ARSE|IPE|OWER|R(?:ELOAD|O(?:CESS|JECT))|ULL)|R(?:AN(?:DOM|GE|K(?:(?:ED)?))|E(?:ALFORMAT|CORDOF|G(?:EX(?:FIND|REPLACE)|ROUP)|JECTED)|O(?:LLUP|UND(?:(?:UP)?)|W(?:(?:DIFF)?)))|S(?:AMPLE|ET|I(?:N(?:(?:H)?)|ZEOF)|O(?:APCALL|RT(?:(?:ED)?))|QRT|T(?:(?:EPP|OR)ED)|UM)|T(?:A(?:BLE|N(?:(?:H)?))|HISNODE|O(?:PN|UNICODE)|R(?:ANSFER|IM|UNCATE)|YPEOF)|UN(?:GROUP|ICODEORDER)|VARIANCE|W(?:HICH|ORKUNIT)|XML(?:DECODE|ENCODE|TEXT|UNICODE))\b", NAME_FUNCTION),
     ]);
-    m.insert(r"hash", vec![
-        Rule::token(r"(?im)^#.*$", COMMENT_PREPROC),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
-        Rule::token_to(r"(?im)\'", STRING, NewState::Pop(1)),
-        Rule::token(r#"(?im)[^"\']+"#, STRING),
-    ]);
+    m.insert(r"hash", vec![Rule::token(r"(?im)^#.*$", COMMENT_PREPROC)]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
+            Rule::token_to(r"(?im)\'", STRING, NewState::Pop(1)),
+            Rule::token(r#"(?im)[^"\']+"#, STRING),
+        ],
+    );
     Table(m)
 }
 

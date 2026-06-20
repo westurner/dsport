@@ -25,18 +25,21 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)#.*\n", COMMENT_SINGLE),
-        Rule::token(r"(?m)/\S*", NAME),
-        Rule::token(r"(?m)[a-zA-Z._-]+", KEYWORD),
-        Rule::token(r"(?m)\d+\.\d+\.\d+\.\d+(?:/\d+)?", NUMBER),
-        Rule::token(r"(?m)[0-9]+", NUMBER),
-        Rule::token(r"(?m)=>|=~|\+=|==|=|\+", OPERATOR),
-        Rule::token(r"(?m)\$[A-Z]+", NAME_BUILTIN),
-        Rule::token(r"(?m)[(){}\[\],]", PUNCTUATION),
-        Rule::token(r#"(?m)"([^"\\]*(?:\\.[^"\\]*)*)""#, STRING_DOUBLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)#.*\n", COMMENT_SINGLE),
+            Rule::token(r"(?m)/\S*", NAME),
+            Rule::token(r"(?m)[a-zA-Z._-]+", KEYWORD),
+            Rule::token(r"(?m)\d+\.\d+\.\d+\.\d+(?:/\d+)?", NUMBER),
+            Rule::token(r"(?m)[0-9]+", NUMBER),
+            Rule::token(r"(?m)=>|=~|\+=|==|=|\+", OPERATOR),
+            Rule::token(r"(?m)\$[A-Z]+", NAME_BUILTIN),
+            Rule::token(r"(?m)[(){}\[\],]", PUNCTUATION),
+            Rule::token(r#"(?m)"([^"\\]*(?:\\.[^"\\]*)*)""#, STRING_DOUBLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+        ],
+    );
     Table(m)
 }
 

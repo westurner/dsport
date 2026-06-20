@@ -46,22 +46,42 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::Push(vec![r"labels"])),
         Rule::token_to(r"(?m)\[", PUNCTUATION, NewState::Push(vec![r"range"])),
     ]);
-    m.insert(r"labels", vec![
-        Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m),", PUNCTUATION),
-        Rule::bygroups(r#"(?m)([_a-zA-Z][a-zA-Z0-9_]*?)(\s*?)(=~|!=|=|!~)(\s*?)("|\')(.*?)("|\')"#, vec![Some(NAME_LABEL), Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE), Some(PUNCTUATION), Some(STRING), Some(PUNCTUATION)]),
-    ]);
-    m.insert(r"range", vec![
-        Rule::token_to(r"(?m)\]", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)[1-9][0-9]*[smhdwy]", STRING),
-    ]);
-    m.insert(r"function", vec![
-        Rule::token_to(r"(?m)\)", OPERATOR, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\(", OPERATOR, NewState::PushSame),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"labels",
+        vec![
+            Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m),", PUNCTUATION),
+            Rule::bygroups(
+                r#"(?m)([_a-zA-Z][a-zA-Z0-9_]*?)(\s*?)(=~|!=|=|!~)(\s*?)("|\')(.*?)("|\')"#,
+                vec![
+                    Some(NAME_LABEL),
+                    Some(WHITESPACE),
+                    Some(OPERATOR),
+                    Some(WHITESPACE),
+                    Some(PUNCTUATION),
+                    Some(STRING),
+                    Some(PUNCTUATION),
+                ],
+            ),
+        ],
+    );
+    m.insert(
+        r"range",
+        vec![
+            Rule::token_to(r"(?m)\]", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?m)[1-9][0-9]*[smhdwy]", STRING),
+        ],
+    );
+    m.insert(
+        r"function",
+        vec![
+            Rule::token_to(r"(?m)\)", OPERATOR, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\(", OPERATOR, NewState::PushSame),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

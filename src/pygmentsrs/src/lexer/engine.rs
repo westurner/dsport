@@ -38,7 +38,10 @@ pub enum GroupAction {
     /// Lex this group's text with a *different* registered lexer
     /// (looked up by its primary alias at call time).
     /// `state = None` means start in "root".
-    UsingLexer { alias: &'static str, state: Option<Vec<&'static str>> },
+    UsingLexer {
+        alias: &'static str,
+        state: Option<Vec<&'static str>>,
+    },
 }
 
 impl From<TokenType> for GroupAction {
@@ -57,7 +60,10 @@ pub enum Action {
     /// Lex the whole match recursively with the same lexer (using(this)).
     UsingThis { state: Option<Vec<&'static str>> },
     /// Lex the whole match with another registered lexer (using(OtherLexer)).
-    UsingLexer { alias: &'static str, state: Option<Vec<&'static str>> },
+    UsingLexer {
+        alias: &'static str,
+        state: Option<Vec<&'static str>>,
+    },
     /// Code-block dispatch: emit prefix/suffix tokens, look up a lexer by the
     /// value of `lang_group`, then lex the code assembled from `code_groups`
     /// with that lexer (or emit as `fallback_token` if the alias is unknown).
@@ -132,7 +138,10 @@ impl Rule {
         Self {
             regex: compile(pattern),
             action: Some(Action::ByGroups(
-                tokens.into_iter().map(|t| t.map(GroupAction::Token)).collect(),
+                tokens
+                    .into_iter()
+                    .map(|t| t.map(GroupAction::Token))
+                    .collect(),
             )),
             new_state: NewState::None,
         }
@@ -141,7 +150,10 @@ impl Rule {
         Self {
             regex: compile(pattern),
             action: Some(Action::ByGroups(
-                tokens.into_iter().map(|t| t.map(GroupAction::Token)).collect(),
+                tokens
+                    .into_iter()
+                    .map(|t| t.map(GroupAction::Token))
+                    .collect(),
             )),
             new_state: ns,
         }
@@ -186,14 +198,23 @@ impl Rule {
         }
     }
     /// `using(OtherLexer)` — lex whole match with another registered lexer.
-    pub fn using_lexer(pattern: &str, alias: &'static str, state: Option<Vec<&'static str>>) -> Self {
+    pub fn using_lexer(
+        pattern: &str,
+        alias: &'static str,
+        state: Option<Vec<&'static str>>,
+    ) -> Self {
         Self {
             regex: compile(pattern),
             action: Some(Action::UsingLexer { alias, state }),
             new_state: NewState::None,
         }
     }
-    pub fn using_lexer_to(pattern: &str, alias: &'static str, state: Option<Vec<&'static str>>, ns: NewState) -> Self {
+    pub fn using_lexer_to(
+        pattern: &str,
+        alias: &'static str,
+        state: Option<Vec<&'static str>>,
+        ns: NewState,
+    ) -> Self {
         Self {
             regex: compile(pattern),
             action: Some(Action::UsingLexer { alias, state }),
@@ -207,7 +228,10 @@ impl Rule {
     pub fn group_using_this(state: Option<Vec<&'static str>>) -> Option<GroupAction> {
         Some(GroupAction::UsingThis { state })
     }
-    pub fn group_using_lexer(alias: &'static str, state: Option<Vec<&'static str>>) -> Option<GroupAction> {
+    pub fn group_using_lexer(
+        alias: &'static str,
+        state: Option<Vec<&'static str>>,
+    ) -> Option<GroupAction> {
         Some(GroupAction::UsingLexer { alias, state })
     }
     /// Code-block dispatch rule (mirrors `_handle_codeblock` callback pattern).
@@ -223,7 +247,11 @@ impl Rule {
             new_state: NewState::None,
         }
     }
-    pub fn dispatch_code_block_to(pattern: &str, spec: DispatchCodeBlockSpec, ns: NewState) -> Self {
+    pub fn dispatch_code_block_to(
+        pattern: &str,
+        spec: DispatchCodeBlockSpec,
+        ns: NewState,
+    ) -> Self {
         Self {
             regex: compile(pattern),
             action: Some(Action::DispatchCodeBlock(Box::new(spec))),
@@ -334,7 +362,9 @@ pub fn tokenize_with_stack<T: StateTable>(
                 }
                 Action::ByGroups(toks) => {
                     for (i, maybe_action) in toks.iter().enumerate() {
-                        let Some(group_action) = maybe_action else { continue };
+                        let Some(group_action) = maybe_action else {
+                            continue;
+                        };
                         if let Some(g) = m.get(i + 1) {
                             let s = &text[g.start()..g.end()];
                             if !s.is_empty() {
@@ -381,7 +411,8 @@ pub fn tokenize_with_stack<T: StateTable>(
                         }
                     }
                     // 3. Look up lexer by lang group and lex the code.
-                    let lang = m.get(spec.lang_group)
+                    let lang = m
+                        .get(spec.lang_group)
                         .map(|g| text[g.start()..g.end()].trim().to_string())
                         .unwrap_or_default();
                     {
@@ -391,24 +422,25 @@ pub fn tokenize_with_stack<T: StateTable>(
                         // intentional — the leaked memory is bounded by the number of
                         // distinct language tags encountered at run time (a small set),
                         // and reclaiming it would require a global cache.
-                        let lang_leaked: &'static str =
-                            Box::leak(lang.clone().into_boxed_str());
+                        let lang_leaked: &'static str = Box::leak(lang.clone().into_boxed_str());
                         if let Some(lexer) = get_lexer_by_name(lang_leaked) {
                             if let Some(indent_grp) = spec.strip_indent_from_group {
                                 // RST-style: the code has leading indentation on every
                                 // non-blank line.  We strip it before lexing but emit
                                 // Text tokens for each stripped prefix, mirroring
                                 // Pygments' `do_insertions` approach.
-                                let indent_size = m.get(indent_grp)
-                                    .map(|g| g.end() - g.start())
-                                    .unwrap_or(0);
+                                let indent_size =
+                                    m.get(indent_grp).map(|g| g.end() - g.start()).unwrap_or(0);
                                 if indent_size > 0 {
                                     // Build insertions: (byte_pos_in_stripped, Text, indent).
                                     let mut stripped = String::new();
                                     let mut insertions: Vec<(usize, String)> = Vec::new();
                                     for line in code.split_inclusive('\n') {
                                         if line.len() > indent_size {
-                                            insertions.push((stripped.len(), line[..indent_size].to_string()));
+                                            insertions.push((
+                                                stripped.len(),
+                                                line[..indent_size].to_string(),
+                                            ));
                                             stripped.push_str(&line[indent_size..]);
                                         } else {
                                             // Short or blank line — keep as-is.
@@ -418,10 +450,14 @@ pub fn tokenize_with_stack<T: StateTable>(
                                     // Splice indent Text tokens back into lexer output.
                                     let code_tokens = lexer.get_tokens(&stripped);
                                     let insertions_fmt: Vec<(usize, Vec<(TokenType, String)>)> =
-                                        insertions.into_iter().map(|(pos, s)| {
-                                            (pos, vec![(token::TEXT, s)])
-                                        }).collect();
-                                    for (t, v) in crate::lexers::do_insertions_owned(insertions_fmt, code_tokens) {
+                                        insertions
+                                            .into_iter()
+                                            .map(|(pos, s)| (pos, vec![(token::TEXT, s)]))
+                                            .collect();
+                                    for (t, v) in crate::lexers::do_insertions_owned(
+                                        insertions_fmt,
+                                        code_tokens,
+                                    ) {
                                         push_merged(&mut out, t, &v);
                                     }
                                 } else {
@@ -643,7 +679,10 @@ mod tests {
 
         // Matching quotes -> single STRING token.
         let matched = reprs(&tokenize(&table, "'abc'"));
-        assert_eq!(matched, vec![("Token.Literal.String".into(), "'abc'".into())]);
+        assert_eq!(
+            matched,
+            vec![("Token.Literal.String".into(), "'abc'".into())]
+        );
 
         // Mismatched quotes -> backref fails, falls through to `.`.
         let mismatched = reprs(&tokenize(&table, "'abc\""));
@@ -659,7 +698,10 @@ mod tests {
         // (return no match) rather than hang. `fancy-regex` surfaces a
         // backtrack-limit overflow as `Err`, which the engine treats
         // as "no match" and advances by one char.
-        let table = OneState(vec![Rule::token(r"(a+)+$", STRING), Rule::token(r".", NAME)]);
+        let table = OneState(vec![
+            Rule::token(r"(a+)+$", STRING),
+            Rule::token(r".", NAME),
+        ]);
         let input = "a".repeat(40) + "!";
         // Must complete (not hang) and consume the whole input.
         let out = tokenize(&table, &input);
@@ -667,4 +709,3 @@ mod tests {
         assert_eq!(consumed, input.len());
     }
 }
-

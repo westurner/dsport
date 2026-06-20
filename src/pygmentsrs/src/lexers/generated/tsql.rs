@@ -50,12 +50,19 @@ fn build_table() -> Table {
         Rule::token(r"(?im)#?#?\w+", NAME),
         Rule::token(r"(?im)\?", NAME_VARIABLE_MAGIC),
     ]);
-    m.insert(r"multiline-comments", vec![
-        Rule::token_to(r"(?im)/\*", COMMENT_MULTILINE, NewState::Push(vec![r"multiline-comments"])),
-        Rule::token_to(r"(?im)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?im)[^/*]+", COMMENT_MULTILINE),
-        Rule::token(r"(?im)[/*]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"multiline-comments",
+        vec![
+            Rule::token_to(
+                r"(?im)/\*",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"multiline-comments"]),
+            ),
+            Rule::token_to(r"(?im)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?im)[^/*]+", COMMENT_MULTILINE),
+            Rule::token(r"(?im)[/*]", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

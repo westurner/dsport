@@ -50,16 +50,22 @@ fn build_table() -> Table {
         Rule::token(r"(?m):", PUNCTUATION),
         Rule::token(r"(?m)[^\W\d]\w*", NAME),
     ]);
-    m.insert(r"triple-double-raw", vec![
-        Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)"(?!"")"#, STRING),
-        Rule::token(r#"(?m)[^"]+"#, STRING),
-    ]);
-    m.insert(r"triple-single-raw", vec![
-        Rule::token_to(r"(?m)'''", STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)'(?!'')", STRING),
-        Rule::token(r"(?m)[^']+", STRING),
-    ]);
+    m.insert(
+        r"triple-double-raw",
+        vec![
+            Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)"(?!"")"#, STRING),
+            Rule::token(r#"(?m)[^"]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"triple-single-raw",
+        vec![
+            Rule::token_to(r"(?m)'''", STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)'(?!'')", STRING),
+            Rule::token(r"(?m)[^']+", STRING),
+        ],
+    );
     m.insert(r"triple-double", vec![
         Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1)),
         Rule::token(r#"(?m)\\(?:[abfnrtv\\"'`?]|[xX][0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|[0-3][0-7][0-7]|.)"#, STRING_ESCAPE),

@@ -7,8 +7,8 @@ use crate::token::TokenType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Style {
-    pub fg_color: Option<(u8, u8, u8)>,  // RGB
-    pub bg_color: Option<(u8, u8, u8)>,  // RGB (rarely used)
+    pub fg_color: Option<(u8, u8, u8)>, // RGB
+    pub bg_color: Option<(u8, u8, u8)>, // RGB (rarely used)
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
@@ -48,7 +48,7 @@ impl Style {
 
         if token == KEYWORD || token == KEYWORD_NAMESPACE {
             return Style {
-                fg_color: Some((0, 0, 255)),     // blue
+                fg_color: Some((0, 0, 255)), // blue
                 bold: true,
                 italic: false,
                 underline: false,
@@ -68,7 +68,7 @@ impl Style {
 
         if token == NAME_FUNCTION {
             return Style {
-                fg_color: Some((0, 128, 0)),     // green
+                fg_color: Some((0, 128, 0)), // green
                 bold: false,
                 italic: false,
                 underline: false,
@@ -78,7 +78,7 @@ impl Style {
 
         if token == STRING || token == STRING_DOUBLE || token == STRING_SINGLE {
             return Style {
-                fg_color: Some((200, 0, 0)),     // red
+                fg_color: Some((200, 0, 0)), // red
                 bold: false,
                 italic: false,
                 underline: false,
@@ -88,7 +88,7 @@ impl Style {
 
         if token == NUMBER || token == NUMBER_INTEGER {
             return Style {
-                fg_color: Some((139, 69, 19)),   // brown
+                fg_color: Some((139, 69, 19)), // brown
                 bold: false,
                 italic: false,
                 underline: false,
@@ -98,7 +98,7 @@ impl Style {
 
         if token == OPERATOR {
             return Style {
-                fg_color: Some((255, 127, 0)),   // orange
+                fg_color: Some((255, 127, 0)), // orange
                 bold: false,
                 italic: false,
                 underline: false,

@@ -36,12 +36,15 @@ fn main() {
         io::stdin().read_to_string(&mut buf).expect("reading stdin");
         buf
     } else {
-        std::fs::read_to_string(template_arg)
-            .unwrap_or_else(|e| { eprintln!("Error reading {}: {}", template_arg, e); std::process::exit(1); })
+        std::fs::read_to_string(template_arg).unwrap_or_else(|e| {
+            eprintln!("Error reading {}: {}", template_arg, e);
+            std::process::exit(1);
+        })
     };
 
     let env = jinja2rs::Environment::new();
-    let json_ctx: serde_json::Value = ctx.iter()
+    let json_ctx: serde_json::Value = ctx
+        .iter()
         .fold(serde_json::Map::new(), |mut m, (k, v)| {
             m.insert(k.clone(), serde_json::Value::String(v.clone()));
             m
@@ -50,6 +53,9 @@ fn main() {
 
     match env.render_str(&source, &json_ctx) {
         Ok(output) => print!("{}", output),
-        Err(e) => { eprintln!("Render error: {}", e); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("Render error: {}", e);
+            std::process::exit(1);
+        }
     }
 }

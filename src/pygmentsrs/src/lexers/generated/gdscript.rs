@@ -67,20 +67,32 @@ fn build_table() -> Table {
     m.insert(r"stringescape", vec![
         Rule::token(r#"(?m)\\([\\abfnrtv"\']|\n|N\{.*?\}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{8}|x[a-fA-F0-9]{2}|[0-7]{1,3})"#, STRING_ESCAPE),
     ]);
-    m.insert(r"tdqs", vec![
-        Rule::token_to(r#"(?m)""""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]", STRING_INTERPOL),
-        Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING_DOUBLE),
-        Rule::token(r"(?m)%", STRING_DOUBLE),
-        Rule::token(r"(?m)\n", WHITESPACE),
-    ]);
-    m.insert(r"strings-double", vec![
-        Rule::token(r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]", STRING_INTERPOL),
-        Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING_DOUBLE),
-        Rule::token(r"(?m)%", STRING_DOUBLE),
-    ]);
+    m.insert(
+        r"tdqs",
+        vec![
+            Rule::token_to(r#"(?m)""""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(
+                r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]",
+                STRING_INTERPOL,
+            ),
+            Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_DOUBLE),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING_DOUBLE),
+            Rule::token(r"(?m)%", STRING_DOUBLE),
+            Rule::token(r"(?m)\n", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"strings-double",
+        vec![
+            Rule::token(
+                r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]",
+                STRING_INTERPOL,
+            ),
+            Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_DOUBLE),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING_DOUBLE),
+            Rule::token(r"(?m)%", STRING_DOUBLE),
+        ],
+    );
     m.insert(r"_tmp_0", vec![
         Rule::token(r#"(?m)\\([\\abfnrtv"\']|\n|N\{.*?\}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{8}|x[a-fA-F0-9]{2}|[0-7]{1,3})"#, STRING_ESCAPE),
         Rule::token_to(r#"(?m)""""#, STRING_DOUBLE, NewState::Pop(1)),
@@ -90,20 +102,32 @@ fn build_table() -> Table {
         Rule::token(r"(?m)%", STRING_DOUBLE),
         Rule::token(r"(?m)\n", WHITESPACE),
     ]);
-    m.insert(r"tsqs", vec![
-        Rule::token_to(r"(?m)'''", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]", STRING_INTERPOL),
-        Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_SINGLE),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING_SINGLE),
-        Rule::token(r"(?m)%", STRING_SINGLE),
-        Rule::token(r"(?m)\n", WHITESPACE),
-    ]);
-    m.insert(r"strings-single", vec![
-        Rule::token(r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]", STRING_INTERPOL),
-        Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_SINGLE),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING_SINGLE),
-        Rule::token(r"(?m)%", STRING_SINGLE),
-    ]);
+    m.insert(
+        r"tsqs",
+        vec![
+            Rule::token_to(r"(?m)'''", STRING_SINGLE, NewState::Pop(1)),
+            Rule::token(
+                r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]",
+                STRING_INTERPOL,
+            ),
+            Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_SINGLE),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING_SINGLE),
+            Rule::token(r"(?m)%", STRING_SINGLE),
+            Rule::token(r"(?m)\n", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"strings-single",
+        vec![
+            Rule::token(
+                r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]",
+                STRING_INTERPOL,
+            ),
+            Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_SINGLE),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING_SINGLE),
+            Rule::token(r"(?m)%", STRING_SINGLE),
+        ],
+    );
     m.insert(r"_tmp_1", vec![
         Rule::token(r#"(?m)\\([\\abfnrtv"\']|\n|N\{.*?\}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{8}|x[a-fA-F0-9]{2}|[0-7]{1,3})"#, STRING_ESCAPE),
         Rule::token_to(r"(?m)'''", STRING_SINGLE, NewState::Pop(1)),
@@ -113,14 +137,20 @@ fn build_table() -> Table {
         Rule::token(r"(?m)%", STRING_SINGLE),
         Rule::token(r"(?m)\n", WHITESPACE),
     ]);
-    m.insert(r"dqs", vec![
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\\\|\\"|\\\n"#, STRING_ESCAPE),
-        Rule::token(r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]", STRING_INTERPOL),
-        Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING_DOUBLE),
-        Rule::token(r"(?m)%", STRING_DOUBLE),
-    ]);
+    m.insert(
+        r"dqs",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(r#"(?m)\\\\|\\"|\\\n"#, STRING_ESCAPE),
+            Rule::token(
+                r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]",
+                STRING_INTERPOL,
+            ),
+            Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_DOUBLE),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING_DOUBLE),
+            Rule::token(r"(?m)%", STRING_DOUBLE),
+        ],
+    );
     m.insert(r"_tmp_2", vec![
         Rule::token(r#"(?m)\\([\\abfnrtv"\']|\n|N\{.*?\}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{8}|x[a-fA-F0-9]{2}|[0-7]{1,3})"#, STRING_ESCAPE),
         Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
@@ -130,14 +160,20 @@ fn build_table() -> Table {
         Rule::token(r#"(?m)[\'"\\]"#, STRING_DOUBLE),
         Rule::token(r"(?m)%", STRING_DOUBLE),
     ]);
-    m.insert(r"sqs", vec![
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?m)\\\\|\\'|\\\n", STRING_ESCAPE),
-        Rule::token(r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]", STRING_INTERPOL),
-        Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_SINGLE),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING_SINGLE),
-        Rule::token(r"(?m)%", STRING_SINGLE),
-    ]);
+    m.insert(
+        r"sqs",
+        vec![
+            Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
+            Rule::token(r"(?m)\\\\|\\'|\\\n", STRING_ESCAPE),
+            Rule::token(
+                r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]",
+                STRING_INTERPOL,
+            ),
+            Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING_SINGLE),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING_SINGLE),
+            Rule::token(r"(?m)%", STRING_SINGLE),
+        ],
+    );
     m.insert(r"_tmp_3", vec![
         Rule::token(r#"(?m)\\([\\abfnrtv"\']|\n|N\{.*?\}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{8}|x[a-fA-F0-9]{2}|[0-7]{1,3})"#, STRING_ESCAPE),
         Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
@@ -147,22 +183,31 @@ fn build_table() -> Table {
         Rule::token(r#"(?m)[\'"\\]"#, STRING_SINGLE),
         Rule::token(r"(?m)%", STRING_SINGLE),
     ]);
-    m.insert(r"name", vec![
-        Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
-    ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?m)(\d+\.\d*|\d*\.\d+)([eE][+-]?[0-9]+)?j?", NUMBER_FLOAT),
-        Rule::token(r"(?m)\d+[eE][+-]?[0-9]+j?", NUMBER_FLOAT),
-        Rule::token(r"(?m)0[xX][a-fA-F0-9]+", NUMBER_HEX),
-        Rule::token(r"(?m)\d+j?", NUMBER_INTEGER),
-    ]);
-    m.insert(r"funcname", vec![
-        Rule::token_to(r"(?m)[a-zA-Z_]\w*", NAME_FUNCTION, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"classname", vec![
-        Rule::token_to(r"(?m)[a-zA-Z_]\w*", NAME_CLASS, NewState::Pop(1)),
-    ]);
+    m.insert(r"name", vec![Rule::token(r"(?m)[a-zA-Z_]\w*", NAME)]);
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(r"(?m)(\d+\.\d*|\d*\.\d+)([eE][+-]?[0-9]+)?j?", NUMBER_FLOAT),
+            Rule::token(r"(?m)\d+[eE][+-]?[0-9]+j?", NUMBER_FLOAT),
+            Rule::token(r"(?m)0[xX][a-fA-F0-9]+", NUMBER_HEX),
+            Rule::token(r"(?m)\d+j?", NUMBER_INTEGER),
+        ],
+    );
+    m.insert(
+        r"funcname",
+        vec![
+            Rule::token_to(r"(?m)[a-zA-Z_]\w*", NAME_FUNCTION, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"classname",
+        vec![Rule::token_to(
+            r"(?m)[a-zA-Z_]\w*",
+            NAME_CLASS,
+            NewState::Pop(1),
+        )],
+    );
     Table(m)
 }
 

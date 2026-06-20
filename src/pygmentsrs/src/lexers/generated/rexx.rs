@@ -47,23 +47,32 @@ fn build_table() -> Table {
     m.insert(r"operator", vec![
         Rule::token(r"(?im)(-|//|/|\(|\)|\*\*|\*|\\<<|\\<|\\==|\\=|\\>>|\\>|\\|\|\||\||&&|&|%|\+|<<=|<<|<=|<>|<|==|=|><|>=|>>=|>>|>|¬<<|¬<|¬==|¬=|¬>>|¬>|¬|\.|,)", OPERATOR),
     ]);
-    m.insert(r"string_double", vec![
-        Rule::token(r#"(?im)[^"\n]+"#, STRING),
-        Rule::token(r#"(?im)"""#, STRING),
-        Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
-        Rule::token_to(r"(?im)\n", TEXT, NewState::Pop(1)),
-    ]);
-    m.insert(r"string_single", vec![
-        Rule::token(r"(?im)[^\'\n]+", STRING),
-        Rule::token(r"(?im)\'\'", STRING),
-        Rule::token_to(r"(?im)\'", STRING, NewState::Pop(1)),
-        Rule::token_to(r"(?im)\n", TEXT, NewState::Pop(1)),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?im)[^*]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?im)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?im)\*", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"string_double",
+        vec![
+            Rule::token(r#"(?im)[^"\n]+"#, STRING),
+            Rule::token(r#"(?im)"""#, STRING),
+            Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
+            Rule::token_to(r"(?im)\n", TEXT, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string_single",
+        vec![
+            Rule::token(r"(?im)[^\'\n]+", STRING),
+            Rule::token(r"(?im)\'\'", STRING),
+            Rule::token_to(r"(?im)\'", STRING, NewState::Pop(1)),
+            Rule::token_to(r"(?im)\n", TEXT, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?im)[^*]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?im)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?im)\*", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

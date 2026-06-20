@@ -5,8 +5,8 @@
 //! - `#[rstest]` parametrization
 //! - Mock state and behavior verification
 
-use rstest::{rstest, fixture};
 use jinja2rs::Environment;
+use rstest::{fixture, rstest};
 use serde_json::json;
 
 // ============================================================================
@@ -195,7 +195,10 @@ fn test_undefined_in_strict_sandbox() {
 
 /// Test loop variables are available in idgen context.
 #[rstest]
-#[case("{% for item in items %}[{{ idgen.next() }}: {{ item }}] {% endfor %}", "[1: a] [2: b] [3: c] ")]
+#[case(
+    "{% for item in items %}[{{ idgen.next() }}: {{ item }}] {% endfor %}",
+    "[1: a] [2: b] [3: c] "
+)]
 fn test_idgen_in_loop_with_items(
     env_with_idgen: Environment,
     #[case] template: &str,
@@ -211,7 +214,8 @@ fn test_idgen_in_loop_with_items(
 /// Test nested loops with idgen.
 #[rstest]
 fn test_idgen_nested_loops(env_with_idgen: Environment) {
-    let template = "{% for row in matrix %}{% for cell in row %}{{ idgen.next() }},{% endfor %};{% endfor %}";
+    let template =
+        "{% for row in matrix %}{% for cell in row %}{{ idgen.next() }},{% endfor %};{% endfor %}";
     let ctx = json!({
         "matrix": [["a", "b"], ["c", "d"]]
     });
@@ -288,7 +292,7 @@ fn test_cycler_creation(test_env: Environment) {
     let out = test_env
         .render_str(template, json!({}))
         .expect("cycler should create and cycle");
-    
+
     assert!(out.contains("red") && out.contains("blue") && out.contains("green"));
 }
 
@@ -302,7 +306,7 @@ fn test_cycler_single_value(test_env: Environment) {
     let out = test_env
         .render_str(template, json!({}))
         .expect("cycler with single value should work");
-    
+
     assert_eq!(out.trim(), "x,x,x");
 }
 
@@ -316,7 +320,7 @@ fn test_cycler_in_loop(test_env: Environment) {
     let out = test_env
         .render_str(template, json!({}))
         .expect("cycler in loop should work");
-    
+
     assert!(out.contains(r#"class="odd""#));
     assert!(out.contains(r#"class="even""#));
 }
@@ -333,7 +337,7 @@ fn test_cycler_current_attribute(test_env: Environment) {
     let out = test_env
         .render_str(template, json!({}))
         .expect("cycler.current should work");
-    
+
     assert!(out.contains("a:") && out.contains("a,"));
 }
 
@@ -351,7 +355,7 @@ fn test_joiner_creation(test_env: Environment) {
     let out = test_env
         .render_str(template, json!({}))
         .expect("joiner should create and join");
-    
+
     assert_eq!(out.trim(), "one, two, three");
 }
 
@@ -371,9 +375,12 @@ fn test_joiner_separators(
     let template = "{% set j = joiner(separator) %}\
                     {{ j(val1) }}{{ j(val2) }}{{ j(val3) }}";
     let out = test_env
-        .render_str(template, json!({"separator": sep, "val1": val1, "val2": val2, "val3": val3}))
+        .render_str(
+            template,
+            json!({"separator": sep, "val1": val1, "val2": val2, "val3": val3}),
+        )
         .expect("joiner with custom separator should work");
-    
+
     assert_eq!(out.trim(), expected);
 }
 
@@ -387,7 +394,7 @@ fn test_joiner_in_loop(test_env: Environment) {
     let out = test_env
         .render_str(template, json!({"items": ["apple", "banana", "cherry"]}))
         .expect("joiner in loop should work");
-    
+
     assert_eq!(out.trim(), "apple, banana, cherry");
 }
 
@@ -401,7 +408,7 @@ fn test_joiner_empty_first_call(test_env: Environment) {
     let out = test_env
         .render_str(template, json!({}))
         .expect("joiner with empty string should work");
-    
+
     assert!(out.contains(", hello"));
 }
 
@@ -416,7 +423,7 @@ fn test_lipsum_generation(test_env: Environment) {
     let out = test_env
         .render_str(template, json!({}))
         .expect("lipsum should generate");
-    
+
     assert!(out.contains("Lorem ipsum"));
     assert!(!out.is_empty());
 }
@@ -431,11 +438,16 @@ fn test_lipsum_paragraphs(test_env: Environment, #[case] n: i64) {
     let out = test_env
         .render_str(&template, json!({}))
         .expect("lipsum with parameter should work");
-    
+
     assert!(out.contains("Lorem ipsum"));
     // Check approximate number of newlines (n-1 newlines for n paragraphs)
     let newline_count = out.matches('\n').count() as i64;
-    assert!(newline_count >= n - 1, "lipsum({}) should have at least {} newlines", n, n - 1);
+    assert!(
+        newline_count >= n - 1,
+        "lipsum({}) should have at least {} newlines",
+        n,
+        n - 1
+    );
 }
 
 /// Test lipsum in realistic template.
@@ -450,7 +462,7 @@ fn test_lipsum_in_template(test_env: Environment) {
     let out = test_env
         .render_str(template, json!({"title": "Test Article"}))
         .expect("lipsum in template should work");
-    
+
     assert!(out.contains("<h1>Test Article</h1>"));
     assert!(out.contains("Lorem ipsum"));
 }

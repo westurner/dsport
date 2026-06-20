@@ -54,28 +54,73 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)(###\w+###)", NAME_CONSTANT),
         Rule::token(r#"(?ms)[\w"\-!/&;]+"#, TEXT),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r#"(?ms)(?<!(#|\'|"))(?:#(?!(?:[a-fA-F0-9]{6}|[a-fA-F0-9]{3}))[^\n#]+|//[^\n]*)"#, COMMENT),
-        Rule::token(r"(?ms)/\*(?:(?!\*/).)*\*/", COMMENT),
-        Rule::token(r"(?ms)(\s*#\s*\n)", COMMENT),
-    ]);
-    m.insert(r"constant", vec![
-        Rule::bygroups(r"(?ms)(\{)(\$)((?:[\w\-]+\.)*)([\w\-]+)(\})", vec![Some(STRING_SYMBOL), Some(OPERATOR), Some(NAME_CONSTANT), Some(NAME_CONSTANT), Some(STRING_SYMBOL)]),
-        Rule::bygroups(r"(?ms)(\{)([\w\-]+)(\s*:\s*)([\w\-]+)(\})", vec![Some(STRING_SYMBOL), Some(NAME_CONSTANT), Some(OPERATOR), Some(NAME_CONSTANT), Some(STRING_SYMBOL)]),
-        Rule::token(r"(?ms)(#[a-fA-F0-9]{6}\b|#[a-fA-F0-9]{3}\b)", STRING_CHAR),
-    ]);
-    m.insert(r"html", vec![
-        Rule::using_lexer(r"(?ms)<\S[^\n>]*>", "typoscripthtmldata", None),
-        Rule::token(r"(?ms)&[^;\n]*;", STRING),
-        Rule::bygroups_g(r"(?ms)(?s)(_CSS_DEFAULT_STYLE)(\s*)(\()(.*(?=\n\)))", vec![Some(GroupAction::Token(NAME_CLASS)), Some(GroupAction::Token(TEXT)), Some(GroupAction::Token(STRING_SYMBOL)), Some(GroupAction::UsingLexer { alias: "typoscriptcssdata", state: None })]),
-    ]);
-    m.insert(r"label", vec![
-        Rule::token(r#"(?ms)(EXT|FILE|LLL):[^}\n"]*"#, STRING),
-        Rule::bygroups(r"(?ms)(?![^\w\-])([\w\-]+(?:/[\w\-]+)+/?)(\S*\n)", vec![Some(STRING), Some(STRING)]),
-    ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(
+                r#"(?ms)(?<!(#|\'|"))(?:#(?!(?:[a-fA-F0-9]{6}|[a-fA-F0-9]{3}))[^\n#]+|//[^\n]*)"#,
+                COMMENT,
+            ),
+            Rule::token(r"(?ms)/\*(?:(?!\*/).)*\*/", COMMENT),
+            Rule::token(r"(?ms)(\s*#\s*\n)", COMMENT),
+        ],
+    );
+    m.insert(
+        r"constant",
+        vec![
+            Rule::bygroups(
+                r"(?ms)(\{)(\$)((?:[\w\-]+\.)*)([\w\-]+)(\})",
+                vec![
+                    Some(STRING_SYMBOL),
+                    Some(OPERATOR),
+                    Some(NAME_CONSTANT),
+                    Some(NAME_CONSTANT),
+                    Some(STRING_SYMBOL),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?ms)(\{)([\w\-]+)(\s*:\s*)([\w\-]+)(\})",
+                vec![
+                    Some(STRING_SYMBOL),
+                    Some(NAME_CONSTANT),
+                    Some(OPERATOR),
+                    Some(NAME_CONSTANT),
+                    Some(STRING_SYMBOL),
+                ],
+            ),
+            Rule::token(r"(?ms)(#[a-fA-F0-9]{6}\b|#[a-fA-F0-9]{3}\b)", STRING_CHAR),
+        ],
+    );
+    m.insert(
+        r"html",
+        vec![
+            Rule::using_lexer(r"(?ms)<\S[^\n>]*>", "typoscripthtmldata", None),
+            Rule::token(r"(?ms)&[^;\n]*;", STRING),
+            Rule::bygroups_g(
+                r"(?ms)(?s)(_CSS_DEFAULT_STYLE)(\s*)(\()(.*(?=\n\)))",
+                vec![
+                    Some(GroupAction::Token(NAME_CLASS)),
+                    Some(GroupAction::Token(TEXT)),
+                    Some(GroupAction::Token(STRING_SYMBOL)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "typoscriptcssdata",
+                        state: None,
+                    }),
+                ],
+            ),
+        ],
+    );
+    m.insert(
+        r"label",
+        vec![
+            Rule::token(r#"(?ms)(EXT|FILE|LLL):[^}\n"]*"#, STRING),
+            Rule::bygroups(
+                r"(?ms)(?![^\w\-])([\w\-]+(?:/[\w\-]+)+/?)(\S*\n)",
+                vec![Some(STRING), Some(STRING)],
+            ),
+        ],
+    );
+    m.insert(r"whitespace", vec![Rule::token(r"(?ms)\s+", TEXT)]);
     m.insert(r"keywords", vec![
         Rule::bygroups(r"(?ms)(?i)(\[)(browser|compatVersion|dayofmonth|dayofweek|dayofyear|device|ELSE|END|GLOBAL|globalString|globalVar|hostname|hour|IP|language|loginUser|loginuser|minute|month|page|PIDinRootline|PIDupinRootline|system|treeLevel|useragent|userFunc|usergroup|version)([^\]]*)(\])", vec![Some(STRING_SYMBOL), Some(NAME_CONSTANT), Some(TEXT), Some(STRING_SYMBOL)]),
         Rule::token(r"(?ms)(?=[\w\-])(HTMLparser|HTMLparser_tags|addParams|cache|encapsLines|filelink|if|imageLinkWrap|imgResource|makelinks|numRows|numberFormat|parseFunc|replacement|round|select|split|stdWrap|strPad|tableStyle|tags|textStyle|typolink)(?![\w\-])", NAME_FUNCTION),
@@ -86,23 +131,24 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)(?=[\w\-])(PHP_SCRIPT(_EXT|_INT)?)", NAME_CLASS),
         Rule::token(r"(?ms)(?=[\w\-])(userFunc)(?![\w\-])", NAME_FUNCTION),
     ]);
-    m.insert(r"punctuation", vec![
-        Rule::token(r"(?ms)[,.]", PUNCTUATION),
-    ]);
-    m.insert(r"operator", vec![
-        Rule::token(r"(?ms)[<>,:=.*%+|]", OPERATOR),
-    ]);
-    m.insert(r"structure", vec![
-        Rule::token(r"(?ms)[{}()\[\]\\]", STRING_SYMBOL),
-    ]);
-    m.insert(r"literal", vec![
-        Rule::token(r"(?ms)0x[0-9A-Fa-f]+t?", NUMBER_HEX),
-        Rule::token(r"(?ms)[0-9]+", NUMBER_INTEGER),
-        Rule::token(r"(?ms)(###\w+###)", NAME_CONSTANT),
-    ]);
-    m.insert(r"other", vec![
-        Rule::token(r#"(?ms)[\w"\-!/&;]+"#, TEXT),
-    ]);
+    m.insert(r"punctuation", vec![Rule::token(r"(?ms)[,.]", PUNCTUATION)]);
+    m.insert(
+        r"operator",
+        vec![Rule::token(r"(?ms)[<>,:=.*%+|]", OPERATOR)],
+    );
+    m.insert(
+        r"structure",
+        vec![Rule::token(r"(?ms)[{}()\[\]\\]", STRING_SYMBOL)],
+    );
+    m.insert(
+        r"literal",
+        vec![
+            Rule::token(r"(?ms)0x[0-9A-Fa-f]+t?", NUMBER_HEX),
+            Rule::token(r"(?ms)[0-9]+", NUMBER_INTEGER),
+            Rule::token(r"(?ms)(###\w+###)", NAME_CONSTANT),
+        ],
+    );
+    m.insert(r"other", vec![Rule::token(r#"(?ms)[\w"\-!/&;]+"#, TEXT)]);
     Table(m)
 }
 

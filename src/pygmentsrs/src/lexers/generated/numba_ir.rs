@@ -25,25 +25,39 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::bygroups(r"(?m)(label)(\ [0-9]+)(:)$", vec![Some(KEYWORD), Some(NAME_LABEL), Some(PUNCTUATION)]),
-        Rule::token(r"(?m)=", OPERATOR),
-        Rule::token(r"(?m)(\n|\s)+", WHITESPACE),
-        Rule::token(r"(?m)(branch|call|del|jump) ", KEYWORD),
-        Rule::token(r"(?m)\$[a-zA-Z0-9._]+", NAME_VARIABLE),
-        Rule::bygroups(r"(?m)([a-zA-Z_]+[a-zA-Z0-9]*)(\()", vec![Some(NAME_FUNCTION), Some(PUNCTUATION)]),
-        Rule::bygroups(r"(?m)([a-zA-Z_]+[a-zA-Z0-9]*)(\=)", vec![Some(NAME_ATTRIBUTE), Some(PUNCTUATION)]),
-        Rule::token(r"(?m)([a-zA-Z_]+[a-zA-Z0-9]*)", NAME_CONSTANT),
-        Rule::token(r"(?m)[0-9]+", NUMBER),
-        Rule::token(r"(?m)<[^>\n]*>", STRING),
-        Rule::token(r"(?m)[=<>{}\[\]()*.,!\':]|x\b", PUNCTUATION),
-    ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?m)(\n|\s)+", WHITESPACE),
-    ]);
-    m.insert(r"keyword", vec![
-        Rule::token(r"(?m)(branch|call|del|jump) ", KEYWORD),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::bygroups(
+                r"(?m)(label)(\ [0-9]+)(:)$",
+                vec![Some(KEYWORD), Some(NAME_LABEL), Some(PUNCTUATION)],
+            ),
+            Rule::token(r"(?m)=", OPERATOR),
+            Rule::token(r"(?m)(\n|\s)+", WHITESPACE),
+            Rule::token(r"(?m)(branch|call|del|jump) ", KEYWORD),
+            Rule::token(r"(?m)\$[a-zA-Z0-9._]+", NAME_VARIABLE),
+            Rule::bygroups(
+                r"(?m)([a-zA-Z_]+[a-zA-Z0-9]*)(\()",
+                vec![Some(NAME_FUNCTION), Some(PUNCTUATION)],
+            ),
+            Rule::bygroups(
+                r"(?m)([a-zA-Z_]+[a-zA-Z0-9]*)(\=)",
+                vec![Some(NAME_ATTRIBUTE), Some(PUNCTUATION)],
+            ),
+            Rule::token(r"(?m)([a-zA-Z_]+[a-zA-Z0-9]*)", NAME_CONSTANT),
+            Rule::token(r"(?m)[0-9]+", NUMBER),
+            Rule::token(r"(?m)<[^>\n]*>", STRING),
+            Rule::token(r"(?m)[=<>{}\[\]()*.,!\':]|x\b", PUNCTUATION),
+        ],
+    );
+    m.insert(
+        r"whitespace",
+        vec![Rule::token(r"(?m)(\n|\s)+", WHITESPACE)],
+    );
+    m.insert(
+        r"keyword",
+        vec![Rule::token(r"(?m)(branch|call|del|jump) ", KEYWORD)],
+    );
     Table(m)
 }
 

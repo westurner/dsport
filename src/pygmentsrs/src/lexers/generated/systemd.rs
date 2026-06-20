@@ -25,18 +25,62 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)^[ \t]*\n", WHITESPACE),
-        Rule::bygroups(r"(?m)^([;#].*)(\n)", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)]),
-        Rule::bygroups(r"(?m)(\[[^\]\n]+\])(\n)", vec![Some(KEYWORD), Some(WHITESPACE)]),
-        Rule::bygroups_to(r"(?m)([^=]+)([ \t]*)(=)([ \t]*)([^\n]*)(\\)(\n)", vec![Some(NAME_ATTRIBUTE), Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE), Some(STRING), Some(TEXT), Some(WHITESPACE)], NewState::Push(vec![r"value"])),
-        Rule::bygroups(r"(?m)([^=]+)([ \t]*)(=)([ \t]*)([^\n]*)(\n)", vec![Some(NAME_ATTRIBUTE), Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE), Some(STRING), Some(WHITESPACE)]),
-    ]);
-    m.insert(r"value", vec![
-        Rule::bygroups(r"(?m)^([;#].*)(\n)", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)]),
-        Rule::bygroups(r"(?m)([ \t]*)([^\n]*)(\\)(\n)", vec![Some(WHITESPACE), Some(STRING), Some(TEXT), Some(WHITESPACE)]),
-        Rule::bygroups_to(r"(?m)([ \t]*)([^\n]*)(\n)", vec![Some(WHITESPACE), Some(STRING), Some(WHITESPACE)], NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)^[ \t]*\n", WHITESPACE),
+            Rule::bygroups(
+                r"(?m)^([;#].*)(\n)",
+                vec![Some(COMMENT_SINGLE), Some(WHITESPACE)],
+            ),
+            Rule::bygroups(
+                r"(?m)(\[[^\]\n]+\])(\n)",
+                vec![Some(KEYWORD), Some(WHITESPACE)],
+            ),
+            Rule::bygroups_to(
+                r"(?m)([^=]+)([ \t]*)(=)([ \t]*)([^\n]*)(\\)(\n)",
+                vec![
+                    Some(NAME_ATTRIBUTE),
+                    Some(WHITESPACE),
+                    Some(OPERATOR),
+                    Some(WHITESPACE),
+                    Some(STRING),
+                    Some(TEXT),
+                    Some(WHITESPACE),
+                ],
+                NewState::Push(vec![r"value"]),
+            ),
+            Rule::bygroups(
+                r"(?m)([^=]+)([ \t]*)(=)([ \t]*)([^\n]*)(\n)",
+                vec![
+                    Some(NAME_ATTRIBUTE),
+                    Some(WHITESPACE),
+                    Some(OPERATOR),
+                    Some(WHITESPACE),
+                    Some(STRING),
+                    Some(WHITESPACE),
+                ],
+            ),
+        ],
+    );
+    m.insert(
+        r"value",
+        vec![
+            Rule::bygroups(
+                r"(?m)^([;#].*)(\n)",
+                vec![Some(COMMENT_SINGLE), Some(WHITESPACE)],
+            ),
+            Rule::bygroups(
+                r"(?m)([ \t]*)([^\n]*)(\\)(\n)",
+                vec![Some(WHITESPACE), Some(STRING), Some(TEXT), Some(WHITESPACE)],
+            ),
+            Rule::bygroups_to(
+                r"(?m)([ \t]*)([^\n]*)(\n)",
+                vec![Some(WHITESPACE), Some(STRING), Some(WHITESPACE)],
+                NewState::Pop(1),
+            ),
+        ],
+    );
     Table(m)
 }
 

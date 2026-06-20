@@ -54,16 +54,12 @@ impl From<Jinja2Error> for pyo3::PyErr {
                 ref message,
             } => TemplateSyntaxError::new_err(format!("Syntax error in '{}': {}", name, message)),
             Jinja2Error::UndefinedError(ref msg) => UndefinedError::new_err(msg.clone()),
-            Jinja2Error::TemplateRuntimeError(ref msg) => TemplateRuntimeError::new_err(msg.clone()),
-            Jinja2Error::TemplatesNotFound(_) => {
-                TemplateNotFound::new_err("No templates found")
+            Jinja2Error::TemplateRuntimeError(ref msg) => {
+                TemplateRuntimeError::new_err(msg.clone())
             }
-            Jinja2Error::Render(ref err) => {
-                TemplateRuntimeError::new_err(err.to_string())
-            }
-            Jinja2Error::Io(ref err) => {
-                pyo3::exceptions::PyIOError::new_err(err.to_string())
-            }
+            Jinja2Error::TemplatesNotFound(_) => TemplateNotFound::new_err("No templates found"),
+            Jinja2Error::Render(ref err) => TemplateRuntimeError::new_err(err.to_string()),
+            Jinja2Error::Io(ref err) => pyo3::exceptions::PyIOError::new_err(err.to_string()),
         }
     }
 }

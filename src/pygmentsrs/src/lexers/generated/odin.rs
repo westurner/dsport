@@ -25,14 +25,21 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"path", vec![
-        Rule::token_to(r"(?m)>", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)[a-z_]\w*", NAME_CLASS),
-        Rule::token(r"(?m)/", PUNCTUATION),
-        Rule::token_to(r"(?m)\[", PUNCTUATION, NewState::Push(vec![r"key"])),
-        Rule::bygroups_to(r"(?m)(\s*)(,)(\s*)", vec![Some(WHITESPACE), Some(PUNCTUATION), Some(WHITESPACE)], NewState::Pop(1)),
-        Rule::token_to(r"(?m)\s+", WHITESPACE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"path",
+        vec![
+            Rule::token_to(r"(?m)>", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?m)[a-z_]\w*", NAME_CLASS),
+            Rule::token(r"(?m)/", PUNCTUATION),
+            Rule::token_to(r"(?m)\[", PUNCTUATION, NewState::Push(vec![r"key"])),
+            Rule::bygroups_to(
+                r"(?m)(\s*)(,)(\s*)",
+                vec![Some(WHITESPACE), Some(PUNCTUATION), Some(WHITESPACE)],
+                NewState::Pop(1),
+            ),
+            Rule::token_to(r"(?m)\s+", WHITESPACE, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"key", vec![
         Rule::token(r"(?m)\d{4}-\d{2}-\d{2}T?", LITERAL_DATE),
         Rule::token(r"(?m)\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{4}|Z)?", LITERAL_DATE),
@@ -75,10 +82,13 @@ fn build_table() -> Table {
         Rule::token(r"(?m)0x[0-9a-fA-F]+", NUMBER_HEX),
         Rule::token(r"(?m)[+-]?\d+%?", NUMBER_INTEGER),
     ]);
-    m.insert(r"type_cast", vec![
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)[^)]+", NAME_CLASS),
-    ]);
+    m.insert(
+        r"type_cast",
+        vec![
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?m)[^)]+", NAME_CLASS),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?m)\n", WHITESPACE),
         Rule::token(r"(?m)\s+", WHITESPACE),
@@ -108,18 +118,33 @@ fn build_table() -> Table {
         Rule::token(r"(?m)>", PUNCTUATION),
         Rule::token(r"(?m);", PUNCTUATION),
     ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::bygroups(r"(?m)([ \t]*)(--.*)$", vec![Some(WHITESPACE), Some(COMMENT)]),
-    ]);
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::bygroups(
+                r"(?m)([ \t]*)(--.*)$",
+                vec![Some(WHITESPACE), Some(COMMENT)],
+            ),
+        ],
+    );
     m.insert(r"archetype_id", vec![
         Rule::bygroups(r"(?m)([ \t]*)(([a-zA-Z]\w+(\.[a-zA-Z]\w+)*::)?[a-zA-Z]\w+(-[a-zA-Z]\w+){2}\.\w+[\w-]*\.v\d+(\.\d+){,2}((-[a-z]+)(\.\d+)?)?)", vec![Some(WHITESPACE), Some(NAME_DECORATOR)]),
     ]);
-    m.insert(r"date_constraints", vec![
-        Rule::token(r"(?m)[Xx?YyMmDdHhSs\d]{2,4}([:-][Xx?YyMmDdHhSs\d]{2}){2}", LITERAL_DATE),
-        Rule::token(r"(?m)(P[YyMmWwDd]+(T[HhMmSs]+)?|PT[HhMmSs]+)/?", LITERAL_DATE),
-    ]);
+    m.insert(
+        r"date_constraints",
+        vec![
+            Rule::token(
+                r"(?m)[Xx?YyMmDdHhSs\d]{2,4}([:-][Xx?YyMmDdHhSs\d]{2}){2}",
+                LITERAL_DATE,
+            ),
+            Rule::token(
+                r"(?m)(P[YyMmWwDd]+(T[HhMmSs]+)?|PT[HhMmSs]+)/?",
+                LITERAL_DATE,
+            ),
+        ],
+    );
     m.insert(r"constraint_values", vec![
         Rule::bygroups_to(r"(?m)(\[)(\w[\w-]*(?:\([^)\n]+\))?)(::)", vec![Some(PUNCTUATION), Some(NAME_DECORATOR), Some(PUNCTUATION)], NewState::Push(vec![r"adl14_code_constraint"])),
         Rule::bygroups(r"(?m)(\d*)(\|)(\[\w[\w-]*::\w[\w-]*\])((?:[,;])?)", vec![Some(NUMBER), Some(PUNCTUATION), Some(NAME_DECORATOR), Some(PUNCTUATION)]),
@@ -146,10 +171,13 @@ fn build_table() -> Table {
         Rule::token(r#"(?m)[^\\"]+"#, STRING),
         Rule::token(r"(?m)\\", STRING),
     ]);
-    m.insert(r"uri", vec![
-        Rule::token_to(r"(?m)[,>\s]", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)[^>\s,]+", LITERAL),
-    ]);
+    m.insert(
+        r"uri",
+        vec![
+            Rule::token_to(r"(?m)[,>\s]", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?m)[^>\s,]+", LITERAL),
+        ],
+    );
     m.insert(r"interval", vec![
         Rule::token_to(r"(?m)\|", PUNCTUATION, NewState::Pop(1)),
         Rule::token(r"(?m)\d{4}-\d{2}-\d{2}T?", LITERAL_DATE),
@@ -173,18 +201,30 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)\]", PUNCTUATION, NewState::Pop(1)),
         Rule::bygroups(r"(?m)(\s*)(,)(\s*)", vec![Some(WHITESPACE), Some(PUNCTUATION), Some(WHITESPACE)]),
     ]);
-    m.insert(r"code_rubric", vec![
-        Rule::token_to(r"(?m)\|", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)[^|]+", STRING),
-    ]);
-    m.insert(r"adl14_code_constraint", vec![
-        Rule::token_to(r"(?m)\]", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\|", PUNCTUATION, NewState::Push(vec![r"code_rubric"])),
-        Rule::bygroups(r"(?m)(\w[\w-]*)([;,]?)", vec![Some(NAME_DECORATOR), Some(PUNCTUATION)]),
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::bygroups(r"(?m)([ \t]*)(--.*)$", vec![Some(WHITESPACE), Some(COMMENT)]),
-    ]);
+    m.insert(
+        r"code_rubric",
+        vec![
+            Rule::token_to(r"(?m)\|", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?m)[^|]+", STRING),
+        ],
+    );
+    m.insert(
+        r"adl14_code_constraint",
+        vec![
+            Rule::token_to(r"(?m)\]", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\|", PUNCTUATION, NewState::Push(vec![r"code_rubric"])),
+            Rule::bygroups(
+                r"(?m)(\w[\w-]*)([;,]?)",
+                vec![Some(NAME_DECORATOR), Some(PUNCTUATION)],
+            ),
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::bygroups(
+                r"(?m)([ \t]*)(--.*)$",
+                vec![Some(WHITESPACE), Some(COMMENT)],
+            ),
+        ],
+    );
     Table(m)
 }
 

@@ -25,15 +25,21 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?im)\s+", TEXT),
-        Rule::token(r"(?im)=", OPERATOR),
-        Rule::token(r"(?im)\b((?:face|impor)t)\s*\b", KEYWORD),
-        Rule::token(r"(?im)\b(children|ex(?:(?:port|tend)s)|facets|i(?:mports|nstaller))\s*:?", NAME),
-        Rule::token(r"(?im)#.*\n", COMMENT),
-        Rule::token(r"(?im)[^#]", TEXT),
-        Rule::token(r"(?im).*\n", TEXT),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?im)\s+", TEXT),
+            Rule::token(r"(?im)=", OPERATOR),
+            Rule::token(r"(?im)\b((?:face|impor)t)\s*\b", KEYWORD),
+            Rule::token(
+                r"(?im)\b(children|ex(?:(?:port|tend)s)|facets|i(?:mports|nstaller))\s*:?",
+                NAME,
+            ),
+            Rule::token(r"(?im)#.*\n", COMMENT),
+            Rule::token(r"(?im)[^#]", TEXT),
+            Rule::token(r"(?im).*\n", TEXT),
+        ],
+    );
     Table(m)
 }
 

@@ -5,8 +5,8 @@
 //! - `#[fixture]` shared setup
 //! - Expected vs actual result assertions
 
-use rstest::{rstest, fixture};
 use jinja2rs::Environment;
+use rstest::{fixture, rstest};
 use serde_json::json;
 
 // ============================================================================
@@ -38,12 +38,13 @@ fn test_env() -> Environment {
 #[case("random", "false")]
 fn test_tobool_filter(test_env: Environment, #[case] input: &str, #[case] expected: &str) {
     let out = test_env
-        .render_str(
-            "{{ val|tobool }}",
-            json!({"val": input}),
-        )
+        .render_str("{{ val|tobool }}", json!({"val": input}))
         .expect("tobool filter should render");
-    assert_eq!(out, expected, "tobool({}) should return {}", input, expected);
+    assert_eq!(
+        out, expected,
+        "tobool({}) should return {}",
+        input, expected
+    );
 }
 
 /// Test `toint` filter with string inputs.
@@ -56,10 +57,7 @@ fn test_tobool_filter(test_env: Environment, #[case] input: &str, #[case] expect
 #[case("", "0")]
 fn test_toint_filter_strings(test_env: Environment, #[case] input: &str, #[case] expected: &str) {
     let out = test_env
-        .render_str(
-            "{{ val|toint }}",
-            json!({"val": input}),
-        )
+        .render_str("{{ val|toint }}", json!({"val": input}))
         .expect("toint filter should render");
     assert_eq!(out, expected, "toint({}) should return {}", input, expected);
 }
@@ -72,10 +70,7 @@ fn test_toint_filter_strings(test_env: Environment, #[case] input: &str, #[case]
 #[case(2560i64, "2560px")]
 fn test_todim_filter_integers(test_env: Environment, #[case] input: i64, #[case] expected: &str) {
     let out = test_env
-        .render_str(
-            "{{ val|todim }}",
-            json!({"val": input}),
-        )
+        .render_str("{{ val|todim }}", json!({"val": input}))
         .expect("todim filter should render");
     assert_eq!(out, expected, "todim({}) should return {}", input, expected);
 }
@@ -89,10 +84,7 @@ fn test_todim_filter_integers(test_env: Environment, #[case] input: i64, #[case]
 #[case("100%", "100%")]
 fn test_todim_filter_strings(test_env: Environment, #[case] input: &str, #[case] expected: &str) {
     let out = test_env
-        .render_str(
-            "{{ val|todim }}",
-            json!({"val": input}),
-        )
+        .render_str("{{ val|todim }}", json!({"val": input}))
         .expect("todim filter should render");
     assert_eq!(out, expected, "todim({}) should return {}", input, expected);
 }
@@ -108,12 +100,13 @@ fn test_todim_filter_strings(test_env: Environment, #[case] input: &str, #[case]
 #[case(1099511627776i64, "1.0 TiB")]
 fn test_filesizeformat_binary(test_env: Environment, #[case] bytes: i64, #[case] expected: &str) {
     let out = test_env
-        .render_str(
-            "{{ size|filesizeformat }}",
-            json!({"size": bytes}),
-        )
+        .render_str("{{ size|filesizeformat }}", json!({"size": bytes}))
         .expect("filesizeformat filter should render");
-    assert_eq!(out, expected, "filesizeformat({} bytes, binary) should return {}", bytes, expected);
+    assert_eq!(
+        out, expected,
+        "filesizeformat({} bytes, binary) should return {}",
+        bytes, expected
+    );
 }
 
 /// Test `filesizeformat` filter with decimal units (1000-based).
@@ -123,12 +116,13 @@ fn test_filesizeformat_binary(test_env: Environment, #[case] bytes: i64, #[case]
 #[rstest]
 #[case(1000i64, "1000 B")]
 #[case(1024i64, "1.0 KiB")]
-fn test_filesizeformat_edge_cases(test_env: Environment, #[case] bytes: i64, #[case] expected: &str) {
+fn test_filesizeformat_edge_cases(
+    test_env: Environment,
+    #[case] bytes: i64,
+    #[case] expected: &str,
+) {
     let out = test_env
-        .render_str(
-            "{{ size|filesizeformat }}",
-            json!({"size": bytes}),
-        )
+        .render_str("{{ size|filesizeformat }}", json!({"size": bytes}))
         .expect("filesizeformat filter should render");
     assert!(
         out.contains(&expected[0..1]) || out == expected,
@@ -146,12 +140,13 @@ fn test_filesizeformat_edge_cases(test_env: Environment, #[case] bytes: i64, #[c
 #[case("0", "FALSE")] // tobool(0 -> false) -> string -> upper
 fn test_filter_chains(test_env: Environment, #[case] input: &str, #[case] expected: &str) {
     let out = test_env
-        .render_str(
-            "{{ val|tobool|string|upper }}",
-            json!({"val": input}),
-        )
+        .render_str("{{ val|tobool|string|upper }}", json!({"val": input}))
         .expect("filter chain should render");
-    assert_eq!(out, expected, "filter chain({}) should return {}", input, expected);
+    assert_eq!(
+        out, expected,
+        "filter chain({}) should return {}",
+        input, expected
+    );
 }
 
 /// Test that filters work in conditional expressions.
@@ -160,18 +155,18 @@ fn test_filter_chains(test_env: Environment, #[case] input: &str, #[case] expect
 #[case("false", "is false")]
 #[case("yes", "is true")]
 #[case("no", "is false")]
-fn test_filter_in_condition(
-    test_env: Environment,
-    #[case] input: &str,
-    #[case] expected: &str,
-) {
+fn test_filter_in_condition(test_env: Environment, #[case] input: &str, #[case] expected: &str) {
     let out = test_env
         .render_str(
             "{% if val|tobool %}is true{% else %}is false{% endif %}",
             json!({"val": input}),
         )
         .expect("filter in condition should render");
-    assert_eq!(out, expected, "condition using tobool({}) should result in {}", input, expected);
+    assert_eq!(
+        out, expected,
+        "condition using tobool({}) should result in {}",
+        input, expected
+    );
 }
 
 /// Test filters with missing/undefined values.
@@ -184,12 +179,19 @@ fn test_filters_with_undefined(
     #[case] filter_name: &str,
     #[case] _expected: &str,
 ) {
-    let template = format!("{{{{ undefined_var|{filter_name} }}}}", filter_name = filter_name);
+    let template = format!(
+        "{{{{ undefined_var|{filter_name} }}}}",
+        filter_name = filter_name
+    );
     let out = test_env
         .render_str(&template, json!({}))
         .expect("filter on undefined should use sensible default");
     // Most filters should handle undefined gracefully
-    assert!(!out.is_empty(), "{} should not crash on undefined", filter_name);
+    assert!(
+        !out.is_empty(),
+        "{} should not crash on undefined",
+        filter_name
+    );
 }
 
 /// Test that filter parameters are handled correctly.
@@ -221,10 +223,7 @@ fn test_toint_numeric_boundaries(
     #[case] expected: &str,
 ) {
     let out = test_env
-        .render_str(
-            "{{ val|toint }}",
-            json!({"val": input}),
-        )
+        .render_str("{{ val|toint }}", json!({"val": input}))
         .expect("toint should handle numeric boundaries");
     assert_eq!(out, expected);
 }
@@ -235,12 +234,12 @@ fn test_toint_numeric_boundaries(
 
 /// Test `indent` filter basic usage.
 #[rstest]
-#[case("hello", "hello", 2, false, false)]  // Single line, first=false: not indented
-#[case("hello", "  hello", 2, true, false)]  // Single line, first=true: indented
-#[case("hello\nworld", "hello\n  world", 2, false, false)]  // Multi-line, first=false: indent after first
-#[case("hello\nworld", "  hello\n  world", 2, true, false)]  // Multi-line, first=true: indent all
-#[case("line1\n\nline2", "line1\n\n  line2", 2, false, false)]  // Blank line not indented, but line after is
-#[case("line1\n\nline2", "  line1\n  \n  line2", 2, true, true)]  // All lines indented with blank=true
+#[case("hello", "hello", 2, false, false)] // Single line, first=false: not indented
+#[case("hello", "  hello", 2, true, false)] // Single line, first=true: indented
+#[case("hello\nworld", "hello\n  world", 2, false, false)] // Multi-line, first=false: indent after first
+#[case("hello\nworld", "  hello\n  world", 2, true, false)] // Multi-line, first=true: indent all
+#[case("line1\n\nline2", "line1\n\n  line2", 2, false, false)] // Blank line not indented, but line after is
+#[case("line1\n\nline2", "  line1\n  \n  line2", 2, true, true)] // All lines indented with blank=true
 fn test_indent_filter(
     test_env: Environment,
     #[case] input: &str,
@@ -261,7 +260,11 @@ fn test_indent_filter(
     let out = test_env
         .render_str(&template, json!({"val": input}))
         .expect("indent filter should render");
-    assert_eq!(out, expected, "indent({:?}, {}, {}, {}) should work", input, width, first, blank);
+    assert_eq!(
+        out, expected,
+        "indent({:?}, {}, {}, {}) should work",
+        input, width, first, blank
+    );
 }
 
 /// Test `indent` filter with default width.
@@ -304,14 +307,20 @@ fn test_wordwrap_filter(
     // Normalize whitespace for comparison
     let normalized_out = out.trim();
     let normalized_expected = expected.trim();
-    assert_eq!(normalized_out, normalized_expected, "wordwrap({:?}, {}) should work", input, width);
+    assert_eq!(
+        normalized_out, normalized_expected,
+        "wordwrap({:?}, {}) should work",
+        input, width
+    );
 }
 
 /// Test `wordwrap` filter with default width.
 #[rstest]
 #[case("a short line", "a short line")]
-#[case("this is a longer line that should wrap at the default width of seventy nine characters", 
-       "this is a longer line that should wrap at the default width of seventy nine")]
+#[case(
+    "this is a longer line that should wrap at the default width of seventy nine characters",
+    "this is a longer line that should wrap at the default width of seventy nine"
+)]
 fn test_wordwrap_filter_default_width(
     test_env: Environment,
     #[case] input: &str,
@@ -327,9 +336,9 @@ fn test_wordwrap_filter_default_width(
 /// Test `xmlattr` filter with various attributes.
 #[rstest]
 #[case(json!({"class": "foo"}), r#" class="foo""#)]
-#[case(json!({"id": "test", "class": "bar"}), "test")]  // Should contain both
-#[case(json!({"data": "a & b"}), "a &amp; b")]  // Should escape &
-#[case(json!({"title": "quote \"test\""}), "&quot;")]  // Should escape "
+#[case(json!({"id": "test", "class": "bar"}), "test")] // Should contain both
+#[case(json!({"data": "a & b"}), "a &amp; b")] // Should escape &
+#[case(json!({"title": "quote \"test\""}), "&quot;")] // Should escape "
 fn test_xmlattr_filter(
     test_env: Environment,
     #[case] attrs: serde_json::Value,
@@ -338,7 +347,11 @@ fn test_xmlattr_filter(
     let out = test_env
         .render_str("{{ attrs|xmlattr }}", json!({"attrs": attrs}))
         .expect("xmlattr filter should render");
-    assert!(out.contains(expected_substring), "xmlattr output should contain {:?}", expected_substring);
+    assert!(
+        out.contains(expected_substring),
+        "xmlattr output should contain {:?}",
+        expected_substring
+    );
 }
 
 /// Test `xmlattr` filter with empty dict.
@@ -370,13 +383,17 @@ fn test_urlencode_filter_string(
     let out = test_env
         .render_str("{{ val|urlencode }}", json!({"val": input}))
         .expect("urlencode filter should render");
-    assert_eq!(out, expected, "urlencode({:?}) should produce {:?}", input, expected);
+    assert_eq!(
+        out, expected,
+        "urlencode({:?}) should produce {:?}",
+        input, expected
+    );
 }
 
 /// Test `urlencode` filter with dicts (query string format).
 #[rstest]
 #[case(json!({"q": "hello"}), "q=hello")]
-#[case(json!({"q": "hello world"}), "q=hello")]  // May be encoded differently
+#[case(json!({"q": "hello world"}), "q=hello")] // May be encoded differently
 fn test_urlencode_filter_dict(
     test_env: Environment,
     #[case] input: serde_json::Value,
@@ -385,6 +402,9 @@ fn test_urlencode_filter_dict(
     let out = test_env
         .render_str("{{ val|urlencode }}", json!({"val": input}))
         .expect("urlencode filter with dict should render");
-    assert!(out.contains(expected_substring) || out.contains(&expected_substring.replace(" ", "%20")),
-        "urlencode dict output should contain {:?}", expected_substring);
+    assert!(
+        out.contains(expected_substring) || out.contains(&expected_substring.replace(" ", "%20")),
+        "urlencode dict output should contain {:?}",
+        expected_substring
+    );
 }

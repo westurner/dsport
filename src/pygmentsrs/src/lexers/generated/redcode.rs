@@ -25,17 +25,23 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m);.*$", COMMENT_SINGLE),
-        Rule::token(r"(?m)\b(DAT|MOV|ADD|SUB|MUL|DIV|MOD|JMP|JMZ|JMN|DJN|CMP|SLT|SPL|ORG|EQU|END)\b", NAME_FUNCTION),
-        Rule::token(r"(?m)\b(A|B|AB|BA|F|X|I)\b", NAME_DECORATOR),
-        Rule::token(r"(?m)[A-Za-z_]\w+", NAME),
-        Rule::token(r"(?m)[-+*/%]", OPERATOR),
-        Rule::token(r"(?m)[#$@<>]", OPERATOR),
-        Rule::token(r"(?m)[.,]", PUNCTUATION),
-        Rule::token(r"(?m)[-+]?\d+", NUMBER_INTEGER),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m);.*$", COMMENT_SINGLE),
+            Rule::token(
+                r"(?m)\b(DAT|MOV|ADD|SUB|MUL|DIV|MOD|JMP|JMZ|JMN|DJN|CMP|SLT|SPL|ORG|EQU|END)\b",
+                NAME_FUNCTION,
+            ),
+            Rule::token(r"(?m)\b(A|B|AB|BA|F|X|I)\b", NAME_DECORATOR),
+            Rule::token(r"(?m)[A-Za-z_]\w+", NAME),
+            Rule::token(r"(?m)[-+*/%]", OPERATOR),
+            Rule::token(r"(?m)[#$@<>]", OPERATOR),
+            Rule::token(r"(?m)[.,]", PUNCTUATION),
+            Rule::token(r"(?m)[-+]?\d+", NUMBER_INTEGER),
+        ],
+    );
     Table(m)
 }
 

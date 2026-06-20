@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::{PathBuf};  // {, Path}
+use std::path::PathBuf; // {, Path}
 use std::sync::Arc;
 //use std::time::SystemTime;
 
@@ -63,7 +63,9 @@ fn load_from_paths_impl(
     for base in paths {
         // Canonicalize the base once per search root.  Skip roots that cannot
         // be resolved (non-existent or permission-denied directories).
-        let Ok(canonical_base) = base.canonicalize() else { continue; };
+        let Ok(canonical_base) = base.canonicalize() else {
+            continue;
+        };
 
         // Security: resolve `candidate` to its real, symlink-free path and
         // confirm it lives inside `canonical_base`.
@@ -176,10 +178,16 @@ impl FileSystemLoader {
     }
 
     /// Return a minijinja-compatible loader closure for this instance.
-    pub fn into_minijinja_loader(self) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
+    pub fn into_minijinja_loader(
+        self,
+    ) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
         let paths = self.paths.clone();
         let allow_special = self.allow_special_files;
-        move |name: &str| Ok(load_from_paths_with_special(&paths, name, allow_special).ok().flatten())
+        move |name: &str| {
+            Ok(load_from_paths_with_special(&paths, name, allow_special)
+                .ok()
+                .flatten())
+        }
     }
 }
 
@@ -219,7 +227,9 @@ impl SphinxFileSystemLoader {
     }
 
     /// Return a minijinja-compatible loader closure.
-    pub fn into_minijinja_loader(self) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
+    pub fn into_minijinja_loader(
+        self,
+    ) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
         let paths = self.inner.paths.clone();
         let allow_special = self.inner.allow_special_files;
         move |name: &str| {
@@ -267,7 +277,9 @@ impl DictLoader {
     }
 
     /// Return a minijinja-compatible loader closure.
-    pub fn into_minijinja_loader(self) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
+    pub fn into_minijinja_loader(
+        self,
+    ) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
         let templates = self.templates.clone();
         move |name: &str| Ok(templates.get(name).cloned())
     }
@@ -343,7 +355,9 @@ impl ChoiceLoader {
     }
 
     /// Return a minijinja-compatible loader closure.
-    pub fn into_minijinja_loader(self) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
+    pub fn into_minijinja_loader(
+        self,
+    ) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
         let loaders = self.loaders.clone();
         move |name: &str| {
             for loader in &loaders {
@@ -412,10 +426,7 @@ impl DjangoAppDirectoryLoader {
 
     /// Derive the full search-root list (`<app_dir>/templates/` for each).
     fn template_roots(&self) -> Vec<PathBuf> {
-        self.app_dirs
-            .iter()
-            .map(|d| d.join("templates"))
-            .collect()
+        self.app_dirs.iter().map(|d| d.join("templates")).collect()
     }
 
     /// Load a template source by name.
@@ -441,12 +452,9 @@ impl DjangoAppDirectoryLoader {
         self,
     ) -> impl Fn(&str) -> Result<Option<String>, minijinja::Error> + Send + Sync + 'static {
         let roots: Arc<Vec<PathBuf>> = Arc::new(self.template_roots());
-        move |name: &str| {
-            Ok(load_from_paths(&roots, name).ok().flatten())
-        }
+        move |name: &str| Ok(load_from_paths(&roots, name).ok().flatten())
     }
 }
-
 
 mod tests {
     use super::*;
@@ -480,9 +488,15 @@ mod tests {
         let choice = ChoiceLoader::new(vec![Arc::new(dict), Arc::new(builtin)]);
 
         // user.html is in both; should get from first loader
-        assert_eq!(choice.get_source("user.html").ok().flatten(), Some("USER".to_string()));
+        assert_eq!(
+            choice.get_source("user.html").ok().flatten(),
+            Some("USER".to_string())
+        );
         // builtin.html only in builtin
-        assert_eq!(choice.get_source("builtin.html").ok().flatten(), Some("BUILTIN".to_string()));
+        assert_eq!(
+            choice.get_source("builtin.html").ok().flatten(),
+            Some("BUILTIN".to_string())
+        );
         // not in either
         assert_eq!(choice.get_source("missing.html").ok().flatten(), None);
     }

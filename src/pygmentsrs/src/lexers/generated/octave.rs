@@ -49,23 +49,52 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\s+", TEXT),
         Rule::token(r"(?m).", TEXT),
     ]);
-    m.insert(r"percentblockcomment", vec![
-        Rule::token_to(r"(?m)^\s*%\}", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)^.*\n", COMMENT_MULTILINE),
-        Rule::token(r"(?m).", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"hashblockcomment", vec![
-        Rule::token_to(r"(?m)^\s*#\}", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)^.*\n", COMMENT_MULTILINE),
-        Rule::token(r"(?m).", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r"(?m)[^']*'", STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"deffunc", vec![
-        Rule::bygroups_to(r"(?m)(\s*)(?:(\S+)(\s*)(=)(\s*))?(.+)(\()(.*)(\))(\s*)", vec![Some(WHITESPACE), Some(TEXT), Some(WHITESPACE), Some(PUNCTUATION), Some(WHITESPACE), Some(NAME_FUNCTION), Some(PUNCTUATION), Some(TEXT), Some(PUNCTUATION), Some(WHITESPACE)], NewState::Pop(1)),
-        Rule::bygroups_to(r"(?m)(\s*)([a-zA-Z_]\w*)", vec![Some(WHITESPACE), Some(NAME_FUNCTION)], NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"percentblockcomment",
+        vec![
+            Rule::token_to(r"(?m)^\s*%\}", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)^.*\n", COMMENT_MULTILINE),
+            Rule::token(r"(?m).", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"hashblockcomment",
+        vec![
+            Rule::token_to(r"(?m)^\s*#\}", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)^.*\n", COMMENT_MULTILINE),
+            Rule::token(r"(?m).", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![Rule::token_to(r"(?m)[^']*'", STRING, NewState::Pop(1))],
+    );
+    m.insert(
+        r"deffunc",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)(\s*)(?:(\S+)(\s*)(=)(\s*))?(.+)(\()(.*)(\))(\s*)",
+                vec![
+                    Some(WHITESPACE),
+                    Some(TEXT),
+                    Some(WHITESPACE),
+                    Some(PUNCTUATION),
+                    Some(WHITESPACE),
+                    Some(NAME_FUNCTION),
+                    Some(PUNCTUATION),
+                    Some(TEXT),
+                    Some(PUNCTUATION),
+                    Some(WHITESPACE),
+                ],
+                NewState::Pop(1),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(\s*)([a-zA-Z_]\w*)",
+                vec![Some(WHITESPACE), Some(NAME_FUNCTION)],
+                NewState::Pop(1),
+            ),
+        ],
+    );
     Table(m)
 }
 

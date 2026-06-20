@@ -52,13 +52,16 @@ fn build_table() -> Table {
         Rule::token(r"(?m)<<\s*(\'?)\\?(\w+)[\w\W]+?\2", STRING),
         Rule::token(r"(?m);", PUNCTUATION),
     ]);
-    m.insert(r"data", vec![
-        Rule::token(r#"(?m)(?s)"(\\\\|\\[0-7]+|\\.|[^"\\])*""#, STRING_DOUBLE),
-        Rule::token(r"(?m)(?s)'(\\\\|\\[0-7]+|\\.|[^'\\])*'", STRING_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r#"(?m)[^=\s\[\]{}()$"\'`\\;#]+"#, TEXT),
-        Rule::token(r"(?m)\d+(?= |\Z)", NUMBER),
-    ]);
+    m.insert(
+        r"data",
+        vec![
+            Rule::token(r#"(?m)(?s)"(\\\\|\\[0-7]+|\\.|[^"\\])*""#, STRING_DOUBLE),
+            Rule::token(r"(?m)(?s)'(\\\\|\\[0-7]+|\\.|[^'\\])*'", STRING_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r#"(?m)[^=\s\[\]{}()$"\'`\\;#]+"#, TEXT),
+            Rule::token(r"(?m)\d+(?= |\Z)", NUMBER),
+        ],
+    );
     m.insert(r"curly", vec![
         Rule::token_to(r"(?m)\}", KEYWORD, NewState::Pop(1)),
         Rule::token(r"(?m):-", KEYWORD),

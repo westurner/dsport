@@ -49,21 +49,30 @@ fn build_table() -> Table {
         Rule::token_to(r"(?im)\n+", WHITESPACE, NewState::Pop(1)),
         Rule::token(r"(?im)[^\S\n]+", WHITESPACE),
     ]);
-    m.insert(r"strings", vec![
-        Rule::token(r#"(?im)(?s)"(\\\\|\\[0-7]+|\\.|[^"\\])*""#, STRING_DOUBLE),
-        Rule::token(r"(?im)(?s)'(\\\\|\\[0-7]+|\\.|[^'\\])*'", STRING_SINGLE),
-        Rule::token(r"(?im)[$%]", STRING_SYMBOL),
-    ]);
-    m.insert(r"nums", vec![
-        Rule::token(r"(?im)[+-]?\d*\.\d+([efEF][-+]?\d+)?", NUMBER_FLOAT),
-        Rule::token(r"(?im)([+-]?\d+([efEF][-+]?\d+))", NUMBER_FLOAT),
-        Rule::token(r"(?im)\b\d+(?![.ef])", NUMBER_INTEGER),
-    ]);
-    m.insert(r"core", vec![
-        Rule::token(r"(?im)(\*\*|\*|\+|-|\/|<|>|<=|>=|==|\/=|=|\(|\))", OPERATOR),
-        Rule::token(r"(?im)/EOF", GENERIC_EMPH),
-        Rule::token(r"(?im)[\.(),:&;]", PUNCTUATION),
-    ]);
+    m.insert(
+        r"strings",
+        vec![
+            Rule::token(r#"(?im)(?s)"(\\\\|\\[0-7]+|\\.|[^"\\])*""#, STRING_DOUBLE),
+            Rule::token(r"(?im)(?s)'(\\\\|\\[0-7]+|\\.|[^'\\])*'", STRING_SINGLE),
+            Rule::token(r"(?im)[$%]", STRING_SYMBOL),
+        ],
+    );
+    m.insert(
+        r"nums",
+        vec![
+            Rule::token(r"(?im)[+-]?\d*\.\d+([efEF][-+]?\d+)?", NUMBER_FLOAT),
+            Rule::token(r"(?im)([+-]?\d+([efEF][-+]?\d+))", NUMBER_FLOAT),
+            Rule::token(r"(?im)\b\d+(?![.ef])", NUMBER_INTEGER),
+        ],
+    );
+    m.insert(
+        r"core",
+        vec![
+            Rule::token(r"(?im)(\*\*|\*|\+|-|\/|<|>|<=|>=|==|\/=|=|\(|\))", OPERATOR),
+            Rule::token(r"(?im)/EOF", GENERIC_EMPH),
+            Rule::token(r"(?im)[\.(),:&;]", PUNCTUATION),
+        ],
+    );
     Table(m)
 }
 

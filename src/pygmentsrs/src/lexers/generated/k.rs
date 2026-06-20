@@ -25,13 +25,20 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?m)^#!.*", COMMENT_HASHBANG),
-        Rule::token_to(r"(?m)^/\s*\n", COMMENT_MULTILINE, NewState::Push(vec![r"comments"])),
-        Rule::token(r"(?m)(?<!\S)/.*", COMMENT_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r#"(?m)\""#, STRING_DOUBLE, NewState::Push(vec![r"strings"])),
-    ]);
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::token(r"(?m)^#!.*", COMMENT_HASHBANG),
+            Rule::token_to(
+                r"(?m)^/\s*\n",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"comments"]),
+            ),
+            Rule::token(r"(?m)(?<!\S)/.*", COMMENT_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(r#"(?m)\""#, STRING_DOUBLE, NewState::Push(vec![r"strings"])),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?m)^#!.*", COMMENT_HASHBANG),
         Rule::token_to(r"(?m)^/\s*\n", COMMENT_MULTILINE, NewState::Push(vec![r"comments"])),
@@ -227,16 +234,22 @@ fn build_table() -> Table {
         Rule::token(r"(?m);", PUNCTUATION),
         Rule::token_to(r"(?m)\]", PUNCTUATION, NewState::Pop(1)),
     ]);
-    m.insert(r"comments", vec![
-        Rule::token(r"(?m)[^\\]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)^\\", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)\\", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"strings", vec![
-        Rule::token(r#"(?m)[^"\\]+"#, STRING_DOUBLE),
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"comments",
+        vec![
+            Rule::token(r"(?m)[^\\]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)^\\", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)\\", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"strings",
+        vec![
+            Rule::token(r#"(?m)[^"\\]+"#, STRING_DOUBLE),
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

@@ -64,18 +64,30 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token(r"(?m).", TEXT),
     ]);
-    m.insert(r"macro", vec![
-        Rule::token(r"(?m)%define.*$", COMMENT_PREPROC),
-        Rule::token(r"(?m)%\{\!\?.*%define.*\}", COMMENT_PREPROC),
-        Rule::bygroups(r"(?m)(%(?:if(?:n?arch)?|else(?:if)?|endif))(.*)$", vec![Some(COMMENT_PREPROC), Some(TEXT)]),
-    ]);
-    m.insert(r"interpol", vec![
-        Rule::token(r"(?m)%\{?__[a-z_]+\}?", NAME_FUNCTION),
-        Rule::token(r"(?m)%\{?_([a-z_]+dir|[a-z_]+path|prefix)\}?", KEYWORD_PSEUDO),
-        Rule::token(r"(?m)%\{\?\w+\}", NAME_VARIABLE),
-        Rule::token(r"(?m)\$\{?RPM_[A-Z0-9_]+\}?", NAME_VARIABLE_GLOBAL),
-        Rule::token(r"(?m)%\{[a-zA-Z]\w+\}", KEYWORD_CONSTANT),
-    ]);
+    m.insert(
+        r"macro",
+        vec![
+            Rule::token(r"(?m)%define.*$", COMMENT_PREPROC),
+            Rule::token(r"(?m)%\{\!\?.*%define.*\}", COMMENT_PREPROC),
+            Rule::bygroups(
+                r"(?m)(%(?:if(?:n?arch)?|else(?:if)?|endif))(.*)$",
+                vec![Some(COMMENT_PREPROC), Some(TEXT)],
+            ),
+        ],
+    );
+    m.insert(
+        r"interpol",
+        vec![
+            Rule::token(r"(?m)%\{?__[a-z_]+\}?", NAME_FUNCTION),
+            Rule::token(
+                r"(?m)%\{?_([a-z_]+dir|[a-z_]+path|prefix)\}?",
+                KEYWORD_PSEUDO,
+            ),
+            Rule::token(r"(?m)%\{\?\w+\}", NAME_VARIABLE),
+            Rule::token(r"(?m)\$\{?RPM_[A-Z0-9_]+\}?", NAME_VARIABLE_GLOBAL),
+            Rule::token(r"(?m)%\{[a-zA-Z]\w+\}", KEYWORD_CONSTANT),
+        ],
+    );
     m.insert(r"description", vec![
         Rule::bygroups_to(r"(?m)^(%(?:package|prep|build|install|clean|check|pre[a-z]*|post[a-z]*|trigger[a-z]*|files))(.*)$", vec![Some(NAME_DECORATOR), Some(TEXT)], NewState::Pop(1)),
         Rule::token(r"(?m)\s+", WHITESPACE),
@@ -87,16 +99,25 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token(r"(?m).", TEXT),
     ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\([\\abfnrtv"\']|x[a-fA-F0-9]{2,4}|[0-7]{1,3})"#, STRING_ESCAPE),
-        Rule::token(r"(?m)%\{?__[a-z_]+\}?", NAME_FUNCTION),
-        Rule::token(r"(?m)%\{?_([a-z_]+dir|[a-z_]+path|prefix)\}?", KEYWORD_PSEUDO),
-        Rule::token(r"(?m)%\{\?\w+\}", NAME_VARIABLE),
-        Rule::token(r"(?m)\$\{?RPM_[A-Z0-9_]+\}?", NAME_VARIABLE_GLOBAL),
-        Rule::token(r"(?m)%\{[a-zA-Z]\w+\}", KEYWORD_CONSTANT),
-        Rule::token(r"(?m).", STRING_DOUBLE),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(
+                r#"(?m)\\([\\abfnrtv"\']|x[a-fA-F0-9]{2,4}|[0-7]{1,3})"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token(r"(?m)%\{?__[a-z_]+\}?", NAME_FUNCTION),
+            Rule::token(
+                r"(?m)%\{?_([a-z_]+dir|[a-z_]+path|prefix)\}?",
+                KEYWORD_PSEUDO,
+            ),
+            Rule::token(r"(?m)%\{\?\w+\}", NAME_VARIABLE),
+            Rule::token(r"(?m)\$\{?RPM_[A-Z0-9_]+\}?", NAME_VARIABLE_GLOBAL),
+            Rule::token(r"(?m)%\{[a-zA-Z]\w+\}", KEYWORD_CONSTANT),
+            Rule::token(r"(?m).", STRING_DOUBLE),
+        ],
+    );
     Table(m)
 }
 

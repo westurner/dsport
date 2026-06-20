@@ -25,24 +25,88 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?ms)[^#$]+", OTHER),
-        Rule::token_to(r"(?ms)#\[", COMMENT_MULTILINE, NewState::Push(vec![r"comment"])),
-        Rule::token(r"(?ms)\$\$", OTHER),
-        Rule::token(r"(?ms)\$\w+:[^$\n]*\$", COMMENT_MULTILINE),
-        Rule::bygroups(r"(?ms)(\$)(begin|end)(\{(%)?)(.*?)((?(4)%)\})", vec![Some(PUNCTUATION), Some(NAME_BUILTIN), Some(PUNCTUATION), None, Some(STRING), Some(PUNCTUATION)]),
-        Rule::bygroups_g(r#"(?ms)(\$)(evoque|overlay)(\{(%)?)(\s*[#\w\-"\'.]+)?(.*?)((?(4)%)\})"#, vec![Some(GroupAction::Token(PUNCTUATION)), Some(GroupAction::Token(NAME_BUILTIN)), Some(GroupAction::Token(PUNCTUATION)), None, Some(GroupAction::Token(STRING)), Some(GroupAction::UsingLexer { alias: "python", state: None }), Some(GroupAction::Token(PUNCTUATION))]),
-        Rule::bygroups_g(r"(?ms)(\$)(\w+)(\{(%)?)(.*?)((?(4)%)\})", vec![Some(GroupAction::Token(PUNCTUATION)), Some(GroupAction::Token(NAME_BUILTIN)), Some(GroupAction::Token(PUNCTUATION)), None, Some(GroupAction::UsingLexer { alias: "python", state: None }), Some(GroupAction::Token(PUNCTUATION))]),
-        Rule::bygroups(r"(?ms)(\$)(else|rof|fi)", vec![Some(PUNCTUATION), Some(NAME_BUILTIN)]),
-        Rule::bygroups_g(r"(?ms)(\$\{(%)?)(.*?)((!)(.*?))?((?(2)%)\})", vec![Some(GroupAction::Token(PUNCTUATION)), None, Some(GroupAction::UsingLexer { alias: "python", state: None }), Some(GroupAction::Token(NAME_BUILTIN)), None, None, Some(GroupAction::Token(PUNCTUATION))]),
-        Rule::token(r"(?ms)#", OTHER),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?ms)[^\]#]", COMMENT_MULTILINE),
-        Rule::token_to(r"(?ms)#\[", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?ms)\]#", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?ms)[\]#]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?ms)[^#$]+", OTHER),
+            Rule::token_to(
+                r"(?ms)#\[",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"comment"]),
+            ),
+            Rule::token(r"(?ms)\$\$", OTHER),
+            Rule::token(r"(?ms)\$\w+:[^$\n]*\$", COMMENT_MULTILINE),
+            Rule::bygroups(
+                r"(?ms)(\$)(begin|end)(\{(%)?)(.*?)((?(4)%)\})",
+                vec![
+                    Some(PUNCTUATION),
+                    Some(NAME_BUILTIN),
+                    Some(PUNCTUATION),
+                    None,
+                    Some(STRING),
+                    Some(PUNCTUATION),
+                ],
+            ),
+            Rule::bygroups_g(
+                r#"(?ms)(\$)(evoque|overlay)(\{(%)?)(\s*[#\w\-"\'.]+)?(.*?)((?(4)%)\})"#,
+                vec![
+                    Some(GroupAction::Token(PUNCTUATION)),
+                    Some(GroupAction::Token(NAME_BUILTIN)),
+                    Some(GroupAction::Token(PUNCTUATION)),
+                    None,
+                    Some(GroupAction::Token(STRING)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "python",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(PUNCTUATION)),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?ms)(\$)(\w+)(\{(%)?)(.*?)((?(4)%)\})",
+                vec![
+                    Some(GroupAction::Token(PUNCTUATION)),
+                    Some(GroupAction::Token(NAME_BUILTIN)),
+                    Some(GroupAction::Token(PUNCTUATION)),
+                    None,
+                    Some(GroupAction::UsingLexer {
+                        alias: "python",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(PUNCTUATION)),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?ms)(\$)(else|rof|fi)",
+                vec![Some(PUNCTUATION), Some(NAME_BUILTIN)],
+            ),
+            Rule::bygroups_g(
+                r"(?ms)(\$\{(%)?)(.*?)((!)(.*?))?((?(2)%)\})",
+                vec![
+                    Some(GroupAction::Token(PUNCTUATION)),
+                    None,
+                    Some(GroupAction::UsingLexer {
+                        alias: "python",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(NAME_BUILTIN)),
+                    None,
+                    None,
+                    Some(GroupAction::Token(PUNCTUATION)),
+                ],
+            ),
+            Rule::token(r"(?ms)#", OTHER),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?ms)[^\]#]", COMMENT_MULTILINE),
+            Rule::token_to(r"(?ms)#\[", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?ms)\]#", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?ms)[\]#]", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

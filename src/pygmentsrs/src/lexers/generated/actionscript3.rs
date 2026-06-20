@@ -52,16 +52,41 @@ fn build_table() -> Table {
         Rule::bygroups_to(r"(?ms)(\s*)(\.\.\.)?([$a-zA-Z_]\w*)(\s*)(:)(\s*)([$a-zA-Z_]\w*(?:\.<\w+>)?|\*)(\s*)", vec![Some(WHITESPACE), Some(PUNCTUATION), Some(NAME), Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE), Some(KEYWORD_TYPE), Some(WHITESPACE)], NewState::Push(vec![r"defval"])),
         Rule::token_to(r"(?ms)\)", OPERATOR, NewState::Push(vec![r"type"])),
     ]);
-    m.insert(r"type", vec![
-        Rule::bygroups_to(r"(?ms)(\s*)(:)(\s*)([$a-zA-Z_]\w*(?:\.<\w+>)?|\*)", vec![Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE), Some(KEYWORD_TYPE)], NewState::Pop(2)),
-        Rule::token_to(r"(?ms)\s+", TEXT, NewState::Pop(2)),
-        Rule::default(NewState::Pop(2)),
-    ]);
-    m.insert(r"defval", vec![
-        Rule::bygroups_g_to(r"(?ms)(=)(\s*)([^(),]+)(\s*)(,?)", vec![Some(GroupAction::Token(OPERATOR)), Some(GroupAction::Token(WHITESPACE)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(WHITESPACE)), Some(GroupAction::Token(OPERATOR))], NewState::Pop(1)),
-        Rule::token_to(r"(?ms),", OPERATOR, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"type",
+        vec![
+            Rule::bygroups_to(
+                r"(?ms)(\s*)(:)(\s*)([$a-zA-Z_]\w*(?:\.<\w+>)?|\*)",
+                vec![
+                    Some(WHITESPACE),
+                    Some(OPERATOR),
+                    Some(WHITESPACE),
+                    Some(KEYWORD_TYPE),
+                ],
+                NewState::Pop(2),
+            ),
+            Rule::token_to(r"(?ms)\s+", TEXT, NewState::Pop(2)),
+            Rule::default(NewState::Pop(2)),
+        ],
+    );
+    m.insert(
+        r"defval",
+        vec![
+            Rule::bygroups_g_to(
+                r"(?ms)(=)(\s*)([^(),]+)(\s*)(,?)",
+                vec![
+                    Some(GroupAction::Token(OPERATOR)),
+                    Some(GroupAction::Token(WHITESPACE)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(WHITESPACE)),
+                    Some(GroupAction::Token(OPERATOR)),
+                ],
+                NewState::Pop(1),
+            ),
+            Rule::token_to(r"(?ms),", OPERATOR, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

@@ -25,14 +25,29 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)\*.*\n", COMMENT),
-        Rule::token_to(r"(?m)[+.] ", PUNCTUATION, NewState::Push(vec![r"statement"])),
-        Rule::token(r"(?m)-.*\n", COMMENT),
-        Rule::token_to(r"(?m)END\s*\n", NAME_LABEL, NewState::Push(vec![r"heredoc"])),
-        Rule::token_to(r"(?m)[A-Za-z$][\w$]*", NAME_LABEL, NewState::Push(vec![r"statement"])),
-        Rule::token_to(r"(?m)\s+", TEXT, NewState::Push(vec![r"statement"])),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)\*.*\n", COMMENT),
+            Rule::token_to(
+                r"(?m)[+.] ",
+                PUNCTUATION,
+                NewState::Push(vec![r"statement"]),
+            ),
+            Rule::token(r"(?m)-.*\n", COMMENT),
+            Rule::token_to(
+                r"(?m)END\s*\n",
+                NAME_LABEL,
+                NewState::Push(vec![r"heredoc"]),
+            ),
+            Rule::token_to(
+                r"(?m)[A-Za-z$][\w$]*",
+                NAME_LABEL,
+                NewState::Push(vec![r"statement"]),
+            ),
+            Rule::token_to(r"(?m)\s+", TEXT, NewState::Push(vec![r"statement"])),
+        ],
+    );
     m.insert(r"statement", vec![
         Rule::token_to(r"(?m)\s*\n", TEXT, NewState::Pop(1)),
         Rule::token(r"(?m)\s+", TEXT),
@@ -46,15 +61,19 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m):", PUNCTUATION, NewState::Push(vec![r"goto"])),
         Rule::token(r"(?m)[()<>,;]", PUNCTUATION),
     ]);
-    m.insert(r"goto", vec![
-        Rule::token_to(r"(?m)\s*\n", TEXT, NewState::Pop(2)),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r"(?m)F|S", KEYWORD),
-        Rule::bygroups(r"(?m)(\()([A-Za-z][\w.]*)(\))", vec![Some(PUNCTUATION), Some(NAME_LABEL), Some(PUNCTUATION)]),
-    ]);
-    m.insert(r"heredoc", vec![
-        Rule::token(r"(?m).*\n", STRING_HEREDOC),
-    ]);
+    m.insert(
+        r"goto",
+        vec![
+            Rule::token_to(r"(?m)\s*\n", TEXT, NewState::Pop(2)),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r"(?m)F|S", KEYWORD),
+            Rule::bygroups(
+                r"(?m)(\()([A-Za-z][\w.]*)(\))",
+                vec![Some(PUNCTUATION), Some(NAME_LABEL), Some(PUNCTUATION)],
+            ),
+        ],
+    );
+    m.insert(r"heredoc", vec![Rule::token(r"(?m).*\n", STRING_HEREDOC)]);
     Table(m)
 }
 

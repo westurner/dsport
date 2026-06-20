@@ -39,24 +39,31 @@ fn build_table() -> Table {
         Rule::token_to(r#"(?m)""""#, STRING, NewState::Push(vec![r"tdqs"])),
         Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"dqs"])),
     ]);
-    m.insert(r"strings", vec![
-        Rule::token(r"(?m)(?i)\\(x[0-9a-f]{2}|.)", STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-    ]);
-    m.insert(r"nl", vec![
-        Rule::token(r"(?m)\n", STRING),
-    ]);
-    m.insert(r"dqs", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)(?i)\\(x[0-9a-f]{2}|.)", STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-    ]);
-    m.insert(r"tdqs", vec![
-        Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)(?i)\\(x[0-9a-f]{2}|.)", STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-        Rule::token(r"(?m)\n", STRING),
-    ]);
+    m.insert(
+        r"strings",
+        vec![
+            Rule::token(r"(?m)(?i)\\(x[0-9a-f]{2}|.)", STRING_ESCAPE),
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+        ],
+    );
+    m.insert(r"nl", vec![Rule::token(r"(?m)\n", STRING)]);
+    m.insert(
+        r"dqs",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)(?i)\\(x[0-9a-f]{2}|.)", STRING_ESCAPE),
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"tdqs",
+        vec![
+            Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)(?i)\\(x[0-9a-f]{2}|.)", STRING_ESCAPE),
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+            Rule::token(r"(?m)\n", STRING),
+        ],
+    );
     Table(m)
 }
 

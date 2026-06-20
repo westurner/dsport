@@ -41,17 +41,23 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token(r"(?m)[^ \'.,():\n*]+", NAME),
     ]);
-    m.insert(r"after_declaration", vec![
-        Rule::token(r"(?m)[^ \'.,():\n*]+", NAME_FUNCTION),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"after_macro_argument", vec![
-        Rule::token_to(r"(?m)\*.*\n", COMMENT_SINGLE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\s+", WHITESPACE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)[.+\-/=\[\](){}<>;,&%¬]", OPERATOR, NewState::Pop(1)),
-        Rule::token_to(r"(?m)'(''|[^'])*'", STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)[^ \'.,():\n*]+", NAME),
-    ]);
+    m.insert(
+        r"after_declaration",
+        vec![
+            Rule::token(r"(?m)[^ \'.,():\n*]+", NAME_FUNCTION),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"after_macro_argument",
+        vec![
+            Rule::token_to(r"(?m)\*.*\n", COMMENT_SINGLE, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\s+", WHITESPACE, NewState::Pop(1)),
+            Rule::token_to(r"(?m)[.+\-/=\[\](){}<>;,&%¬]", OPERATOR, NewState::Pop(1)),
+            Rule::token_to(r"(?m)'(''|[^'])*'", STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)[^ \'.,():\n*]+", NAME),
+        ],
+    );
     Table(m)
 }
 

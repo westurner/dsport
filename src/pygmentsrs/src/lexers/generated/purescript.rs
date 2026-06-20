@@ -81,33 +81,52 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"funclist"])),
         Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^-{}]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)\{-", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)-\}", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[-{}]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"character", vec![
-        Rule::token_to(r"(?m)[^\\']'", STRING_CHAR, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
-        Rule::token_to(r"(?m)'", STRING_CHAR, NewState::Pop(1)),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-        Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"rawstring", vec![
-        Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)[^"]+"#, STRING),
-        Rule::token(r#"(?m)""#, STRING),
-    ]);
-    m.insert(r"escape", vec![
-        Rule::token_to(r#"(?m)[nrt"\'\\]"#, STRING_ESCAPE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)x[\da-fA-F]{1,6}", STRING_ESCAPE, NewState::Pop(1)),
-        Rule::bygroups_to(r"(?m)(\s+)(\\)", vec![Some(WHITESPACE), Some(STRING_ESCAPE)], NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^-{}]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)\{-", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)-\}", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[-{}]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"character",
+        vec![
+            Rule::token_to(r"(?m)[^\\']'", STRING_CHAR, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
+            Rule::token_to(r"(?m)'", STRING_CHAR, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+            Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"rawstring",
+        vec![
+            Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)[^"]+"#, STRING),
+            Rule::token(r#"(?m)""#, STRING),
+        ],
+    );
+    m.insert(
+        r"escape",
+        vec![
+            Rule::token_to(r#"(?m)[nrt"\'\\]"#, STRING_ESCAPE, NewState::Pop(1)),
+            Rule::token_to(r"(?m)x[\da-fA-F]{1,6}", STRING_ESCAPE, NewState::Pop(1)),
+            Rule::bygroups_to(
+                r"(?m)(\s+)(\\)",
+                vec![Some(WHITESPACE), Some(STRING_ESCAPE)],
+                NewState::Pop(1),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

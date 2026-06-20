@@ -25,14 +25,36 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::bygroups_to(r"(?m)^(Signed-By)(:)(\s*)", vec![Some(KEYWORD), Some(PUNCTUATION), Some(WHITESPACE)], NewState::Push(vec![r"signed-by"])),
-        Rule::bygroups(r"(?m)^([a-zA-Z\-0-9\.]*?)(:)(\s*)(.*?)$", vec![Some(KEYWORD), Some(PUNCTUATION), Some(WHITESPACE), Some(STRING)]),
-    ]);
-    m.insert(r"signed-by", vec![
-        Rule::token_to(r"(?m) -----END PGP PUBLIC KEY BLOCK-----\n", TEXT, NewState::Pop(1)),
-        Rule::token(r"(?m).+\n", TEXT),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)^(Signed-By)(:)(\s*)",
+                vec![Some(KEYWORD), Some(PUNCTUATION), Some(WHITESPACE)],
+                NewState::Push(vec![r"signed-by"]),
+            ),
+            Rule::bygroups(
+                r"(?m)^([a-zA-Z\-0-9\.]*?)(:)(\s*)(.*?)$",
+                vec![
+                    Some(KEYWORD),
+                    Some(PUNCTUATION),
+                    Some(WHITESPACE),
+                    Some(STRING),
+                ],
+            ),
+        ],
+    );
+    m.insert(
+        r"signed-by",
+        vec![
+            Rule::token_to(
+                r"(?m) -----END PGP PUBLIC KEY BLOCK-----\n",
+                TEXT,
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m).+\n", TEXT),
+        ],
+    );
     Table(m)
 }
 

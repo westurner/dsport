@@ -43,30 +43,33 @@
 
 use pyo3::prelude::*;
 
+pub mod ansible_filters;
+pub mod ansible_inventory;
+pub mod ansible_validation;
 pub mod compat;
 pub mod environment;
 pub mod errors;
 pub mod filters;
 pub mod globals;
+pub mod i18n;
+pub mod kubernetes_filters;
+pub mod kubernetes_inventory;
 pub mod loaders;
 pub mod sandbox;
 pub mod sandbox_config;
 pub mod sphinx_glue;
-pub mod i18n;
-pub mod ansible_filters;
-pub mod ansible_inventory;
-pub mod ansible_validation;
-pub mod kubernetes_filters;
-pub mod kubernetes_inventory;
 
 mod bridge;
 
-pub use compat::{CompatMode, AnsibleMode, AnsibleInventorySource, DjangoMode, DjangoAutoEscape};
+pub use compat::{AnsibleInventorySource, AnsibleMode, CompatMode, DjangoAutoEscape, DjangoMode};
 pub use environment::Environment;
 pub use errors::Jinja2Error;
+pub use loaders::{
+    ChoiceLoader, DictLoader, DjangoAppDirectoryLoader, FileSystemLoader, Loader,
+    SphinxFileSystemLoader,
+};
 pub use sandbox::SandboxedEnvironment;
 pub use sandbox_config::SandboxedEnvironmentBuilder;
-pub use loaders::{DictLoader, ChoiceLoader, FileSystemLoader, SphinxFileSystemLoader, Loader, DjangoAppDirectoryLoader};
 
 /// Crate version string. Mirrors `Cargo.toml` `[package].version`.
 pub fn version() -> &'static str {

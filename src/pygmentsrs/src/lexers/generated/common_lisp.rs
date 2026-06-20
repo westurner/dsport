@@ -25,20 +25,24 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::default(NewState::Push(vec![r"body"])),
-    ]);
-    m.insert(r"multiline-comment", vec![
-        Rule::token_to(r"(?im)#\|", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?im)\|#", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?im)[^|#]+", COMMENT_MULTILINE),
-        Rule::token(r"(?im)[|#]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"commented-form", vec![
-        Rule::token_to(r"(?im)\(", COMMENT_PREPROC, NewState::PushSame),
-        Rule::token_to(r"(?im)\)", COMMENT_PREPROC, NewState::Pop(1)),
-        Rule::token(r"(?im)[^()]+", COMMENT_PREPROC),
-    ]);
+    m.insert(r"root", vec![Rule::default(NewState::Push(vec![r"body"]))]);
+    m.insert(
+        r"multiline-comment",
+        vec![
+            Rule::token_to(r"(?im)#\|", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?im)\|#", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?im)[^|#]+", COMMENT_MULTILINE),
+            Rule::token(r"(?im)[|#]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"commented-form",
+        vec![
+            Rule::token_to(r"(?im)\(", COMMENT_PREPROC, NewState::PushSame),
+            Rule::token_to(r"(?im)\)", COMMENT_PREPROC, NewState::Pop(1)),
+            Rule::token(r"(?im)[^()]+", COMMENT_PREPROC),
+        ],
+    );
     m.insert(r"body", vec![
         Rule::token(r"(?im)\s+", WHITESPACE),
         Rule::token(r"(?im);.*$", COMMENT_SINGLE),

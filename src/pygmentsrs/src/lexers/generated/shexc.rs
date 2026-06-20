@@ -45,35 +45,65 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)'''", STRING, NewState::Push(vec![r"triple-single-quoted-string"])),
         Rule::token_to(r"(?m)'", STRING, NewState::Push(vec![r"single-single-quoted-string"])),
     ]);
-    m.insert(r"triple-double-quoted-string", vec![
-        Rule::token_to(r#"(?m)""""#, STRING, NewState::Push(vec![r"end-of-string"])),
-        Rule::token(r"(?m)[^\\]+", STRING),
-        Rule::token_to(r"(?m)\\", STRING, NewState::Push(vec![r"string-escape"])),
-    ]);
-    m.insert(r"single-double-quoted-string", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"end-of-string"])),
-        Rule::token(r#"(?m)[^"\\\n]+"#, STRING),
-        Rule::token_to(r"(?m)\\", STRING, NewState::Push(vec![r"string-escape"])),
-    ]);
-    m.insert(r"triple-single-quoted-string", vec![
-        Rule::token_to(r"(?m)'''", STRING, NewState::Push(vec![r"end-of-string"])),
-        Rule::token(r"(?m)[^\\]+", STRING),
-        Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"string-escape"])),
-    ]);
-    m.insert(r"single-single-quoted-string", vec![
-        Rule::token_to(r"(?m)'", STRING, NewState::Push(vec![r"end-of-string"])),
-        Rule::token(r"(?m)[^'\\\n]+", STRING),
-        Rule::token_to(r"(?m)\\", STRING, NewState::Push(vec![r"string-escape"])),
-    ]);
-    m.insert(r"string-escape", vec![
-        Rule::token_to(r"(?m)(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})", STRING_ESCAPE, NewState::Pop(1)),
-        Rule::token_to(r"(?m).", STRING_ESCAPE, NewState::Pop(1)),
-    ]);
-    m.insert(r"end-of-string", vec![
-        Rule::bygroups_to(r"(?m)(@)([a-zA-Z]+(?:-[a-zA-Z0-9]+)*)", vec![Some(OPERATOR), Some(NAME_FUNCTION)], NewState::Pop(2)),
-        Rule::token_to(r"(?m)\^\^", OPERATOR, NewState::Pop(2)),
-        Rule::default(NewState::Pop(2)),
-    ]);
+    m.insert(
+        r"triple-double-quoted-string",
+        vec![
+            Rule::token_to(r#"(?m)""""#, STRING, NewState::Push(vec![r"end-of-string"])),
+            Rule::token(r"(?m)[^\\]+", STRING),
+            Rule::token_to(r"(?m)\\", STRING, NewState::Push(vec![r"string-escape"])),
+        ],
+    );
+    m.insert(
+        r"single-double-quoted-string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"end-of-string"])),
+            Rule::token(r#"(?m)[^"\\\n]+"#, STRING),
+            Rule::token_to(r"(?m)\\", STRING, NewState::Push(vec![r"string-escape"])),
+        ],
+    );
+    m.insert(
+        r"triple-single-quoted-string",
+        vec![
+            Rule::token_to(r"(?m)'''", STRING, NewState::Push(vec![r"end-of-string"])),
+            Rule::token(r"(?m)[^\\]+", STRING),
+            Rule::token_to(
+                r"(?m)\\",
+                STRING_ESCAPE,
+                NewState::Push(vec![r"string-escape"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"single-single-quoted-string",
+        vec![
+            Rule::token_to(r"(?m)'", STRING, NewState::Push(vec![r"end-of-string"])),
+            Rule::token(r"(?m)[^'\\\n]+", STRING),
+            Rule::token_to(r"(?m)\\", STRING, NewState::Push(vec![r"string-escape"])),
+        ],
+    );
+    m.insert(
+        r"string-escape",
+        vec![
+            Rule::token_to(
+                r"(?m)(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})",
+                STRING_ESCAPE,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(r"(?m).", STRING_ESCAPE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"end-of-string",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)(@)([a-zA-Z]+(?:-[a-zA-Z0-9]+)*)",
+                vec![Some(OPERATOR), Some(NAME_FUNCTION)],
+                NewState::Pop(2),
+            ),
+            Rule::token_to(r"(?m)\^\^", OPERATOR, NewState::Pop(2)),
+            Rule::default(NewState::Pop(2)),
+        ],
+    );
     Table(m)
 }
 

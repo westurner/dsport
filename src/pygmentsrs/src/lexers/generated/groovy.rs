@@ -25,10 +25,17 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token_to(r"(?ms)#!(.*?)$", COMMENT_PREPROC, NewState::Push(vec![r"base"])),
-        Rule::default(NewState::Push(vec![r"base"])),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token_to(
+                r"(?ms)#!(.*?)$",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"base"]),
+            ),
+            Rule::default(NewState::Push(vec![r"base"])),
+        ],
+    );
     m.insert(r"base", vec![
         Rule::token(r"(?ms)[^\S\n]+", WHITESPACE),
         Rule::bygroups(r"(?ms)(//.*?)(\n)", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)]),
@@ -58,12 +65,22 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)[0-9]+L?", NUMBER_INTEGER),
         Rule::token(r"(?ms)\n", WHITESPACE),
     ]);
-    m.insert(r"class", vec![
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"import", vec![
-        Rule::token_to(r"(?ms)[\w.]+\*?", NAME_NAMESPACE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"class",
+        vec![Rule::token_to(
+            r"(?ms)[a-zA-Z_]\w*",
+            NAME_CLASS,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"import",
+        vec![Rule::token_to(
+            r"(?ms)[\w.]+\*?",
+            NAME_NAMESPACE,
+            NewState::Pop(1),
+        )],
+    );
     Table(m)
 }
 

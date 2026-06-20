@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use jinja2rs::environment::Environment;
 
 /// Compile a simple template
@@ -45,7 +45,10 @@ fn compile_benchmarks(c: &mut Criterion) {
     group.bench_function("simple", |b| {
         let env = Environment::new();
         b.iter(|| {
-            black_box(env.render_str(black_box(simple_template()), black_box(&serde_json::json!({}))))
+            black_box(env.render_str(
+                black_box(simple_template()),
+                black_box(&serde_json::json!({})),
+            ))
         });
     });
 
@@ -53,12 +56,10 @@ fn compile_benchmarks(c: &mut Criterion) {
     group.bench_function("medium", |b| {
         let env = Environment::new();
         b.iter(|| {
-            black_box(
-                env.render_str(
-                    black_box(medium_template()),
-                    black_box(&serde_json::json!({"items": []})),
-                ),
-            )
+            black_box(env.render_str(
+                black_box(medium_template()),
+                black_box(&serde_json::json!({"items": []})),
+            ))
         });
     });
 
@@ -66,12 +67,10 @@ fn compile_benchmarks(c: &mut Criterion) {
     group.bench_function("with_filters", |b| {
         let env = Environment::new();
         b.iter(|| {
-            black_box(
-                env.render_str(
-                    black_box(filters_template()),
-                    black_box(&serde_json::json!({"text": "hello"})),
-                ),
-            )
+            black_box(env.render_str(
+                black_box(filters_template()),
+                black_box(&serde_json::json!({"text": "hello"})),
+            ))
         });
     });
 
@@ -79,12 +78,10 @@ fn compile_benchmarks(c: &mut Criterion) {
     group.bench_function("with_macros", |b| {
         let env = Environment::new();
         b.iter(|| {
-            black_box(
-                env.render_str(
-                    black_box(with_macros_template()),
-                    black_box(&serde_json::json!({"items": []})),
-                ),
-            )
+            black_box(env.render_str(
+                black_box(with_macros_template()),
+                black_box(&serde_json::json!({"items": []})),
+            ))
         });
     });
 
@@ -112,12 +109,10 @@ fn compile_complex_templates(c: &mut Criterion) {
                 }
 
                 b.iter(|| {
-                    black_box(
-                        env.render_str(
-                            black_box(template.as_str()),
-                            black_box(&serde_json::json!({"value": "test"})),
-                        ),
-                    )
+                    black_box(env.render_str(
+                        black_box(template.as_str()),
+                        black_box(&serde_json::json!({"value": "test"})),
+                    ))
                 });
             },
         );

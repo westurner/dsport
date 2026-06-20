@@ -25,20 +25,29 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"escape-sequence", vec![
-        Rule::token(r#"(?m)\\[\\"\'ntr}]"#, STRING_ESCAPE),
-        Rule::token(r"(?m)\\[0-9]{3}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
-    ]);
-    m.insert(r"comments", vec![
-        Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
-        Rule::token(r"(?m)//.*?$", COMMENT),
-    ]);
-    m.insert(r"comments-and-spaces", vec![
-        Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
-        Rule::token(r"(?m)//.*?$", COMMENT),
-        Rule::token(r"(?m)\s+", TEXT),
-    ]);
+    m.insert(
+        r"escape-sequence",
+        vec![
+            Rule::token(r#"(?m)\\[\\"\'ntr}]"#, STRING_ESCAPE),
+            Rule::token(r"(?m)\\[0-9]{3}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
+        ],
+    );
+    m.insert(
+        r"comments",
+        vec![
+            Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
+            Rule::token(r"(?m)//.*?$", COMMENT),
+        ],
+    );
+    m.insert(
+        r"comments-and-spaces",
+        vec![
+            Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
+            Rule::token(r"(?m)//.*?$", COMMENT),
+            Rule::token(r"(?m)\s+", TEXT),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
         Rule::token(r"(?m)//.*?$", COMMENT),
@@ -70,125 +79,258 @@ fn build_table() -> Table {
         Rule::token(r"(?m)#(?=\{)", STRING_SINGLE),
         Rule::token(r"(?m)(([a-zA-Z_]\w*)|(`[^`]*`))", TEXT),
     ]);
-    m.insert(r"type", vec![
-        Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
-        Rule::token(r"(?m)//.*?$", COMMENT),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r"(?m)->", KEYWORD_TYPE),
-        Rule::default(NewState::Push(vec![r"#pop", r"type-lhs-1", r"type-with-slash"])),
-    ]);
-    m.insert(r"type-1", vec![
-        Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
-        Rule::token(r"(?m)//.*?$", COMMENT),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token_to(r"(?m)\(", KEYWORD_TYPE, NewState::Push(vec![r"#pop", r"type-tuple"])),
-        Rule::token_to(r"(?m)~?\{", KEYWORD_TYPE, NewState::Push(vec![r"#pop", r"type-record"])),
-        Rule::token_to(r"(?m)(([a-zA-Z_]\w*)|(`[^`]*`))\(", KEYWORD_TYPE, NewState::Push(vec![r"#pop", r"type-tuple"])),
-        Rule::token_to(r"(?m)(([a-zA-Z_]\w*)|(`[^`]*`))", KEYWORD_TYPE, NewState::Pop(1)),
-        Rule::token(r"(?m)'(([a-zA-Z_]\w*)|(`[^`]*`))", KEYWORD_TYPE),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"type-with-slash", vec![
-        Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
-        Rule::token(r"(?m)//.*?$", COMMENT),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::default(NewState::Push(vec![r"#pop", r"slash-type-1", r"type-1"])),
-    ]);
-    m.insert(r"slash-type-1", vec![
-        Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
-        Rule::token(r"(?m)//.*?$", COMMENT),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token_to(r"(?m)/", KEYWORD_TYPE, NewState::Push(vec![r"#pop", r"type-1"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"type-lhs-1", vec![
-        Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
-        Rule::token(r"(?m)//.*?$", COMMENT),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token_to(r"(?m)->", KEYWORD_TYPE, NewState::Push(vec![r"#pop", r"type"])),
-        Rule::token_to(r"(?m)(?=,)", KEYWORD_TYPE, NewState::Push(vec![r"#pop", r"type-arrow"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"type-arrow", vec![
-        Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
-        Rule::token(r"(?m)//.*?$", COMMENT),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token_to(r"(?m),(?=[^:]*?->)", KEYWORD_TYPE, NewState::Push(vec![r"type-with-slash"])),
-        Rule::token_to(r"(?m)->", KEYWORD_TYPE, NewState::Push(vec![r"#pop", r"type"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"type-tuple", vec![
-        Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
-        Rule::token(r"(?m)//.*?$", COMMENT),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r"(?m)[^()/*]+", KEYWORD_TYPE),
-        Rule::token(r"(?m)[/*]", KEYWORD_TYPE),
-        Rule::token_to(r"(?m)\(", KEYWORD_TYPE, NewState::PushSame),
-        Rule::token_to(r"(?m)\)", KEYWORD_TYPE, NewState::Pop(1)),
-    ]);
-    m.insert(r"type-record", vec![
-        Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
-        Rule::token(r"(?m)//.*?$", COMMENT),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r"(?m)[^{}/*]+", KEYWORD_TYPE),
-        Rule::token(r"(?m)[/*]", KEYWORD_TYPE),
-        Rule::token_to(r"(?m)\{", KEYWORD_TYPE, NewState::PushSame),
-        Rule::token_to(r"(?m)\}", KEYWORD_TYPE, NewState::Pop(1)),
-    ]);
-    m.insert(r"nested-comment", vec![
-        Rule::token(r"(?m)[^/*]+", COMMENT),
-        Rule::token_to(r"(?m)/\*", COMMENT, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT, NewState::Pop(1)),
-        Rule::token(r"(?m)[/*]", COMMENT),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^\\"{]+"#, STRING_DOUBLE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\{", OPERATOR, NewState::Push(vec![r"root"])),
-        Rule::token(r#"(?m)\\[\\"\'ntr}]"#, STRING_ESCAPE),
-        Rule::token(r"(?m)\\[0-9]{3}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
-    ]);
-    m.insert(r"single-string", vec![
-        Rule::token(r"(?m)[^\\\'{]+", STRING_DOUBLE),
-        Rule::token_to(r"(?m)\'", STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\{", OPERATOR, NewState::Push(vec![r"root"])),
-        Rule::token(r#"(?m)\\[\\"\'ntr}]"#, STRING_ESCAPE),
-        Rule::token(r"(?m)\\[0-9]{3}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
-    ]);
-    m.insert(r"html-open-tag", vec![
-        Rule::token_to(r"(?m)[\w\-:]+", STRING_SINGLE, NewState::Push(vec![r"#pop", r"html-attr"])),
-        Rule::token_to(r"(?m)>", STRING_SINGLE, NewState::Push(vec![r"#pop", r"html-content"])),
-    ]);
-    m.insert(r"html-end-tag", vec![
-        Rule::token_to(r"(?m)[\w\-:]*>", STRING_SINGLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"html-attr", vec![
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token_to(r"(?m)[\w\-:]+=", STRING_SINGLE, NewState::Push(vec![r"html-attr-value"])),
-        Rule::token_to(r"(?m)/>", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)>", STRING_SINGLE, NewState::Push(vec![r"#pop", r"html-content"])),
-    ]);
-    m.insert(r"html-attr-value", vec![
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Push(vec![r"#pop", r"single-string"])),
-        Rule::token_to(r#"(?m)""#, STRING_SINGLE, NewState::Push(vec![r"#pop", r"string"])),
-        Rule::token_to(r"(?m)#(([a-zA-Z_]\w*)|(`[^`]*`))", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)#(?=\{)", STRING_SINGLE, NewState::Push(vec![r"#pop", r"root"])),
-        Rule::token_to(r#"(?m)[^"\'{`=<>]+"#, STRING_SINGLE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\{", OPERATOR, NewState::Push(vec![r"#pop", r"root"])),
-    ]);
-    m.insert(r"html-content", vec![
-        Rule::token_to(r"(?m)<!--", COMMENT, NewState::Push(vec![r"html-comment"])),
-        Rule::token_to(r"(?m)</", STRING_SINGLE, NewState::Push(vec![r"#pop", r"html-end-tag"])),
-        Rule::token_to(r"(?m)<", STRING_SINGLE, NewState::Push(vec![r"html-open-tag"])),
-        Rule::token_to(r"(?m)\{", OPERATOR, NewState::Push(vec![r"root"])),
-        Rule::token(r"(?m)[^<{]+", STRING_SINGLE),
-    ]);
-    m.insert(r"html-comment", vec![
-        Rule::token_to(r"(?m)-->", COMMENT, NewState::Pop(1)),
-        Rule::token(r"(?m)[^\-]+|-", COMMENT),
-    ]);
+    m.insert(
+        r"type",
+        vec![
+            Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
+            Rule::token(r"(?m)//.*?$", COMMENT),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r"(?m)->", KEYWORD_TYPE),
+            Rule::default(NewState::Push(vec![
+                r"#pop",
+                r"type-lhs-1",
+                r"type-with-slash",
+            ])),
+        ],
+    );
+    m.insert(
+        r"type-1",
+        vec![
+            Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
+            Rule::token(r"(?m)//.*?$", COMMENT),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token_to(
+                r"(?m)\(",
+                KEYWORD_TYPE,
+                NewState::Push(vec![r"#pop", r"type-tuple"]),
+            ),
+            Rule::token_to(
+                r"(?m)~?\{",
+                KEYWORD_TYPE,
+                NewState::Push(vec![r"#pop", r"type-record"]),
+            ),
+            Rule::token_to(
+                r"(?m)(([a-zA-Z_]\w*)|(`[^`]*`))\(",
+                KEYWORD_TYPE,
+                NewState::Push(vec![r"#pop", r"type-tuple"]),
+            ),
+            Rule::token_to(
+                r"(?m)(([a-zA-Z_]\w*)|(`[^`]*`))",
+                KEYWORD_TYPE,
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)'(([a-zA-Z_]\w*)|(`[^`]*`))", KEYWORD_TYPE),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"type-with-slash",
+        vec![
+            Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
+            Rule::token(r"(?m)//.*?$", COMMENT),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::default(NewState::Push(vec![r"#pop", r"slash-type-1", r"type-1"])),
+        ],
+    );
+    m.insert(
+        r"slash-type-1",
+        vec![
+            Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
+            Rule::token(r"(?m)//.*?$", COMMENT),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token_to(
+                r"(?m)/",
+                KEYWORD_TYPE,
+                NewState::Push(vec![r"#pop", r"type-1"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"type-lhs-1",
+        vec![
+            Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
+            Rule::token(r"(?m)//.*?$", COMMENT),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token_to(
+                r"(?m)->",
+                KEYWORD_TYPE,
+                NewState::Push(vec![r"#pop", r"type"]),
+            ),
+            Rule::token_to(
+                r"(?m)(?=,)",
+                KEYWORD_TYPE,
+                NewState::Push(vec![r"#pop", r"type-arrow"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"type-arrow",
+        vec![
+            Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
+            Rule::token(r"(?m)//.*?$", COMMENT),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token_to(
+                r"(?m),(?=[^:]*?->)",
+                KEYWORD_TYPE,
+                NewState::Push(vec![r"type-with-slash"]),
+            ),
+            Rule::token_to(
+                r"(?m)->",
+                KEYWORD_TYPE,
+                NewState::Push(vec![r"#pop", r"type"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"type-tuple",
+        vec![
+            Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
+            Rule::token(r"(?m)//.*?$", COMMENT),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r"(?m)[^()/*]+", KEYWORD_TYPE),
+            Rule::token(r"(?m)[/*]", KEYWORD_TYPE),
+            Rule::token_to(r"(?m)\(", KEYWORD_TYPE, NewState::PushSame),
+            Rule::token_to(r"(?m)\)", KEYWORD_TYPE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"type-record",
+        vec![
+            Rule::token_to(r"(?m)/\*", COMMENT, NewState::Push(vec![r"nested-comment"])),
+            Rule::token(r"(?m)//.*?$", COMMENT),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r"(?m)[^{}/*]+", KEYWORD_TYPE),
+            Rule::token(r"(?m)[/*]", KEYWORD_TYPE),
+            Rule::token_to(r"(?m)\{", KEYWORD_TYPE, NewState::PushSame),
+            Rule::token_to(r"(?m)\}", KEYWORD_TYPE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"nested-comment",
+        vec![
+            Rule::token(r"(?m)[^/*]+", COMMENT),
+            Rule::token_to(r"(?m)/\*", COMMENT, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT, NewState::Pop(1)),
+            Rule::token(r"(?m)[/*]", COMMENT),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^\\"{]+"#, STRING_DOUBLE),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\{", OPERATOR, NewState::Push(vec![r"root"])),
+            Rule::token(r#"(?m)\\[\\"\'ntr}]"#, STRING_ESCAPE),
+            Rule::token(r"(?m)\\[0-9]{3}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
+        ],
+    );
+    m.insert(
+        r"single-string",
+        vec![
+            Rule::token(r"(?m)[^\\\'{]+", STRING_DOUBLE),
+            Rule::token_to(r"(?m)\'", STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\{", OPERATOR, NewState::Push(vec![r"root"])),
+            Rule::token(r#"(?m)\\[\\"\'ntr}]"#, STRING_ESCAPE),
+            Rule::token(r"(?m)\\[0-9]{3}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
+        ],
+    );
+    m.insert(
+        r"html-open-tag",
+        vec![
+            Rule::token_to(
+                r"(?m)[\w\-:]+",
+                STRING_SINGLE,
+                NewState::Push(vec![r"#pop", r"html-attr"]),
+            ),
+            Rule::token_to(
+                r"(?m)>",
+                STRING_SINGLE,
+                NewState::Push(vec![r"#pop", r"html-content"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"html-end-tag",
+        vec![Rule::token_to(
+            r"(?m)[\w\-:]*>",
+            STRING_SINGLE,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"html-attr",
+        vec![
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token_to(
+                r"(?m)[\w\-:]+=",
+                STRING_SINGLE,
+                NewState::Push(vec![r"html-attr-value"]),
+            ),
+            Rule::token_to(r"(?m)/>", STRING_SINGLE, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)>",
+                STRING_SINGLE,
+                NewState::Push(vec![r"#pop", r"html-content"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"html-attr-value",
+        vec![
+            Rule::token_to(
+                r"(?m)'",
+                STRING_SINGLE,
+                NewState::Push(vec![r"#pop", r"single-string"]),
+            ),
+            Rule::token_to(
+                r#"(?m)""#,
+                STRING_SINGLE,
+                NewState::Push(vec![r"#pop", r"string"]),
+            ),
+            Rule::token_to(
+                r"(?m)#(([a-zA-Z_]\w*)|(`[^`]*`))",
+                STRING_SINGLE,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)#(?=\{)",
+                STRING_SINGLE,
+                NewState::Push(vec![r"#pop", r"root"]),
+            ),
+            Rule::token_to(r#"(?m)[^"\'{`=<>]+"#, STRING_SINGLE, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\{", OPERATOR, NewState::Push(vec![r"#pop", r"root"])),
+        ],
+    );
+    m.insert(
+        r"html-content",
+        vec![
+            Rule::token_to(r"(?m)<!--", COMMENT, NewState::Push(vec![r"html-comment"])),
+            Rule::token_to(
+                r"(?m)</",
+                STRING_SINGLE,
+                NewState::Push(vec![r"#pop", r"html-end-tag"]),
+            ),
+            Rule::token_to(
+                r"(?m)<",
+                STRING_SINGLE,
+                NewState::Push(vec![r"html-open-tag"]),
+            ),
+            Rule::token_to(r"(?m)\{", OPERATOR, NewState::Push(vec![r"root"])),
+            Rule::token(r"(?m)[^<{]+", STRING_SINGLE),
+        ],
+    );
+    m.insert(
+        r"html-comment",
+        vec![
+            Rule::token_to(r"(?m)-->", COMMENT, NewState::Pop(1)),
+            Rule::token(r"(?m)[^\-]+|-", COMMENT),
+        ],
+    );
     Table(m)
 }
 

@@ -55,12 +55,15 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)[-+]?(\d+\.\d*|\d*\.\d+)(E[-+][0-9]+)?", NUMBER_FLOAT),
         Rule::token(r"(?ms)[-+]?\d+", NUMBER_INTEGER),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token_to(r"(?ms)\(\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?ms)\*\)", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?ms)[^*(]+", COMMENT_MULTILINE),
-        Rule::token(r"(?ms)[*(]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token_to(r"(?ms)\(\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?ms)\*\)", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?ms)[^*(]+", COMMENT_MULTILINE),
+            Rule::token(r"(?ms)[*(]", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

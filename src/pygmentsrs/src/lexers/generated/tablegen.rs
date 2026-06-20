@@ -44,25 +44,37 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)\[\{", PUNCTUATION, NewState::Push(vec![r"codeblock"])),
         Rule::token(r"(?m)[-+\[\]{}()<>\.,;:=?#]+", PUNCTUATION),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"strings", vec![
-        Rule::token(r#"(?m)\\[\\\'"tn]"#, STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-    ]);
-    m.insert(r"dqs", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\[\\\'"tn]"#, STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-    ]);
-    m.insert(r"codeblock", vec![
-        Rule::token_to(r"(?m)\}\]", TEXT, NewState::Pop(1)),
-        Rule::using_lexer_to(r"(?m)([^}]+|\}[^\]])*", "cpp", None, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"strings",
+        vec![
+            Rule::token(r#"(?m)\\[\\\'"tn]"#, STRING_ESCAPE),
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"dqs",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)\\[\\\'"tn]"#, STRING_ESCAPE),
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"codeblock",
+        vec![
+            Rule::token_to(r"(?m)\}\]", TEXT, NewState::Pop(1)),
+            Rule::using_lexer_to(r"(?m)([^}]+|\}[^\]])*", "cpp", None, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

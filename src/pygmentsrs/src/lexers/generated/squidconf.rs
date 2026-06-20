@@ -38,11 +38,14 @@ fn build_table() -> Table {
         Rule::token(r"(?im)(?:\b\d+\b(?:-\b\d+|%)?)", NUMBER),
         Rule::token(r"(?im)\S+", TEXT),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token_to(r"(?im)\s*TAG:.*", STRING_ESCAPE, NewState::Pop(1)),
-        Rule::token_to(r"(?im).+", COMMENT, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token_to(r"(?im)\s*TAG:.*", STRING_ESCAPE, NewState::Pop(1)),
+            Rule::token_to(r"(?im).+", COMMENT, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

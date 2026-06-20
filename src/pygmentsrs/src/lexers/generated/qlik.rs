@@ -25,23 +25,47 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"comment", vec![
-        Rule::token_to(r"(?im)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?im)[^*]+", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"numerics", vec![
-        Rule::token(r"(?im)\b\d+\.\d+(e\d+)?[fd]?\b", NUMBER_FLOAT),
-        Rule::token(r"(?im)\b\d+\b", NUMBER_INTEGER),
-    ]);
-    m.insert(r"interp", vec![
-        Rule::bygroups(r"(?im)(\$\()(\w+)(\))", vec![Some(STRING_INTERPOL), Some(NAME_VARIABLE), Some(STRING_INTERPOL)]),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r"(?im)'", STRING, NewState::Pop(1)),
-        Rule::bygroups(r"(?im)(\$\()(\w+)(\))", vec![Some(STRING_INTERPOL), Some(NAME_VARIABLE), Some(STRING_INTERPOL)]),
-        Rule::token(r"(?im)[^'$]+", STRING),
-        Rule::token(r"(?im)\$", STRING),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token_to(r"(?im)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?im)[^*]+", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"numerics",
+        vec![
+            Rule::token(r"(?im)\b\d+\.\d+(e\d+)?[fd]?\b", NUMBER_FLOAT),
+            Rule::token(r"(?im)\b\d+\b", NUMBER_INTEGER),
+        ],
+    );
+    m.insert(
+        r"interp",
+        vec![Rule::bygroups(
+            r"(?im)(\$\()(\w+)(\))",
+            vec![
+                Some(STRING_INTERPOL),
+                Some(NAME_VARIABLE),
+                Some(STRING_INTERPOL),
+            ],
+        )],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r"(?im)'", STRING, NewState::Pop(1)),
+            Rule::bygroups(
+                r"(?im)(\$\()(\w+)(\))",
+                vec![
+                    Some(STRING_INTERPOL),
+                    Some(NAME_VARIABLE),
+                    Some(STRING_INTERPOL),
+                ],
+            ),
+            Rule::token(r"(?im)[^'$]+", STRING),
+            Rule::token(r"(?im)\$", STRING),
+        ],
+    );
     m.insert(r"assignment", vec![
         Rule::token_to(r"(?im);", PUNCTUATION, NewState::Pop(1)),
         Rule::token(r"(?im)\s+", WHITESPACE),
@@ -85,18 +109,38 @@ fn build_table() -> Table {
         Rule::token(r"(?im)\b\w+\b", TEXT),
         Rule::token(r"(?im)[,;.()\\/]", PUNCTUATION),
     ]);
-    m.insert(r"field_name_quote", vec![
-        Rule::token_to(r#"(?im)""#, STRING_SYMBOL, NewState::Pop(1)),
-        Rule::bygroups(r"(?im)(\$\()(\w+)(\))", vec![Some(STRING_INTERPOL), Some(NAME_VARIABLE), Some(STRING_INTERPOL)]),
-        Rule::token(r#"(?im)[^\"$]+"#, STRING_SYMBOL),
-        Rule::token(r"(?im)\$", STRING_SYMBOL),
-    ]);
-    m.insert(r"field_name_bracket", vec![
-        Rule::token_to(r"(?im)\]", STRING_SYMBOL, NewState::Pop(1)),
-        Rule::bygroups(r"(?im)(\$\()(\w+)(\))", vec![Some(STRING_INTERPOL), Some(NAME_VARIABLE), Some(STRING_INTERPOL)]),
-        Rule::token(r"(?im)[^\]$]+", STRING_SYMBOL),
-        Rule::token(r"(?im)\$", STRING_SYMBOL),
-    ]);
+    m.insert(
+        r"field_name_quote",
+        vec![
+            Rule::token_to(r#"(?im)""#, STRING_SYMBOL, NewState::Pop(1)),
+            Rule::bygroups(
+                r"(?im)(\$\()(\w+)(\))",
+                vec![
+                    Some(STRING_INTERPOL),
+                    Some(NAME_VARIABLE),
+                    Some(STRING_INTERPOL),
+                ],
+            ),
+            Rule::token(r#"(?im)[^\"$]+"#, STRING_SYMBOL),
+            Rule::token(r"(?im)\$", STRING_SYMBOL),
+        ],
+    );
+    m.insert(
+        r"field_name_bracket",
+        vec![
+            Rule::token_to(r"(?im)\]", STRING_SYMBOL, NewState::Pop(1)),
+            Rule::bygroups(
+                r"(?im)(\$\()(\w+)(\))",
+                vec![
+                    Some(STRING_INTERPOL),
+                    Some(NAME_VARIABLE),
+                    Some(STRING_INTERPOL),
+                ],
+            ),
+            Rule::token(r"(?im)[^\]$]+", STRING_SYMBOL),
+            Rule::token(r"(?im)\$", STRING_SYMBOL),
+        ],
+    );
     m.insert(r"function", vec![
         Rule::token_to(r"(?im)\)", PUNCTUATION, NewState::Pop(1)),
         Rule::token(r"(?im)\s+", WHITESPACE),

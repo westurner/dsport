@@ -48,17 +48,23 @@ fn build_table() -> Table {
         Rule::bygroups(r"(?m)('[01 ]*')(B)\b", vec![Some(STRING), Some(STRING_AFFIX)]),
         Rule::bygroups(r"(?m)('[0-9A-F ]*')(H)\b", vec![Some(STRING), Some(STRING_AFFIX)]),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)"""#, STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)[^"]"#, STRING),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)"""#, STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)[^"]"#, STRING),
+        ],
+    );
     Table(m)
 }
 

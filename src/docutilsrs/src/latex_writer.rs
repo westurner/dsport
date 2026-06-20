@@ -16,7 +16,11 @@ const SECTION_CMDS: &[&str] = &[
     "\\subparagraph",
 ];
 
-pub fn latex(tree: &Doctree, _options: &crate::cli::LatexOptions, _common: &crate::cli::CommonOptions) -> String {
+pub fn latex(
+    tree: &Doctree,
+    _options: &crate::cli::LatexOptions,
+    _common: &crate::cli::CommonOptions,
+) -> String {
     let mut out = String::new();
     out.push_str("\\documentclass{article}\n");
     out.push_str("\\usepackage[utf8]{inputenc}\n");

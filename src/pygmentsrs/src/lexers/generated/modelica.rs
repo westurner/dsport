@@ -25,11 +25,14 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?ms)[\s\ufeff]+", TEXT),
-        Rule::token(r"(?ms)//[^\n]*\n?", COMMENT_SINGLE),
-        Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::token(r"(?ms)[\s\ufeff]+", TEXT),
+            Rule::token(r"(?ms)//[^\n]*\n?", COMMENT_SINGLE),
+            Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?ms)[\s\ufeff]+", TEXT),
         Rule::token(r"(?ms)//[^\n]*\n?", COMMENT_SINGLE),
@@ -47,28 +50,53 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)within\b", KEYWORD_RESERVED, NewState::Push(vec![r"package-prefix"])),
         Rule::token(r"(?ms)(?:'(?:[^\\']|\\.)+'|[a-zA-Z_]\w*)", NAME),
     ]);
-    m.insert(r"class", vec![
-        Rule::token(r"(?ms)[\s\ufeff]+", TEXT),
-        Rule::token(r"(?ms)//[^\n]*\n?", COMMENT_SINGLE),
-        Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
-        Rule::token(r"(?ms)(function|record)\b", KEYWORD_RESERVED),
-        Rule::token_to(r"(?ms)(if|for|when|while)\b", KEYWORD_RESERVED, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)(?:'(?:[^\\']|\\.)+'|[a-zA-Z_]\w*)", NAME_CLASS, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"package-prefix", vec![
-        Rule::token(r"(?ms)[\s\ufeff]+", TEXT),
-        Rule::token(r"(?ms)//[^\n]*\n?", COMMENT_SINGLE),
-        Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
-        Rule::token_to(r"(?ms)(?:'(?:[^\\']|\\.)+'|[a-zA-Z_]\w*)", NAME_NAMESPACE, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?ms)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r#"(?ms)\\[\'"?\\abfnrtv]"#, STRING_ESCAPE),
-        Rule::using_lexer(r#"(?ms)(?i)<\s*html\s*>([^\\"]|\\.)+?(<\s*/\s*html\s*>|(?="))"#, "html", None),
-        Rule::token(r#"(?ms)<|\\?[^"\\<]+"#, STRING_DOUBLE),
-    ]);
+    m.insert(
+        r"class",
+        vec![
+            Rule::token(r"(?ms)[\s\ufeff]+", TEXT),
+            Rule::token(r"(?ms)//[^\n]*\n?", COMMENT_SINGLE),
+            Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
+            Rule::token(r"(?ms)(function|record)\b", KEYWORD_RESERVED),
+            Rule::token_to(
+                r"(?ms)(if|for|when|while)\b",
+                KEYWORD_RESERVED,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)(?:'(?:[^\\']|\\.)+'|[a-zA-Z_]\w*)",
+                NAME_CLASS,
+                NewState::Pop(1),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"package-prefix",
+        vec![
+            Rule::token(r"(?ms)[\s\ufeff]+", TEXT),
+            Rule::token(r"(?ms)//[^\n]*\n?", COMMENT_SINGLE),
+            Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
+            Rule::token_to(
+                r"(?ms)(?:'(?:[^\\']|\\.)+'|[a-zA-Z_]\w*)",
+                NAME_NAMESPACE,
+                NewState::Pop(1),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?ms)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(r#"(?ms)\\[\'"?\\abfnrtv]"#, STRING_ESCAPE),
+            Rule::using_lexer(
+                r#"(?ms)(?i)<\s*html\s*>([^\\"]|\\.)+?(<\s*/\s*html\s*>|(?="))"#,
+                "html",
+                None,
+            ),
+            Rule::token(r#"(?ms)<|\\?[^"\\<]+"#, STRING_DOUBLE),
+        ],
+    );
     Table(m)
 }
 

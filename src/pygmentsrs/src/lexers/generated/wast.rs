@@ -43,32 +43,53 @@ fn build_table() -> Table {
         Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"string"])),
         Rule::token(r"(?m)\s+", TEXT),
     ]);
-    m.insert(r"nesting_comment", vec![
-        Rule::token_to(r"(?m)\(;", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m);\)", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[^;(]+", COMMENT_MULTILINE),
-        Rule::token(r"(?m)[;(]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r"(?m)\\[\dA-Fa-f][\dA-Fa-f]", STRING_ESCAPE),
-        Rule::token(r"(?m)\\t", STRING_ESCAPE),
-        Rule::token(r"(?m)\\n", STRING_ESCAPE),
-        Rule::token(r"(?m)\\r", STRING_ESCAPE),
-        Rule::token(r#"(?m)\\""#, STRING_ESCAPE),
-        Rule::token(r"(?m)\\'", STRING_ESCAPE),
-        Rule::token(r"(?m)\\u\{[\dA-Fa-f](_?[\dA-Fa-f])*\}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\\\", STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r#"(?m)[^"\\]+"#, STRING_DOUBLE),
-    ]);
-    m.insert(r"arguments", vec![
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::bygroups(r"(?m)(offset)(=)(0x[\dA-Fa-f](_?[\dA-Fa-f])*)", vec![Some(KEYWORD), Some(OPERATOR), Some(NUMBER_HEX)]),
-        Rule::bygroups(r"(?m)(offset)(=)(\d(_?\d)*)", vec![Some(KEYWORD), Some(OPERATOR), Some(NUMBER_INTEGER)]),
-        Rule::bygroups(r"(?m)(align)(=)(0x[\dA-Fa-f](_?[\dA-Fa-f])*)", vec![Some(KEYWORD), Some(OPERATOR), Some(NUMBER_HEX)]),
-        Rule::bygroups(r"(?m)(align)(=)(\d(_?\d)*)", vec![Some(KEYWORD), Some(OPERATOR), Some(NUMBER_INTEGER)]),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"nesting_comment",
+        vec![
+            Rule::token_to(r"(?m)\(;", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m);\)", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[^;(]+", COMMENT_MULTILINE),
+            Rule::token(r"(?m)[;(]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r"(?m)\\[\dA-Fa-f][\dA-Fa-f]", STRING_ESCAPE),
+            Rule::token(r"(?m)\\t", STRING_ESCAPE),
+            Rule::token(r"(?m)\\n", STRING_ESCAPE),
+            Rule::token(r"(?m)\\r", STRING_ESCAPE),
+            Rule::token(r#"(?m)\\""#, STRING_ESCAPE),
+            Rule::token(r"(?m)\\'", STRING_ESCAPE),
+            Rule::token(r"(?m)\\u\{[\dA-Fa-f](_?[\dA-Fa-f])*\}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\\\", STRING_ESCAPE),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(r#"(?m)[^"\\]+"#, STRING_DOUBLE),
+        ],
+    );
+    m.insert(
+        r"arguments",
+        vec![
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::bygroups(
+                r"(?m)(offset)(=)(0x[\dA-Fa-f](_?[\dA-Fa-f])*)",
+                vec![Some(KEYWORD), Some(OPERATOR), Some(NUMBER_HEX)],
+            ),
+            Rule::bygroups(
+                r"(?m)(offset)(=)(\d(_?\d)*)",
+                vec![Some(KEYWORD), Some(OPERATOR), Some(NUMBER_INTEGER)],
+            ),
+            Rule::bygroups(
+                r"(?m)(align)(=)(0x[\dA-Fa-f](_?[\dA-Fa-f])*)",
+                vec![Some(KEYWORD), Some(OPERATOR), Some(NUMBER_HEX)],
+            ),
+            Rule::bygroups(
+                r"(?m)(align)(=)(\d(_?\d)*)",
+                vec![Some(KEYWORD), Some(OPERATOR), Some(NUMBER_INTEGER)],
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

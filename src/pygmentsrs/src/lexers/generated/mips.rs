@@ -41,11 +41,14 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\w+", TEXT),
         Rule::token(r"(?m).", TEXT),
     ]);
-    m.insert(r"string", vec![
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+        ],
+    );
     Table(m)
 }
 

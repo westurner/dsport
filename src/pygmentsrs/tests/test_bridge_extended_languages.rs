@@ -23,7 +23,9 @@ mod bridge_extended_language_tests {
     fn bridge_available() -> bool {
         use pyo3::prelude::*;
         Python::try_attach(|py| {
-            py.import("pygments").and_then(|_| py.import("pygments.lexers")).is_ok()
+            py.import("pygments")
+                .and_then(|_| py.import("pygments.lexers"))
+                .is_ok()
         })
         .unwrap_or(false)
     }
@@ -385,20 +387,20 @@ function onClick() {
         skip_if_needed!();
         // Test that aliases resolve correctly
         let aliases_map = vec![
-            ("python", "py"),       // python aliases
+            ("python", "py"), // python aliases
             ("python", "python3"),
-            ("javascript", "js"),   // javascript aliases
+            ("javascript", "js"), // javascript aliases
             ("javascript", "node"),
-            ("shell", "bash"),      // shell aliases
+            ("shell", "bash"), // shell aliases
             ("shell", "sh"),
         ];
 
         for (primary, alias) in aliases_map {
             let code = "x = 1";
-            
+
             let primary_result = bridge::lex(primary, code);
             let alias_result = bridge::lex(alias, code);
-            
+
             // Both should either succeed or both fail
             match (primary_result, alias_result) {
                 (Some(p_tokens), Some(a_tokens)) => {
@@ -432,13 +434,20 @@ function onClick() {
             let result = bridge::lex(lang, code);
             if let Some(tokens) = result {
                 assert!(!tokens.is_empty(), "{} tokens should be non-empty", lang);
-                
+
                 // Should contain string and function/method tokens
                 let has_string = tokens.iter().any(|(t, _)| t.contains("String"));
-                let has_name = tokens.iter().any(|(t, _)| t.contains("Name") || t.contains("Keyword"));
-                
-                eprintln!("{}: {} tokens, has_string={}, has_name={}", 
-                          lang, tokens.len(), has_string, has_name);
+                let has_name = tokens
+                    .iter()
+                    .any(|(t, _)| t.contains("Name") || t.contains("Keyword"));
+
+                eprintln!(
+                    "{}: {} tokens, has_string={}, has_name={}",
+                    lang,
+                    tokens.len(),
+                    has_string,
+                    has_name
+                );
             }
         }
     }

@@ -25,29 +25,78 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::bygroups(r"(?m)^(;.+\n)", vec![Some(COMMENT)]),
-        Rule::bygroups(r"(?m)^(#)([^#].+\n)", vec![Some(GENERIC_HEADING), Some(TEXT)]),
-        Rule::bygroups(r"(?m)^(#{2})(.+\n)", vec![Some(GENERIC_SUBHEADING), Some(TEXT)]),
-        Rule::bygroups_g(r"(?m)^(\s*)([*-])(\s)(.+\n)", vec![Some(GroupAction::Token(TEXT)), Some(GroupAction::Token(KEYWORD)), Some(GroupAction::Token(TEXT)), Some(GroupAction::UsingThis { state: Some(vec!["root", "inline"]) })]),
-        Rule::bygroups_g(r"(?m)^(\s*)(\.+\.)( .+\n)", vec![Some(GroupAction::Token(TEXT)), Some(GroupAction::Token(KEYWORD)), Some(GroupAction::UsingThis { state: Some(vec!["root", "inline"]) })]),
-        Rule::bygroups(r"(?m)^(\s*>\s)(.+\n)", vec![Some(KEYWORD), Some(GENERIC_EMPH)]),
-        Rule::bygroups(r"(?m)^(```\n)([\w\W]*?)(^```$)", vec![Some(STRING), Some(TEXT), Some(STRING)]),
-        Rule::token(r"(?m)\\.", TEXT),
-        Rule::bygroups(r"(?m)(\s)(_[^_]+_)(\W|\n)", vec![Some(TEXT), Some(GENERIC_EMPH), Some(TEXT)]),
-        Rule::bygroups(r"(?m)(\s)(\*[^*]+\*)(\W|\n)", vec![Some(TEXT), Some(GENERIC_STRONG), Some(TEXT)]),
-        Rule::token(r"(?m)`[^`]+`", STRING_BACKTICK),
-        Rule::token(r"(?m)[^\\\s]+", TEXT),
-        Rule::token(r"(?m).", TEXT),
-    ]);
-    m.insert(r"inline", vec![
-        Rule::token(r"(?m)\\.", TEXT),
-        Rule::bygroups(r"(?m)(\s)(_[^_]+_)(\W|\n)", vec![Some(TEXT), Some(GENERIC_EMPH), Some(TEXT)]),
-        Rule::bygroups(r"(?m)(\s)(\*[^*]+\*)(\W|\n)", vec![Some(TEXT), Some(GENERIC_STRONG), Some(TEXT)]),
-        Rule::token(r"(?m)`[^`]+`", STRING_BACKTICK),
-        Rule::token(r"(?m)[^\\\s]+", TEXT),
-        Rule::token(r"(?m).", TEXT),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::bygroups(r"(?m)^(;.+\n)", vec![Some(COMMENT)]),
+            Rule::bygroups(
+                r"(?m)^(#)([^#].+\n)",
+                vec![Some(GENERIC_HEADING), Some(TEXT)],
+            ),
+            Rule::bygroups(
+                r"(?m)^(#{2})(.+\n)",
+                vec![Some(GENERIC_SUBHEADING), Some(TEXT)],
+            ),
+            Rule::bygroups_g(
+                r"(?m)^(\s*)([*-])(\s)(.+\n)",
+                vec![
+                    Some(GroupAction::Token(TEXT)),
+                    Some(GroupAction::Token(KEYWORD)),
+                    Some(GroupAction::Token(TEXT)),
+                    Some(GroupAction::UsingThis {
+                        state: Some(vec!["root", "inline"]),
+                    }),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?m)^(\s*)(\.+\.)( .+\n)",
+                vec![
+                    Some(GroupAction::Token(TEXT)),
+                    Some(GroupAction::Token(KEYWORD)),
+                    Some(GroupAction::UsingThis {
+                        state: Some(vec!["root", "inline"]),
+                    }),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?m)^(\s*>\s)(.+\n)",
+                vec![Some(KEYWORD), Some(GENERIC_EMPH)],
+            ),
+            Rule::bygroups(
+                r"(?m)^(```\n)([\w\W]*?)(^```$)",
+                vec![Some(STRING), Some(TEXT), Some(STRING)],
+            ),
+            Rule::token(r"(?m)\\.", TEXT),
+            Rule::bygroups(
+                r"(?m)(\s)(_[^_]+_)(\W|\n)",
+                vec![Some(TEXT), Some(GENERIC_EMPH), Some(TEXT)],
+            ),
+            Rule::bygroups(
+                r"(?m)(\s)(\*[^*]+\*)(\W|\n)",
+                vec![Some(TEXT), Some(GENERIC_STRONG), Some(TEXT)],
+            ),
+            Rule::token(r"(?m)`[^`]+`", STRING_BACKTICK),
+            Rule::token(r"(?m)[^\\\s]+", TEXT),
+            Rule::token(r"(?m).", TEXT),
+        ],
+    );
+    m.insert(
+        r"inline",
+        vec![
+            Rule::token(r"(?m)\\.", TEXT),
+            Rule::bygroups(
+                r"(?m)(\s)(_[^_]+_)(\W|\n)",
+                vec![Some(TEXT), Some(GENERIC_EMPH), Some(TEXT)],
+            ),
+            Rule::bygroups(
+                r"(?m)(\s)(\*[^*]+\*)(\W|\n)",
+                vec![Some(TEXT), Some(GENERIC_STRONG), Some(TEXT)],
+            ),
+            Rule::token(r"(?m)`[^`]+`", STRING_BACKTICK),
+            Rule::token(r"(?m)[^\\\s]+", TEXT),
+            Rule::token(r"(?m).", TEXT),
+        ],
+    );
     Table(m)
 }
 

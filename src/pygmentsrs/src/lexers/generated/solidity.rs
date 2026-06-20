@@ -47,30 +47,48 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[~!%^&*+=|?:<>/-]", OPERATOR),
         Rule::token(r"(?m)[.;{}(),\[\]]", PUNCTUATION),
     ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)\n", WHITESPACE),
-    ]);
-    m.insert(r"comments", vec![
-        Rule::token(r"(?m)//(\n|[\w\W]*?[^\\]\n)", COMMENT_SINGLE),
-        Rule::token(r"(?m)/(\\\n)?[*][\w\W]*?[*](\\\n)?/", COMMENT_MULTILINE),
-        Rule::token(r"(?m)/(\\\n)?[*][\w\W]*", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"constants", vec![
-        Rule::token(r#"(?m)("(\\"|.)*?")"#, STRING_DOUBLE),
-        Rule::token(r"(?m)('(\\'|.)*?')", STRING_SINGLE),
-        Rule::token(r"(?m)\b0[xX][0-9a-fA-F]+\b", NUMBER_HEX),
-        Rule::token(r"(?m)\b\d+\b", TokenType::new(&["Literal", "Number", "Decimal"])),
-    ]);
-    m.insert(r"pragma", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)//(\n|[\w\W]*?[^\\]\n)", COMMENT_SINGLE),
-        Rule::token(r"(?m)/(\\\n)?[*][\w\W]*?[*](\\\n)?/", COMMENT_MULTILINE),
-        Rule::token(r"(?m)/(\\\n)?[*][\w\W]*", COMMENT_MULTILINE),
-        Rule::bygroups(r"(?m)(\^|>=|<)(\s*)(\d+\.\d+\.\d+)", vec![Some(OPERATOR), Some(WHITESPACE), Some(KEYWORD)]),
-        Rule::token_to(r"(?m);", PUNCTUATION, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)\n", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"comments",
+        vec![
+            Rule::token(r"(?m)//(\n|[\w\W]*?[^\\]\n)", COMMENT_SINGLE),
+            Rule::token(r"(?m)/(\\\n)?[*][\w\W]*?[*](\\\n)?/", COMMENT_MULTILINE),
+            Rule::token(r"(?m)/(\\\n)?[*][\w\W]*", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"constants",
+        vec![
+            Rule::token(r#"(?m)("(\\"|.)*?")"#, STRING_DOUBLE),
+            Rule::token(r"(?m)('(\\'|.)*?')", STRING_SINGLE),
+            Rule::token(r"(?m)\b0[xX][0-9a-fA-F]+\b", NUMBER_HEX),
+            Rule::token(
+                r"(?m)\b\d+\b",
+                TokenType::new(&["Literal", "Number", "Decimal"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"pragma",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)//(\n|[\w\W]*?[^\\]\n)", COMMENT_SINGLE),
+            Rule::token(r"(?m)/(\\\n)?[*][\w\W]*?[*](\\\n)?/", COMMENT_MULTILINE),
+            Rule::token(r"(?m)/(\\\n)?[*][\w\W]*", COMMENT_MULTILINE),
+            Rule::bygroups(
+                r"(?m)(\^|>=|<)(\s*)(\d+\.\d+\.\d+)",
+                vec![Some(OPERATOR), Some(WHITESPACE), Some(KEYWORD)],
+            ),
+            Rule::token_to(r"(?m);", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

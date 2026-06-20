@@ -39,19 +39,34 @@ fn build_table() -> Table {
         Rule::token(r"(?m)/\*(?:.|\n)*?\*/", COMMENT_MULTILINE),
         Rule::token(r"(?m)[ \t\r\n]+", WHITESPACE),
     ]);
-    m.insert(r"comments", vec![
-        Rule::token(r"(?m)(?://|#).*?\n", COMMENT_SINGLE),
-        Rule::token(r"(?m)/\*(?:.|\n)*?\*/", COMMENT_MULTILINE),
-        Rule::token(r"(?m)[ \t\r\n]+", WHITESPACE),
-    ]);
-    m.insert(r"attrs", vec![
-        Rule::token_to(r"(?m)\]", PUNCTUATION, NewState::Pop(1)),
-        Rule::bygroups(r#"(?m)(\w+|"(?:\\"|[^"])*")(\s*)(=)(\s*)(\w+|"(?:\\"|[^"])*")"#, vec![Some(NAME_ATTRIBUTE), Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE), Some(STRING)]),
-        Rule::token(r"(?m),", PUNCTUATION),
-        Rule::token(r"(?m)(?://|#).*?\n", COMMENT_SINGLE),
-        Rule::token(r"(?m)/\*(?:.|\n)*?\*/", COMMENT_MULTILINE),
-        Rule::token(r"(?m)[ \t\r\n]+", WHITESPACE),
-    ]);
+    m.insert(
+        r"comments",
+        vec![
+            Rule::token(r"(?m)(?://|#).*?\n", COMMENT_SINGLE),
+            Rule::token(r"(?m)/\*(?:.|\n)*?\*/", COMMENT_MULTILINE),
+            Rule::token(r"(?m)[ \t\r\n]+", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"attrs",
+        vec![
+            Rule::token_to(r"(?m)\]", PUNCTUATION, NewState::Pop(1)),
+            Rule::bygroups(
+                r#"(?m)(\w+|"(?:\\"|[^"])*")(\s*)(=)(\s*)(\w+|"(?:\\"|[^"])*")"#,
+                vec![
+                    Some(NAME_ATTRIBUTE),
+                    Some(WHITESPACE),
+                    Some(OPERATOR),
+                    Some(WHITESPACE),
+                    Some(STRING),
+                ],
+            ),
+            Rule::token(r"(?m),", PUNCTUATION),
+            Rule::token(r"(?m)(?://|#).*?\n", COMMENT_SINGLE),
+            Rule::token(r"(?m)/\*(?:.|\n)*?\*/", COMMENT_MULTILINE),
+            Rule::token(r"(?m)[ \t\r\n]+", WHITESPACE),
+        ],
+    );
     Table(m)
 }
 

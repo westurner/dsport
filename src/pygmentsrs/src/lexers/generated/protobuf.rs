@@ -48,18 +48,27 @@ fn build_table() -> Table {
         Rule::bygroups(r"(?m)([a-zA-Z_][\w.]*)([ \t]*)(=)", vec![Some(NAME_ATTRIBUTE), Some(WHITESPACE), Some(OPERATOR)]),
         Rule::token(r"(?m)[a-zA-Z_][\w.]*", NAME),
     ]);
-    m.insert(r"package", vec![
-        Rule::token_to(r"(?m)[a-zA-Z_][\w\.]*", NAME_NAMESPACE, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"message", vec![
-        Rule::token_to(r"(?m)[a-zA-Z_]\w*", NAME_CLASS, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"type", vec![
-        Rule::token_to(r"(?m)[a-zA-Z_]\w*", NAME, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"package",
+        vec![
+            Rule::token_to(r"(?m)[a-zA-Z_][\w\.]*", NAME_NAMESPACE, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"message",
+        vec![
+            Rule::token_to(r"(?m)[a-zA-Z_]\w*", NAME_CLASS, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"type",
+        vec![
+            Rule::token_to(r"(?m)[a-zA-Z_]\w*", NAME, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

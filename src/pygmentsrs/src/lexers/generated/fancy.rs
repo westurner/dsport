@@ -25,18 +25,61 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"balanced-regex", vec![
-        Rule::token_to(r"(?m)/(\\\\|\\[^\\]|[^/\\])*/[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?m)!(\\\\|\\[^\\]|[^!\\])*![egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\\(\\\\|[^\\])*\\[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\{(\\\\|\\[^\\]|[^}\\])*\}[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?m)<(\\\\|\\[^\\]|[^>\\])*>[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\[(\\\\|\\[^\\]|[^\]\\])*\][egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\((\\\\|\\[^\\]|[^)\\])*\)[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?m)@(\\\\|\\[^\\]|[^@\\])*@[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?m)%(\\\\|\\[^\\]|[^%\\])*%[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\$(\\\\|\\[^\\]|[^$\\])*\$[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"balanced-regex",
+        vec![
+            Rule::token_to(
+                r"(?m)/(\\\\|\\[^\\]|[^/\\])*/[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)!(\\\\|\\[^\\]|[^!\\])*![egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)\\(\\\\|[^\\])*\\[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)\{(\\\\|\\[^\\]|[^}\\])*\}[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)<(\\\\|\\[^\\]|[^>\\])*>[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)\[(\\\\|\\[^\\]|[^\]\\])*\][egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)\((\\\\|\\[^\\]|[^)\\])*\)[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)@(\\\\|\\[^\\]|[^@\\])*@[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)%(\\\\|\\[^\\]|[^%\\])*%[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)\$(\\\\|\\[^\\]|[^$\\])*\$[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token_to(r"(?m)s\{(\\\\|\\[^\\]|[^}\\])*\}\s*", STRING_REGEX, NewState::Push(vec![r"balanced-regex"])),

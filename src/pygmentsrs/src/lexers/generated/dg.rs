@@ -56,16 +56,23 @@ fn build_table() -> Table {
     m.insert(r"stringescape", vec![
         Rule::token(r#"(?m)\\([\\abfnrtv"\']|\n|N\{.*?\}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{8}|x[a-fA-F0-9]{2}|[0-7]{1,3})"#, STRING_ESCAPE),
     ]);
-    m.insert(r"tsqs", vec![
-        Rule::token_to(r"(?m)'''", STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]", STRING_INTERPOL),
-        Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING),
-        Rule::token(r#"(?m)[\'"\\]"#, STRING),
-        Rule::token(r"(?m)%", STRING),
-        Rule::token(r"(?m)\n", STRING),
-    ]);
+    m.insert(
+        r"tsqs",
+        vec![Rule::token_to(r"(?m)'''", STRING, NewState::Pop(1))],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(
+                r"(?m)%(\(\w+\))?[-#0 +]*([0-9]+|[*])?(\.([0-9]+|[*]))?[hlL]?[E-GXc-giorsux%]",
+                STRING_INTERPOL,
+            ),
+            Rule::token(r#"(?m)[^\\\'"%\n]+"#, STRING),
+            Rule::token(r#"(?m)[\'"\\]"#, STRING),
+            Rule::token(r"(?m)%", STRING),
+            Rule::token(r"(?m)\n", STRING),
+        ],
+    );
     m.insert(r"_tmp_0", vec![
         Rule::token(r#"(?m)\\([\\abfnrtv"\']|\n|N\{.*?\}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{8}|x[a-fA-F0-9]{2}|[0-7]{1,3})"#, STRING_ESCAPE),
         Rule::token_to(r"(?m)'''", STRING, NewState::Pop(1)),
@@ -75,9 +82,10 @@ fn build_table() -> Table {
         Rule::token(r"(?m)%", STRING),
         Rule::token(r"(?m)\n", STRING),
     ]);
-    m.insert(r"tdqs", vec![
-        Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"tdqs",
+        vec![Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1))],
+    );
     m.insert(r"_tmp_1", vec![
         Rule::token(r#"(?m)\\([\\abfnrtv"\']|\n|N\{.*?\}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{8}|x[a-fA-F0-9]{2}|[0-7]{1,3})"#, STRING_ESCAPE),
         Rule::token_to(r#"(?m)""""#, STRING, NewState::Pop(1)),
@@ -87,9 +95,10 @@ fn build_table() -> Table {
         Rule::token(r"(?m)%", STRING),
         Rule::token(r"(?m)\n", STRING),
     ]);
-    m.insert(r"sqs", vec![
-        Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"sqs",
+        vec![Rule::token_to(r"(?m)'", STRING, NewState::Pop(1))],
+    );
     m.insert(r"_tmp_2", vec![
         Rule::token(r#"(?m)\\([\\abfnrtv"\']|\n|N\{.*?\}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{8}|x[a-fA-F0-9]{2}|[0-7]{1,3})"#, STRING_ESCAPE),
         Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
@@ -99,9 +108,10 @@ fn build_table() -> Table {
         Rule::token(r"(?m)%", STRING),
         Rule::token(r"(?m)\n", STRING),
     ]);
-    m.insert(r"dqs", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"dqs",
+        vec![Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1))],
+    );
     m.insert(r"_tmp_3", vec![
         Rule::token(r#"(?m)\\([\\abfnrtv"\']|\n|N\{.*?\}|u[a-fA-F0-9]{4}|U[a-fA-F0-9]{8}|x[a-fA-F0-9]{2}|[0-7]{1,3})"#, STRING_ESCAPE),
         Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),

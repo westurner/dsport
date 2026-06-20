@@ -46,11 +46,18 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[a-zA-Z_][a-zA-Z0-9_]*", NAME),
         Rule::token(r"(?m)(\.)+", PUNCTUATION),
     ]);
-    m.insert(r"function", vec![
-        Rule::token(r"(?m)[ \n\t\r]+", WHITESPACE),
-        Rule::token_to(r"(?m)[a-zA-Z_][a-zA-Z0-9_]*", NAME_FUNCTION, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"function",
+        vec![
+            Rule::token(r"(?m)[ \n\t\r]+", WHITESPACE),
+            Rule::token_to(
+                r"(?m)[a-zA-Z_][a-zA-Z0-9_]*",
+                NAME_FUNCTION,
+                NewState::Pop(1),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

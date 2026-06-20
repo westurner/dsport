@@ -18,6 +18,10 @@ not yet ported — keep as parity probes only.
 | `extension.py` | `sphinxdocrs::extension` | **P2** | **mirrored** — `Extension` wrapper + `verify_needs_extensions` landed in `src/sphinxdocrs/src/extension.rs`; gated by `tests/test_sphinxdocrs_extension.py` |
 | `registry.py` | `sphinxdocrs::registry` | **P2** | builder/parser/transform/translator registries; depends on extension + events |
 | `config.py` | `sphinxdocrs::config` | **P2** | depends on `util.typing`, complex value coercion; port `Config` after util |
+| `cmd/quickstart.py` | `sphinxdocrs::quickstart` | **C1** | **mirrored** — all 7 validators, `ask_user`, `generate`, `valid_dir`, full clap parser in `src/sphinxdocrs/src/quickstart/`; 50 Rust-side integration tests; `sphinx-quickstart-rs` binary native by default |
+| `cmd/build.py` + `cmd/make_mode.py` | `sphinxdocrs::build` | **C2** | **partial** — arg parser, all `_parse_*` helpers, `jobs_argument`, `MakeMode` (`build_clean`, `build_help`, `run_generic_build`, full `BUILDERS` table, target dispatch) ported in `src/sphinxdocrs/src/build/`; 35 Rust-side integration tests; `sphinx-build -M` runs natively; `sphinx-build -b` delegates to Python until builders land |
+| `ext/apidoc.py` | `sphinxdocrs::apidoc` | **C3** | deferred — module-discovery, per-package `.rst` generation, `--full`, excludes via `util_matching` |
+| `ext/autosummary/generate.py` | `sphinxdocrs::autogen` | **C4** | deferred — CLI scan + template rendering native; object introspection stays Python |
 | `roles.py` / `directives/` | `sphinxdocrs::roles` etc | **P3** | needs the doctree converter (already in `docutilsrs::python`) and the directive/role registry |
 | `domains/` | `sphinxdocrs::domains` | **P3** | each domain is a substantial subsystem (`py`, `c`, `cpp`, `js`, `rst`, `std`) |
 | `environment/` | `sphinxdocrs::environment` | **P3** | the build environment, large and stateful |
@@ -42,7 +46,7 @@ underlying subsystem is ported.
 | `test_addnodes.py` | addnodes | P1 | deferred (no Sphinx-specific nodes in Rust doctree yet) |
 | (no upstream test_extension.py) | extension | P2 | mirrored — `tests/test_sphinxdocrs_extension.py` (8 cases: defaults, kwargs-pop semantics, explicit-None preservation, `verify_needs_extensions` parity) |
 | `test_application.py` | application | P3 | deferred |
-| `test_command_line.py`, `test__cli/` | cli | P3 | deferred |
+| `test_command_line.py`, `test__cli/` | cli | P3 | **partial** — arg-parsing layer ported natively (`build::parser`, `build::args`, `build::logging`, `build::make_mode`); full `Sphinx()` invocation deferred |
 | `test_config/` | config | P2 | deferred |
 | `test_directives/` | directives | P3 | deferred |
 | `test_domains/` | domains | P3 | deferred |
@@ -53,7 +57,7 @@ underlying subsystem is ported.
 | `test_intl/` | intl | P3 | deferred |
 | `test_markup/` | markup | P3 | depends on docutils converter |
 | `test_pycode/` | pycode | P3 | deferred |
-| `test_quickstart.py` | quickstart | P3 | deferred |
+| `test_quickstart.py` | quickstart | **C1** | **mirrored** — `quickstart::validate` (all 7 validators), `quickstart::parser` (full clap flag grammar), `quickstart::generate`, `quickstart::ask_user`, `quickstart::valid_dir` ported; 50 Rust-side tests in `tests/quickstart.rs` (11 validator `#[case]` tables, 8 parser flag tests, 4 `valid_dir` tests, 4 tree-layout insta snapshots, `conf_py_snapshot`, newline-mode assertions, `ask_user` scripted-terminal test, help-text snapshot); `sphinx-quickstart-rs` binary now runs natively, falling back to Python only on `--use-python-impl` / `SPHINXDOCRS_PY_FALLBACK=1` |
 | `test_roles.py` | roles | P3 | deferred |
 | `test_search.py` | search | P3 | deferred |
 | `test_theming/` | theming | P3 | deferred |
@@ -75,3 +79,30 @@ underlying subsystem is ported.
    Rust extension is missing — so existing extensions can keep
    working.
 4. Inventory (this file) is updated whenever a row's status changes.
+
+## CLI porting milestone (C-phase) — current status
+
+| step | target | status |
+| --- | --- | --- |
+| **C1** `sphinx-quickstart` | `sphinxdocrs::quickstart` | **done** — 50 tests green; native binary default; Python fallback on `--use-python-impl` |
+| **C2a** `sphinx-build` parser + `_parse_*` | `sphinxdocrs::build::args` | **done** — 35 tests green (all `jobs_argument`, `parse_confdir`, `parse_doctreedir`, `validate_filenames`, `parse_confoverrides`, `parse_color` param tables) |
+| **C2b** `sphinx-build -M` make-mode | `sphinxdocrs::build::make_mode` | **done** — `build_clean` safety checks, `build_help`, `run_generic_build`, `BUILDERS` table, target dispatch all ported and tested via `CapturingRunner` |
+| **C2c** `sphinx-build -b` direct mode | delegates to Python `Sphinx` | pending builders |
+| **C3** `sphinx-apidoc` | `sphinxdocrs::apidoc` | not started |
+| **C4** `sphinx-autogen` | `sphinxdocrs::autogen` | not started |
+
+### New modules landed (C-phase)
+
+| crate path | mirrors | notes |
+| --- | --- | --- |
+| `src/sphinxdocrs/src/cli/io.rs` | — | `Terminal`, `Fs`, `Clock`, `Runner` traits + `RealTerminal`, `RealFs`, `SystemClock`, `ProcessRunner` impls; `FixedClock`, `CapturingRunner`, `ScriptedTerminal` test helpers |
+| `src/sphinxdocrs/src/quickstart/validate.rs` | `sphinx.cmd.quickstart` validators | 7 functions: `is_path`, `is_path_or_empty`, `allow_empty`, `nonempty`, `choice`, `boolean`, `suffix`, `ok` |
+| `src/sphinxdocrs/src/quickstart/settings.rs` | `d: dict` in quickstart | `QuickstartSettings`, `EXTENSIONS` table |
+| `src/sphinxdocrs/src/quickstart/templates.rs` | `QuickstartRenderer` | wraps `jinja2rs::Environment`; vendored templates in `assets/quickstart/`; registers `repr` filter (Jinja2 built-in missing from minijinja) |
+| `src/sphinxdocrs/src/quickstart/generate.rs` | `ask_user`, `generate`, `valid_dir` | |
+| `src/sphinxdocrs/src/quickstart/parser.rs` | `get_parser` / `main` | full clap flag grammar; `--ext-*` per-extension flags; `--use-python-impl` escape hatch |
+| `src/sphinxdocrs/src/build/parser.rs` | `sphinx.cmd.build.get_parser` | |
+| `src/sphinxdocrs/src/build/args.rs` | `_parse_confdir`, `_parse_doctreedir`, `_validate_filenames`, `_parse_confoverrides`, `jobs_argument`, `parse_color` | `BuildArgs`, `ConfValue` |
+| `src/sphinxdocrs/src/build/logging.rs` | `_parse_logging` | `LoggingConfig` |
+| `src/sphinxdocrs/src/build/make_mode.rs` | `sphinx.cmd.make_mode.Make` | `MakeMode`, `BUILDERS`, `run_make_mode` |
+| `src/sphinxdocrs/assets/quickstart/` | `sphinx/templates/quickstart/` | 4 vendored Jinja templates embedded via `include_str!` |

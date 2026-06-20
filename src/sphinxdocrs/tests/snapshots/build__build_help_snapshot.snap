@@ -1,0 +1,37 @@
+---
+source: src/sphinxdocrs/tests/build.rs
+expression: cmd.render_help().to_string()
+---
+Generate documentation from source files.
+
+Usage: sphinx-build [OPTIONS] <SOURCE_DIR> <OUTPUT_DIR> [FILENAMES]...
+
+Arguments:
+  <SOURCE_DIR>    path to documentation source files
+  <OUTPUT_DIR>    path to output directory
+  [FILENAMES]...  (optional) a list of specific files to rebuild. Ignored if --write-all is specified
+
+Options:
+  -b, --builder <BUILDER>         builder to use (default: 'html') [default: html]
+  -j, --jobs <N>                  run in parallel with N processes, when possible. 'auto' uses the number of CPU cores [default: 1]
+  -a, --write-all                 write all files (default: only write new and changed files)
+  -E, --fresh-env                 don't use a saved environment, always read all files
+  -d, --doctree-dir <PATH>        directory for doctree and environment files (default: OUTPUT_DIR/.doctrees)
+  -c, --conf-dir <PATH>           directory for the configuration file (conf.py) (default: SOURCE_DIR)
+  -C, --isolated                  use no configuration file, only use settings from -D options
+  -D, --define <setting=value>    override a setting in configuration file
+  -A, --html-define <name=value>  pass a value into HTML templates
+  -t, --tag <TAG>                 define tag: include "only" blocks with TAG
+  -n, --nitpicky                  nitpicky mode: warn about all missing references
+  -v, --verbose...                increase verbosity (can be repeated)
+  -q, --quiet                     no output on stdout, just warnings on stderr
+  -Q, --silent                    no output at all, not even warnings
+      --color                     do emit colored output (default: auto-detect)
+  -N, --no-color                  do not emit colored output
+  -w, --warning-file <FILE>       write warnings (and errors) to given file
+  -W, --fail-on-warning           turn warnings into errors
+  -T, --show-traceback            show full traceback on exception
+  -P, --pdb                       run Pdb on exception
+      --exception-on-warning      raise an exception on warnings
+      --use-python-impl           delegate to the upstream Python sphinx-build
+  -h, --help                      Print help

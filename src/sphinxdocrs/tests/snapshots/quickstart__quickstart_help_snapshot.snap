@@ -1,0 +1,43 @@
+---
+source: src/sphinxdocrs/tests/quickstart.rs
+expression: cmd.render_help().to_string()
+---
+Generate required files for a Sphinx project.
+
+sphinx-quickstart is an interactive tool that asks some questions about your project and then generates a complete documentation directory and sample Makefile to be used with sphinx-build.
+
+Usage: sphinx-quickstart [OPTIONS] [PROJECT_DIR]
+
+Arguments:
+  [PROJECT_DIR]  project root [default: .]
+
+Options:
+  -q, --quiet                    quiet mode
+      --sep                      if specified, separate source and build dirs
+      --no-sep                   if specified, create build dir under source dir
+      --dot <DOT>                replacement for dot in _templates etc. [default: _]
+  -p, --project <PROJECT>        project name
+  -a, --author <AUTHOR>          author names
+  -v <VERSION>                   version of project [default: ""]
+  -r, --release <RELEASE>        release of project
+  -l, --language <LANGUAGE>      document language
+      --suffix <SUFFIX>          source file suffix [default: .rst]
+      --master <MASTER>          master document name [default: index]
+      --epub                     use epub
+      --makefile                 create makefile
+      --no-makefile              do not create makefile
+      --batchfile                create batchfile
+      --no-batchfile             do not create batchfile
+      --extensions <EXTENSIONS>  enable arbitrary extensions
+      --use-python-impl          delegate to the upstream Python sphinx-quickstart
+      --ext-autodoc              enable autodoc extension: automatically insert docstrings from modules
+      --ext-doctest              enable doctest extension: automatically test code snippets in doctest blocks
+      --ext-intersphinx          enable intersphinx extension: link between Sphinx documentation of different projects
+      --ext-todo                 enable todo extension: write "todo" entries that can be shown or hidden on build
+      --ext-coverage             enable coverage extension: checks for documentation coverage
+      --ext-imgmath              enable imgmath extension: include math, rendered as PNG or SVG images
+      --ext-mathjax              enable mathjax extension: include math, rendered in the browser by MathJax
+      --ext-ifconfig             enable ifconfig extension: conditional inclusion of content based on config values
+      --ext-viewcode             enable viewcode extension: include links to the source code of documented Python objects
+      --ext-githubpages          enable githubpages extension: create .nojekyll file to publish the document on GitHub pages
+  -h, --help                     Print help

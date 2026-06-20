@@ -16,11 +16,14 @@
 use pyo3::prelude::*;
 
 pub mod assets;
+pub mod build;
+pub mod cli;
 pub mod config;
 pub mod errors;
 pub mod events;
 pub mod extension;
 pub mod project;
+pub mod quickstart;
 pub mod util_console;
 pub mod util_matching;
 

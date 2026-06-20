@@ -1,0 +1,374 @@
+# sphinxdocrs CLI port & test plan
+
+Drop-in replacements for the Sphinx command-line entry points, ported to
+native Rust in [`src/sphinxdocrs`](../src/sphinxdocrs). Target binaries:
+
+| upstream console script | Rust binary | upstream module | priority | status |
+| --- | --- | --- | --- | --- |
+| `sphinx-quickstart` | `sphinx-quickstart-rs` | `sphinx.cmd.quickstart` | **C1** | **done** |
+| `sphinx-build`      | `sphinx-build-rs`      | `sphinx.cmd.build` + `sphinx.cmd.make_mode` | **C2** | **partial** (make-mode native; direct-mode delegates to Python) |
+| `sphinx-apidoc`     | `sphinx-apidoc-rs`     | `sphinx.ext.apidoc` | **C3** | not started |
+| `sphinx-autogen`    | `sphinx-autogen-rs`    | `sphinx.ext.autosummary.generate` | **C4** | not started |
+
+~~Current state: all four binaries in
+[src/sphinxdocrs/src/bin](../src/sphinxdocrs/src/bin) are **PyO3
+shell-out shims** that exec `python -c "from <mod> import main; ..."`.~~
+
+Current state (post C1/C2a/C2b):
+- `sphinx-quickstart-rs` — **fully native**; Python fallback only on
+  `--use-python-impl` / `SPHINXDOCRS_PY_FALLBACK=1`.
+- `sphinx-build-rs` — **make-mode (`-M`) native**; direct mode (`-b`)
+  validates args natively then delegates to Python `Sphinx`.
+- `sphinx-apidoc-rs`, `sphinx-autogen-rs` — still Python shell-out shims.
+
+New modules in `src/sphinxdocrs/src/`:
+
+```
+cli/
+  mod.rs          — re-exports
+  io.rs           — Terminal, Fs, Clock, Runner traits + Real* impls +
+                    FixedClock, CapturingRunner, ScriptedTerminal test helpers
+quickstart/
+  mod.rs
+  validate.rs     — 7 validator fns (boolean, suffix, nonempty, …)
+  settings.rs     — QuickstartSettings, EXTENSIONS table
+  templates.rs    — QuickstartTemplates (jinja2rs wrapper + repr filter)
+  generate.rs     — valid_dir, ask_user, generate
+  parser.rs       — clap parser, parse_args, is_fully_specified
+build/
+  mod.rs
+  parser.rs       — clap parser mirroring sphinx-build get_parser()
+  args.rs         — BuildArgs, ConfValue, jobs_argument, _parse_* helpers
+  logging.rs      — LoggingConfig, parse_logging
+  make_mode.rs    — MakeMode, BUILDERS, run_make_mode
+assets/quickstart/
+  conf.py.jinja   — vendored from sphinx/templates/quickstart/
+  root_doc.rst.jinja
+  Makefile.new.jinja
+  make.bat.new.jinja
+```
+
+Test suites (all green, 172 total):
+
+| suite | tests | covers |
+| --- | --- | --- |
+| `tests/quickstart.rs` | 50 | validators (11 `#[case]` tables), parser (8), `valid_dir` (4), tree-layout snapshots (4), `conf_py_snapshot`, newline modes (2), `ask_user` scripted-terminal, help-text snapshot |
+| `tests/build.rs` | 35 | `jobs_argument` (6), `parse_confdir` (4), `parse_doctreedir` (2), `validate_filenames` (2), `parse_confoverrides` (5), `parse_color` (3), `build_clean` safety (4), `run_generic_build` (2), dispatch (2), `run_make_mode` (1), BUILDERS completeness (1), help snapshot |
+| lib (unit) | 71 | existing + inline tests in `cli/io.rs`, `quickstart/validate.rs`, `build/args.rs`, `build/make_mode.rs`, `build/logging.rs` |
+| `tests/config.rs` | 9 | existing |
+| `tests/assets.rs` | 6 | existing |
+| `tests/snapshot.rs` | 1 | existing |
+
+---
+
+## 1. Porting principles
+
+- **Drop-in CLI contract first.** Argument grammar, exit codes, stdout/
+  stderr text, and on-disk artifacts must match upstream byte-for-byte
+  where observable. The argparse surface is the spec; mirror flag names,
+  defaults, `dest`, and help strings.
+- **Three-layer architecture per command** so logic is unit-testable
+  without a process boundary:
+  1. **parse layer** — pure `argv: &[String] -> Result<Args, CliError>`.
+     No I/O. Mirrors each `get_parser()` / `_parse_*` helper.
+  2. **core layer** — pure-ish functions taking an injected filesystem +
+     clock + terminal trait, returning planned actions or rendered
+     strings. Mirrors `generate()`, `ask_user()`, `build_main()` body.
+  3. **shell layer** — `main()` wiring real stdio, real FS, real exit.
+- **Dependency injection at boundaries only** (FS, time, terminal input,
+  subprocess). Everything else stays concrete. This is what makes
+  `mockall` + `rstest` fixtures cheap (see test plan).
+- **Reuse already-ported subsystems**: `config` (conf.py reader),
+  `util_console` (colour/escape parity), `util_matching`, `project`,
+  `errors`, `events`, `extension`. Do not re-implement these.
+- **Templating**: quickstart renders Jinja templates. Use the vendored
+  `minijinja`/`jinja2rs` already in the workspace
+  (`src/minijinja`, `src/jinja2rs`) rather than shelling to Python. The
+  four template files
+  ([sphinx/templates/quickstart](../src/sphinx/sphinx/templates/quickstart))
+  are vendored as crate assets.
+- **Fallback ladder**: every command keeps a `--use-python-impl` escape
+  hatch (and an env `SPHINXDOCRS_PY_FALLBACK=1`) that runs the existing
+  shell-out shim. Until a command reaches parity it defaults to the
+  Python path; a feature flag flips the default once snapshots are green.
+
+---
+
+## 2. Command: `sphinx-quickstart` (C1)
+
+Smallest blast radius, no builder/environment dependency, pure file
+generation — the correct first target.
+
+### 2.1 Surface to port (`sphinx.cmd.quickstart`)
+
+| upstream symbol | Rust target | notes |
+| --- | --- | --- |
+| validators (`is_path`, `nonempty`, `choice`, `boolean`, `suffix`, `ok`, `allow_empty`) | `quickstart::validate` | pure `fn(&str) -> Result<Value, ValidationError>`; table-test each |
+| `do_prompt` / `term_input` | `quickstart::prompt` over a `Terminal` trait | `mockall`-mocked in tests; readline behavior is out of scope |
+| `ask_user(d)` | `quickstart::ask_user(&mut Settings, &dyn Terminal)` | drives prompts; the conflict rule (imgmath + mathjax) and existing-conf.py / existing-master guards must match |
+| `QuickstartRenderer` | `quickstart::render` over minijinja | `_has_custom_template` + `templatedir` override semantics |
+| `generate(d, ...)` | `quickstart::generate(&Settings, &dyn Fs, &dyn Clock)` | dir layout (`sep`/`dot`), `exclude_patterns`, `copyright`, `now`, `project_underline` (column-width!), newline modes (`\n` Makefile, `\r\n` make.bat) |
+| `valid_dir(d)` | `quickstart::valid_dir` | reserved-name collision check |
+| `get_parser()` / `main()` | `quickstart::{parser, run}` | flag parity incl. `--ext-*` append_const, `--no-sep`/`--no-makefile` |
+
+### 2.2 Parity-critical details
+
+- `project_underline = column_width(project) * '='` — uses `unicode-width`
+  crate (`UnicodeWidthStr::width`) matching docutils' east-Asian width.
+- `copyright = "<year>, <author>"` and `now = time.asctime()` — injected
+  via `Clock` trait; `FixedClock::snapshot()` for deterministic snapshots.
+- `extensions` ordering follows the fixed `EXTENSIONS` dict order.
+- Makefile written with binary LF via `to_lf()`; make.bat with CRLF via
+  `to_crlf()`. Snapshot tests assert both.
+- "Creating file %s." / "File %s already exists, skipping." stdout lines
+  honor the `quiet` key.
+- `| repr` Jinja2 filter registered manually — not present in minijinja
+  builtins or `minijinja-contrib` pycompat (which only covers method
+  syntax like `str.upper()`). Registered via `env.add_filter("repr", …)`
+  in `QuickstartTemplates::vendored()`.
+
+### 2.3 Definition of done (C1) — ✅ COMPLETE
+
+- `sphinx-quickstart-rs` produces a tree matching upstream layout for
+  the matrix `{sep×nosep} × {makefile×none} × {default exts, all exts}`
+  — verified by 4 insta tree-layout snapshots.
+- Non-interactive (`-q -p -a -v ...`) and interactive (`ScriptedTerminal`)
+  paths both covered.
+- 50 passing tests in `tests/quickstart.rs`.
+
+---
+
+## 3. Command: `sphinx-build` (C2)
+
+Two entry modes share the binary:
+
+- **make mode** `sphinx-build -M <target> <src> <out>` →
+  `sphinx.cmd.make_mode` (porting first; it is mostly arg routing +
+  subprocess + `clean`).
+- **direct mode** `sphinx-build -b <builder> <src> <out>` →
+  `sphinx.cmd.build.build_main`, which constructs `Sphinx(...)` and runs
+  a builder. **The builder/environment pipeline is P3 and not yet
+  ported**, so direct mode delegates to the Python `Sphinx` app via the
+  existing shim until builders land.
+
+### 3.1 Port now (native)
+
+| upstream symbol | Rust target | notes |
+| --- | --- | --- |
+| `get_parser()` | `build::parser` | full flag grammar parity (builder, jobs, `-a/-E`, path opts, `-D/-A/-t/-n`, console/warning opts) |
+| `jobs_argument` | `build::jobs_argument` | `'auto'` → cpu count; positive-int validation + error text |
+| `_parse_confdir` / `_parse_doctreedir` / `_validate_filenames` / `_validate_colour_support` / `_parse_confoverrides` | `build::args::*` | pure; high-value unit/param tests |
+| `make_mode.Make` (`build_clean`, `build_help`, `run_generic_build`, target dispatch, `BUILDERS` table) | `build::make_mode` | `build_clean` safety checks (same-dir, src-under-build) are security-relevant — port faithfully; subprocess calls go through an injected `Runner` trait |
+| `handle_exception` / `_parse_logging` (status/warning/TeeStripANSI/warnfile) | `build::logging` | colour disable via `util_console` |
+
+### 3.2 Delegate (for now)
+
+- `build_main` → constructing and running `Sphinx`. Keep shell-out shim;
+  gate native takeover behind `feature = "native-build"` once a builder
+  exists. make-mode's `run_generic_build` shells to `sphinx-build` direct
+  mode anyway, so make mode can be native while direct mode is Python.
+
+### 3.3 Definition of done (C2) — ⚠️ PARTIAL
+
+- ✅ `-M help`, `-M clean`, unknown-target, and arg-validation errors
+  match upstream stdout/stderr + exit codes natively (35 passing tests).
+- ✅ `build_clean` safety checks (same-dir, src-under-build) ported and
+  tested with real `TempDir`.
+- ✅ `jobs_argument`, all `_parse_*` helpers, `BUILDERS` table complete.
+- ⏳ Direct-mode invocations transparently forwarded (Python delegation
+  path is in place; parity harness §5.5 pending).
+
+---
+
+## 4. Commands: `sphinx-apidoc` (C3) & `sphinx-autogen` (C4)
+
+Ported after C1/C2. Both are file-generators (good fit for the
+quickstart-style FS+template architecture).
+
+- **apidoc** (`sphinx.ext.apidoc`): recursive module discovery,
+  `.rst` generation per package/module, `--full` (calls quickstart),
+  excludes, `--implicit-namespaces`. Reuses `util_matching` for
+  excludes and the quickstart renderer for `--full`.
+- **autogen** (`sphinx.ext.autosummary.generate`): scans sources for
+  `autosummary` directives and emits stub `.rst` files. Heaviest
+  dependency on autodoc import machinery → likely keeps a Python bridge
+  for the actual object import/introspection step while the CLI scan and
+  template rendering go native.
+
+Detailed inventories deferred until C1/C2 land; tracked as follow-up
+rows in [docs/sphinx-port-inventory.md](sphinx-port-inventory.md).
+
+---
+
+## 5. Testing plan
+
+Tooling: `rstest` (fixtures + parametrization), `mockall` (trait
+mocks), `insta` / `cargo-insta` (snapshots), `wiremock`/`rvcr` (only if a
+command ever touches the network — currently none do). Dev-deps already
+present in [Cargo.toml](../src/sphinxdocrs/Cargo.toml).
+
+### 5.1 Injection traits (enable mocking) — ✅ IMPLEMENTED
+
+All four traits and their production impls are live in
+[`src/sphinxdocrs/src/cli/io.rs`](../src/sphinxdocrs/src/cli/io.rs).
+The `#[cfg_attr(test, mockall::automock)]` attributes generate `Mock*`
+types for inline `#[cfg(test)]` use. External test crates use the
+concrete test helpers instead:
+
+```rust
+// src/sphinxdocrs/src/cli/io.rs
+#[cfg_attr(test, mockall::automock)]
+pub trait Terminal { … }
+
+#[cfg_attr(test, mockall::automock)]
+pub trait Fs { … }
+
+#[cfg_attr(test, mockall::automock)]
+pub trait Clock { … }
+
+#[cfg_attr(test, mockall::automock)]
+pub trait Runner { … }
+```
+
+External test helpers (public, no mockall needed in integration tests):
+
+```rust
+pub struct FixedClock { pub asctime_str: String, pub year_val: i32 }
+pub struct CapturingRunner { … }  // records (program, args) pairs
+pub struct ScriptedTerminal { … } // feeds pre-set answers, captures print()
+```
+
+### 5.2 `rstest` fixtures — ✅ IMPLEMENTED
+
+Used in `tests/quickstart.rs`. Note: external test crates cannot see
+`Mock*` types generated by `#[cfg_attr(test, mockall::automock)]`, so
+fixtures use the concrete `FixedClock` helper instead of `MockClock`:
+
+```rust
+#[fixture]
+fn fixed_clock() -> FixedClock { FixedClock::snapshot() }
+
+#[fixture]
+#[once]
+fn templates() -> QuickstartTemplates { QuickstartTemplates::vendored() }
+```
+
+### 5.3 Parametrization (`#[case]`)
+
+Validators — one table per function:
+
+```rust
+#[rstest]
+#[case("y", Some(true))] #[case("YES", Some(true))]
+#[case("n", Some(false))] #[case("maybe", None)]
+fn boolean_parity(#[case] input: &str, #[case] want: Option<bool>) {
+    assert_eq!(quickstart::validate::boolean(input).ok(), want);
+}
+
+#[rstest]
+#[case(".rst", true)] #[case(".txt", true)]
+#[case("rst", false)] #[case(".", false)] #[case("", false)]
+fn suffix_parity(#[case] input: &str, #[case] ok: bool) {
+    assert_eq!(quickstart::validate::suffix(input).is_ok(), ok);
+}
+```
+
+build arg parsing:
+
+```rust
+#[rstest]
+#[case("auto", Ok(num_cpus))]
+#[case("4", Ok(4))]
+#[case("0", Err("job number should be a positive number"))]
+#[case("-1", Err("job number should be a positive number"))]
+fn jobs_argument(#[case] v: &str, #[case] want: Result<usize, &str>) { /* ... */ }
+
+#[rstest]
+#[case(true,  None,        "src", None)]          // noconfig
+#[case(false, Some("cfg"), "src", Some("cfg"))]   // explicit confdir
+#[case(false, None,        "src", Some("src"))]   // default → sourcedir
+fn parse_confdir(/* ... */) { /* ... */ }
+```
+
+### 5.4 `cargo-insta` snapshots — ✅ IMPLEMENTED
+
+Two snapshot families in `tests/snapshots/`:
+
+1. **Rendered strings** — `conf_py_snapshot` (full `conf.py` content),
+   `quickstart_help_snapshot`, `build_help_snapshot`.
+2. **Generated trees** — `quickstart_tree_snapshot` with per-case suffix
+   via `insta::with_settings!({snapshot_suffix => …})` so each
+   `#[case]` variant gets its own snapshot file:
+   - `quickstart_tree_snapshot@flat_make.snap`
+   - `quickstart_tree_snapshot@sep.snap`
+   - `quickstart_tree_snapshot@no-makefile_no-batchfile.snap`
+   - `quickstart_tree_snapshot@ext-autodoc_ext-mathjax.snap`
+
+Tree manifest stores the sorted list of relative paths (not SHA256 hashes
+because template timestamps would cause churn). The newline tests assert
+byte-level LF/CRLF correctness separately.
+
+```rust
+#[rstest]
+#[case::flat_make(&["-q","-p","P","-a","A"])]
+#[case::sep(&["-q","--sep","-p","P","-a","A"])]
+#[case::no_make(&["-q","--no-makefile","--no-batchfile","-p","P","-a","A"])]
+fn quickstart_tree_snapshot(clock: MockClock, templates: &QuickstartTemplates,
+                            #[case] argv: &[&str]) {
+    let tmp = TempDir::new().unwrap();
+    let s = Settings::from_args(argv).with_path(tmp.path());
+    quickstart::generate(&s, &RealFs, &clock, templates).unwrap();
+    insta::assert_yaml_snapshot!(tree_manifest(tmp.path()));
+}
+```
+
+Interactive `ask_user` via `MockTerminal` with `Sequence` to assert
+prompt order and feed answers:
+
+```rust
+let mut term = MockTerminal::new();
+let mut seq = mockall::Sequence::new();
+for ans in ["", "n", "_", "MyProj", "Me", "1.0", "1.0", "en", ".rst", "index"] {
+    term.expect_prompt().times(1).in_sequence(&mut seq)
+        .return_once(move |_| Ok(ans.into()));
+}
+term.expect_print().returning(|_| ());
+quickstart::ask_user(&mut settings, &term);
+```
+
+### 5.5 Cross-language parity harness — ⏳ PENDING
+
+Planned integration test (`tests/parity_quickstart.rs`,
+`tests/parity_build.rs`) gated behind `cfg(feature = "parity")`. First
+run records the Python side into an insta snapshot; CI replays from the
+committed snapshot so Python is not required in every run.
+
+### 5.6 Coverage / triage tagging
+
+Mirror the inventory legend: tag each ported function **exact parity**,
+**accepted deviation**, or **pending**, in
+[docs/sphinx-port-inventory.md](sphinx-port-inventory.md). Branch-coverage
+target ≥ the existing crate bar; `build_clean` safety branches and
+validator error paths are mandatory-covered.
+
+---
+
+## 6. Sequencing
+
+1. ✅ **C1.0** Land `cli::io` traits + real impls + minijinja template assets.
+2. ✅ **C1.1** Port validators + `do_prompt` + `parser`; full `#[case]` tables.
+3. ✅ **C1.2** Port `generate` + `ask_user` + `valid_dir`; tree snapshots;
+   `sphinx-quickstart-rs` default flipped to native (all 50 tests green).
+4. ✅ **C2.1** Port build `parser` + `_parse_*` + `jobs_argument`; param tests.
+5. ✅ **C2.2** Port `make_mode` (clean/help/dispatch via `Runner`); native
+   make-mode, Python-delegated direct mode (all 35 tests green).
+6. ⏳ **C2.3** Parity harness (`feature = "parity"`): run Python quickstart +
+   build side-by-side, commit insta snapshots, gate CI.
+7. ⏳ **C3** `sphinx-apidoc` — recursive module discovery, `.rst` generation
+   per package/module, `--full` (reuses quickstart `generate`), excludes
+   via `util_matching`, `--implicit-namespaces`.
+8. ⏳ **C4** `sphinx-autogen` — CLI scan + template rendering native; object
+   introspection keeps Python bridge.
+
+Each step is independently shippable: the binary keeps working via the
+shim fallback until its native path passes the parity harness.

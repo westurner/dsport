@@ -1,0 +1,9 @@
+---
+source: src/sphinxdocrs/tests/quickstart.rs
+expression: list_tree(tmp.path())
+---
+- _build
+- _static
+- _templates
+- conf.py
+- index.rst

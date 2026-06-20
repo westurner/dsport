@@ -51,7 +51,7 @@ fn nodes(sources: &[&str]) -> Vec<Node> {
     sources.iter().map(|s| Node::new(s)).collect()
 }
 
-fn stamp(ns: &mut Vec<Node>) -> Vec<String> {
+fn stamp(ns: &mut [Node]) -> Vec<String> {
     add_uids(ns)
 }
 

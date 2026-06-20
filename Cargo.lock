@@ -2554,6 +2554,7 @@ name = "sphinxdocrs"
 version = "0.0.1"
 dependencies = [
  "clap",
+ "glob",
  "insta",
  "jinja2rs",
  "minijinja",

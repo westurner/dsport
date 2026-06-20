@@ -1,0 +1,12 @@
+---
+source: src/sphinxdocrs/tests/apidoc.rs
+expression: content
+---
+My Package
+==========
+
+.. toctree::
+   :maxdepth: 2
+
+   mypkg
+   other

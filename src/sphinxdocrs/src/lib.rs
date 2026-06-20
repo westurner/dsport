@@ -15,6 +15,7 @@
 
 use pyo3::prelude::*;
 
+pub mod apidoc;
 pub mod assets;
 pub mod build;
 pub mod cli;

@@ -1,0 +1,11 @@
+---
+source: src/sphinxdocrs/tests/apidoc.rs
+expression: content
+---
+utils module
+============
+
+.. automodule:: mypkg.utils
+   :members:
+   :show-inheritance:
+   :undoc-members:

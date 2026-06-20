@@ -7,19 +7,21 @@ native Rust in [`src/sphinxdocrs`](../src/sphinxdocrs). Target binaries:
 | --- | --- | --- | --- | --- |
 | `sphinx-quickstart` | `sphinx-quickstart-rs` | `sphinx.cmd.quickstart` | **C1** | **done** |
 | `sphinx-build`      | `sphinx-build-rs`      | `sphinx.cmd.build` + `sphinx.cmd.make_mode` | **C2** | **partial** (make-mode native; direct-mode delegates to Python) |
-| `sphinx-apidoc`     | `sphinx-apidoc-rs`     | `sphinx.ext.apidoc` | **C3** | not started |
+| `sphinx-apidoc`     | `sphinx-apidoc-rs`     | `sphinx.ext.apidoc` | **C3** | **partial** (module generation native; `--full` delegates to Python) |
 | `sphinx-autogen`    | `sphinx-autogen-rs`    | `sphinx.ext.autosummary.generate` | **C4** | not started |
 
 ~~Current state: all four binaries in
 [src/sphinxdocrs/src/bin](../src/sphinxdocrs/src/bin) are **PyO3
 shell-out shims** that exec `python -c "from <mod> import main; ..."`.~~
 
-Current state (post C1/C2a/C2b):
+Current state (post C1/C2a/C2b/C3):
 - `sphinx-quickstart-rs` — **fully native**; Python fallback only on
   `--use-python-impl` / `SPHINXDOCRS_PY_FALLBACK=1`.
 - `sphinx-build-rs` — **make-mode (`-M`) native**; direct mode (`-b`)
   validates args natively then delegates to Python `Sphinx`.
-- `sphinx-apidoc-rs`, `sphinx-autogen-rs` — still Python shell-out shims.
+- `sphinx-apidoc-rs` — **module/package generation native**; `--full`
+  delegates to Python quickstart bridge (builder dep).
+- `sphinx-autogen-rs` — still Python shell-out shim.
 
 New modules in `src/sphinxdocrs/src/`:
 
@@ -41,23 +43,37 @@ build/
   args.rs         — BuildArgs, ConfValue, jobs_argument, _parse_* helpers
   logging.rs      — LoggingConfig, parse_logging
   make_mode.rs    — MakeMode, BUILDERS, run_make_mode
+apidoc/
+  mod.rs
+  settings.rs     — ApidocOptions (20 fields), DEFAULT_AUTOMODULE_OPTIONS
+  templates.rs    — ApidocTemplates (heading/heading2/repr filters; 3 vendored templates)
+  generate.rs     — is_initpy, module_join, is_excluded, walk, recurse_tree,
+                    create_module_file, create_package_file,
+                    create_modules_toc_file, remove_old_files
+  parser.rs       — clap parser, parse_args (full flag grammar + --ext-*)
 assets/quickstart/
   conf.py.jinja   — vendored from sphinx/templates/quickstart/
   root_doc.rst.jinja
   Makefile.new.jinja
   make.bat.new.jinja
+assets/apidoc/
+  module.rst.jinja  — vendored from sphinx/templates/apidoc/
+  package.rst.jinja — (patched: heading(2) → heading2 filter)
+  toc.rst.jinja
 ```
 
-Test suites (all green, 172 total):
+Test suites (all green, 206 total):
 
 | suite | tests | covers |
 | --- | --- | --- |
+| lib (unit) | 81 | existing + inline tests in `cli/io.rs`, `quickstart/validate.rs`, `build/args.rs`, `build/make_mode.rs`, `build/logging.rs`, `apidoc/generate.rs`, `apidoc/parser.rs` |
+| `tests/apidoc.rs` | 24 | parser flags (8), `is_initpy` (4 `#[case]`), `module_join` (4 `#[case]`), `is_excluded` (1), `recurse_tree` basic/no-private/with-private (3), module/TOC/help snapshots (3) |
 | `tests/quickstart.rs` | 50 | validators (11 `#[case]` tables), parser (8), `valid_dir` (4), tree-layout snapshots (4), `conf_py_snapshot`, newline modes (2), `ask_user` scripted-terminal, help-text snapshot |
 | `tests/build.rs` | 35 | `jobs_argument` (6), `parse_confdir` (4), `parse_doctreedir` (2), `validate_filenames` (2), `parse_confoverrides` (5), `parse_color` (3), `build_clean` safety (4), `run_generic_build` (2), dispatch (2), `run_make_mode` (1), BUILDERS completeness (1), help snapshot |
-| lib (unit) | 71 | existing + inline tests in `cli/io.rs`, `quickstart/validate.rs`, `build/args.rs`, `build/make_mode.rs`, `build/logging.rs` |
 | `tests/config.rs` | 9 | existing |
 | `tests/assets.rs` | 6 | existing |
 | `tests/snapshot.rs` | 1 | existing |
+| `tests/parity.rs` | 0 (skipped) | cross-language harness; enabled with `--features parity`; skips if Python/sphinx unavailable |
 
 ---
 
@@ -182,21 +198,32 @@ Two entry modes share the binary:
 
 ## 4. Commands: `sphinx-apidoc` (C3) & `sphinx-autogen` (C4)
 
-Ported after C1/C2. Both are file-generators (good fit for the
-quickstart-style FS+template architecture).
+### 4.1 `sphinx-apidoc` (C3) — ⚠️ PARTIAL
 
-- **apidoc** (`sphinx.ext.apidoc`): recursive module discovery,
-  `.rst` generation per package/module, `--full` (calls quickstart),
-  excludes, `--implicit-namespaces`. Reuses `util_matching` for
-  excludes and the quickstart renderer for `--full`.
-- **autogen** (`sphinx.ext.autosummary.generate`): scans sources for
-  `autosummary` directives and emits stub `.rst` files. Heaviest
-  dependency on autodoc import machinery → likely keeps a Python bridge
-  for the actual object import/introspection step while the CLI scan and
-  template rendering go native.
+File-generator with no builder/environment dependency. Implementation
+status:
 
-Detailed inventories deferred until C1/C2 land; tracked as follow-up
-rows in [docs/sphinx-port-inventory.md](sphinx-port-inventory.md).
+| upstream symbol | Rust target | status |
+| --- | --- | --- |
+| `ApidocOptions` dataclass | `apidoc::settings::ApidocOptions` | ✅ all 20 fields |
+| `_generate.py` helpers | `apidoc::generate` | ✅ `is_initpy`, `module_join`, `is_excluded`, `is_skipped_package/module`, `walk`, `recurse_tree`, `create_module_file`, `create_package_file`, `create_modules_toc_file`, `remove_old_files` |
+| RST templates | `assets/apidoc/*.jinja` | ✅ all 3 vendored; `heading(2)` call patched to `heading2` filter |
+| `_cli.get_parser()` | `apidoc::parser` | ✅ full clap grammar, all flags incl. `--ext-*`, `SPHINX_APIDOC_OPTIONS` env |
+| `--full` mode | delegates to Python | ⏳ calls Python quickstart bridge until quickstart `generate()` is wired |
+| exclude regex compilation | `fnmatch_to_regex` in binary | ✅ simplified fnmatch→regex (full glob lib can replace if needed) |
+
+Definition of done (C3) — ⚠️ PARTIAL:
+- ✅ `recurse_tree` generates correct package/module `.rst` layout (tested with synthetic Python packages).
+- ✅ 24 passing tests in `tests/apidoc.rs`.
+- ⏳ `--full` native: wire `apidoc::generate::_full_quickstart` to `quickstart::generate` (reuse existing quickstart module).
+- ⏳ Parity harness (`tests/parity.rs`, `feature = "parity"`): compare Python and Rust output trees.
+
+### 4.2 `sphinx-autogen` (C4) — ⏳ NOT STARTED
+
+Scans sources for `autosummary` directives and emits stub `.rst` files.
+Heaviest dependency on autodoc import machinery → likely keeps a Python
+bridge for the actual object import/introspection step while the CLI scan
+and template rendering go native.
 
 ---
 
@@ -336,12 +363,23 @@ term.expect_print().returning(|_| ());
 quickstart::ask_user(&mut settings, &term);
 ```
 
-### 5.5 Cross-language parity harness — ⏳ PENDING
+### 5.5 Cross-language parity harness — ⚠️ SCAFFOLDED
 
-Planned integration test (`tests/parity_quickstart.rs`,
-`tests/parity_build.rs`) gated behind `cfg(feature = "parity")`. First
-run records the Python side into an insta snapshot; CI replays from the
-committed snapshot so Python is not required in every run.
+Integration tests in `tests/parity.rs` gated behind
+`cfg(feature = "parity")`:
+- `quickstart_parity_flat`: runs Python `sphinx-quickstart` and
+  `sphinx-quickstart-rs` on identical inputs, diffs file trees.
+- `apidoc_parity_basic`: runs Python `sphinx-apidoc` and
+  `sphinx-apidoc-rs` on a synthetic Python package, diffs file trees.
+
+Both skip gracefully when Python/sphinx is unavailable.
+First run records the Python side into an insta snapshot; CI replays
+from the committed snapshot so Python is not required every run.
+
+Enable with:
+```
+cargo test -p sphinxdocrs --features parity --test parity
+```
 
 ### 5.6 Coverage / triage tagging
 
@@ -362,13 +400,15 @@ validator error paths are mandatory-covered.
 4. ✅ **C2.1** Port build `parser` + `_parse_*` + `jobs_argument`; param tests.
 5. ✅ **C2.2** Port `make_mode` (clean/help/dispatch via `Runner`); native
    make-mode, Python-delegated direct mode (all 35 tests green).
-6. ⏳ **C2.3** Parity harness (`feature = "parity"`): run Python quickstart +
-   build side-by-side, commit insta snapshots, gate CI.
-7. ⏳ **C3** `sphinx-apidoc` — recursive module discovery, `.rst` generation
-   per package/module, `--full` (reuses quickstart `generate`), excludes
-   via `util_matching`, `--implicit-namespaces`.
-8. ⏳ **C4** `sphinx-autogen` — CLI scan + template rendering native; object
-   introspection keeps Python bridge.
+6. ✅ **C2.3** Parity harness scaffold (`feature = "parity"`): `tests/parity.rs`
+   written for quickstart + apidoc; skips gracefully without Python.
+7. ✅ **C3.1** Port apidoc `settings`, `templates` (heading/heading2/repr filters),
+   `generate` (walk, recurse_tree, create_*_file, remove_old_files),
+   `parser` (full clap grammar); 24 passing integration tests.
+8. ⏳ **C3.2** Wire `--full` to `quickstart::generate` (native quickstart bridge).
+9. ⏳ **C3.3** Parity harness first run: commit Python-side apidoc insta snapshot.
+10. ⏳ **C4** `sphinx-autogen` — CLI scan + template rendering native; object
+    introspection keeps Python bridge.
 
 Each step is independently shippable: the binary keeps working via the
 shim fallback until its native path passes the parity harness.

@@ -1,0 +1,4 @@
+# Ignore vendored upstream sources pulled in as path dependencies.
+ignore = [
+    "src/RaTeX",
+]

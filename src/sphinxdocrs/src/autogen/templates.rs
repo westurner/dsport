@@ -39,6 +39,13 @@ impl AutogenTemplates {
     pub fn vendored() -> Self {
         let mut env = Environment::new();
         env.add_filter("underline", underline_filter);
+        // `_()` is the gettext wrapper used in class.rst / module.rst rubric
+        // headings (e.g. `{{ _('Methods') }}`).  Register as a pass-through
+        // identity function so template rendering never errors in native mode.
+        env.add_global(
+            "_",
+            minijinja::Value::from_function(|s: String| -> String { s }),
+        );
         env.add_template("base.rst", BASE_RST)
             .expect("bundled base.rst is valid");
         env.add_template("class.rst", CLASS_RST)

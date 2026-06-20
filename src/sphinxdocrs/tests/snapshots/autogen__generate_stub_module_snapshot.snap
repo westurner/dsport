@@ -1,0 +1,8 @@
+---
+source: src/sphinxdocrs/tests/autogen.rs
+expression: content
+---
+mypkg.helpers
+=============
+
+.. automodule:: mypkg.helpers

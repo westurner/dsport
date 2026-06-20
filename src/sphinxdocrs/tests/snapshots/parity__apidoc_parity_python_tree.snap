@@ -1,0 +1,7 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: py_tree
+---
+- modules.rst
+- mypkg.rst
+- mypkg.sub.rst

@@ -1,0 +1,9 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: py_tree
+---
+- _build
+- _static
+- _templates
+- conf.py
+- index.rst

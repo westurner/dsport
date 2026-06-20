@@ -1,0 +1,13 @@
+---
+source: src/sphinxdocrs/tests/autogen.rs
+expression: content
+---
+mypkg.MyClass
+=============
+
+.. currentmodule:: mypkg
+
+.. autoclass:: MyClass
+
+   
+   .. automethod:: __init__

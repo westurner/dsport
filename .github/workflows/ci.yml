@@ -13,6 +13,8 @@ jobs:
         working-directory: src
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -30,6 +32,8 @@ jobs:
         working-directory: src
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
@@ -37,9 +41,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src
-      - run: pip install maturin pytest
-      - run: maturin develop --release
+      - run: python -m venv .venv
+      - run: .venv/bin/python -m pip install maturin pytest
+      - run: ../.venv/bin/maturin develop --release
         working-directory: src/docutilsrs
-      - run: maturin develop --release
+      - run: ../.venv/bin/maturin develop --release
         working-directory: src/sphinxdocrs
-      - run: pytest tests/ -q
+      - run: .venv/bin/pytest tests/ -q

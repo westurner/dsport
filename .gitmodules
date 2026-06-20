@@ -1,0 +1,27 @@
+[submodule "src/MyST-Parser"]
+	path = src/MyST-Parser
+	url = https://github.com/executablebooks/MyST-Parser
+[submodule "src/RaTeX"]
+	path = src/RaTeX
+	url = https://github.com/erweixin/RaTeX
+[submodule "src/docutils"]
+	path = src/docutils
+	url = https://github.com/docutils/docutils
+[submodule "src/jinja2"]
+	path = src/jinja2
+	url = https://github.com/pallets/jinja
+[submodule "src/markdown-it-py"]
+	path = src/markdown-it-py
+	url = https://github.com/executablebooks/markdown-it-py
+[submodule "src/minijinja"]
+	path = src/minijinja
+	url = https://github.com/mitsuhiko/minijinja
+[submodule "src/pulldown-cmark"]
+	path = src/pulldown-cmark
+	url = https://github.com/pulldown-cmark/pulldown-cmark
+[submodule "src/pygments"]
+	path = src/pygments
+	url = https://github.com/pygments/pygments
+[submodule "src/sphinx"]
+	path = src/sphinx
+	url = https://github.com/sphinx-doc/sphinx

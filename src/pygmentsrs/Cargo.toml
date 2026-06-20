@@ -41,8 +41,8 @@ default = ["python-bridge"]
 
 [dependencies]
 pyo3 = { workspace = true, features = ["auto-initialize"], optional = true }
-fancy-regex = "0.14"
-phf = { version = "0.11", features = ["macros"] }
+fancy-regex = "0.18"
+phf = { version = "0.13", features = ["macros"] }
 
 # Optional RaTeX dependencies (feature-gated; Phase F3.1+)
 ratex-svg = { path = "../RaTeX/crates/ratex-svg", version = "0.1.9", optional = true }

@@ -75,12 +75,13 @@ assets/autosummary/
   module.rst
 ```
 
-Test suites (all green, 325 total):
+Test suites (all green, 380 total):
 
 | suite | tests | covers |
 | --- | --- | --- |
-| lib (unit) | 136 | existing + inline tests in `cli/io.rs`, `quickstart/validate.rs`, `build/args.rs`, `build/make_mode.rs`, `build/logging.rs`, `apidoc/generate.rs`, `apidoc/parser.rs`, `autogen/scan.rs`, `autogen/parser.rs`, `autogen/generate.rs`, `registry.rs` |
-| `tests/registry.rs` | 32 | `add_source_suffix` (3, incl. `#[case]` suffix variants), `add_source_parser`/`get_source_parser`/`get_source_parsers` (6), `add_transform`/`get_transforms` (5), `add_post_transform`/`get_post_transforms` (2), CSS assets (3), JS assets (2), static dirs (2), LaTeX packages (7), HTML themes (2), empty registry (1) |
+| lib (unit) | 162 | existing + inline tests in `cli/io.rs`, `quickstart/validate.rs`, `build/args.rs`, `build/make_mode.rs`, `build/logging.rs`, `apidoc/generate.rs`, `apidoc/parser.rs`, `autogen/scan.rs`, `autogen/parser.rs`, `autogen/generate.rs`, `registry.rs`, `versioning.rs` |
+| `tests/versioning.rs` | 29 | `levenshtein_distance` (8 `#[case]`), `get_ratio` (5), `add_uids` (3), `merge_doctrees` mirrors (modified/added/deleted/deleted_end/insert/insert_beginning/insert_similar + edge cases) |
+| `tests/registry.rs` | 32 | `add_source_suffix` (3, incl. `#[case]` suffix variants), `add_source_parser`/`get_source_parser`/`get_source_parsers` (6), `add_transform`/`get_transforms` (5), `add_post_transform`/`get_post_transforms` (2), CSS assets (3), JS assets (2), static dirs (2), LaTeX packages (7), HTML themes (2), empty registry (1) | `add_source_suffix` (3, incl. `#[case]` suffix variants), `add_source_parser`/`get_source_parser`/`get_source_parsers` (6), `add_transform`/`get_transforms` (5), `add_post_transform`/`get_post_transforms` (2), CSS assets (3), JS assets (2), static dirs (2), LaTeX packages (7), HTML themes (2), empty registry (1) |
 | `tests/autogen.rs` | 32 | parser flags (7 incl. 3 `#[case]`), `find_autosummary_in_lines` (7 cases), `find_autosummary_in_files` (1), template/help snapshots (2), `infer_obj_type` (5 `#[case]`), `split_fqn` (2), `generate_stub` (5), `generate_stubs` (2), stub content snapshots (2) |
 | `tests/apidoc.rs` | 24 | parser flags (8), `is_initpy` (4 `#[case]`), `module_join` (4 `#[case]`), `is_excluded` (1), `recurse_tree` basic/no-private/with-private (3), module/TOC/help snapshots (3) |
 | `tests/quickstart.rs` | 50 | validators (11 `#[case]` tables), parser (8), `valid_dir` (4), tree-layout snapshots (4), `conf_py_snapshot`, newline modes (2), `ask_user` scripted-terminal, help-text snapshot |
@@ -445,6 +446,12 @@ validator error paths are mandatory-covered.
     registration, transforms, CSS/JS/static asset tracking, LaTeX packages, HTML
     theme registry. `RegistryError` for duplicate/not-found conditions. 27 inline
     unit tests + 32 integration tests in `tests/registry.rs`; 325 total.
+13. ✅ **P2.2 Versioning** Port `sphinx.versioning` pure algorithms: `VERSIONING_RATIO`,
+    `levenshtein_distance`, `get_ratio`, `VersionableNode` trait, `add_uids`,
+    `merge_doctrees`; mirrors all 7 Python test fixture scenarios (modified, added,
+    deleted, deleted_end, insert, insert_beginning, insert_similar). Added `uuid`
+    dep for UID generation. 26 inline unit tests + 29 integration tests in
+    `tests/versioning.rs`; `UIDTransform` deferred to P3; 380 total tests.
 
 Each step is independently shippable: the binary keeps working via the
 shim fallback until its native path passes the parity harness.

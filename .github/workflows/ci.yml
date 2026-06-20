@@ -42,9 +42,9 @@ jobs:
         with:
           workspaces: src
       - run: python -m venv .venv
-      - run: .venv/bin/python -m pip install maturin pytest
-      - run: ../.venv/bin/maturin develop --release
+      - run: ${{ github.workspace }}/src/.venv/bin/python -m pip install maturin pytest
+      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
         working-directory: src/docutilsrs
-      - run: ../.venv/bin/maturin develop --release
+      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
         working-directory: src/sphinxdocrs
-      - run: .venv/bin/pytest tests/ -q
+      - run: ${{ github.workspace }}/src/.venv/bin/pytest tests/ -q

@@ -38,11 +38,14 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[ \t\r]+", TEXT),
         Rule::token(r"(?m)#[^\n]*", COMMENT),
     ]);
-    m.insert(r"escapable-string", vec![
-        Rule::token(r"(?m)\\[tsn]", STRING_ESCAPE),
-        Rule::token(r#"(?m)[^"]"#, STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"escapable-string",
+        vec![
+            Rule::token(r"(?m)\\[tsn]", STRING_ESCAPE),
+            Rule::token(r#"(?m)[^"]"#, STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

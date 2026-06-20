@@ -56,42 +56,57 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[~?][a-z][\w\']*:", NAME),
         Rule::token(r"(?m)\S", NAME_BUILTIN_PSEUDO),
     ]);
-    m.insert(r"set-options", vec![
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r"(?m)[A-Z]\w*", KEYWORD_NAMESPACE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"string"])),
-        Rule::token(r"(?m)\d+", NUMBER_INTEGER),
-        Rule::token_to(r"(?m)\.", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"sn-notation", vec![
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r"(?m)\b(?:via|mapping|abstract|warning|after)\b", KEYWORD),
-        Rule::token(r"(?m)=>|[()\[\]:,]", OPERATOR),
-        Rule::token(r"(?m)\b[^\W\d][\w\']*(?:\.[^\W\d][\w\']*)*\b", NAME),
-        Rule::token(r"(?m)\d[\d_]*", NUMBER_INTEGER),
-        Rule::token(r"(?m)0[xX][\da-fA-F][\da-fA-F_]*", NUMBER_HEX),
-        Rule::token_to(r"(?m)\(\*", COMMENT, NewState::Push(vec![r"comment"])),
-        Rule::token_to(r"(?m)\.", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)([^(*)]+|\*+(?!\)))+", COMMENT),
-        Rule::token_to(r"(?m)\(\*", COMMENT, NewState::PushSame),
-        Rule::token_to(r"(?m)\*\)", COMMENT, NewState::Pop(1)),
-        Rule::token(r"(?m)[(*)]", COMMENT),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^"]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?m)"""#, STRING_DOUBLE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"dotted", vec![
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r"(?m)\.", PUNCTUATION),
-        Rule::token(r"(?m)[A-Z][\w\']*(?=\s*\.)", NAME_NAMESPACE),
-        Rule::token_to(r"(?m)[A-Z][\w\']*", NAME_CLASS, NewState::Pop(1)),
-        Rule::token_to(r"(?m)[a-z][a-z0-9_\']*", NAME, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"set-options",
+        vec![
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r"(?m)[A-Z]\w*", KEYWORD_NAMESPACE),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"string"])),
+            Rule::token(r"(?m)\d+", NUMBER_INTEGER),
+            Rule::token_to(r"(?m)\.", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"sn-notation",
+        vec![
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r"(?m)\b(?:via|mapping|abstract|warning|after)\b", KEYWORD),
+            Rule::token(r"(?m)=>|[()\[\]:,]", OPERATOR),
+            Rule::token(r"(?m)\b[^\W\d][\w\']*(?:\.[^\W\d][\w\']*)*\b", NAME),
+            Rule::token(r"(?m)\d[\d_]*", NUMBER_INTEGER),
+            Rule::token(r"(?m)0[xX][\da-fA-F][\da-fA-F_]*", NUMBER_HEX),
+            Rule::token_to(r"(?m)\(\*", COMMENT, NewState::Push(vec![r"comment"])),
+            Rule::token_to(r"(?m)\.", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)([^(*)]+|\*+(?!\)))+", COMMENT),
+            Rule::token_to(r"(?m)\(\*", COMMENT, NewState::PushSame),
+            Rule::token_to(r"(?m)\*\)", COMMENT, NewState::Pop(1)),
+            Rule::token(r"(?m)[(*)]", COMMENT),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^"]+"#, STRING_DOUBLE),
+            Rule::token(r#"(?m)"""#, STRING_DOUBLE),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"dotted",
+        vec![
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r"(?m)\.", PUNCTUATION),
+            Rule::token(r"(?m)[A-Z][\w\']*(?=\s*\.)", NAME_NAMESPACE),
+            Rule::token_to(r"(?m)[A-Z][\w\']*", NAME_CLASS, NewState::Pop(1)),
+            Rule::token_to(r"(?m)[a-z][a-z0-9_\']*", NAME, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

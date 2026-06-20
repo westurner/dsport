@@ -18,8 +18,8 @@ use minijinja::{Error, ErrorKind};
 use std::fmt;
 use std::sync::Arc;
 
-use crate::markup::Markup;
 use crate::escape::escape_to;
+use crate::markup::Markup;
 
 // ── Object impl ───────────────────────────────────────────────────────────────
 

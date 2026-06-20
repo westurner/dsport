@@ -44,13 +44,20 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[a-zA-Z_][a-zA-Z_0-9]*", NAME),
         Rule::token(r"(?m)\s+", WHITESPACE),
     ]);
-    m.insert(r"string", vec![
-        Rule::token(r"(?m)[']{3}([']{0,2}([^\\']|\\(.|\n)))*[']{3}", STRING),
-        Rule::token(r"(?m)'.*?(?<!\\)(\\\\)*?'", STRING),
-    ]);
-    m.insert(r"keywords", vec![
-        Rule::token(r"(?m)(break|continue|e(?:l(?:if|se)|nd(?:foreach|if))|foreach|if)\b", KEYWORD),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r"(?m)[']{3}([']{0,2}([^\\']|\\(.|\n)))*[']{3}", STRING),
+            Rule::token(r"(?m)'.*?(?<!\\)(\\\\)*?'", STRING),
+        ],
+    );
+    m.insert(
+        r"keywords",
+        vec![Rule::token(
+            r"(?m)(break|continue|e(?:l(?:if|se)|nd(?:foreach|if))|foreach|if)\b",
+            KEYWORD,
+        )],
+    );
     m.insert(r"expr", vec![
         Rule::token(r"(?m)(in|and|or|not)\b", OPERATOR_WORD),
         Rule::token(r"(?m)([\*/%\+-]=?|==|!=|=)", OPERATOR),

@@ -44,14 +44,39 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token(r"(?m).", TEXT),
     ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r"(?m)[^']*'", STRING, NewState::Pop(1)),
-        Rule::token_to(r"(?m).", STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"deffunc", vec![
-        Rule::bygroups_to(r"(?m)(\s*)(?:(\S+)(\s*)(=)(\s*))?(.+)(\()(.*)(\))(\s*)", vec![Some(WHITESPACE), Some(TEXT), Some(WHITESPACE), Some(PUNCTUATION), Some(WHITESPACE), Some(NAME_FUNCTION), Some(PUNCTUATION), Some(TEXT), Some(PUNCTUATION), Some(WHITESPACE)], NewState::Pop(1)),
-        Rule::bygroups_to(r"(?m)(\s*)([a-zA-Z_]\w*)", vec![Some(TEXT), Some(NAME_FUNCTION)], NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r"(?m)[^']*'", STRING, NewState::Pop(1)),
+            Rule::token_to(r"(?m).", STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"deffunc",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)(\s*)(?:(\S+)(\s*)(=)(\s*))?(.+)(\()(.*)(\))(\s*)",
+                vec![
+                    Some(WHITESPACE),
+                    Some(TEXT),
+                    Some(WHITESPACE),
+                    Some(PUNCTUATION),
+                    Some(WHITESPACE),
+                    Some(NAME_FUNCTION),
+                    Some(PUNCTUATION),
+                    Some(TEXT),
+                    Some(PUNCTUATION),
+                    Some(WHITESPACE),
+                ],
+                NewState::Pop(1),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(\s*)([a-zA-Z_]\w*)",
+                vec![Some(TEXT), Some(NAME_FUNCTION)],
+                NewState::Pop(1),
+            ),
+        ],
+    );
     Table(m)
 }
 

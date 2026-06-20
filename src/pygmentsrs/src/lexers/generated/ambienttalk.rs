@@ -46,23 +46,40 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)(\d+\.\d*|\d*\.\d+)([eE][+-]?[0-9]+)?", NUMBER_FLOAT),
         Rule::token(r"(?ms)\d+", NUMBER_INTEGER),
     ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?ms)(\d+\.\d*|\d*\.\d+)([eE][+-]?[0-9]+)?", NUMBER_FLOAT),
-        Rule::token(r"(?ms)\d+", NUMBER_INTEGER),
-    ]);
-    m.insert(r"namespace", vec![
-        Rule::token(r"(?ms)[a-zA-Z_]\w*\.", NAME_NAMESPACE),
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*:", NAME_FUNCTION, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*(?!\.)", NAME_FUNCTION, NewState::Pop(1)),
-    ]);
-    m.insert(r"annotations", vec![
-        Rule::token_to(r"(?ms)(.*?)\]", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"arglist", vec![
-        Rule::token_to(r"(?ms)\|", PUNCTUATION, NewState::Pop(1)),
-        Rule::bygroups(r"(?ms)(\s*)(,)(\s*)", vec![Some(WHITESPACE), Some(PUNCTUATION), Some(WHITESPACE)]),
-        Rule::token(r"(?ms)[a-zA-Z_]\w*", NAME_VARIABLE),
-    ]);
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(r"(?ms)(\d+\.\d*|\d*\.\d+)([eE][+-]?[0-9]+)?", NUMBER_FLOAT),
+            Rule::token(r"(?ms)\d+", NUMBER_INTEGER),
+        ],
+    );
+    m.insert(
+        r"namespace",
+        vec![
+            Rule::token(r"(?ms)[a-zA-Z_]\w*\.", NAME_NAMESPACE),
+            Rule::token_to(r"(?ms)[a-zA-Z_]\w*:", NAME_FUNCTION, NewState::Pop(1)),
+            Rule::token_to(r"(?ms)[a-zA-Z_]\w*(?!\.)", NAME_FUNCTION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"annotations",
+        vec![Rule::token_to(
+            r"(?ms)(.*?)\]",
+            NAME_CLASS,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"arglist",
+        vec![
+            Rule::token_to(r"(?ms)\|", PUNCTUATION, NewState::Pop(1)),
+            Rule::bygroups(
+                r"(?ms)(\s*)(,)(\s*)",
+                vec![Some(WHITESPACE), Some(PUNCTUATION), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?ms)[a-zA-Z_]\w*", NAME_VARIABLE),
+        ],
+    );
     Table(m)
 }
 

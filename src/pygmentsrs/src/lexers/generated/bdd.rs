@@ -25,18 +25,26 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"comments", vec![
-        Rule::token(r"(?m)^\s*#.*$", COMMENT),
-    ]);
-    m.insert(r"miscellaneous", vec![
-        Rule::token(r"(?m)(<|>|\[|\]|=|\||:|\(|\)|\{|\}|,|\.|;|-|_|\$)", PUNCTUATION),
-        Rule::token(r"(?m)((?<=\<)[^\\>]+(?=\>))", NAME_VARIABLE),
-        Rule::token(r#"(?m)"([^\"]*)""#, STRING),
-        Rule::token(r"(?m)^@\S+", NAME_LABEL),
-    ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?m)(\d+\.?\d*|\d*\.\d+)([eE][+-]?[0-9]+)?", NUMBER),
-    ]);
+    m.insert(r"comments", vec![Rule::token(r"(?m)^\s*#.*$", COMMENT)]);
+    m.insert(
+        r"miscellaneous",
+        vec![
+            Rule::token(
+                r"(?m)(<|>|\[|\]|=|\||:|\(|\)|\{|\}|,|\.|;|-|_|\$)",
+                PUNCTUATION,
+            ),
+            Rule::token(r"(?m)((?<=\<)[^\\>]+(?=\>))", NAME_VARIABLE),
+            Rule::token(r#"(?m)"([^\"]*)""#, STRING),
+            Rule::token(r"(?m)^@\S+", NAME_LABEL),
+        ],
+    );
+    m.insert(
+        r"numbers",
+        vec![Rule::token(
+            r"(?m)(\d+\.?\d*|\d*\.\d+)([eE][+-]?[0-9]+)?",
+            NUMBER,
+        )],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?m)\n|\s+", WHITESPACE),
         Rule::token(r"(?m)Given|When|Then|Add|And|Feature|Scenario Outline|Scenario|Background|Examples|But", KEYWORD),

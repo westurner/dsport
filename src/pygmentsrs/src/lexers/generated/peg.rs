@@ -25,17 +25,23 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)#.*$", COMMENT_SINGLE),
-        Rule::token(r"(?m)<-|[←:=/|&!?*+^↑~]", OPERATOR),
-        Rule::token(r"(?m)[()]", PUNCTUATION),
-        Rule::token(r"(?m)\.", KEYWORD),
-        Rule::bygroups(r"(?m)(\[)([^\]]*(?:\\.[^\]\\]*)*)(\])", vec![Some(PUNCTUATION), Some(STRING), Some(PUNCTUATION)]),
-        Rule::token(r#"(?m)[a-z]?"[^"\\]*(?:\\.[^"\\]*)*"[a-z]*"#, STRING_DOUBLE),
-        Rule::token(r"(?m)[a-z]?'[^'\\]*(?:\\.[^'\\]*)*'[a-z]*", STRING_SINGLE),
-        Rule::token(r#"(?m)[^\s<←:=/|&!?*+\^↑~()\[\]"\'#]+"#, NAME_CLASS),
-        Rule::token(r"(?m).", TEXT),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)#.*$", COMMENT_SINGLE),
+            Rule::token(r"(?m)<-|[←:=/|&!?*+^↑~]", OPERATOR),
+            Rule::token(r"(?m)[()]", PUNCTUATION),
+            Rule::token(r"(?m)\.", KEYWORD),
+            Rule::bygroups(
+                r"(?m)(\[)([^\]]*(?:\\.[^\]\\]*)*)(\])",
+                vec![Some(PUNCTUATION), Some(STRING), Some(PUNCTUATION)],
+            ),
+            Rule::token(r#"(?m)[a-z]?"[^"\\]*(?:\\.[^"\\]*)*"[a-z]*"#, STRING_DOUBLE),
+            Rule::token(r"(?m)[a-z]?'[^'\\]*(?:\\.[^'\\]*)*'[a-z]*", STRING_SINGLE),
+            Rule::token(r#"(?m)[^\s<←:=/|&!?*+\^↑~()\[\]"\'#]+"#, NAME_CLASS),
+            Rule::token(r"(?m).", TEXT),
+        ],
+    );
     Table(m)
 }
 

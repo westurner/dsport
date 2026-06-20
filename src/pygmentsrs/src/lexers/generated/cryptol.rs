@@ -51,46 +51,96 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\(\)", NAME_BUILTIN),
         Rule::token(r"(?m)[\]\[(),;`{}]", PUNCTUATION),
     ]);
-    m.insert(r"import", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)qualified\b", KEYWORD),
-        Rule::bygroups_to(r"(?m)([A-Z][\w.]*)(\s+)(as)(\s+)([A-Z][\w.]*)", vec![Some(NAME_NAMESPACE), Some(WHITESPACE), Some(KEYWORD), Some(WHITESPACE), Some(NAME)], NewState::Pop(1)),
-        Rule::bygroups_to(r"(?m)([A-Z][\w.]*)(\s+)(hiding)(\s+)(\()", vec![Some(NAME_NAMESPACE), Some(WHITESPACE), Some(KEYWORD), Some(WHITESPACE), Some(PUNCTUATION)], NewState::Push(vec![r"funclist"])),
-        Rule::bygroups_to(r"(?m)([A-Z][\w.]*)(\s+)(\()", vec![Some(NAME_NAMESPACE), Some(WHITESPACE), Some(PUNCTUATION)], NewState::Push(vec![r"funclist"])),
-        Rule::token_to(r"(?m)[\w.]+", NAME_NAMESPACE, NewState::Pop(1)),
-    ]);
-    m.insert(r"module", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::bygroups_to(r"(?m)([A-Z][\w.]*)(\s+)(\()", vec![Some(NAME_NAMESPACE), Some(WHITESPACE), Some(PUNCTUATION)], NewState::Push(vec![r"funclist"])),
-        Rule::token_to(r"(?m)[A-Z][\w.]*", NAME_NAMESPACE, NewState::Pop(1)),
-    ]);
-    m.insert(r"funclist", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)[A-Z]\w*", KEYWORD_TYPE),
-        Rule::token(r"(?m)(_[\w\']+|[a-z][\w\']*)", NAME_FUNCTION),
-        Rule::token(r"(?m),", PUNCTUATION),
-        Rule::token(r"(?m)[:!#$%&*+.\\/<=>?@^|~-]+", OPERATOR),
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"funclist", r"funclist"])),
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(2)),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^/*]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"character", vec![
-        Rule::token_to(r"(?m)[^\\']'", STRING_CHAR, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
-        Rule::token_to(r"(?m)'", STRING_CHAR, NewState::Pop(1)),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-        Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"import",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?m)qualified\b", KEYWORD),
+            Rule::bygroups_to(
+                r"(?m)([A-Z][\w.]*)(\s+)(as)(\s+)([A-Z][\w.]*)",
+                vec![
+                    Some(NAME_NAMESPACE),
+                    Some(WHITESPACE),
+                    Some(KEYWORD),
+                    Some(WHITESPACE),
+                    Some(NAME),
+                ],
+                NewState::Pop(1),
+            ),
+            Rule::bygroups_to(
+                r"(?m)([A-Z][\w.]*)(\s+)(hiding)(\s+)(\()",
+                vec![
+                    Some(NAME_NAMESPACE),
+                    Some(WHITESPACE),
+                    Some(KEYWORD),
+                    Some(WHITESPACE),
+                    Some(PUNCTUATION),
+                ],
+                NewState::Push(vec![r"funclist"]),
+            ),
+            Rule::bygroups_to(
+                r"(?m)([A-Z][\w.]*)(\s+)(\()",
+                vec![Some(NAME_NAMESPACE), Some(WHITESPACE), Some(PUNCTUATION)],
+                NewState::Push(vec![r"funclist"]),
+            ),
+            Rule::token_to(r"(?m)[\w.]+", NAME_NAMESPACE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"module",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::bygroups_to(
+                r"(?m)([A-Z][\w.]*)(\s+)(\()",
+                vec![Some(NAME_NAMESPACE), Some(WHITESPACE), Some(PUNCTUATION)],
+                NewState::Push(vec![r"funclist"]),
+            ),
+            Rule::token_to(r"(?m)[A-Z][\w.]*", NAME_NAMESPACE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"funclist",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)[A-Z]\w*", KEYWORD_TYPE),
+            Rule::token(r"(?m)(_[\w\']+|[a-z][\w\']*)", NAME_FUNCTION),
+            Rule::token(r"(?m),", PUNCTUATION),
+            Rule::token(r"(?m)[:!#$%&*+.\\/<=>?@^|~-]+", OPERATOR),
+            Rule::token_to(
+                r"(?m)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"funclist", r"funclist"]),
+            ),
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(2)),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^/*]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"character",
+        vec![
+            Rule::token_to(r"(?m)[^\\']'", STRING_CHAR, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
+            Rule::token_to(r"(?m)'", STRING_CHAR, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+            Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"escape", vec![
         Rule::token_to(r#"(?m)[abfnrtv"\'&\\]"#, STRING_ESCAPE, NewState::Pop(1)),
         Rule::token_to(r"(?m)\^[\]\[A-Z@^_]", STRING_ESCAPE, NewState::Pop(1)),

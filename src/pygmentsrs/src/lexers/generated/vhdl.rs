@@ -61,14 +61,17 @@ fn build_table() -> Table {
     m.insert(r"keywords", vec![
         Rule::token(r"(?im)(a(?:bs|ccess|fter|l(?:ias|l)|nd|r(?:chitecture|ray)|ssert|ttribute)|b(?:egin|lock|ody|u(?:ffer|s))|c(?:ase|o(?:mponent|n(?:figuration|stant)))|d(?:isconnect|ownto)|e(?:ls(?:e|if)|n(?:d|tity)|xit)|f(?:ile|or|unction)|g(?:ener(?:ate|ic)|roup|uarded)|i(?:mpure|n(?:ertial|out)|[fns])|l(?:abel|i(?:brary|nkage|teral)|oop)|m(?:ap|od)|n(?:and|e(?:w|xt)|o(?:[rt])|ull)|o(?:pen|thers|ut|[fnr])|p(?:ackage|o(?:rt|stponed)|roce(?:dure|ss)|ure)|r(?:ange|e(?:cord|gister|ject|m|turn)|o(?:[lr]))|s(?:e(?:lect|verity)|hared|ignal|l(?:[al])|r(?:[al])|ubtype)|t(?:hen|o|ransport|ype)|u(?:n(?:its|til)|se)|variable|w(?:ait|h(?:en|ile)|ith)|x(?:(?:(?:n)?)or))\b", KEYWORD),
     ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?im)\d{1,2}#[0-9a-f_]+#?", NUMBER_INTEGER),
-        Rule::token(r"(?im)\d+", NUMBER_INTEGER),
-        Rule::token(r"(?im)(\d+\.\d*|\.\d+|\d+)E[+-]?\d+", NUMBER_FLOAT),
-        Rule::token(r#"(?im)X"[0-9a-f_]+""#, NUMBER_HEX),
-        Rule::token(r#"(?im)O"[0-7_]+""#, NUMBER_OCT),
-        Rule::token(r#"(?im)B"[01_]+""#, NUMBER_BIN),
-    ]);
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(r"(?im)\d{1,2}#[0-9a-f_]+#?", NUMBER_INTEGER),
+            Rule::token(r"(?im)\d+", NUMBER_INTEGER),
+            Rule::token(r"(?im)(\d+\.\d*|\.\d+|\d+)E[+-]?\d+", NUMBER_FLOAT),
+            Rule::token(r#"(?im)X"[0-9a-f_]+""#, NUMBER_HEX),
+            Rule::token(r#"(?im)O"[0-7_]+""#, NUMBER_OCT),
+            Rule::token(r#"(?im)B"[01_]+""#, NUMBER_BIN),
+        ],
+    );
     m.insert(r"endblock", vec![
         Rule::token(r"(?im)(a(?:bs|ccess|fter|l(?:ias|l)|nd|r(?:chitecture|ray)|ssert|ttribute)|b(?:egin|lock|ody|u(?:ffer|s))|c(?:ase|o(?:mponent|n(?:figuration|stant)))|d(?:isconnect|ownto)|e(?:ls(?:e|if)|n(?:d|tity)|xit)|f(?:ile|or|unction)|g(?:ener(?:ate|ic)|roup|uarded)|i(?:mpure|n(?:ertial|out)|[fns])|l(?:abel|i(?:brary|nkage|teral)|oop)|m(?:ap|od)|n(?:and|e(?:w|xt)|o(?:[rt])|ull)|o(?:pen|thers|ut|[fnr])|p(?:ackage|o(?:rt|stponed)|roce(?:dure|ss)|ure)|r(?:ange|e(?:cord|gister|ject|m|turn)|o(?:[lr]))|s(?:e(?:lect|verity)|hared|ignal|l(?:[al])|r(?:[al])|ubtype)|t(?:hen|o|ransport|ype)|u(?:n(?:its|til)|se)|variable|w(?:ait|h(?:en|ile)|ith)|x(?:(?:(?:n)?)or))\b", KEYWORD),
         Rule::token(r"(?im)[a-z_]\w*", NAME_CLASS),

@@ -40,12 +40,14 @@ fn build_table() -> Table {
         Rule::bygroups_to(r"(?im)(Evalue|Rvalue|Uvalue|Edefer|Rdefer|Udefer)(\s+)", vec![Some(KEYWORD_NAMESPACE), Some(TEXT)], NewState::Push(vec![r"worddef"])),
         Rule::token(r"(?im)\S+", NAME_FUNCTION),
     ]);
-    m.insert(r"worddef", vec![
-        Rule::token_to(r"(?im)\S+", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"stringdef", vec![
-        Rule::token_to(r#"(?im)[^"]+"#, STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"worddef",
+        vec![Rule::token_to(r"(?im)\S+", NAME_CLASS, NewState::Pop(1))],
+    );
+    m.insert(
+        r"stringdef",
+        vec![Rule::token_to(r#"(?im)[^"]+"#, STRING, NewState::Pop(1))],
+    );
     Table(m)
 }
 

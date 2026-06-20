@@ -48,23 +48,53 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)[0-9]+", NUMBER_INTEGER),
         Rule::token(r"(?ms)\n", WHITESPACE),
     ]);
-    m.insert(r"templateText", vec![
-        Rule::token(r"(?ms)(\\<)|(\\\$)", STRING),
-        Rule::bygroups_to(r"(?ms)(<%@\s+)(extends|params)", vec![Some(OPERATOR), Some(NAME_DECORATOR)], NewState::Push(vec![r"stringTemplate"])),
-        Rule::token(r"(?ms)<%!--.*?--%>", COMMENT_MULTILINE),
-        Rule::token_to(r"(?ms)(<%)|(<%=)", OPERATOR, NewState::Push(vec![r"stringTemplate"])),
-        Rule::token_to(r"(?ms)\$\{", OPERATOR, NewState::Push(vec![r"stringTemplateShorthand"])),
-        Rule::token(r"(?ms).", STRING),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?ms)""#, STRING, NewState::Pop(1)),
-        Rule::token(r"(?ms)(\\<)|(\\\$)", STRING),
-        Rule::bygroups_to(r"(?ms)(<%@\s+)(extends|params)", vec![Some(OPERATOR), Some(NAME_DECORATOR)], NewState::Push(vec![r"stringTemplate"])),
-        Rule::token(r"(?ms)<%!--.*?--%>", COMMENT_MULTILINE),
-        Rule::token_to(r"(?ms)(<%)|(<%=)", OPERATOR, NewState::Push(vec![r"stringTemplate"])),
-        Rule::token_to(r"(?ms)\$\{", OPERATOR, NewState::Push(vec![r"stringTemplateShorthand"])),
-        Rule::token(r"(?ms).", STRING),
-    ]);
+    m.insert(
+        r"templateText",
+        vec![
+            Rule::token(r"(?ms)(\\<)|(\\\$)", STRING),
+            Rule::bygroups_to(
+                r"(?ms)(<%@\s+)(extends|params)",
+                vec![Some(OPERATOR), Some(NAME_DECORATOR)],
+                NewState::Push(vec![r"stringTemplate"]),
+            ),
+            Rule::token(r"(?ms)<%!--.*?--%>", COMMENT_MULTILINE),
+            Rule::token_to(
+                r"(?ms)(<%)|(<%=)",
+                OPERATOR,
+                NewState::Push(vec![r"stringTemplate"]),
+            ),
+            Rule::token_to(
+                r"(?ms)\$\{",
+                OPERATOR,
+                NewState::Push(vec![r"stringTemplateShorthand"]),
+            ),
+            Rule::token(r"(?ms).", STRING),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?ms)""#, STRING, NewState::Pop(1)),
+            Rule::token(r"(?ms)(\\<)|(\\\$)", STRING),
+            Rule::bygroups_to(
+                r"(?ms)(<%@\s+)(extends|params)",
+                vec![Some(OPERATOR), Some(NAME_DECORATOR)],
+                NewState::Push(vec![r"stringTemplate"]),
+            ),
+            Rule::token(r"(?ms)<%!--.*?--%>", COMMENT_MULTILINE),
+            Rule::token_to(
+                r"(?ms)(<%)|(<%=)",
+                OPERATOR,
+                NewState::Push(vec![r"stringTemplate"]),
+            ),
+            Rule::token_to(
+                r"(?ms)\$\{",
+                OPERATOR,
+                NewState::Push(vec![r"stringTemplateShorthand"]),
+            ),
+            Rule::token(r"(?ms).", STRING),
+        ],
+    );
     m.insert(r"stringTemplate", vec![
         Rule::token_to(r#"(?ms)""#, STRING, NewState::Push(vec![r"string"])),
         Rule::token_to(r"(?ms)%>", OPERATOR, NewState::Pop(1)),

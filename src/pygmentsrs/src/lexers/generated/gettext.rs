@@ -25,15 +25,33 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)^#,\s.*?$", KEYWORD_TYPE),
-        Rule::token(r"(?m)^#:\s.*?$", KEYWORD_DECLARATION),
-        Rule::token(r"(?m)^(#|#\.\s|#\|\s|#~\s|#\s).*$", COMMENT_SINGLE),
-        Rule::bygroups(r#"(?m)^(")([A-Za-z-]+:)(.*")$"#, vec![Some(STRING), Some(NAME_PROPERTY), Some(STRING)]),
-        Rule::token(r#"(?m)^".*"$"#, STRING),
-        Rule::bygroups(r#"(?m)^(msgid|msgid_plural|msgstr|msgctxt)(\s+)(".*")$"#, vec![Some(NAME_VARIABLE), Some(TEXT), Some(STRING)]),
-        Rule::bygroups(r#"(?m)^(msgstr\[)(\d)(\])(\s+)(".*")$"#, vec![Some(NAME_VARIABLE), Some(NUMBER_INTEGER), Some(NAME_VARIABLE), Some(TEXT), Some(STRING)]),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)^#,\s.*?$", KEYWORD_TYPE),
+            Rule::token(r"(?m)^#:\s.*?$", KEYWORD_DECLARATION),
+            Rule::token(r"(?m)^(#|#\.\s|#\|\s|#~\s|#\s).*$", COMMENT_SINGLE),
+            Rule::bygroups(
+                r#"(?m)^(")([A-Za-z-]+:)(.*")$"#,
+                vec![Some(STRING), Some(NAME_PROPERTY), Some(STRING)],
+            ),
+            Rule::token(r#"(?m)^".*"$"#, STRING),
+            Rule::bygroups(
+                r#"(?m)^(msgid|msgid_plural|msgstr|msgctxt)(\s+)(".*")$"#,
+                vec![Some(NAME_VARIABLE), Some(TEXT), Some(STRING)],
+            ),
+            Rule::bygroups(
+                r#"(?m)^(msgstr\[)(\d)(\])(\s+)(".*")$"#,
+                vec![
+                    Some(NAME_VARIABLE),
+                    Some(NUMBER_INTEGER),
+                    Some(NAME_VARIABLE),
+                    Some(TEXT),
+                    Some(STRING),
+                ],
+            ),
+        ],
+    );
     Table(m)
 }
 

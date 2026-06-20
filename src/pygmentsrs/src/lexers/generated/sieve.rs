@@ -38,10 +38,13 @@ fn build_table() -> Table {
         Rule::token(r#"(?m)"[^"]*?""#, STRING),
         Rule::token_to(r"(?m)text:", NAME_TAG, NewState::Push(vec![r"text"])),
     ]);
-    m.insert(r"text", vec![
-        Rule::token(r"(?m)[^.].*?\n", STRING),
-        Rule::token_to(r"(?m)^\.", PUNCTUATION, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"text",
+        vec![
+            Rule::token(r"(?m)[^.].*?\n", STRING),
+            Rule::token_to(r"(?m)^\.", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

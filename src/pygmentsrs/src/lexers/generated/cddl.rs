@@ -25,10 +25,13 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"commentsandwhitespace", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m);.+$", COMMENT_SINGLE),
-    ]);
+    m.insert(
+        r"commentsandwhitespace",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m);.+$", COMMENT_SINGLE),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token(r"(?m);.+$", COMMENT_SINGLE),
@@ -57,27 +60,36 @@ fn build_table() -> Table {
         Rule::token(r"(?m)-?(?:0b[01]+|0x[0-9a-fA-F]+|[1-9]\d*|0(?!\d))", NUMBER_INTEGER),
         Rule::token(r#"(?m)"(\\\\|\\"|[^"])*""#, STRING_DOUBLE),
     ]);
-    m.insert(r"bstrb64url", vec![
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m);.+$", COMMENT_SINGLE),
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token(r"(?m)[0-9a-zA-Z\-_=]+", STRING_SINGLE),
-        Rule::token(r"(?m).", ERROR),
-    ]);
-    m.insert(r"bstrh", vec![
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m);.+$", COMMENT_SINGLE),
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token(r"(?m)[0-9a-fA-F]+", STRING_SINGLE),
-        Rule::token(r"(?m).", ERROR),
-    ]);
-    m.insert(r"bstr", vec![
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token(r"(?m)[^'\\]+", STRING_SINGLE),
-    ]);
+    m.insert(
+        r"bstrb64url",
+        vec![
+            Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m);.+$", COMMENT_SINGLE),
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token(r"(?m)[0-9a-zA-Z\-_=]+", STRING_SINGLE),
+            Rule::token(r"(?m).", ERROR),
+        ],
+    );
+    m.insert(
+        r"bstrh",
+        vec![
+            Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m);.+$", COMMENT_SINGLE),
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token(r"(?m)[0-9a-fA-F]+", STRING_SINGLE),
+            Rule::token(r"(?m).", ERROR),
+        ],
+    );
+    m.insert(
+        r"bstr",
+        vec![
+            Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token(r"(?m)[^'\\]+", STRING_SINGLE),
+        ],
+    );
     Table(m)
 }
 

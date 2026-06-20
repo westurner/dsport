@@ -87,22 +87,34 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[~?][a-z][\w\']*:", NAME_VARIABLE),
         Rule::token(r"(?m)\S", NAME_BUILTIN_PSEUDO),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^/-]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/-", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)-/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[/-]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"docstring", vec![
-        Rule::token(r"(?m)[^/-]+", STRING_DOC),
-        Rule::token_to(r"(?m)-/", STRING_DOC, NewState::Pop(1)),
-        Rule::token(r"(?m)[/-]", STRING_DOC),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^\\"]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?m)(?:(\\[\\\"'nt])|(\\x[0-9a-fA-F]{2})|(\\u[0-9a-fA-F]{4}))"#, STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^/-]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/-", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)-/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[/-]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"docstring",
+        vec![
+            Rule::token(r"(?m)[^/-]+", STRING_DOC),
+            Rule::token_to(r"(?m)-/", STRING_DOC, NewState::Pop(1)),
+            Rule::token(r"(?m)[/-]", STRING_DOC),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^\\"]+"#, STRING_DOUBLE),
+            Rule::token(
+                r#"(?m)(?:(\\[\\\"'nt])|(\\x[0-9a-fA-F]{2})|(\\u[0-9a-fA-F]{4}))"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

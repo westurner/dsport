@@ -96,10 +96,7 @@ impl AnsibleValidator {
 
             // Check required fields
             if !play_obj.contains_key("name") && !play_obj.contains_key("hosts") {
-                warnings.push(format!(
-                    "Play at $[{}] should have 'name' field",
-                    idx
-                ));
+                warnings.push(format!("Play at $[{}] should have 'name' field", idx));
             }
 
             if !play_obj.contains_key("hosts") {

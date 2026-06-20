@@ -43,30 +43,51 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[a-z_][a-zA-Z0-9_\']*", NAME_VARIABLE),
         Rule::token(r"(?m)[,()\[\]{}]", PUNCTUATION),
     ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?m)_?\d+\.(?=\d+)", NUMBER_FLOAT),
-        Rule::token(r"(?m)_?\d+", NUMBER_INTEGER),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)-(?!\})", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)\{-", COMMENT_MULTILINE, NewState::Push(vec![r"comment"])),
-        Rule::token(r"(?m)[^-}]", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)-\}", COMMENT_MULTILINE, NewState::Pop(1)),
-    ]);
-    m.insert(r"doublequote", vec![
-        Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
-        Rule::token(r#"(?m)\\[nrfvb\\"]"#, STRING_ESCAPE),
-        Rule::token(r#"(?m)[^"]"#, STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"imports", vec![
-        Rule::token_to(r"(?m)\w+(\.\w+)*", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"shader", vec![
-        Rule::token(r"(?m)\|(?!\])", NAME_ENTITY),
-        Rule::token_to(r"(?m)\|\]", NAME_ENTITY, NewState::Pop(1)),
-        Rule::bygroups(r"(?m)(.*)(\n)", vec![Some(NAME_ENTITY), Some(WHITESPACE)]),
-    ]);
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(r"(?m)_?\d+\.(?=\d+)", NUMBER_FLOAT),
+            Rule::token(r"(?m)_?\d+", NUMBER_INTEGER),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)-(?!\})", COMMENT_MULTILINE),
+            Rule::token_to(
+                r"(?m)\{-",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"comment"]),
+            ),
+            Rule::token(r"(?m)[^-}]", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)-\}", COMMENT_MULTILINE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"doublequote",
+        vec![
+            Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
+            Rule::token(r#"(?m)\\[nrfvb\\"]"#, STRING_ESCAPE),
+            Rule::token(r#"(?m)[^"]"#, STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"imports",
+        vec![Rule::token_to(
+            r"(?m)\w+(\.\w+)*",
+            NAME_CLASS,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"shader",
+        vec![
+            Rule::token(r"(?m)\|(?!\])", NAME_ENTITY),
+            Rule::token_to(r"(?m)\|\]", NAME_ENTITY, NewState::Pop(1)),
+            Rule::bygroups(r"(?m)(.*)(\n)", vec![Some(NAME_ENTITY), Some(WHITESPACE)]),
+        ],
+    );
     Table(m)
 }
 

@@ -126,11 +126,7 @@ impl Object for AccessKey {
         ObjectRepr::Plain
     }
 
-    fn call(
-        self: &Arc<Self>,
-        _state: &State<'_, '_>,
-        args: &[Value],
-    ) -> Result<Value, Error> {
+    fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
         let key = args
             .first()
             .and_then(|v| v.as_str().map(|s| s.to_owned()))
@@ -178,11 +174,7 @@ impl Object for Debug {
         ObjectRepr::Plain
     }
 
-    fn call(
-        self: &Arc<Self>,
-        _state: &State<'_, '_>,
-        args: &[Value],
-    ) -> Result<Value, Error> {
+    fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
         if args.is_empty() {
             return Err(Error::new(
                 ErrorKind::MissingArgument,
@@ -191,8 +183,7 @@ impl Object for Debug {
         }
         // Use JSON pretty-printing as a substitute for pformat
         let val = &args[0];
-        let pretty = serde_json::to_string_pretty(&val)
-            .unwrap_or_else(|_| val.to_string());
+        let pretty = serde_json::to_string_pretty(&val).unwrap_or_else(|_| val.to_string());
         Ok(Value::from(pretty))
     }
 }
@@ -324,21 +315,17 @@ impl Object for Joiner {
         ObjectRepr::Plain
     }
 
-    fn call(
-        self: &Arc<Self>,
-        _state: &State<'_, '_>,
-        args: &[Value],
-    ) -> Result<Value, Error> {
+    fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
         if args.is_empty() {
             return Err(Error::new(
                 ErrorKind::MissingArgument,
                 "joiner() requires at least one argument",
             ));
         }
-        
+
         let mut first = self.first.lock().unwrap();
         let text = args[0].to_string();
-        
+
         if *first {
             *first = false;
             Ok(Value::from(text))
@@ -383,11 +370,7 @@ impl Object for CyclerFactory {
         ObjectRepr::Plain
     }
 
-    fn call(
-        self: &Arc<Self>,
-        _state: &State<'_, '_>,
-        args: &[Value],
-    ) -> Result<Value, Error> {
+    fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
         if args.is_empty() {
             return Err(Error::new(
                 ErrorKind::MissingArgument,
@@ -433,15 +416,8 @@ impl Object for JoinerFactory {
         ObjectRepr::Plain
     }
 
-    fn call(
-        self: &Arc<Self>,
-        _state: &State<'_, '_>,
-        args: &[Value],
-    ) -> Result<Value, Error> {
-        let separator = args
-            .first()
-            .map(|v| v.to_string())
-            .unwrap_or_default();
+    fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
+        let separator = args.first().map(|v| v.to_string()).unwrap_or_default();
         Ok(Value::from_object(Joiner::new(separator)))
     }
 }
@@ -481,16 +457,9 @@ impl Object for LipsumFactory {
         ObjectRepr::Plain
     }
 
-    fn call(
-        self: &Arc<Self>,
-        _state: &State<'_, '_>,
-        args: &[Value],
-    ) -> Result<Value, Error> {
-        let n = args
-            .first()
-            .and_then(|v| v.as_i64())
-            .unwrap_or(5) as usize;
-        
+    fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
+        let n = args.first().and_then(|v| v.as_i64()).unwrap_or(5) as usize;
+
         Ok(Value::from(generate_lipsum(n)))
     }
 }

@@ -25,9 +25,12 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?mx)^\*\*\*\*(.*)\*\*\*\*$", COMMENT),
-        Rule::bygroups(r"(?mx)^
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?mx)^\*\*\*\*(.*)\*\*\*\*$", COMMENT),
+            Rule::bygroups(
+                r"(?mx)^
         (
           # irssi / xchat and others
           (?: \[|\()?                  # Opening bracket or paren for the timestamp
@@ -48,8 +51,11 @@ fn build_table() -> Table {
           \w{3}\s\d{2}\s               # Date
           \d{2}:\d{2}:\d{2}\s+         # Time + Whitespace
         )?
-    (\s*<[^>]*>\s*)$", vec![Some(COMMENT_PREPROC), Some(NAME_TAG)]),
-        Rule::bygroups_to(r"(?mx)^
+    (\s*<[^>]*>\s*)$",
+                vec![Some(COMMENT_PREPROC), Some(NAME_TAG)],
+            ),
+            Rule::bygroups_to(
+                r"(?mx)^
         (
           # irssi / xchat and others
           (?: \[|\()?                  # Opening bracket or paren for the timestamp
@@ -71,8 +77,12 @@ fn build_table() -> Table {
           \d{2}:\d{2}:\d{2}\s+         # Time + Whitespace
         )?
     
-                (\s*<.*?>\s*)          # Nick ", vec![Some(COMMENT_PREPROC), Some(NAME_TAG)], NewState::Push(vec![r"msg"])),
-        Rule::bygroups(r"(?mx)^
+                (\s*<.*?>\s*)          # Nick ",
+                vec![Some(COMMENT_PREPROC), Some(NAME_TAG)],
+                NewState::Push(vec![r"msg"]),
+            ),
+            Rule::bygroups(
+                r"(?mx)^
         (
           # irssi / xchat and others
           (?: \[|\()?                  # Opening bracket or paren for the timestamp
@@ -95,8 +105,11 @@ fn build_table() -> Table {
         )?
     
                 (\s*[*]\s+)            # Star
-                (\S+\s+.*?\n)          # Nick + rest of message ", vec![Some(COMMENT_PREPROC), Some(KEYWORD), Some(GENERIC_INSERTED)]),
-        Rule::bygroups(r"(?mx)^
+                (\S+\s+.*?\n)          # Nick + rest of message ",
+                vec![Some(COMMENT_PREPROC), Some(KEYWORD), Some(GENERIC_INSERTED)],
+            ),
+            Rule::bygroups(
+                r"(?mx)^
         (
           # irssi / xchat and others
           (?: \[|\()?                  # Opening bracket or paren for the timestamp
@@ -120,13 +133,24 @@ fn build_table() -> Table {
     
                 (\s*(?:\*{3}|<?-[!@=P]?->?)\s*)  # Star(s) or symbols
                 (\S+\s+)                     # Nick + Space
-                (.*?\n)                         # Rest of message ", vec![Some(COMMENT_PREPROC), Some(KEYWORD), Some(STRING), Some(COMMENT)]),
-        Rule::token(r"(?mx)^.*?\n", TEXT),
-    ]);
-    m.insert(r"msg", vec![
-        Rule::token(r"(?mx)\S+:(?!//)", NAME_ATTRIBUTE),
-        Rule::token_to(r"(?mx).*\n", TEXT, NewState::Pop(1)),
-    ]);
+                (.*?\n)                         # Rest of message ",
+                vec![
+                    Some(COMMENT_PREPROC),
+                    Some(KEYWORD),
+                    Some(STRING),
+                    Some(COMMENT),
+                ],
+            ),
+            Rule::token(r"(?mx)^.*?\n", TEXT),
+        ],
+    );
+    m.insert(
+        r"msg",
+        vec![
+            Rule::token(r"(?mx)\S+:(?!//)", NAME_ATTRIBUTE),
+            Rule::token_to(r"(?mx).*\n", TEXT, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

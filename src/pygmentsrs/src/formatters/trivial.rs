@@ -59,13 +59,13 @@ impl TestcaseFormatter {
         out.push_str("    use pygmentsrs::token::Token;\n");
         out.push_str("    \n");
         out.push_str("    let tokens = vec![\n");
-        
+
         for (ttype, value) in tokens {
             let token_str = format!("{:?}", ttype);
             let escaped = Self::escape_rust_string(value);
             out.push_str(&format!("        ({}, {}),\n", token_str, escaped));
         }
-        
+
         out.push_str("    ];\n");
         out.push_str("    \n");
         out.push_str("    // Verify token types\n");

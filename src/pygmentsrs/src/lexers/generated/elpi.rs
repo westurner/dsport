@@ -91,15 +91,24 @@ fn build_table() -> Table {
         Rule::token(r"(?m)-?\d[\d_]*(.[\d_]*)?([eE][+\-]?\d[\d_]*)", NUMBER_FLOAT),
         Rule::token(r"(?m)[\+\*\-/\^\.]", OPERATOR),
     ]);
-    m.insert(r"_elpi-comment", vec![
-        Rule::token(r"(?m)%[^\n]*\n", COMMENT),
-        Rule::token(r"(?m)/(?:\\\n)?[*](?:[^*]|[*](?!(?:\\\n)?/))*[*](?:\\\n)?/", COMMENT),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-    ]);
-    m.insert(r"elpi-indexing-expr", vec![
-        Rule::token(r"(?m)[0-9 _]+", NUMBER_INTEGER),
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"_elpi-comment",
+        vec![
+            Rule::token(r"(?m)%[^\n]*\n", COMMENT),
+            Rule::token(
+                r"(?m)/(?:\\\n)?[*](?:[^*]|[*](?!(?:\\\n)?/))*[*](?:\\\n)?/",
+                COMMENT,
+            ),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"elpi-indexing-expr",
+        vec![
+            Rule::token(r"(?m)[0-9 _]+", NUMBER_INTEGER),
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"elpi-type", vec![
         Rule::bygroups_to(r#"(?m)(ctype\s+)(\")"#, vec![Some(KEYWORD_TYPE), Some(STRING_DOUBLE)], NewState::Push(vec![r"elpi-string"])),
         Rule::token(r"(?m)->", KEYWORD_TYPE),
@@ -111,12 +120,22 @@ fn build_table() -> Table {
         Rule::token(r"(?m)/(?:\\\n)?[*](?:[^*]|[*](?!(?:\\\n)?/))*[*](?:\\\n)?/", COMMENT),
         Rule::token(r"(?m)\s+", WHITESPACE),
     ]);
-    m.insert(r"elpi-chr-rule-start", vec![
-        Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::Push(vec![r"elpi-chr-rule"])),
-        Rule::token(r"(?m)%[^\n]*\n", COMMENT),
-        Rule::token(r"(?m)/(?:\\\n)?[*](?:[^*]|[*](?!(?:\\\n)?/))*[*](?:\\\n)?/", COMMENT),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-    ]);
+    m.insert(
+        r"elpi-chr-rule-start",
+        vec![
+            Rule::token_to(
+                r"(?m)\{",
+                PUNCTUATION,
+                NewState::Push(vec![r"elpi-chr-rule"]),
+            ),
+            Rule::token(r"(?m)%[^\n]*\n", COMMENT),
+            Rule::token(
+                r"(?m)/(?:\\\n)?[*](?:[^*]|[*](?!(?:\\\n)?/))*[*](?:\\\n)?/",
+                COMMENT,
+            ),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+        ],
+    );
     m.insert(r"elpi-chr-rule", vec![
         Rule::token(r"(?m)\brule\b", KEYWORD_DECLARATION),
         Rule::token(r"(?m)\\", KEYWORD_DECLARATION),
@@ -174,10 +193,29 @@ fn build_table() -> Table {
         Rule::token(r"(?m)/(?:\\\n)?[*](?:[^*]|[*](?!(?:\\\n)?/))*[*](?:\\\n)?/", COMMENT),
         Rule::token(r"(?m)\s+", WHITESPACE),
     ]);
-    m.insert(r"_elpi-inner-pred-fun", vec![
-        Rule::bygroups_to(r"(?m)(\()(\s*)(pred)", vec![Some(TokenType::new(&["Keyword", "Mode"])), Some(WHITESPACE), Some(KEYWORD_DECLARATION)], NewState::Push(vec![r"elpi-pred-item"])),
-        Rule::bygroups_to(r"(?m)(\()(\s*)(func)", vec![Some(TokenType::new(&["Keyword", "Mode"])), Some(WHITESPACE), Some(KEYWORD_DECLARATION)], NewState::Push(vec![r"elpi-func-item"])),
-    ]);
+    m.insert(
+        r"_elpi-inner-pred-fun",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)(\()(\s*)(pred)",
+                vec![
+                    Some(TokenType::new(&["Keyword", "Mode"])),
+                    Some(WHITESPACE),
+                    Some(KEYWORD_DECLARATION),
+                ],
+                NewState::Push(vec![r"elpi-pred-item"]),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(\()(\s*)(func)",
+                vec![
+                    Some(TokenType::new(&["Keyword", "Mode"])),
+                    Some(WHITESPACE),
+                    Some(KEYWORD_DECLARATION),
+                ],
+                NewState::Push(vec![r"elpi-func-item"]),
+            ),
+        ],
+    );
     m.insert(r"_elpi-type-item", vec![
         Rule::token(r"(?m)->", KEYWORD_TYPE),
         Rule::token(r"(?m)([A-Z]([a-z]|[A-Z]|[0-9]|(([+*^?/<>`'@#~=&!])|-|\$|_))*|[a-z](([a-z]|[A-Z]|[0-9]|(([+*^?/<>`'@#~=&!])|-|\$|_))*(\.([a-z]|[A-Z])([a-z]|[A-Z]|[0-9]|(([+*^?/<>`'@#~=&!])|-|\$|_))*)*)|([+*^?/<>`'@#~=&!])([a-z]|[A-Z]|[0-9]|(([+*^?/<>`'@#~=&!])|-|\$|_)|:)*|_([a-z]|[A-Z]|[0-9]|(([+*^?/<>`'@#~=&!])|-|\$|_))+)", KEYWORD_TYPE),
@@ -211,18 +249,27 @@ fn build_table() -> Table {
         Rule::token(r"(?m)/(?:\\\n)?[*](?:[^*]|[*](?!(?:\\\n)?/))*[*](?:\\\n)?/", COMMENT),
         Rule::token(r"(?m)\s+", WHITESPACE),
     ]);
-    m.insert(r"elpi-btick", vec![
-        Rule::token(r"(?m)[^` ]+", STRING_DOUBLE),
-        Rule::token_to(r"(?m)`", STRING_DOUBLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"elpi-tick", vec![
-        Rule::token(r"(?m)[^\' ]+", STRING_DOUBLE),
-        Rule::token_to(r"(?m)\'", STRING_DOUBLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"elpi-string", vec![
-        Rule::token(r#"(?m)[^\"]+"#, STRING_DOUBLE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"elpi-btick",
+        vec![
+            Rule::token(r"(?m)[^` ]+", STRING_DOUBLE),
+            Rule::token_to(r"(?m)`", STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"elpi-tick",
+        vec![
+            Rule::token(r"(?m)[^\' ]+", STRING_DOUBLE),
+            Rule::token_to(r"(?m)\'", STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"elpi-string",
+        vec![
+            Rule::token(r#"(?m)[^\"]+"#, STRING_DOUBLE),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"elpi-quote", vec![
         Rule::token_to(r"(?m)\}\}", PUNCTUATION, NewState::Pop(1)),
         Rule::token(r"(?m)\s+", WHITESPACE),

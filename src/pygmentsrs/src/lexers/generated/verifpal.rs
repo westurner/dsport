@@ -41,12 +41,15 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token(r"(?m)\w+", NAME_VARIABLE),
     ]);
-    m.insert(r"shared", vec![
-        Rule::token(r"(?m)[\^\[\],]", PUNCTUATION),
-        Rule::token(r"(?m) +", WHITESPACE),
-        Rule::token(r"(?m)\w+", NAME_VARIABLE),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"shared",
+        vec![
+            Rule::token(r"(?m)[\^\[\],]", PUNCTUATION),
+            Rule::token(r"(?m) +", WHITESPACE),
+            Rule::token(r"(?m)\w+", NAME_VARIABLE),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     m.insert(r"queries", vec![
         Rule::token(r"(?m)\s+", NAME_VARIABLE),
         Rule::bygroups_to(r"(?m)((?:authentication|confidentiality|equivalence|freshness|unlinkability)\?)( )", vec![Some(KEYWORD_PSEUDO), Some(WHITESPACE)], NewState::Push(vec![r"shared"])),

@@ -51,12 +51,15 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[A-Z_]\w*", NAME_VARIABLE),
         Rule::token(r"(?m)\s+|[\u2000-\u200f\ufff0-\ufffe\uffef]", TEXT),
     ]);
-    m.insert(r"nested-comment", vec![
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"nested-comment",
+        vec![
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

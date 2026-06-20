@@ -65,86 +65,194 @@ fn build_table() -> Table {
         Rule::bygroups(r"(?m)(!\n)(\].*)(! !)$", vec![Some(KEYWORD), Some(TEXT), Some(KEYWORD)]),
         Rule::token(r"(?m)! !$", KEYWORD),
     ]);
-    m.insert(r"whitespaces", vec![
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
-    ]);
-    m.insert(r"method definition", vec![
-        Rule::bygroups(r"(?m)([a-zA-Z]+\w*:)(\s*)(\w+)", vec![Some(NAME_FUNCTION), Some(TEXT), Some(NAME_VARIABLE)]),
-        Rule::bygroups(r"(?m)^(\b[a-zA-Z]+\w*\b)(\s*)$", vec![Some(NAME_FUNCTION), Some(TEXT)]),
-        Rule::bygroups(r"(?m)^([-+*/\\~<>=|&!?,@%]+)(\s*)(\w+)(\s*)$", vec![Some(NAME_FUNCTION), Some(TEXT), Some(NAME_VARIABLE), Some(TEXT)]),
-    ]);
-    m.insert(r"objects", vec![
-        Rule::token_to(r"(?m)\[", TEXT, NewState::Push(vec![r"blockvariables"])),
-        Rule::token_to(r"(?m)\]", TEXT, NewState::Push(vec![r"afterobject"])),
-        Rule::token_to(r"(?m)\b(self|super|true|false|nil|thisContext)\b", NAME_BUILTIN_PSEUDO, NewState::Push(vec![r"afterobject"])),
-        Rule::token_to(r"(?m)\b[A-Z]\w*(?!:)\b", NAME_CLASS, NewState::Push(vec![r"afterobject"])),
-        Rule::token_to(r"(?m)\b[a-z]\w*(?!:)\b", NAME_VARIABLE, NewState::Push(vec![r"afterobject"])),
-        Rule::token_to(r#"(?m)#("(""|[^"])*"|[-+*/\\~<>=|&!?,@%]+|[\w:]+)"#, STRING_SYMBOL, NewState::Push(vec![r"afterobject"])),
-        Rule::token_to(r"(?m)'(''|[^'])*'", STRING, NewState::Push(vec![r"afterobject"])),
-        Rule::token_to(r"(?m)\$.", STRING_CHAR, NewState::Push(vec![r"afterobject"])),
-        Rule::token_to(r"(?m)#\(", STRING_SYMBOL, NewState::Push(vec![r"parenth"])),
-        Rule::token_to(r"(?m)\)", TEXT, NewState::Push(vec![r"afterobject"])),
-        Rule::token_to(r"(?m)(\d+r)?-?\d+(\.\d+)?(e-?\d+)?", NUMBER, NewState::Push(vec![r"afterobject"])),
-    ]);
-    m.insert(r"literals", vec![
-        Rule::token_to(r"(?m)'(''|[^'])*'", STRING, NewState::Push(vec![r"afterobject"])),
-        Rule::token_to(r"(?m)\$.", STRING_CHAR, NewState::Push(vec![r"afterobject"])),
-        Rule::token_to(r"(?m)#\(", STRING_SYMBOL, NewState::Push(vec![r"parenth"])),
-        Rule::token_to(r"(?m)\)", TEXT, NewState::Push(vec![r"afterobject"])),
-        Rule::token_to(r"(?m)(\d+r)?-?\d+(\.\d+)?(e-?\d+)?", NUMBER, NewState::Push(vec![r"afterobject"])),
-    ]);
-    m.insert(r"blockvariables", vec![
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
-        Rule::bygroups(r"(?m)(:)(\s*)(\w+)", vec![Some(OPERATOR), Some(TEXT), Some(NAME_VARIABLE)]),
-        Rule::token_to(r"(?m)\|", OPERATOR, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"_parenth_helper", vec![
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
-        Rule::token(r"(?m)(\d+r)?-?\d+(\.\d+)?(e-?\d+)?", NUMBER),
-        Rule::token(r"(?m)[-+*/\\~<>=|&#!?,@%\w:]+", STRING_SYMBOL),
-        Rule::token(r"(?m)'(''|[^'])*'", STRING),
-        Rule::token(r"(?m)\$.", STRING_CHAR),
-        Rule::token_to(r"(?m)#*\(", STRING_SYMBOL, NewState::Push(vec![r"inner_parenth"])),
-    ]);
-    m.insert(r"parenth", vec![
-        Rule::token_to(r"(?m)\)", STRING_SYMBOL, NewState::Push(vec![r"root", r"afterobject"])),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
-        Rule::token(r"(?m)(\d+r)?-?\d+(\.\d+)?(e-?\d+)?", NUMBER),
-        Rule::token(r"(?m)[-+*/\\~<>=|&#!?,@%\w:]+", STRING_SYMBOL),
-        Rule::token(r"(?m)'(''|[^'])*'", STRING),
-        Rule::token(r"(?m)\$.", STRING_CHAR),
-        Rule::token_to(r"(?m)#*\(", STRING_SYMBOL, NewState::Push(vec![r"inner_parenth"])),
-    ]);
-    m.insert(r"inner_parenth", vec![
-        Rule::token_to(r"(?m)\)", STRING_SYMBOL, NewState::Pop(1)),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
-        Rule::token(r"(?m)(\d+r)?-?\d+(\.\d+)?(e-?\d+)?", NUMBER),
-        Rule::token(r"(?m)[-+*/\\~<>=|&#!?,@%\w:]+", STRING_SYMBOL),
-        Rule::token(r"(?m)'(''|[^'])*'", STRING),
-        Rule::token(r"(?m)\$.", STRING_CHAR),
-        Rule::token_to(r"(?m)#*\(", STRING_SYMBOL, NewState::Push(vec![r"inner_parenth"])),
-    ]);
-    m.insert(r"afterobject", vec![
-        Rule::token_to(r"(?m)! !$", KEYWORD, NewState::Pop(1)),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
-        Rule::token_to(r"(?m)\b(ifTrue:|ifFalse:|whileTrue:|whileFalse:|timesRepeat:)", NAME_BUILTIN, NewState::Pop(1)),
-        Rule::token(r"(?m)\b(new\b(?!:))", NAME_BUILTIN),
-        Rule::token_to(r"(?m)\:=|\_", OPERATOR, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\b[a-zA-Z]+\w*:", NAME_FUNCTION, NewState::Pop(1)),
-        Rule::token(r"(?m)\b[a-zA-Z]+\w*", NAME_FUNCTION),
-        Rule::token_to(r"(?m)\w+:?|[-+*/\\~<>=|&!?,@%]+", NAME_FUNCTION, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\.", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m);", PUNCTUATION),
-        Rule::token(r"(?m)[\])}]", TEXT),
-        Rule::token_to(r"(?m)[\[({]", TEXT, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"whitespaces",
+        vec![
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
+        ],
+    );
+    m.insert(
+        r"method definition",
+        vec![
+            Rule::bygroups(
+                r"(?m)([a-zA-Z]+\w*:)(\s*)(\w+)",
+                vec![Some(NAME_FUNCTION), Some(TEXT), Some(NAME_VARIABLE)],
+            ),
+            Rule::bygroups(
+                r"(?m)^(\b[a-zA-Z]+\w*\b)(\s*)$",
+                vec![Some(NAME_FUNCTION), Some(TEXT)],
+            ),
+            Rule::bygroups(
+                r"(?m)^([-+*/\\~<>=|&!?,@%]+)(\s*)(\w+)(\s*)$",
+                vec![
+                    Some(NAME_FUNCTION),
+                    Some(TEXT),
+                    Some(NAME_VARIABLE),
+                    Some(TEXT),
+                ],
+            ),
+        ],
+    );
+    m.insert(
+        r"objects",
+        vec![
+            Rule::token_to(r"(?m)\[", TEXT, NewState::Push(vec![r"blockvariables"])),
+            Rule::token_to(r"(?m)\]", TEXT, NewState::Push(vec![r"afterobject"])),
+            Rule::token_to(
+                r"(?m)\b(self|super|true|false|nil|thisContext)\b",
+                NAME_BUILTIN_PSEUDO,
+                NewState::Push(vec![r"afterobject"]),
+            ),
+            Rule::token_to(
+                r"(?m)\b[A-Z]\w*(?!:)\b",
+                NAME_CLASS,
+                NewState::Push(vec![r"afterobject"]),
+            ),
+            Rule::token_to(
+                r"(?m)\b[a-z]\w*(?!:)\b",
+                NAME_VARIABLE,
+                NewState::Push(vec![r"afterobject"]),
+            ),
+            Rule::token_to(
+                r#"(?m)#("(""|[^"])*"|[-+*/\\~<>=|&!?,@%]+|[\w:]+)"#,
+                STRING_SYMBOL,
+                NewState::Push(vec![r"afterobject"]),
+            ),
+            Rule::token_to(
+                r"(?m)'(''|[^'])*'",
+                STRING,
+                NewState::Push(vec![r"afterobject"]),
+            ),
+            Rule::token_to(
+                r"(?m)\$.",
+                STRING_CHAR,
+                NewState::Push(vec![r"afterobject"]),
+            ),
+            Rule::token_to(r"(?m)#\(", STRING_SYMBOL, NewState::Push(vec![r"parenth"])),
+            Rule::token_to(r"(?m)\)", TEXT, NewState::Push(vec![r"afterobject"])),
+            Rule::token_to(
+                r"(?m)(\d+r)?-?\d+(\.\d+)?(e-?\d+)?",
+                NUMBER,
+                NewState::Push(vec![r"afterobject"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"literals",
+        vec![
+            Rule::token_to(
+                r"(?m)'(''|[^'])*'",
+                STRING,
+                NewState::Push(vec![r"afterobject"]),
+            ),
+            Rule::token_to(
+                r"(?m)\$.",
+                STRING_CHAR,
+                NewState::Push(vec![r"afterobject"]),
+            ),
+            Rule::token_to(r"(?m)#\(", STRING_SYMBOL, NewState::Push(vec![r"parenth"])),
+            Rule::token_to(r"(?m)\)", TEXT, NewState::Push(vec![r"afterobject"])),
+            Rule::token_to(
+                r"(?m)(\d+r)?-?\d+(\.\d+)?(e-?\d+)?",
+                NUMBER,
+                NewState::Push(vec![r"afterobject"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"blockvariables",
+        vec![
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
+            Rule::bygroups(
+                r"(?m)(:)(\s*)(\w+)",
+                vec![Some(OPERATOR), Some(TEXT), Some(NAME_VARIABLE)],
+            ),
+            Rule::token_to(r"(?m)\|", OPERATOR, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"_parenth_helper",
+        vec![
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
+            Rule::token(r"(?m)(\d+r)?-?\d+(\.\d+)?(e-?\d+)?", NUMBER),
+            Rule::token(r"(?m)[-+*/\\~<>=|&#!?,@%\w:]+", STRING_SYMBOL),
+            Rule::token(r"(?m)'(''|[^'])*'", STRING),
+            Rule::token(r"(?m)\$.", STRING_CHAR),
+            Rule::token_to(
+                r"(?m)#*\(",
+                STRING_SYMBOL,
+                NewState::Push(vec![r"inner_parenth"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"parenth",
+        vec![
+            Rule::token_to(
+                r"(?m)\)",
+                STRING_SYMBOL,
+                NewState::Push(vec![r"root", r"afterobject"]),
+            ),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
+            Rule::token(r"(?m)(\d+r)?-?\d+(\.\d+)?(e-?\d+)?", NUMBER),
+            Rule::token(r"(?m)[-+*/\\~<>=|&#!?,@%\w:]+", STRING_SYMBOL),
+            Rule::token(r"(?m)'(''|[^'])*'", STRING),
+            Rule::token(r"(?m)\$.", STRING_CHAR),
+            Rule::token_to(
+                r"(?m)#*\(",
+                STRING_SYMBOL,
+                NewState::Push(vec![r"inner_parenth"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"inner_parenth",
+        vec![
+            Rule::token_to(r"(?m)\)", STRING_SYMBOL, NewState::Pop(1)),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
+            Rule::token(r"(?m)(\d+r)?-?\d+(\.\d+)?(e-?\d+)?", NUMBER),
+            Rule::token(r"(?m)[-+*/\\~<>=|&#!?,@%\w:]+", STRING_SYMBOL),
+            Rule::token(r"(?m)'(''|[^'])*'", STRING),
+            Rule::token(r"(?m)\$.", STRING_CHAR),
+            Rule::token_to(
+                r"(?m)#*\(",
+                STRING_SYMBOL,
+                NewState::Push(vec![r"inner_parenth"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"afterobject",
+        vec![
+            Rule::token_to(r"(?m)! !$", KEYWORD, NewState::Pop(1)),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r#"(?m)"(""|[^"])*""#, COMMENT),
+            Rule::token_to(
+                r"(?m)\b(ifTrue:|ifFalse:|whileTrue:|whileFalse:|timesRepeat:)",
+                NAME_BUILTIN,
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)\b(new\b(?!:))", NAME_BUILTIN),
+            Rule::token_to(r"(?m)\:=|\_", OPERATOR, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\b[a-zA-Z]+\w*:", NAME_FUNCTION, NewState::Pop(1)),
+            Rule::token(r"(?m)\b[a-zA-Z]+\w*", NAME_FUNCTION),
+            Rule::token_to(
+                r"(?m)\w+:?|[-+*/\\~<>=|&!?,@%]+",
+                NAME_FUNCTION,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(r"(?m)\.", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?m);", PUNCTUATION),
+            Rule::token(r"(?m)[\])}]", TEXT),
+            Rule::token_to(r"(?m)[\[({]", TEXT, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

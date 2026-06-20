@@ -25,10 +25,13 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)#!(.*?)$", COMMENT_PREPROC),
-        Rule::default(NewState::Push(vec![r"base"])),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)#!(.*?)$", COMMENT_PREPROC),
+            Rule::default(NewState::Push(vec![r"base"])),
+        ],
+    );
     m.insert(r"base", vec![
         Rule::token(r"(?m)//.*$", COMMENT_SINGLE),
         Rule::token(r"(?m)(?i)(\d*\.\d+|\d+\.\d*)(e[+-]?\d+)?", NUMBER),
@@ -46,12 +49,15 @@ fn build_table() -> Table {
         Rule::token(r"(?m)(self|super|__isa)\b", NAME_BUILTIN_PSEUDO),
         Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_VARIABLE),
     ]);
-    m.insert(r"string_double", vec![
-        Rule::token(r#"(?m)[^"\n]+"#, STRING),
-        Rule::token(r#"(?m)"""#, STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\n", TEXT, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"string_double",
+        vec![
+            Rule::token(r#"(?m)[^"\n]+"#, STRING),
+            Rule::token(r#"(?m)"""#, STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\n", TEXT, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

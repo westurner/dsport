@@ -25,18 +25,89 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::bygroups(r"(?m)(?s)(<%doc>)(.*?)(</%doc>)", vec![Some(NAME_TAG), Some(COMMENT_MULTILINE), Some(NAME_TAG)]),
-        Rule::bygroups_g(r"(?m)(?s)(<%(?:def|method))(\s*)(.*?)(>)(.*?)(</%\2\s*>)", vec![Some(GroupAction::Token(NAME_TAG)), Some(GroupAction::Token(WHITESPACE)), Some(GroupAction::Token(NAME_FUNCTION)), Some(GroupAction::Token(NAME_TAG)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(NAME_TAG))]),
-        Rule::bygroups_g(r"(?m)(?s)(<%(\w+)(.*?)(>))(.*?)(</%\2\s*>)", vec![Some(GroupAction::Token(NAME_TAG)), None, None, None, Some(GroupAction::UsingLexer { alias: "perl", state: None }), Some(GroupAction::Token(NAME_TAG))]),
-        Rule::bygroups_g(r"(?m)(?s)(<&[^|])(.*?)(,.*?)?(&>)", vec![Some(GroupAction::Token(NAME_TAG)), Some(GroupAction::Token(NAME_FUNCTION)), Some(GroupAction::UsingLexer { alias: "perl", state: None }), Some(GroupAction::Token(NAME_TAG))]),
-        Rule::bygroups_g(r"(?m)(?s)(<&\|)(.*?)(,.*?)?(&>)", vec![Some(GroupAction::Token(NAME_TAG)), Some(GroupAction::Token(NAME_FUNCTION)), Some(GroupAction::UsingLexer { alias: "perl", state: None }), Some(GroupAction::Token(NAME_TAG))]),
-        Rule::token(r"(?m)</&>", NAME_TAG),
-        Rule::bygroups_g(r"(?m)(?s)(<%!?)(.*?)(%>)", vec![Some(GroupAction::Token(NAME_TAG)), Some(GroupAction::UsingLexer { alias: "perl", state: None }), Some(GroupAction::Token(NAME_TAG))]),
-        Rule::token(r"(?m)(?<=^)#[^\n]*(\n|\Z)", COMMENT),
-        Rule::bygroups_g(r"(?m)(?<=^)(%)([^\n]*)(\n|\Z)", vec![Some(GroupAction::Token(NAME_TAG)), Some(GroupAction::UsingLexer { alias: "perl", state: None }), Some(GroupAction::Token(OTHER))]),
-        Rule::bygroups_g(r"(?m)(?sx)
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::bygroups(
+                r"(?m)(?s)(<%doc>)(.*?)(</%doc>)",
+                vec![Some(NAME_TAG), Some(COMMENT_MULTILINE), Some(NAME_TAG)],
+            ),
+            Rule::bygroups_g(
+                r"(?m)(?s)(<%(?:def|method))(\s*)(.*?)(>)(.*?)(</%\2\s*>)",
+                vec![
+                    Some(GroupAction::Token(NAME_TAG)),
+                    Some(GroupAction::Token(WHITESPACE)),
+                    Some(GroupAction::Token(NAME_FUNCTION)),
+                    Some(GroupAction::Token(NAME_TAG)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(NAME_TAG)),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?m)(?s)(<%(\w+)(.*?)(>))(.*?)(</%\2\s*>)",
+                vec![
+                    Some(GroupAction::Token(NAME_TAG)),
+                    None,
+                    None,
+                    None,
+                    Some(GroupAction::UsingLexer {
+                        alias: "perl",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(NAME_TAG)),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?m)(?s)(<&[^|])(.*?)(,.*?)?(&>)",
+                vec![
+                    Some(GroupAction::Token(NAME_TAG)),
+                    Some(GroupAction::Token(NAME_FUNCTION)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "perl",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(NAME_TAG)),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?m)(?s)(<&\|)(.*?)(,.*?)?(&>)",
+                vec![
+                    Some(GroupAction::Token(NAME_TAG)),
+                    Some(GroupAction::Token(NAME_FUNCTION)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "perl",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(NAME_TAG)),
+                ],
+            ),
+            Rule::token(r"(?m)</&>", NAME_TAG),
+            Rule::bygroups_g(
+                r"(?m)(?s)(<%!?)(.*?)(%>)",
+                vec![
+                    Some(GroupAction::Token(NAME_TAG)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "perl",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(NAME_TAG)),
+                ],
+            ),
+            Rule::token(r"(?m)(?<=^)#[^\n]*(\n|\Z)", COMMENT),
+            Rule::bygroups_g(
+                r"(?m)(?<=^)(%)([^\n]*)(\n|\Z)",
+                vec![
+                    Some(GroupAction::Token(NAME_TAG)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "perl",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(OTHER)),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?m)(?sx)
                  (.+?)               # anything, followed by:
                  (?:
                   (?<=\n)(?=[%#]) |  # an eval or comment line
@@ -45,8 +116,17 @@ fn build_table() -> Table {
                                      # - don't consume
                   (\\\n) |           # an escaped newline
                   \Z                 # end of string
-                 )", vec![Some(GroupAction::UsingLexer { alias: "html", state: None }), Some(GroupAction::Token(OPERATOR))]),
-    ]);
+                 )",
+                vec![
+                    Some(GroupAction::UsingLexer {
+                        alias: "html",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(OPERATOR)),
+                ],
+            ),
+        ],
+    );
     Table(m)
 }
 

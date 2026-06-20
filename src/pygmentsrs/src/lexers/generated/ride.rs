@@ -43,25 +43,32 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[a-zA-Z_][a-zA-Z0-9_\']*", NAME_VARIABLE),
         Rule::token(r"(?m)[,()\[\]{}]", PUNCTUATION),
     ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?m)_?\d+", NUMBER_INTEGER),
-    ]);
-    m.insert(r"doublequote", vec![
-        Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
-        Rule::token(r#"(?m)\\[nrfvb\\"]"#, STRING_ESCAPE),
-        Rule::token(r#"(?m)[^"]"#, STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"utf8quote", vec![
-        Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\[nrfvb\\\']", STRING_ESCAPE),
-        Rule::token(r"(?m)[^\']", STRING),
-        Rule::token_to(r"(?m)\'", STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"singlequote", vec![
-        Rule::token(r"(?m)[^\']", STRING),
-        Rule::token_to(r"(?m)\'", STRING, NewState::Pop(1)),
-    ]);
+    m.insert(r"numbers", vec![Rule::token(r"(?m)_?\d+", NUMBER_INTEGER)]);
+    m.insert(
+        r"doublequote",
+        vec![
+            Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
+            Rule::token(r#"(?m)\\[nrfvb\\"]"#, STRING_ESCAPE),
+            Rule::token(r#"(?m)[^"]"#, STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"utf8quote",
+        vec![
+            Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\[nrfvb\\\']", STRING_ESCAPE),
+            Rule::token(r"(?m)[^\']", STRING),
+            Rule::token_to(r"(?m)\'", STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"singlequote",
+        vec![
+            Rule::token(r"(?m)[^\']", STRING),
+            Rule::token_to(r"(?m)\'", STRING, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

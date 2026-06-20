@@ -25,11 +25,18 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token_to(r"(?ims)<\?(php)?", COMMENT_PREPROC, NewState::Push(vec![r"php"])),
-        Rule::token(r"(?ims)[^<]+", OTHER),
-        Rule::token(r"(?ims)<", OTHER),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token_to(
+                r"(?ims)<\?(php)?",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"php"]),
+            ),
+            Rule::token(r"(?ims)[^<]+", OTHER),
+            Rule::token(r"(?ims)<", OTHER),
+        ],
+    );
     m.insert(r"php", vec![
         Rule::token_to(r"(?ims)\?>", COMMENT_PREPROC, NewState::Pop(1)),
         Rule::bygroups(r#"(?ims)(<<<)([\'"]?)((?:[_a-z]|[^\x00-\x7f])(?:\w|[^\x00-\x7f])*)(\2\n.*?\n\s*)(\3)(;?)(\n)"#, vec![Some(STRING), Some(STRING), Some(STRING_DELIMITER), Some(STRING), Some(STRING_DELIMITER), Some(PUNCTUATION), Some(TEXT)]),
@@ -107,9 +114,14 @@ fn build_table() -> Table {
     m.insert(r"magicfuncs", vec![
         Rule::token(r"(?ims)(__(?:c(?:all(?:(?:Static)?)|lone|onstruct)|de(?:bugInfo|struct)|get|i(?:nvoke|sset)|s(?:et(?:(?:_state)?)|leep)|toString|unset|wakeup))\b", NAME_FUNCTION_MAGIC),
     ]);
-    m.insert(r"classname", vec![
-        Rule::token_to(r"(?ims)(?:[\\_a-z]|[^\x00-\x7f])(?:[\\\w]|[^\x00-\x7f])*", NAME_CLASS, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"classname",
+        vec![Rule::token_to(
+            r"(?ims)(?:[\\_a-z]|[^\x00-\x7f])(?:[\\\w]|[^\x00-\x7f])*",
+            NAME_CLASS,
+            NewState::Pop(1),
+        )],
+    );
     m.insert(r"functionname", vec![
         Rule::token(r"(?ims)(__(?:c(?:all(?:(?:Static)?)|lone|onstruct)|de(?:bugInfo|struct)|get|i(?:nvoke|sset)|s(?:et(?:(?:_state)?)|leep)|toString|unset|wakeup))\b", NAME_FUNCTION_MAGIC),
         Rule::token_to(r"(?ims)(?:[\\_a-z]|[^\x00-\x7f])(?:[\\\w]|[^\x00-\x7f])*", NAME_FUNCTION, NewState::Pop(1)),

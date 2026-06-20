@@ -25,24 +25,59 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::bygroups(r"(?m)(##[^\n]*)$", vec![Some(COMMENT)]),
-        Rule::token(r"(?m)#[*](.|\n)*?[*]#", COMMENT),
-        Rule::token(r"(?m)#end[^#\n]*(?:#|$)", COMMENT_PREPROC),
-        Rule::token(r"(?m)#slurp$", COMMENT_PREPROC),
-        Rule::bygroups_g(r"(?m)(#[a-zA-Z]+)([^#\n]*)(#|$)", vec![Some(GroupAction::Token(COMMENT_PREPROC)), Some(GroupAction::UsingLexer { alias: "cheetahpython", state: None }), Some(GroupAction::Token(COMMENT_PREPROC))]),
-        Rule::bygroups_g(r"(?m)(\$)([a-zA-Z_][\w.]*\w)", vec![Some(GroupAction::Token(COMMENT_PREPROC)), Some(GroupAction::UsingLexer { alias: "cheetahpython", state: None })]),
-        Rule::bygroups_g(r"(?m)(?s)(\$\{!?)(.*?)(\})", vec![Some(GroupAction::Token(COMMENT_PREPROC)), Some(GroupAction::UsingLexer { alias: "cheetahpython", state: None }), Some(GroupAction::Token(COMMENT_PREPROC))]),
-        Rule::token(r"(?m)(?sx)
+    m.insert(
+        r"root",
+        vec![
+            Rule::bygroups(r"(?m)(##[^\n]*)$", vec![Some(COMMENT)]),
+            Rule::token(r"(?m)#[*](.|\n)*?[*]#", COMMENT),
+            Rule::token(r"(?m)#end[^#\n]*(?:#|$)", COMMENT_PREPROC),
+            Rule::token(r"(?m)#slurp$", COMMENT_PREPROC),
+            Rule::bygroups_g(
+                r"(?m)(#[a-zA-Z]+)([^#\n]*)(#|$)",
+                vec![
+                    Some(GroupAction::Token(COMMENT_PREPROC)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "cheetahpython",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(COMMENT_PREPROC)),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?m)(\$)([a-zA-Z_][\w.]*\w)",
+                vec![
+                    Some(GroupAction::Token(COMMENT_PREPROC)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "cheetahpython",
+                        state: None,
+                    }),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?m)(?s)(\$\{!?)(.*?)(\})",
+                vec![
+                    Some(GroupAction::Token(COMMENT_PREPROC)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "cheetahpython",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(COMMENT_PREPROC)),
+                ],
+            ),
+            Rule::token(
+                r"(?m)(?sx)
                 (.+?)               # anything, followed by:
                 (?:
                  (?=\#[#a-zA-Z]*) | # an eval comment
                  (?=\$[a-zA-Z_{]) | # a substitution
                  \Z                 # end of string
                 )
-            ", OTHER),
-        Rule::token(r"(?m)\s+", TEXT),
-    ]);
+            ",
+                OTHER,
+            ),
+            Rule::token(r"(?m)\s+", TEXT),
+        ],
+    );
     Table(m)
 }
 

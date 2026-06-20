@@ -68,19 +68,41 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)[{()}]", PUNCTUATION),
         Rule::token(r"(?ms);", PUNCTUATION),
     ]);
-    m.insert(r"whitespace", vec![
-        Rule::bygroups(r#"(?ms)(@import)(\s+)("(?:\\\\|\\"|[^"])*")"#, vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)]),
-        Rule::bygroups(r"(?ms)(@import)(\s+)(<(?:\\\\|\\>|[^>])*>)", vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)]),
-        Rule::bygroups(r#"(?ms)(#(?:include|import))(\s+)("(?:\\\\|\\"|[^"])*")"#, vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)]),
-        Rule::bygroups(r"(?ms)(#(?:include|import))(\s+)(<(?:\\\\|\\>|[^>])*>)", vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)]),
-        Rule::token_to(r"(?ms)#if\s+0", COMMENT_PREPROC, NewState::Push(vec![r"if0"])),
-        Rule::token_to(r"(?ms)#", COMMENT_PREPROC, NewState::Push(vec![r"macro"])),
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::bygroups(r"(?ms)(\\)(\n)", vec![Some(STRING_ESCAPE), Some(WHITESPACE)]),
-        Rule::token(r"(?ms)//(\n|(.|\n)*?[^\\]\n)", COMMENT_SINGLE),
-        Rule::token(r"(?ms)/(\\\n)?[*](.|\n)*?[*](\\\n)?/", COMMENT_MULTILINE),
-        Rule::token(r"(?ms)<!--", COMMENT),
-    ]);
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::bygroups(
+                r#"(?ms)(@import)(\s+)("(?:\\\\|\\"|[^"])*")"#,
+                vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)],
+            ),
+            Rule::bygroups(
+                r"(?ms)(@import)(\s+)(<(?:\\\\|\\>|[^>])*>)",
+                vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)],
+            ),
+            Rule::bygroups(
+                r#"(?ms)(#(?:include|import))(\s+)("(?:\\\\|\\"|[^"])*")"#,
+                vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)],
+            ),
+            Rule::bygroups(
+                r"(?ms)(#(?:include|import))(\s+)(<(?:\\\\|\\>|[^>])*>)",
+                vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)],
+            ),
+            Rule::token_to(
+                r"(?ms)#if\s+0",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"if0"]),
+            ),
+            Rule::token_to(r"(?ms)#", COMMENT_PREPROC, NewState::Push(vec![r"macro"])),
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::bygroups(
+                r"(?ms)(\\)(\n)",
+                vec![Some(STRING_ESCAPE), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?ms)//(\n|(.|\n)*?[^\\]\n)", COMMENT_SINGLE),
+            Rule::token(r"(?ms)/(\\\n)?[*](.|\n)*?[*](\\\n)?/", COMMENT_MULTILINE),
+            Rule::token(r"(?ms)<!--", COMMENT),
+        ],
+    );
     m.insert(r"statements", vec![
         Rule::token_to(r#"(?ms)(L|@)?""#, STRING, NewState::Push(vec![r"string"])),
         Rule::token(r"(?ms)(L|@)?'(\\.|\\[0-7]{1,3}|\\x[a-fA-F0-9]{1,2}|[^\\\'\n])'", STRING_CHAR),
@@ -107,34 +129,81 @@ fn build_table() -> Table {
         Rule::bygroups_g(r"(?ms)([$a-zA-Z_]\w*)((?:\s|//[^\n]*\n|/[*](?:[^*]|[*][^/])*[*]/)*)(?=\()", vec![Some(GroupAction::Token(NAME_FUNCTION)), Some(GroupAction::UsingThis { state: None })]),
         Rule::token(r"(?ms)[$a-zA-Z_]\w*", NAME),
     ]);
-    m.insert(r"slashstartsregex", vec![
-        Rule::bygroups(r#"(?ms)(@import)(\s+)("(?:\\\\|\\"|[^"])*")"#, vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)]),
-        Rule::bygroups(r"(?ms)(@import)(\s+)(<(?:\\\\|\\>|[^>])*>)", vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)]),
-        Rule::bygroups(r#"(?ms)(#(?:include|import))(\s+)("(?:\\\\|\\"|[^"])*")"#, vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)]),
-        Rule::bygroups(r"(?ms)(#(?:include|import))(\s+)(<(?:\\\\|\\>|[^>])*>)", vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)]),
-        Rule::token_to(r"(?ms)#if\s+0", COMMENT_PREPROC, NewState::Push(vec![r"if0"])),
-        Rule::token_to(r"(?ms)#", COMMENT_PREPROC, NewState::Push(vec![r"macro"])),
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::bygroups(r"(?ms)(\\)(\n)", vec![Some(STRING_ESCAPE), Some(WHITESPACE)]),
-        Rule::token(r"(?ms)//(\n|(.|\n)*?[^\\]\n)", COMMENT_SINGLE),
-        Rule::token(r"(?ms)/(\\\n)?[*](.|\n)*?[*](\\\n)?/", COMMENT_MULTILINE),
-        Rule::token(r"(?ms)<!--", COMMENT),
-        Rule::token_to(r"(?ms)/(\\.|[^\[/\\\n]|\[(\\.|[^\]\\\n])*])+/([gim]+\b|\B)", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)(?=/)", TEXT, NewState::Push(vec![r"#pop", r"badregex"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"badregex", vec![
-        Rule::token_to(r"(?ms)\n", WHITESPACE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"slashstartsregex",
+        vec![
+            Rule::bygroups(
+                r#"(?ms)(@import)(\s+)("(?:\\\\|\\"|[^"])*")"#,
+                vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)],
+            ),
+            Rule::bygroups(
+                r"(?ms)(@import)(\s+)(<(?:\\\\|\\>|[^>])*>)",
+                vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)],
+            ),
+            Rule::bygroups(
+                r#"(?ms)(#(?:include|import))(\s+)("(?:\\\\|\\"|[^"])*")"#,
+                vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)],
+            ),
+            Rule::bygroups(
+                r"(?ms)(#(?:include|import))(\s+)(<(?:\\\\|\\>|[^>])*>)",
+                vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)],
+            ),
+            Rule::token_to(
+                r"(?ms)#if\s+0",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"if0"]),
+            ),
+            Rule::token_to(r"(?ms)#", COMMENT_PREPROC, NewState::Push(vec![r"macro"])),
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::bygroups(
+                r"(?ms)(\\)(\n)",
+                vec![Some(STRING_ESCAPE), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?ms)//(\n|(.|\n)*?[^\\]\n)", COMMENT_SINGLE),
+            Rule::token(r"(?ms)/(\\\n)?[*](.|\n)*?[*](\\\n)?/", COMMENT_MULTILINE),
+            Rule::token(r"(?ms)<!--", COMMENT),
+            Rule::token_to(
+                r"(?ms)/(\\.|[^\[/\\\n]|\[(\\.|[^\]\\\n])*])+/([gim]+\b|\B)",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)(?=/)",
+                TEXT,
+                NewState::Push(vec![r"#pop", r"badregex"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"badregex",
+        vec![Rule::token_to(r"(?ms)\n", WHITESPACE, NewState::Pop(1))],
+    );
     m.insert(r"classname", vec![
         Rule::bygroups_g_to(r"(?ms)([a-zA-Z_]\w*)((?:\s|//[^\n]*\n|/[*](?:[^*]|[*][^/])*[*]/)*:(?:\s|//[^\n]*\n|/[*](?:[^*]|[*][^/])*[*]/)*)([a-zA-Z_]\w*)?", vec![Some(GroupAction::Token(NAME_CLASS)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(NAME_CLASS))], NewState::Pop(1)),
         Rule::bygroups_g_to(r"(?ms)([a-zA-Z_]\w*)((?:\s|//[^\n]*\n|/[*](?:[^*]|[*][^/])*[*]/)*\()([a-zA-Z_]\w*)(\))", vec![Some(GroupAction::Token(NAME_CLASS)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(NAME_LABEL)), Some(GroupAction::Token(TEXT))], NewState::Pop(1)),
         Rule::token_to(r"(?ms)([a-zA-Z_]\w*)", NAME_CLASS, NewState::Pop(1)),
     ]);
-    m.insert(r"forward_classname", vec![
-        Rule::bygroups_to(r"(?ms)([a-zA-Z_]\w*)(\s*)(,)(\s*)", vec![Some(NAME_CLASS), Some(WHITESPACE), Some(TEXT), Some(WHITESPACE)], NewState::PushSame),
-        Rule::bygroups_to(r"(?ms)([a-zA-Z_]\w*)(\s*)(;?)", vec![Some(NAME_CLASS), Some(WHITESPACE), Some(TEXT)], NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"forward_classname",
+        vec![
+            Rule::bygroups_to(
+                r"(?ms)([a-zA-Z_]\w*)(\s*)(,)(\s*)",
+                vec![
+                    Some(NAME_CLASS),
+                    Some(WHITESPACE),
+                    Some(TEXT),
+                    Some(WHITESPACE),
+                ],
+                NewState::PushSame,
+            ),
+            Rule::bygroups_to(
+                r"(?ms)([a-zA-Z_]\w*)(\s*)(;?)",
+                vec![Some(NAME_CLASS), Some(WHITESPACE), Some(TEXT)],
+                NewState::Pop(1),
+            ),
+        ],
+    );
     m.insert(r"function_signature", vec![
         Rule::bygroups(r#"(?ms)(@import)(\s+)("(?:\\\\|\\"|[^"])*")"#, vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)]),
         Rule::bygroups(r"(?ms)(@import)(\s+)(<(?:\\\\|\\>|[^>])*>)", vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(STRING_DOUBLE)]),
@@ -171,30 +240,63 @@ fn build_table() -> Table {
         Rule::using_this(r"(?ms)(,(?:\s|//[^\n]*\n|/[*](?:[^*]|[*][^/])*[*]/)*\.\.\.)", None),
         Rule::token(r"(?ms)([$a-zA-Z_]\w+)", TEXT),
     ]);
-    m.insert(r"expression", vec![
-        Rule::bygroups(r"(?ms)([$a-zA-Z_]\w*)(\()", vec![Some(NAME_FUNCTION), Some(PUNCTUATION)]),
-        Rule::token_to(r"(?ms)(\))", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?ms)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?ms)\\([\\abfnrtv"\']|x[a-fA-F0-9]{2,4}|[0-7]{1,3})"#, STRING_ESCAPE),
-        Rule::token(r#"(?ms)[^\\"\n]+"#, STRING),
-        Rule::bygroups(r"(?ms)(\\)(\n)", vec![Some(STRING_ESCAPE), Some(WHITESPACE)]),
-        Rule::token(r"(?ms)\\", STRING),
-    ]);
-    m.insert(r"macro", vec![
-        Rule::token(r"(?ms)[^/\n]+", COMMENT_PREPROC),
-        Rule::token(r"(?ms)/[*](.|\n)*?[*]/", COMMENT_MULTILINE),
-        Rule::bygroups_to(r"(?ms)(//.*?)(\n)", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)], NewState::Pop(1)),
-        Rule::token(r"(?ms)/", COMMENT_PREPROC),
-        Rule::token(r"(?ms)(?<=\\)\n", WHITESPACE),
-        Rule::token_to(r"(?ms)\n", WHITESPACE, NewState::Pop(1)),
-    ]);
-    m.insert(r"if0", vec![
-        Rule::token_to(r"(?ms)^\s*#if.*?(?<!\\)\n", COMMENT_PREPROC, NewState::PushSame),
-        Rule::token_to(r"(?ms)^\s*#endif.*?(?<!\\)\n", COMMENT_PREPROC, NewState::Pop(1)),
-        Rule::bygroups(r"(?ms)(.*?)(\n)", vec![Some(COMMENT), Some(WHITESPACE)]),
-    ]);
+    m.insert(
+        r"expression",
+        vec![
+            Rule::bygroups(
+                r"(?ms)([$a-zA-Z_]\w*)(\()",
+                vec![Some(NAME_FUNCTION), Some(PUNCTUATION)],
+            ),
+            Rule::token_to(r"(?ms)(\))", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?ms)""#, STRING, NewState::Pop(1)),
+            Rule::token(
+                r#"(?ms)\\([\\abfnrtv"\']|x[a-fA-F0-9]{2,4}|[0-7]{1,3})"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token(r#"(?ms)[^\\"\n]+"#, STRING),
+            Rule::bygroups(
+                r"(?ms)(\\)(\n)",
+                vec![Some(STRING_ESCAPE), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?ms)\\", STRING),
+        ],
+    );
+    m.insert(
+        r"macro",
+        vec![
+            Rule::token(r"(?ms)[^/\n]+", COMMENT_PREPROC),
+            Rule::token(r"(?ms)/[*](.|\n)*?[*]/", COMMENT_MULTILINE),
+            Rule::bygroups_to(
+                r"(?ms)(//.*?)(\n)",
+                vec![Some(COMMENT_SINGLE), Some(WHITESPACE)],
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?ms)/", COMMENT_PREPROC),
+            Rule::token(r"(?ms)(?<=\\)\n", WHITESPACE),
+            Rule::token_to(r"(?ms)\n", WHITESPACE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"if0",
+        vec![
+            Rule::token_to(
+                r"(?ms)^\s*#if.*?(?<!\\)\n",
+                COMMENT_PREPROC,
+                NewState::PushSame,
+            ),
+            Rule::token_to(
+                r"(?ms)^\s*#endif.*?(?<!\\)\n",
+                COMMENT_PREPROC,
+                NewState::Pop(1),
+            ),
+            Rule::bygroups(r"(?ms)(.*?)(\n)", vec![Some(COMMENT), Some(WHITESPACE)]),
+        ],
+    );
     Table(m)
 }
 

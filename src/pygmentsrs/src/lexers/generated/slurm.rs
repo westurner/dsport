@@ -67,37 +67,54 @@ fn build_table() -> Table {
         Rule::token(r"(?m)<<-?\s*(\'?)\\?(\w+)[\w\W]+?\2", STRING),
         Rule::token(r"(?m)&&|\|\|", OPERATOR),
     ]);
-    m.insert(r"data", vec![
-        Rule::token(r#"(?m)(?s)\$?"(\\.|[^"\\$])*""#, STRING_DOUBLE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"string"])),
-        Rule::token(r"(?m)(?s)\$'(\\\\|\\[0-7]+|\\.|[^'\\])*'", STRING_SINGLE),
-        Rule::token(r"(?m)(?s)'.*?'", STRING_SINGLE),
-        Rule::token(r"(?m);", PUNCTUATION),
-        Rule::token(r"(?m)&", PUNCTUATION),
-        Rule::token(r"(?m)\|", PUNCTUATION),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)\d+\b", NUMBER),
-        Rule::token(r#"(?m)[^=\s\[\]{}()$"\'`\\<&|;]+"#, TEXT),
-        Rule::token(r"(?m)<", TEXT),
-    ]);
-    m.insert(r"interp", vec![
-        Rule::token_to(r"(?m)\$\(\(", KEYWORD, NewState::Push(vec![r"math"])),
-        Rule::token_to(r"(?m)\$\(", KEYWORD, NewState::Push(vec![r"paren"])),
-        Rule::token_to(r"(?m)\$\{#?", STRING_INTERPOL, NewState::Push(vec![r"curly"])),
-        Rule::token(r"(?m)\$[a-zA-Z_]\w*", NAME_VARIABLE),
-        Rule::token(r"(?m)\$(?:\d+|[#$?!_*@-])", NAME_VARIABLE),
-        Rule::token(r"(?m)\$", TEXT),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r#"(?m)(?s)(\\\\|\\[0-7]+|\\.|[^"\\$])+"#, STRING_DOUBLE),
-        Rule::token_to(r"(?m)\$\(\(", KEYWORD, NewState::Push(vec![r"math"])),
-        Rule::token_to(r"(?m)\$\(", KEYWORD, NewState::Push(vec![r"paren"])),
-        Rule::token_to(r"(?m)\$\{#?", STRING_INTERPOL, NewState::Push(vec![r"curly"])),
-        Rule::token(r"(?m)\$[a-zA-Z_]\w*", NAME_VARIABLE),
-        Rule::token(r"(?m)\$(?:\d+|[#$?!_*@-])", NAME_VARIABLE),
-        Rule::token(r"(?m)\$", TEXT),
-    ]);
+    m.insert(
+        r"data",
+        vec![
+            Rule::token(r#"(?m)(?s)\$?"(\\.|[^"\\$])*""#, STRING_DOUBLE),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"string"])),
+            Rule::token(r"(?m)(?s)\$'(\\\\|\\[0-7]+|\\.|[^'\\])*'", STRING_SINGLE),
+            Rule::token(r"(?m)(?s)'.*?'", STRING_SINGLE),
+            Rule::token(r"(?m);", PUNCTUATION),
+            Rule::token(r"(?m)&", PUNCTUATION),
+            Rule::token(r"(?m)\|", PUNCTUATION),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)\d+\b", NUMBER),
+            Rule::token(r#"(?m)[^=\s\[\]{}()$"\'`\\<&|;]+"#, TEXT),
+            Rule::token(r"(?m)<", TEXT),
+        ],
+    );
+    m.insert(
+        r"interp",
+        vec![
+            Rule::token_to(r"(?m)\$\(\(", KEYWORD, NewState::Push(vec![r"math"])),
+            Rule::token_to(r"(?m)\$\(", KEYWORD, NewState::Push(vec![r"paren"])),
+            Rule::token_to(
+                r"(?m)\$\{#?",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"curly"]),
+            ),
+            Rule::token(r"(?m)\$[a-zA-Z_]\w*", NAME_VARIABLE),
+            Rule::token(r"(?m)\$(?:\d+|[#$?!_*@-])", NAME_VARIABLE),
+            Rule::token(r"(?m)\$", TEXT),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(r#"(?m)(?s)(\\\\|\\[0-7]+|\\.|[^"\\$])+"#, STRING_DOUBLE),
+            Rule::token_to(r"(?m)\$\(\(", KEYWORD, NewState::Push(vec![r"math"])),
+            Rule::token_to(r"(?m)\$\(", KEYWORD, NewState::Push(vec![r"paren"])),
+            Rule::token_to(
+                r"(?m)\$\{#?",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"curly"]),
+            ),
+            Rule::token(r"(?m)\$[a-zA-Z_]\w*", NAME_VARIABLE),
+            Rule::token(r"(?m)\$(?:\d+|[#$?!_*@-])", NAME_VARIABLE),
+            Rule::token(r"(?m)\$", TEXT),
+        ],
+    );
     m.insert(r"curly", vec![
         Rule::token_to(r"(?m)\}", STRING_INTERPOL, NewState::Pop(1)),
         Rule::token(r"(?m):-", KEYWORD),

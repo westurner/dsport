@@ -40,10 +40,18 @@ pub struct DelegatingLexer {
 
 impl DelegatingLexer {
     pub fn new(root: Box<dyn Lexer>, language: Box<dyn Lexer>) -> Self {
-        Self { root, language, needle: token::OTHER }
+        Self {
+            root,
+            language,
+            needle: token::OTHER,
+        }
     }
     pub fn with_needle(root: Box<dyn Lexer>, language: Box<dyn Lexer>, needle: TokenType) -> Self {
-        Self { root, language, needle }
+        Self {
+            root,
+            language,
+            needle,
+        }
     }
 }
 

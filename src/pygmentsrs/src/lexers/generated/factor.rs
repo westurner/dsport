@@ -25,10 +25,13 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)#!.*$", COMMENT_PREPROC),
-        Rule::default(NewState::Push(vec![r"base"])),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)#!.*$", COMMENT_PREPROC),
+            Rule::default(NewState::Push(vec![r"base"])),
+        ],
+    );
     m.insert(r"base", vec![
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::bygroups(r"(?m)((?:MACRO|MEMO|TYPED)?:[:]?)(\s+)(\S+)", vec![Some(KEYWORD), Some(WHITESPACE), Some(NAME_FUNCTION)]),
@@ -94,34 +97,88 @@ fn build_table() -> Table {
         Rule::bygroups(r"(?m)(<(?:(?:con(?:(?:di|tinua)tion)|restart)>)|attempt\-all(?:(?:\-error(?:(?:\?)?))?)|c(?:all(?:back\-error\-hook|cc(?:[01]))|leanup|o(?:mpute\-restarts|n(?:dition(?:(?:\?)?)|tinu(?:ation(?:(?:\?)?)|e(?:(?:\-(?:restart|with))?))))|urrent\-continuation)|error(?:(?:\-(?:continuation|(?:(?:in\-)?)thread))?)|i(?:fcc|gnore\-errors|n\-callback\?)|original\-error|re(?:cover|start(?:(?:[?s])?)|t(?:hrow(?:(?:\-restarts)?)|urn(?:(?:\-continuation)?)))|thr(?:ead\-error\-hook|ow\-(?:continue|restarts))|with\-(?:datastack|return))(\s+)", vec![Some(NAME_BUILTIN), Some(WHITESPACE)]),
         Rule::token(r"(?m)\S+", TEXT),
     ]);
-    m.insert(r"stackeffect", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::bygroups_to(r"(?m)(\()(\s+)", vec![Some(NAME_FUNCTION), Some(WHITESPACE)], NewState::Push(vec![r"stackeffect"])),
-        Rule::bygroups_to(r"(?m)(\))(\s+)", vec![Some(NAME_FUNCTION), Some(WHITESPACE)], NewState::Pop(1)),
-        Rule::bygroups(r"(?m)(--)(\s+)", vec![Some(NAME_FUNCTION), Some(WHITESPACE)]),
-        Rule::token(r"(?m)\S+", NAME_VARIABLE),
-    ]);
-    m.insert(r"slots", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::bygroups_to(r"(?m)(;)(\s+)", vec![Some(KEYWORD), Some(WHITESPACE)], NewState::Pop(1)),
-        Rule::bygroups(r"(?m)(\{)(\s+)(\S+)(\s+)([^}]+)(\s+)(\})(\s+)", vec![Some(TEXT), Some(WHITESPACE), Some(NAME_VARIABLE), Some(WHITESPACE), Some(TEXT), Some(WHITESPACE), Some(TEXT), Some(WHITESPACE)]),
-        Rule::token(r"(?m)\S+", NAME_VARIABLE),
-    ]);
-    m.insert(r"vocabs", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::bygroups_to(r"(?m)(;)(\s+)", vec![Some(KEYWORD), Some(WHITESPACE)], NewState::Pop(1)),
-        Rule::token(r"(?m)\S+", NAME_NAMESPACE),
-    ]);
-    m.insert(r"classes", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::bygroups_to(r"(?m)(;)(\s+)", vec![Some(KEYWORD), Some(WHITESPACE)], NewState::Pop(1)),
-        Rule::token(r"(?m)\S+", NAME_CLASS),
-    ]);
-    m.insert(r"words", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::bygroups_to(r"(?m)(;)(\s+)", vec![Some(KEYWORD), Some(WHITESPACE)], NewState::Pop(1)),
-        Rule::token(r"(?m)\S+", NAME_FUNCTION),
-    ]);
+    m.insert(
+        r"stackeffect",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::bygroups_to(
+                r"(?m)(\()(\s+)",
+                vec![Some(NAME_FUNCTION), Some(WHITESPACE)],
+                NewState::Push(vec![r"stackeffect"]),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(\))(\s+)",
+                vec![Some(NAME_FUNCTION), Some(WHITESPACE)],
+                NewState::Pop(1),
+            ),
+            Rule::bygroups(
+                r"(?m)(--)(\s+)",
+                vec![Some(NAME_FUNCTION), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?m)\S+", NAME_VARIABLE),
+        ],
+    );
+    m.insert(
+        r"slots",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::bygroups_to(
+                r"(?m)(;)(\s+)",
+                vec![Some(KEYWORD), Some(WHITESPACE)],
+                NewState::Pop(1),
+            ),
+            Rule::bygroups(
+                r"(?m)(\{)(\s+)(\S+)(\s+)([^}]+)(\s+)(\})(\s+)",
+                vec![
+                    Some(TEXT),
+                    Some(WHITESPACE),
+                    Some(NAME_VARIABLE),
+                    Some(WHITESPACE),
+                    Some(TEXT),
+                    Some(WHITESPACE),
+                    Some(TEXT),
+                    Some(WHITESPACE),
+                ],
+            ),
+            Rule::token(r"(?m)\S+", NAME_VARIABLE),
+        ],
+    );
+    m.insert(
+        r"vocabs",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::bygroups_to(
+                r"(?m)(;)(\s+)",
+                vec![Some(KEYWORD), Some(WHITESPACE)],
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)\S+", NAME_NAMESPACE),
+        ],
+    );
+    m.insert(
+        r"classes",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::bygroups_to(
+                r"(?m)(;)(\s+)",
+                vec![Some(KEYWORD), Some(WHITESPACE)],
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)\S+", NAME_CLASS),
+        ],
+    );
+    m.insert(
+        r"words",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::bygroups_to(
+                r"(?m)(;)(\s+)",
+                vec![Some(KEYWORD), Some(WHITESPACE)],
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)\S+", NAME_FUNCTION),
+        ],
+    );
     Table(m)
 }
 

@@ -57,14 +57,21 @@ fn build_table() -> Table {
         Rule::token(r"(?im)[*<>+=/&-]", OPERATOR),
         Rule::token(r"(?im)\n+", TEXT),
     ]);
-    m.insert(r"attribute", vec![
-        Rule::bygroups(r"(?im)(')(\w+)", vec![Some(PUNCTUATION), Some(NAME_ATTRIBUTE)]),
-    ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?im)[0-9_]+#[0-9a-f_\.]+#", NUMBER_HEX),
-        Rule::token(r"(?im)[0-9_]+\.[0-9_]*", NUMBER_FLOAT),
-        Rule::token(r"(?im)[0-9_]+", NUMBER_INTEGER),
-    ]);
+    m.insert(
+        r"attribute",
+        vec![Rule::bygroups(
+            r"(?im)(')(\w+)",
+            vec![Some(PUNCTUATION), Some(NAME_ATTRIBUTE)],
+        )],
+    );
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(r"(?im)[0-9_]+#[0-9a-f_\.]+#", NUMBER_HEX),
+            Rule::token(r"(?im)[0-9_]+\.[0-9_]*", NUMBER_FLOAT),
+            Rule::token(r"(?im)[0-9_]+", NUMBER_INTEGER),
+        ],
+    );
     m.insert(r"subprogram", vec![
         Rule::token_to(r"(?im)\(", PUNCTUATION, NewState::Push(vec![r"#pop", r"formal_part"])),
         Rule::token_to(r"(?im);", PUNCTUATION, NewState::Pop(1)),
@@ -101,12 +108,15 @@ fn build_table() -> Table {
         Rule::token(r"(?im)[*<>+=/&-]", OPERATOR),
         Rule::token(r"(?im)\n+", TEXT),
     ]);
-    m.insert(r"end", vec![
-        Rule::token(r"(?im)(if|case|record|loop|select)", KEYWORD_RESERVED),
-        Rule::token(r#"(?im)"[^"]+"|[\w.]+"#, NAME_FUNCTION),
-        Rule::token(r"(?im)\s+", TEXT),
-        Rule::token_to(r"(?im);", PUNCTUATION, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"end",
+        vec![
+            Rule::token(r"(?im)(if|case|record|loop|select)", KEYWORD_RESERVED),
+            Rule::token(r#"(?im)"[^"]+"|[\w.]+"#, NAME_FUNCTION),
+            Rule::token(r"(?im)\s+", TEXT),
+            Rule::token_to(r"(?im);", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"type_def", vec![
         Rule::token_to(r"(?im);", PUNCTUATION, NewState::Pop(1)),
         Rule::token_to(r"(?im)\(", PUNCTUATION, NewState::Push(vec![r"formal_part"])),
@@ -213,10 +223,13 @@ fn build_table() -> Table {
         Rule::token(r"(?im)[*<>+=/&-]", OPERATOR),
         Rule::token(r"(?im)\n+", TEXT),
     ]);
-    m.insert(r"import", vec![
-        Rule::token_to(r"(?im)[\w.]+", NAME, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"import",
+        vec![
+            Rule::token_to(r"(?im)[\w.]+", NAME, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     m.insert(r"formal_part", vec![
         Rule::token_to(r"(?im)\)", PUNCTUATION, NewState::Pop(1)),
         Rule::token_to(r"(?im)\]", PUNCTUATION, NewState::Pop(1)),

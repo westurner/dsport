@@ -25,18 +25,21 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)#(.*?)\n", COMMENT_SINGLE),
-        Rule::token(r"(?m)@(.*?)\n", OPERATOR),
-        Rule::token(r#"(?m)"(\w|\d|\s|(\\")|[\'_\-./,\?\!])+?""#, LITERAL),
-        Rule::token(r#"(?m)\'(\w|\d|\s|(\\\')|["_\-./,\?\!])+?\'"#, LITERAL),
-        Rule::token(r"(?m)([A-Z_]+)", KEYWORD),
-        Rule::token(r"(?m)([a-z0-9_]+)", NAME),
-        Rule::token(r"(?m)((->)|[!?+*|=])", OPERATOR),
-        Rule::token(r"(?m)[\(\),\{\}]", PUNCTUATION),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)#(.*?)\n", COMMENT_SINGLE),
+            Rule::token(r"(?m)@(.*?)\n", OPERATOR),
+            Rule::token(r#"(?m)"(\w|\d|\s|(\\")|[\'_\-./,\?\!])+?""#, LITERAL),
+            Rule::token(r#"(?m)\'(\w|\d|\s|(\\\')|["_\-./,\?\!])+?\'"#, LITERAL),
+            Rule::token(r"(?m)([A-Z_]+)", KEYWORD),
+            Rule::token(r"(?m)([a-z0-9_]+)", NAME),
+            Rule::token(r"(?m)((->)|[!?+*|=])", OPERATOR),
+            Rule::token(r"(?m)[\(\),\{\}]", PUNCTUATION),
+        ],
+    );
     Table(m)
 }
 

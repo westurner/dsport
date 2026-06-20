@@ -52,11 +52,14 @@ fn build_table() -> Table {
         Rule::token(r"(?im)\b(A(?:bs(?:(?:tract)?)|s(?:c|sert))|C(?:a(?:se|tch)|hr|ontinue)|De(?:f(?:Data|ault)|lete)|E(?:achIn|lse(?:(?:If)?)|nd(?:(?:Extern|Function|If|Method|Select|T(?:ry|ype)|While)?)|x(?:it|te(?:nds|rn)))|F(?:inal|or(?:(?:ever)?)|ramework|unction)|Goto|I(?:f|mport|nc(?:bin(?:(?:Len|Ptr)?)|lude))|Len|M(?:ax|ethod|in|odule(?:(?:Info)?))|Ne(?:w|xt)|P(?:rivate|ublic)|Re(?:adData|lease|peat|storeData|turn)|S(?:elect|gn|izeOf|t(?:ep|rict)|uperStrict)|T(?:h(?:en|row)|o|ry|ype)|Until|Var(?:(?:Ptr)?)|W(?:end|hile))\b", KEYWORD_RESERVED),
         Rule::token(r"(?im)([a-z_]\w*)", NAME_VARIABLE),
     ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?im)"""#, STRING_DOUBLE),
-        Rule::token_to(r#"(?im)"C?"#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r#"(?im)[^"]+"#, STRING_DOUBLE),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?im)"""#, STRING_DOUBLE),
+            Rule::token_to(r#"(?im)"C?"#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(r#"(?im)[^"]+"#, STRING_DOUBLE),
+        ],
+    );
     Table(m)
 }
 

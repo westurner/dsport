@@ -1,6 +1,6 @@
 mod common;
 
-use docutilsrs::{manpage, cli::ManOptions};
+use docutilsrs::{cli::ManOptions, manpage};
 
 #[test]
 fn test_manpage_coverage() {

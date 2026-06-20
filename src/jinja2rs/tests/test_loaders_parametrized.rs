@@ -5,9 +5,9 @@
 //! - Shared `#[fixture]` setup
 //! - Loader composition and chaining
 
+use jinja2rs::{ChoiceLoader, DictLoader, FileSystemLoader, Loader};
+use rstest::{fixture, rstest};
 use std::collections::HashMap;
-use rstest::{rstest, fixture};
-use jinja2rs::{DictLoader, ChoiceLoader, FileSystemLoader, Loader};
 
 // ============================================================================
 // FIXTURES
@@ -57,11 +57,7 @@ fn test_dict_loader_lookup(
 #[case("greeting.html", true)]
 #[case("base.html", true)]
 #[case("nonexistent.html", false)]
-fn test_dict_loader_trait(
-    dict_loader: DictLoader,
-    #[case] name: &str,
-    #[case] should_exist: bool,
-) {
+fn test_dict_loader_trait(dict_loader: DictLoader, #[case] name: &str, #[case] should_exist: bool) {
     // Test that DictLoader implements Loader trait
     let loader: &dyn Loader = &dict_loader;
     let result = loader.get_source(name);
@@ -84,8 +80,12 @@ fn test_fs_loader_lookup(#[case] name: &str, #[case] expected: Option<String>) {
     // Create temp directory with files
     let temp_dir = tempfile::tempdir().expect("create tempdir");
     std::fs::write(temp_dir.path().join("page.html"), "Page: {{ title }}").unwrap();
-    std::fs::write(temp_dir.path().join("layout.html"), "Layout: {% block body %}{% endblock %}").unwrap();
-    
+    std::fs::write(
+        temp_dir.path().join("layout.html"),
+        "Layout: {% block body %}{% endblock %}",
+    )
+    .unwrap();
+
     let fs_loader = FileSystemLoader::new(temp_dir.path());
     let result = fs_loader
         .get_source(name)
@@ -106,25 +106,27 @@ fn test_choice_loader_precedence(
     #[case] expected: &str,
 ) {
     use std::sync::Arc;
-    
+
     // Create temp directory with files
     let temp_dir = tempfile::tempdir().expect("create tempdir");
     std::fs::write(temp_dir.path().join("page.html"), "Page: {{ title }}").unwrap();
-    std::fs::write(temp_dir.path().join("layout.html"), "Layout: {% block body %}{% endblock %}").unwrap();
+    std::fs::write(
+        temp_dir.path().join("layout.html"),
+        "Layout: {% block body %}{% endblock %}",
+    )
+    .unwrap();
     let fs_loader = FileSystemLoader::new(temp_dir.path());
-    
+
     // Order matters: dict_loader first, then fs_loader
-    let choice = ChoiceLoader::new(vec![
-        Arc::new(dict_loader),
-        Arc::new(fs_loader),
-    ]);
+    let choice = ChoiceLoader::new(vec![Arc::new(dict_loader), Arc::new(fs_loader)]);
 
     let result = choice
         .get_source(name)
         .expect("ChoiceLoader::get_source should not error");
 
     assert_eq!(
-        result, Some(expected.to_string()),
+        result,
+        Some(expected.to_string()),
         "ChoiceLoader should find {} in priority order",
         name
     );
@@ -136,18 +138,19 @@ fn test_choice_loader_precedence(
 #[rstest]
 fn test_choice_loader_reverse_order(dict_loader: DictLoader) {
     use std::sync::Arc;
-    
+
     // Create temp directory with files
     let temp_dir = tempfile::tempdir().expect("create tempdir");
     std::fs::write(temp_dir.path().join("page.html"), "Page: {{ title }}").unwrap();
-    std::fs::write(temp_dir.path().join("layout.html"), "Layout: {% block body %}{% endblock %}").unwrap();
+    std::fs::write(
+        temp_dir.path().join("layout.html"),
+        "Layout: {% block body %}{% endblock %}",
+    )
+    .unwrap();
     let fs_loader = FileSystemLoader::new(temp_dir.path());
-    
+
     // Reverse order: fs_loader first, then dict_loader
-    let choice = ChoiceLoader::new(vec![
-        Arc::new(fs_loader),
-        Arc::new(dict_loader),
-    ]);
+    let choice = ChoiceLoader::new(vec![Arc::new(fs_loader), Arc::new(dict_loader)]);
 
     // page.html only exists in fs_loader, should be found
     let result = choice
@@ -160,41 +163,39 @@ fn test_choice_loader_reverse_order(dict_loader: DictLoader) {
     let result = choice
         .get_source("base.html")
         .expect("ChoiceLoader should find base.html from second loader");
-    assert_eq!(result, Some("{% block content %}default{% endblock %}".to_string()));
+    assert_eq!(
+        result,
+        Some("{% block content %}default{% endblock %}".to_string())
+    );
 }
 
 /// Test ChoiceLoader returns None when no loader has the template.
 #[rstest]
 fn test_choice_loader_not_found(dict_loader: DictLoader) {
     use std::sync::Arc;
-    
+
     // Create temp directory with files
     let temp_dir = tempfile::tempdir().expect("create tempdir");
     std::fs::write(temp_dir.path().join("page.html"), "Page: {{ title }}").unwrap();
     let fs_loader = FileSystemLoader::new(temp_dir.path());
-    
-    let choice = ChoiceLoader::new(vec![
-        Arc::new(dict_loader),
-        Arc::new(fs_loader),
-    ]);
+
+    let choice = ChoiceLoader::new(vec![Arc::new(dict_loader), Arc::new(fs_loader)]);
 
     let result = choice
         .get_source("totally_missing.html")
         .expect("ChoiceLoader::get_source should not error");
 
-    assert_eq!(result, None, "ChoiceLoader should return None when template not found");
+    assert_eq!(
+        result, None,
+        "ChoiceLoader should return None when template not found"
+    );
 }
 
 /// Parametrized test for template variations in DictLoader.
 ///
 /// Tests different template syntaxes and content patterns.
 #[rstest]
-#[case(
-    "empty.html",
-    "",
-    "",
-    "Empty template should be loadable"
-)]
+#[case("empty.html", "", "", "Empty template should be loadable")]
 #[case(
     "whitespace.html",
     "   \n\n   ",
@@ -261,9 +262,18 @@ fn test_choice_loader_chain(base_templates: HashMap<String, String>) {
     ]);
 
     // Each should be found from its respective loader
-    assert_eq!(choice.get_source("first.html").ok().flatten(), Some("FIRST".to_string()));
-    assert_eq!(choice.get_source("second.html").ok().flatten(), Some("SECOND".to_string()));
-    assert_eq!(choice.get_source("third.html").ok().flatten(), Some("THIRD".to_string()));
+    assert_eq!(
+        choice.get_source("first.html").ok().flatten(),
+        Some("FIRST".to_string())
+    );
+    assert_eq!(
+        choice.get_source("second.html").ok().flatten(),
+        Some("SECOND".to_string())
+    );
+    assert_eq!(
+        choice.get_source("third.html").ok().flatten(),
+        Some("THIRD".to_string())
+    );
 
     // From the third loader (which has base_templates)
     assert_eq!(
@@ -292,21 +302,20 @@ fn test_dict_loader_minijinja_closure(dict_loader: DictLoader) {
 
 /// Test that ChoiceLoader minijinja closure works end-to-end.
 #[rstest]
-fn test_choice_loader_minijinja_closure(
-    dict_loader: DictLoader,
-) {
+fn test_choice_loader_minijinja_closure(dict_loader: DictLoader) {
     use std::sync::Arc;
-    
+
     // Create temp directory with files
     let temp_dir = tempfile::tempdir().expect("create tempdir");
     std::fs::write(temp_dir.path().join("page.html"), "Page: {{ title }}").unwrap();
-    std::fs::write(temp_dir.path().join("layout.html"), "Layout: {% block body %}{% endblock %}").unwrap();
+    std::fs::write(
+        temp_dir.path().join("layout.html"),
+        "Layout: {% block body %}{% endblock %}",
+    )
+    .unwrap();
     let fs_loader = FileSystemLoader::new(temp_dir.path());
-    
-    let choice = ChoiceLoader::new(vec![
-        Arc::new(dict_loader),
-        Arc::new(fs_loader),
-    ]);
+
+    let choice = ChoiceLoader::new(vec![Arc::new(dict_loader), Arc::new(fs_loader)]);
     let closure = choice.into_minijinja_loader();
 
     // From dict_loader

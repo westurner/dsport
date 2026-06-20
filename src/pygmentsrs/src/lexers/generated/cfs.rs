@@ -46,13 +46,19 @@ fn build_table() -> Table {
         Rule::token(r"(?im)[()\[\]{};:,.\\]", PUNCTUATION),
         Rule::token(r"(?im)\s+", TEXT),
     ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?im)"""#, STRING_DOUBLE),
-        Rule::token(r"(?im)#.+?#", TokenType::new(&["Literal", "String", "Interp"])),
-        Rule::token(r##"(?im)[^"#]+"##, STRING_DOUBLE),
-        Rule::token(r"(?im)#", STRING_DOUBLE),
-        Rule::token_to(r#"(?im)""#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?im)"""#, STRING_DOUBLE),
+            Rule::token(
+                r"(?im)#.+?#",
+                TokenType::new(&["Literal", "String", "Interp"]),
+            ),
+            Rule::token(r##"(?im)[^"#]+"##, STRING_DOUBLE),
+            Rule::token(r"(?im)#", STRING_DOUBLE),
+            Rule::token_to(r#"(?im)""#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

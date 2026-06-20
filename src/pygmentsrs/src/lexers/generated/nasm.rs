@@ -38,12 +38,15 @@ fn build_table() -> Table {
         Rule::token_to(r"(?im)[a-z$._?][\w$.?#@~]*", NAME_FUNCTION, NewState::Push(vec![r"instruction-args"])),
         Rule::token(r"(?im)[\r\n]+", WHITESPACE),
     ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?im)\n", WHITESPACE),
-        Rule::token(r"(?im)[ \t]+", WHITESPACE),
-        Rule::token(r"(?im);.*", COMMENT_SINGLE),
-        Rule::token(r"(?im)#.*", COMMENT_SINGLE),
-    ]);
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::token(r"(?im)\n", WHITESPACE),
+            Rule::token(r"(?im)[ \t]+", WHITESPACE),
+            Rule::token(r"(?im);.*", COMMENT_SINGLE),
+            Rule::token(r"(?im)#.*", COMMENT_SINGLE),
+        ],
+    );
     m.insert(r"instruction-args", vec![
         Rule::token(r#"(?im)"(\\"|[^"\n])*"|'(\\'|[^'\n])*'|`(\\`|[^`\n])*`"#, STRING),
         Rule::token(r"(?im)(?:0x[0-9a-f]+|$0[0-9a-f]*|[0-9]+[0-9a-f]*h)", NUMBER_HEX),
@@ -64,18 +67,24 @@ fn build_table() -> Table {
         Rule::token(r"(?im);.*", COMMENT_SINGLE),
         Rule::token(r"(?im)#.*", COMMENT_SINGLE),
     ]);
-    m.insert(r"punctuation", vec![
-        Rule::token(r"(?im)[,{}():\[\]]+", PUNCTUATION),
-        Rule::token(r"(?im)[&|^<>+*/%~-]+", OPERATOR),
-        Rule::token(r"(?im)[$]+", KEYWORD_CONSTANT),
-        Rule::token(r"(?im)seg|wrt|strict|rel|abs", OPERATOR_WORD),
-        Rule::token(r"(?im)byte|[dq]?word", KEYWORD_TYPE),
-    ]);
-    m.insert(r"preproc", vec![
-        Rule::token(r"(?im)[^;\n]+", COMMENT_PREPROC),
-        Rule::token_to(r"(?im);.*?\n", COMMENT_SINGLE, NewState::Pop(1)),
-        Rule::token_to(r"(?im)\n", COMMENT_PREPROC, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"punctuation",
+        vec![
+            Rule::token(r"(?im)[,{}():\[\]]+", PUNCTUATION),
+            Rule::token(r"(?im)[&|^<>+*/%~-]+", OPERATOR),
+            Rule::token(r"(?im)[$]+", KEYWORD_CONSTANT),
+            Rule::token(r"(?im)seg|wrt|strict|rel|abs", OPERATOR_WORD),
+            Rule::token(r"(?im)byte|[dq]?word", KEYWORD_TYPE),
+        ],
+    );
+    m.insert(
+        r"preproc",
+        vec![
+            Rule::token(r"(?im)[^;\n]+", COMMENT_PREPROC),
+            Rule::token_to(r"(?im);.*?\n", COMMENT_SINGLE, NewState::Pop(1)),
+            Rule::token_to(r"(?im)\n", COMMENT_PREPROC, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

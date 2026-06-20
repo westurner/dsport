@@ -39,14 +39,22 @@ fn build_table() -> Table {
         Rule::token(r"(?im)([\w!$%&*+.,/<=>?@^~|-])+|(\[.*?\])+", STRING_SYMBOL),
         Rule::token(r"(?im)(\(|\))", PUNCTUATION),
     ]);
-    m.insert(r"bracestring", vec![
-        Rule::token_to(r"(?im)\{", STRING, NewState::PushSame),
-        Rule::token_to(r"(?im)\}", STRING, NewState::Pop(1)),
-        Rule::token(r"(?im)[^{}]+", STRING),
-    ]);
-    m.insert(r"tagstring", vec![
-        Rule::token_to(r"(?im)(?s)(.*?)(\[/text\])", STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"bracestring",
+        vec![
+            Rule::token_to(r"(?im)\{", STRING, NewState::PushSame),
+            Rule::token_to(r"(?im)\}", STRING, NewState::Pop(1)),
+            Rule::token(r"(?im)[^{}]+", STRING),
+        ],
+    );
+    m.insert(
+        r"tagstring",
+        vec![Rule::token_to(
+            r"(?im)(?s)(.*?)(\[/text\])",
+            STRING,
+            NewState::Pop(1),
+        )],
+    );
     Table(m)
 }
 

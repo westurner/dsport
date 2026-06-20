@@ -42,41 +42,41 @@ pub fn rgb_to_hex(r: u8, g: u8, b: u8) -> String {
 
 /// 16 ANSI color palette (indices 0-15).
 const ANSI_16: [(u8, u8, u8); 16] = [
-    (0, 0, 0),           // 0: black
-    (128, 0, 0),         // 1: maroon
-    (0, 128, 0),         // 2: green
-    (128, 128, 0),       // 3: olive
-    (0, 0, 128),         // 4: navy
-    (128, 0, 128),       // 5: purple
-    (0, 128, 128),       // 6: teal
-    (192, 192, 192),     // 7: silver
-    (128, 128, 128),     // 8: gray
-    (255, 0, 0),         // 9: red
-    (0, 255, 0),         // 10: lime
-    (255, 255, 0),       // 11: yellow
-    (0, 0, 255),         // 12: blue
-    (255, 0, 255),       // 13: magenta
-    (0, 255, 255),       // 14: cyan
-    (255, 255, 255),     // 15: white
+    (0, 0, 0),       // 0: black
+    (128, 0, 0),     // 1: maroon
+    (0, 128, 0),     // 2: green
+    (128, 128, 0),   // 3: olive
+    (0, 0, 128),     // 4: navy
+    (128, 0, 128),   // 5: purple
+    (0, 128, 128),   // 6: teal
+    (192, 192, 192), // 7: silver
+    (128, 128, 128), // 8: gray
+    (255, 0, 0),     // 9: red
+    (0, 255, 0),     // 10: lime
+    (255, 255, 0),   // 11: yellow
+    (0, 0, 255),     // 12: blue
+    (255, 0, 255),   // 13: magenta
+    (0, 255, 255),   // 14: cyan
+    (255, 255, 255), // 15: white
 ];
 
 /// Convert RGB to ANSI 16-color index (0-15) using nearest neighbor.
 pub fn rgb_to_ansi16(r: u8, g: u8, b: u8) -> u8 {
     let mut best_idx = 0;
     let mut best_dist = u32::MAX;
-    
+
     for (idx, &(cr, cg, cb)) in ANSI_16.iter().enumerate() {
         let dr = (r as i32 - cr as i32).abs() as u32;
         let dg = (g as i32 - cg as i32).abs() as u32;
         let db = (b as i32 - cb as i32).abs() as u32;
         let dist = dr * dr + dg * dg + db * db;
-        
+
         if dist < best_dist {
             best_dist = dist;
             best_idx = idx;
         }
     }
-    
+
     best_idx as u8
 }
 
@@ -97,53 +97,53 @@ pub fn rgb_to_ansi256(r: u8, g: u8, b: u8) -> u8 {
         let step = ((gray as u32 - 48) * 24) / 208;
         return (232 + step.min(23)) as u8;
     }
-    
+
     // 6×6×6 RGB cube: map each channel to 0-5
     let r_idx = (r as u32 * 6) / 256;
     let g_idx = (g as u32 * 6) / 256;
     let b_idx = (b as u32 * 6) / 256;
-    
+
     // Cube formula: 16 + 36*r + 6*g + b
     (16 + 36 * r_idx + 6 * g_idx + b_idx) as u8
 }
 
 /// 16 mIRC standard color codes.
 const MIRC_COLORS: [(u8, u8, u8); 16] = [
-    (255, 255, 255),     // 00: white
-    (0, 0, 0),           // 01: black
-    (0, 0, 127),         // 02: blue
-    (0, 147, 0),         // 03: green
-    (255, 0, 0),         // 04: red
-    (127, 0, 0),         // 05: brown
-    (156, 0, 156),       // 06: magenta
-    (252, 127, 0),       // 07: orange
-    (255, 255, 0),       // 08: yellow
-    (0, 252, 0),         // 09: light green
-    (0, 147, 147),       // 10: teal
-    (0, 255, 255),       // 11: cyan
-    (0, 0, 252),         // 12: light blue
-    (255, 0, 255),       // 13: light magenta
-    (127, 127, 127),     // 14: gray
-    (192, 192, 192),     // 15: light gray
+    (255, 255, 255), // 00: white
+    (0, 0, 0),       // 01: black
+    (0, 0, 127),     // 02: blue
+    (0, 147, 0),     // 03: green
+    (255, 0, 0),     // 04: red
+    (127, 0, 0),     // 05: brown
+    (156, 0, 156),   // 06: magenta
+    (252, 127, 0),   // 07: orange
+    (255, 255, 0),   // 08: yellow
+    (0, 252, 0),     // 09: light green
+    (0, 147, 147),   // 10: teal
+    (0, 255, 255),   // 11: cyan
+    (0, 0, 252),     // 12: light blue
+    (255, 0, 255),   // 13: light magenta
+    (127, 127, 127), // 14: gray
+    (192, 192, 192), // 15: light gray
 ];
 
 /// Convert RGB to mIRC color index (0-15) using nearest neighbor.
 pub fn rgb_to_mirc(r: u8, g: u8, b: u8) -> u8 {
     let mut best_idx = 0;
     let mut best_dist = u32::MAX;
-    
+
     for (idx, &(cr, cg, cb)) in MIRC_COLORS.iter().enumerate() {
         let dr = (r as i32 - cr as i32).abs() as u32;
         let dg = (g as i32 - cg as i32).abs() as u32;
         let db = (b as i32 - cb as i32).abs() as u32;
         let dist = dr * dr + dg * dg + db * db;
-        
+
         if dist < best_dist {
             best_dist = dist;
             best_idx = idx;
         }
     }
-    
+
     best_idx as u8
 }
 

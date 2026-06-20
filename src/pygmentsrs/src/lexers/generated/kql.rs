@@ -39,29 +39,44 @@ fn build_table() -> Table {
         Rule::token_to(r#"(?m)@""#, STRING, NewState::Push(vec![r"double_verbatim"])),
         Rule::token_to(r"(?m)```", STRING, NewState::Push(vec![r"multi_string"])),
     ]);
-    m.insert(r"single_string", vec![
-        Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token(r"(?m)[^'\\]+", STRING),
-    ]);
-    m.insert(r"double_string", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token(r#"(?m)[^"\\]+"#, STRING),
-    ]);
-    m.insert(r"single_verbatim", vec![
-        Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)[^']+", STRING),
-    ]);
-    m.insert(r"double_verbatim", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)[^"]+"#, STRING),
-    ]);
-    m.insert(r"multi_string", vec![
-        Rule::token(r"(?m)[^`]+", STRING),
-        Rule::token_to(r"(?m)```", STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)`", STRING),
-    ]);
+    m.insert(
+        r"single_string",
+        vec![
+            Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token(r"(?m)[^'\\]+", STRING),
+        ],
+    );
+    m.insert(
+        r"double_string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token(r#"(?m)[^"\\]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"single_verbatim",
+        vec![
+            Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)[^']+", STRING),
+        ],
+    );
+    m.insert(
+        r"double_verbatim",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)[^"]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"multi_string",
+        vec![
+            Rule::token(r"(?m)[^`]+", STRING),
+            Rule::token_to(r"(?m)```", STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)`", STRING),
+        ],
+    );
     Table(m)
 }
 

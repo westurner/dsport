@@ -25,48 +25,87 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"string", vec![
-        Rule::token(r"(?m)'(\\(.|\n)|[^'\\])*'", STRING),
-    ]);
-    m.insert(r"punctuation", vec![
-        Rule::token(r"(?m)(\[\?|[\.\*\[\],:\(\)\{\}\|])", PUNCTUATION),
-    ]);
-    m.insert(r"ws", vec![
-        Rule::token(r"(?m) |\t|\n|\r", WHITESPACE),
-    ]);
-    m.insert(r"dq-identifier", vec![
-        Rule::token(r#"(?m)[^\\"]+"#, NAME_VARIABLE),
-        Rule::token(r#"(?m)\\""#, NAME_VARIABLE),
-        Rule::token_to(r"(?m).", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"identifier", vec![
-        Rule::bygroups_to(r#"(?m)(&)?(")"#, vec![Some(NAME_VARIABLE), Some(PUNCTUATION)], NewState::Push(vec![r"dq-identifier"])),
-        Rule::bygroups(r#"(?m)(")?(&?[A-Za-z][A-Za-z0-9_-]*)(")?"#, vec![Some(PUNCTUATION), Some(NAME_VARIABLE), Some(PUNCTUATION)]),
-    ]);
-    m.insert(r"root", vec![
-        Rule::token(r"(?m) |\t|\n|\r", WHITESPACE),
-        Rule::token(r"(?m)'(\\(.|\n)|[^'\\])*'", STRING),
-        Rule::token(r"(?m)(==|!=|<=|>=|<|>|&&|\|\||!)", OPERATOR),
-        Rule::token(r"(?m)(\[\?|[\.\*\[\],:\(\)\{\}\|])", PUNCTUATION),
-        Rule::token(r"(?m)@", NAME_VARIABLE_GLOBAL),
-        Rule::bygroups(r"(?m)(&?[A-Za-z][A-Za-z0-9_]*)(\()", vec![Some(NAME_FUNCTION), Some(PUNCTUATION)]),
-        Rule::bygroups(r"(?m)(&)(\()", vec![Some(NAME_VARIABLE), Some(PUNCTUATION)]),
-        Rule::bygroups_to(r#"(?m)(&)?(")"#, vec![Some(NAME_VARIABLE), Some(PUNCTUATION)], NewState::Push(vec![r"dq-identifier"])),
-        Rule::bygroups(r#"(?m)(")?(&?[A-Za-z][A-Za-z0-9_-]*)(")?"#, vec![Some(PUNCTUATION), Some(NAME_VARIABLE), Some(PUNCTUATION)]),
-        Rule::token(r"(?m)-?\d+", NUMBER),
-        Rule::token_to(r"(?m)`", LITERAL, NewState::Push(vec![r"literal"])),
-    ]);
-    m.insert(r"literal", vec![
-        Rule::token(r"(?m) |\t|\n|\r", WHITESPACE),
-        Rule::token(r"(?m)'(\\(.|\n)|[^'\\])*'", STRING),
-        Rule::token(r"(?m)(\[\?|[\.\*\[\],:\(\)\{\}\|])", PUNCTUATION),
-        Rule::token(r"(?m)(false|true|null)\b", KEYWORD_CONSTANT),
-        Rule::bygroups_to(r#"(?m)(&)?(")"#, vec![Some(NAME_VARIABLE), Some(PUNCTUATION)], NewState::Push(vec![r"dq-identifier"])),
-        Rule::bygroups(r#"(?m)(")?(&?[A-Za-z][A-Za-z0-9_-]*)(")?"#, vec![Some(PUNCTUATION), Some(NAME_VARIABLE), Some(PUNCTUATION)]),
-        Rule::token(r"(?m)-?\d+\.?\d*([eE][-+]\d+)?", NUMBER),
-        Rule::token(r"(?m)\\`", LITERAL),
-        Rule::token_to(r"(?m)`", LITERAL, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"string",
+        vec![Rule::token(r"(?m)'(\\(.|\n)|[^'\\])*'", STRING)],
+    );
+    m.insert(
+        r"punctuation",
+        vec![Rule::token(
+            r"(?m)(\[\?|[\.\*\[\],:\(\)\{\}\|])",
+            PUNCTUATION,
+        )],
+    );
+    m.insert(r"ws", vec![Rule::token(r"(?m) |\t|\n|\r", WHITESPACE)]);
+    m.insert(
+        r"dq-identifier",
+        vec![
+            Rule::token(r#"(?m)[^\\"]+"#, NAME_VARIABLE),
+            Rule::token(r#"(?m)\\""#, NAME_VARIABLE),
+            Rule::token_to(r"(?m).", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"identifier",
+        vec![
+            Rule::bygroups_to(
+                r#"(?m)(&)?(")"#,
+                vec![Some(NAME_VARIABLE), Some(PUNCTUATION)],
+                NewState::Push(vec![r"dq-identifier"]),
+            ),
+            Rule::bygroups(
+                r#"(?m)(")?(&?[A-Za-z][A-Za-z0-9_-]*)(")?"#,
+                vec![Some(PUNCTUATION), Some(NAME_VARIABLE), Some(PUNCTUATION)],
+            ),
+        ],
+    );
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m) |\t|\n|\r", WHITESPACE),
+            Rule::token(r"(?m)'(\\(.|\n)|[^'\\])*'", STRING),
+            Rule::token(r"(?m)(==|!=|<=|>=|<|>|&&|\|\||!)", OPERATOR),
+            Rule::token(r"(?m)(\[\?|[\.\*\[\],:\(\)\{\}\|])", PUNCTUATION),
+            Rule::token(r"(?m)@", NAME_VARIABLE_GLOBAL),
+            Rule::bygroups(
+                r"(?m)(&?[A-Za-z][A-Za-z0-9_]*)(\()",
+                vec![Some(NAME_FUNCTION), Some(PUNCTUATION)],
+            ),
+            Rule::bygroups(r"(?m)(&)(\()", vec![Some(NAME_VARIABLE), Some(PUNCTUATION)]),
+            Rule::bygroups_to(
+                r#"(?m)(&)?(")"#,
+                vec![Some(NAME_VARIABLE), Some(PUNCTUATION)],
+                NewState::Push(vec![r"dq-identifier"]),
+            ),
+            Rule::bygroups(
+                r#"(?m)(")?(&?[A-Za-z][A-Za-z0-9_-]*)(")?"#,
+                vec![Some(PUNCTUATION), Some(NAME_VARIABLE), Some(PUNCTUATION)],
+            ),
+            Rule::token(r"(?m)-?\d+", NUMBER),
+            Rule::token_to(r"(?m)`", LITERAL, NewState::Push(vec![r"literal"])),
+        ],
+    );
+    m.insert(
+        r"literal",
+        vec![
+            Rule::token(r"(?m) |\t|\n|\r", WHITESPACE),
+            Rule::token(r"(?m)'(\\(.|\n)|[^'\\])*'", STRING),
+            Rule::token(r"(?m)(\[\?|[\.\*\[\],:\(\)\{\}\|])", PUNCTUATION),
+            Rule::token(r"(?m)(false|true|null)\b", KEYWORD_CONSTANT),
+            Rule::bygroups_to(
+                r#"(?m)(&)?(")"#,
+                vec![Some(NAME_VARIABLE), Some(PUNCTUATION)],
+                NewState::Push(vec![r"dq-identifier"]),
+            ),
+            Rule::bygroups(
+                r#"(?m)(")?(&?[A-Za-z][A-Za-z0-9_-]*)(")?"#,
+                vec![Some(PUNCTUATION), Some(NAME_VARIABLE), Some(PUNCTUATION)],
+            ),
+            Rule::token(r"(?m)-?\d+\.?\d*([eE][-+]\d+)?", NUMBER),
+            Rule::token(r"(?m)\\`", LITERAL),
+            Rule::token_to(r"(?m)`", LITERAL, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

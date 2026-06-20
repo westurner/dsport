@@ -41,17 +41,27 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[\[\](){}`,.]", PUNCTUATION),
         Rule::token(r"(?m).*\n", TEXT),
     ]);
-    m.insert(r"multiline-comments", vec![
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::Push(vec![r"multiline-comments"])),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[^/*]+", COMMENT_MULTILINE),
-        Rule::token(r"(?m)[/*]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)"""#, STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)[^"]+"#, STRING),
-    ]);
+    m.insert(
+        r"multiline-comments",
+        vec![
+            Rule::token_to(
+                r"(?m)/\*",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"multiline-comments"]),
+            ),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[^/*]+", COMMENT_MULTILINE),
+            Rule::token(r"(?m)[/*]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)"""#, STRING_ESCAPE),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)[^"]+"#, STRING),
+        ],
+    );
     Table(m)
 }
 

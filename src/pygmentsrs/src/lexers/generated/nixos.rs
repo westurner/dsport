@@ -48,30 +48,63 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[a-zA-Z_][\w\'-]*", TEXT),
         Rule::token_to(r"(?m)\$\{", STRING_INTERPOL, NewState::Push(vec![r"antiquote"])),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^/*]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"multiline", vec![
-        Rule::token(r"(?m)''(\$|'|\\n|\\r|\\t|\\)", STRING_ESCAPE),
-        Rule::token_to(r"(?m)''", TokenType::new(&["Literal", "String", "Multiline"]), NewState::Pop(1)),
-        Rule::token_to(r"(?m)\$\{", STRING_INTERPOL, NewState::Push(vec![r"antiquote"])),
-        Rule::token(r"(?m)[^'\$]+", TokenType::new(&["Literal", "String", "Multiline"])),
-        Rule::token(r"(?m)\$[^\{']", TokenType::new(&["Literal", "String", "Multiline"])),
-        Rule::token(r"(?m)'[^']", TokenType::new(&["Literal", "String", "Multiline"])),
-        Rule::token(r"(?m)\$(?=')", TokenType::new(&["Literal", "String", "Multiline"])),
-    ]);
-    m.insert(r"doublequote", vec![
-        Rule::token(r#"(?m)\\(\\|"|\$|n)"#, STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\$\{", STRING_INTERPOL, NewState::Push(vec![r"antiquote"])),
-        Rule::token(r#"(?m)[^"\\\$]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?m)\$[^\{"]"#, STRING_DOUBLE),
-        Rule::token(r#"(?m)\$(?=")"#, STRING_DOUBLE),
-        Rule::token(r"(?m)\\", STRING_DOUBLE),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^/*]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"multiline",
+        vec![
+            Rule::token(r"(?m)''(\$|'|\\n|\\r|\\t|\\)", STRING_ESCAPE),
+            Rule::token_to(
+                r"(?m)''",
+                TokenType::new(&["Literal", "String", "Multiline"]),
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?m)\$\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"antiquote"]),
+            ),
+            Rule::token(
+                r"(?m)[^'\$]+",
+                TokenType::new(&["Literal", "String", "Multiline"]),
+            ),
+            Rule::token(
+                r"(?m)\$[^\{']",
+                TokenType::new(&["Literal", "String", "Multiline"]),
+            ),
+            Rule::token(
+                r"(?m)'[^']",
+                TokenType::new(&["Literal", "String", "Multiline"]),
+            ),
+            Rule::token(
+                r"(?m)\$(?=')",
+                TokenType::new(&["Literal", "String", "Multiline"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"doublequote",
+        vec![
+            Rule::token(r#"(?m)\\(\\|"|\$|n)"#, STRING_ESCAPE),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)\$\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"antiquote"]),
+            ),
+            Rule::token(r#"(?m)[^"\\\$]+"#, STRING_DOUBLE),
+            Rule::token(r#"(?m)\$[^\{"]"#, STRING_DOUBLE),
+            Rule::token(r#"(?m)\$(?=")"#, STRING_DOUBLE),
+            Rule::token(r"(?m)\\", STRING_DOUBLE),
+        ],
+    );
     m.insert(r"antiquote", vec![
         Rule::token_to(r"(?m)\}", STRING_INTERPOL, NewState::Pop(1)),
         Rule::token_to(r"(?m)\$\{", STRING_INTERPOL, NewState::PushSame),

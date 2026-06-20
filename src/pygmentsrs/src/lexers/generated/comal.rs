@@ -44,11 +44,14 @@ fn build_table() -> Table {
         Rule::token(r"(?im)\d+", NUMBER_INTEGER),
         Rule::token(r"(?im)[(),:;]", PUNCTUATION),
     ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?im)[^"]+"#, STRING),
-        Rule::token(r#"(?im)"[0-9]*""#, STRING_ESCAPE),
-        Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?im)[^"]+"#, STRING),
+            Rule::token(r#"(?im)"[0-9]*""#, STRING_ESCAPE),
+            Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

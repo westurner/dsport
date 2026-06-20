@@ -25,18 +25,61 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"balanced-regex", vec![
-        Rule::token_to(r"(?ms)/(\\\\|\\[^\\]|[^\\/])*/[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)!(\\\\|\\[^\\]|[^\\!])*![egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\\(\\\\|[^\\])*\\[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\{(\\\\|\\[^\\]|[^\\}])*\}[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)<(\\\\|\\[^\\]|[^\\>])*>[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\[(\\\\|\\[^\\]|[^\\\]])*\][egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\((\\\\|\\[^\\]|[^\\)])*\)[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)@(\\\\|\\[^\\]|[^\\@])*@[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)%(\\\\|\\[^\\]|[^\\%])*%[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\$(\\\\|\\[^\\]|[^\\$])*\$[egimosx]*", STRING_REGEX, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"balanced-regex",
+        vec![
+            Rule::token_to(
+                r"(?ms)/(\\\\|\\[^\\]|[^\\/])*/[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)!(\\\\|\\[^\\]|[^\\!])*![egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)\\(\\\\|[^\\])*\\[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)\{(\\\\|\\[^\\]|[^\\}])*\}[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)<(\\\\|\\[^\\]|[^\\>])*>[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)\[(\\\\|\\[^\\]|[^\\\]])*\][egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)\((\\\\|\\[^\\]|[^\\)])*\)[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)@(\\\\|\\[^\\]|[^\\@])*@[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)%(\\\\|\\[^\\]|[^\\%])*%[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)\$(\\\\|\\[^\\]|[^\\$])*\$[egimosx]*",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?ms)\A\#!.+?$", COMMENT_HASHBANG),
         Rule::token(r"(?ms)\#.*?$", COMMENT_SINGLE),
@@ -88,62 +131,102 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)[()\[\]:;,<>/?{}]", PUNCTUATION),
         Rule::token_to(r"(?ms)(?=\w)", NAME, NewState::Push(vec![r"name"])),
     ]);
-    m.insert(r"format", vec![
-        Rule::token_to(r"(?ms)\.\n", STRING_INTERPOL, NewState::Pop(1)),
-        Rule::token(r"(?ms)[^\n]*\n", STRING_INTERPOL),
-    ]);
-    m.insert(r"varname", vec![
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::token_to(r"(?ms)\{", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\)|,", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?ms)\w+::", NAME_NAMESPACE),
-        Rule::token_to(r"(?ms)[\w:]+", NAME_VARIABLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"name", vec![
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*(::[a-zA-Z_]\w*)*(::)?(?=\s*->)", NAME_NAMESPACE, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*(::[a-zA-Z_]\w*)*::", NAME_NAMESPACE, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)[\w:]+", NAME, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)[A-Z_]+(?=\W)", NAME_CONSTANT, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)(?=\W)", TEXT, NewState::Pop(1)),
-    ]);
-    m.insert(r"funcname", vec![
-        Rule::token(r"(?ms)[a-zA-Z_]\w*[!?]?", NAME_FUNCTION),
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::bygroups(r"(?ms)(\([$@%]*\))(\s*)", vec![Some(PUNCTUATION), Some(WHITESPACE)]),
-        Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?ms).*?\{", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"cb-string", vec![
-        Rule::token(r"(?ms)\\[{}\\]", STRING_OTHER),
-        Rule::token(r"(?ms)\\", STRING_OTHER),
-        Rule::token_to(r"(?ms)\{", STRING_OTHER, NewState::Push(vec![r"cb-string"])),
-        Rule::token_to(r"(?ms)\}", STRING_OTHER, NewState::Pop(1)),
-        Rule::token(r"(?ms)[^{}\\]+", STRING_OTHER),
-    ]);
-    m.insert(r"rb-string", vec![
-        Rule::token(r"(?ms)\\[()\\]", STRING_OTHER),
-        Rule::token(r"(?ms)\\", STRING_OTHER),
-        Rule::token_to(r"(?ms)\(", STRING_OTHER, NewState::Push(vec![r"rb-string"])),
-        Rule::token_to(r"(?ms)\)", STRING_OTHER, NewState::Pop(1)),
-        Rule::token(r"(?ms)[^()]+", STRING_OTHER),
-    ]);
-    m.insert(r"sb-string", vec![
-        Rule::token(r"(?ms)\\[\[\]\\]", STRING_OTHER),
-        Rule::token(r"(?ms)\\", STRING_OTHER),
-        Rule::token_to(r"(?ms)\[", STRING_OTHER, NewState::Push(vec![r"sb-string"])),
-        Rule::token_to(r"(?ms)\]", STRING_OTHER, NewState::Pop(1)),
-        Rule::token(r"(?ms)[^\[\]]+", STRING_OTHER),
-    ]);
-    m.insert(r"lt-string", vec![
-        Rule::token(r"(?ms)\\[<>\\]", STRING_OTHER),
-        Rule::token(r"(?ms)\\", STRING_OTHER),
-        Rule::token_to(r"(?ms)\<", STRING_OTHER, NewState::Push(vec![r"lt-string"])),
-        Rule::token_to(r"(?ms)\>", STRING_OTHER, NewState::Pop(1)),
-        Rule::token(r"(?ms)[^<>]+", STRING_OTHER),
-    ]);
-    m.insert(r"end-part", vec![
-        Rule::token_to(r"(?ms).+", COMMENT_PREPROC, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"format",
+        vec![
+            Rule::token_to(r"(?ms)\.\n", STRING_INTERPOL, NewState::Pop(1)),
+            Rule::token(r"(?ms)[^\n]*\n", STRING_INTERPOL),
+        ],
+    );
+    m.insert(
+        r"varname",
+        vec![
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::token_to(r"(?ms)\{", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(r"(?ms)\)|,", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?ms)\w+::", NAME_NAMESPACE),
+            Rule::token_to(r"(?ms)[\w:]+", NAME_VARIABLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"name",
+        vec![
+            Rule::token_to(
+                r"(?ms)[a-zA-Z_]\w*(::[a-zA-Z_]\w*)*(::)?(?=\s*->)",
+                NAME_NAMESPACE,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)[a-zA-Z_]\w*(::[a-zA-Z_]\w*)*::",
+                NAME_NAMESPACE,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(r"(?ms)[\w:]+", NAME, NewState::Pop(1)),
+            Rule::token_to(r"(?ms)[A-Z_]+(?=\W)", NAME_CONSTANT, NewState::Pop(1)),
+            Rule::token_to(r"(?ms)(?=\W)", TEXT, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"funcname",
+        vec![
+            Rule::token(r"(?ms)[a-zA-Z_]\w*[!?]?", NAME_FUNCTION),
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::bygroups(
+                r"(?ms)(\([$@%]*\))(\s*)",
+                vec![Some(PUNCTUATION), Some(WHITESPACE)],
+            ),
+            Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(r"(?ms).*?\{", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"cb-string",
+        vec![
+            Rule::token(r"(?ms)\\[{}\\]", STRING_OTHER),
+            Rule::token(r"(?ms)\\", STRING_OTHER),
+            Rule::token_to(r"(?ms)\{", STRING_OTHER, NewState::Push(vec![r"cb-string"])),
+            Rule::token_to(r"(?ms)\}", STRING_OTHER, NewState::Pop(1)),
+            Rule::token(r"(?ms)[^{}\\]+", STRING_OTHER),
+        ],
+    );
+    m.insert(
+        r"rb-string",
+        vec![
+            Rule::token(r"(?ms)\\[()\\]", STRING_OTHER),
+            Rule::token(r"(?ms)\\", STRING_OTHER),
+            Rule::token_to(r"(?ms)\(", STRING_OTHER, NewState::Push(vec![r"rb-string"])),
+            Rule::token_to(r"(?ms)\)", STRING_OTHER, NewState::Pop(1)),
+            Rule::token(r"(?ms)[^()]+", STRING_OTHER),
+        ],
+    );
+    m.insert(
+        r"sb-string",
+        vec![
+            Rule::token(r"(?ms)\\[\[\]\\]", STRING_OTHER),
+            Rule::token(r"(?ms)\\", STRING_OTHER),
+            Rule::token_to(r"(?ms)\[", STRING_OTHER, NewState::Push(vec![r"sb-string"])),
+            Rule::token_to(r"(?ms)\]", STRING_OTHER, NewState::Pop(1)),
+            Rule::token(r"(?ms)[^\[\]]+", STRING_OTHER),
+        ],
+    );
+    m.insert(
+        r"lt-string",
+        vec![
+            Rule::token(r"(?ms)\\[<>\\]", STRING_OTHER),
+            Rule::token(r"(?ms)\\", STRING_OTHER),
+            Rule::token_to(r"(?ms)\<", STRING_OTHER, NewState::Push(vec![r"lt-string"])),
+            Rule::token_to(r"(?ms)\>", STRING_OTHER, NewState::Pop(1)),
+            Rule::token(r"(?ms)[^<>]+", STRING_OTHER),
+        ],
+    );
+    m.insert(
+        r"end-part",
+        vec![Rule::token_to(
+            r"(?ms).+",
+            COMMENT_PREPROC,
+            NewState::Pop(1),
+        )],
+    );
     Table(m)
 }
 

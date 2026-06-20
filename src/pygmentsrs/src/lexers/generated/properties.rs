@@ -25,30 +25,59 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)[!#].*|/{2}.*", COMMENT_SINGLE),
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)^[^\S\n]+", WHITESPACE),
-        Rule::default(NewState::Push(vec![r"key"])),
-    ]);
-    m.insert(r"key", vec![
-        Rule::token(r"(?m)[^\\:=\s]+", NAME_ATTRIBUTE),
-        Rule::bygroups(r"(?m)(\\\n)([^\S\n]*)", vec![Some(STRING_ESCAPE), Some(WHITESPACE)]),
-        Rule::token(r"(?m)\\(.|\n)", STRING_ESCAPE),
-        Rule::bygroups_to(r"(?m)([^\S\n]*)([:=])([^\S\n]*)", vec![Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE)], NewState::Push(vec![r"#pop", r"value"])),
-        Rule::token_to(r"(?m)[^\S\n]+", WHITESPACE, NewState::Push(vec![r"#pop", r"value"])),
-        Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
-    ]);
-    m.insert(r"escapes", vec![
-        Rule::bygroups(r"(?m)(\\\n)([^\S\n]*)", vec![Some(STRING_ESCAPE), Some(WHITESPACE)]),
-        Rule::token(r"(?m)\\(.|\n)", STRING_ESCAPE),
-    ]);
-    m.insert(r"value", vec![
-        Rule::token(r"(?m)[^\\\n]+", STRING),
-        Rule::bygroups(r"(?m)(\\\n)([^\S\n]*)", vec![Some(STRING_ESCAPE), Some(WHITESPACE)]),
-        Rule::token(r"(?m)\\(.|\n)", STRING_ESCAPE),
-        Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)[!#].*|/{2}.*", COMMENT_SINGLE),
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)^[^\S\n]+", WHITESPACE),
+            Rule::default(NewState::Push(vec![r"key"])),
+        ],
+    );
+    m.insert(
+        r"key",
+        vec![
+            Rule::token(r"(?m)[^\\:=\s]+", NAME_ATTRIBUTE),
+            Rule::bygroups(
+                r"(?m)(\\\n)([^\S\n]*)",
+                vec![Some(STRING_ESCAPE), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?m)\\(.|\n)", STRING_ESCAPE),
+            Rule::bygroups_to(
+                r"(?m)([^\S\n]*)([:=])([^\S\n]*)",
+                vec![Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE)],
+                NewState::Push(vec![r"#pop", r"value"]),
+            ),
+            Rule::token_to(
+                r"(?m)[^\S\n]+",
+                WHITESPACE,
+                NewState::Push(vec![r"#pop", r"value"]),
+            ),
+            Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"escapes",
+        vec![
+            Rule::bygroups(
+                r"(?m)(\\\n)([^\S\n]*)",
+                vec![Some(STRING_ESCAPE), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?m)\\(.|\n)", STRING_ESCAPE),
+        ],
+    );
+    m.insert(
+        r"value",
+        vec![
+            Rule::token(r"(?m)[^\\\n]+", STRING),
+            Rule::bygroups(
+                r"(?m)(\\\n)([^\S\n]*)",
+                vec![Some(STRING_ESCAPE), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?m)\\(.|\n)", STRING_ESCAPE),
+            Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

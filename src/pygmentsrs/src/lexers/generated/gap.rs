@@ -25,11 +25,14 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)#.*$", COMMENT_SINGLE),
-        Rule::token(r#"(?m)"(?:[^"\\]|\\.)*""#, STRING),
-        Rule::token(r"(?m)\(|\)|\[|\]|\{|\}", PUNCTUATION),
-        Rule::token(r"(?m)(?x)\b(?:
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)#.*$", COMMENT_SINGLE),
+            Rule::token(r#"(?m)"(?:[^"\\]|\\.)*""#, STRING),
+            Rule::token(r"(?m)\(|\)|\[|\]|\{|\}", PUNCTUATION),
+            Rule::token(
+                r"(?m)(?x)\b(?:
                 if|then|elif|else|fi|
                 for|while|do|od|
                 repeat|until|
@@ -40,25 +43,40 @@ fn build_table() -> Table {
                 IsBound|Unbind|
                 TryNextMethod|
                 Info|Assert
-              )\b", KEYWORD),
-        Rule::token(r"(?m)(?x)\b(?:
+              )\b",
+                KEYWORD,
+            ),
+            Rule::token(
+                r"(?m)(?x)\b(?:
                 true|false|fail|infinity
-              )\b", NAME_CONSTANT),
-        Rule::token(r"(?m)(?x)\b(?:
+              )\b",
+                NAME_CONSTANT,
+            ),
+            Rule::token(
+                r"(?m)(?x)\b(?:
                 (Declare|Install)([A-Z][A-Za-z]+)|
                    BindGlobal|BIND_GLOBAL
-              )\b", NAME_BUILTIN),
-        Rule::token(r"(?m)\.|,|:=|;|=|\+|-|\*|/|\^|>|<", OPERATOR),
-        Rule::token(r"(?m)(?x)\b(?:
+              )\b",
+                NAME_BUILTIN,
+            ),
+            Rule::token(r"(?m)\.|,|:=|;|=|\+|-|\*|/|\^|>|<", OPERATOR),
+            Rule::token(
+                r"(?m)(?x)\b(?:
                 and|or|not|mod|in
-              )\b", OPERATOR_WORD),
-        Rule::token(r"(?m)(?x)
+              )\b",
+                OPERATOR_WORD,
+            ),
+            Rule::token(
+                r"(?m)(?x)
               (?:\w+|`[^`]*`)
-              (?:::\w+|`[^`]*`)*", NAME_VARIABLE),
-        Rule::token(r"(?m)[0-9]+(?:\.[0-9]*)?(?:e[0-9]+)?", NUMBER),
-        Rule::token(r"(?m)\.[0-9]+(?:e[0-9]+)?", NUMBER),
-        Rule::token(r"(?m).", TEXT),
-    ]);
+              (?:::\w+|`[^`]*`)*",
+                NAME_VARIABLE,
+            ),
+            Rule::token(r"(?m)[0-9]+(?:\.[0-9]*)?(?:e[0-9]+)?", NUMBER),
+            Rule::token(r"(?m)\.[0-9]+(?:e[0-9]+)?", NUMBER),
+            Rule::token(r"(?m).", TEXT),
+        ],
+    );
     Table(m)
 }
 

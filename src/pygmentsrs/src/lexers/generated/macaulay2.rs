@@ -37,22 +37,31 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\s+", WHITESPACE),
         Rule::token(r"(?m).", TEXT),
     ]);
-    m.insert(r"block comment", vec![
-        Rule::token(r"(?m)[^*-]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)\*-", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*-]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"quote string", vec![
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\"?"#, STRING),
-    ]);
-    m.insert(r"slash string", vec![
-        Rule::token(r"(?m)[^/]+", STRING),
-        Rule::token(r"(?m)(//)+(?!/)", STRING),
-        Rule::token_to(r"(?m)/(//)+(?!/)", STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)/", STRING),
-    ]);
+    m.insert(
+        r"block comment",
+        vec![
+            Rule::token(r"(?m)[^*-]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)\*-", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*-]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"quote string",
+        vec![
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)\\"?"#, STRING),
+        ],
+    );
+    m.insert(
+        r"slash string",
+        vec![
+            Rule::token(r"(?m)[^/]+", STRING),
+            Rule::token(r"(?m)(//)+(?!/)", STRING),
+            Rule::token_to(r"(?m)/(//)+(?!/)", STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)/", STRING),
+        ],
+    );
     Table(m)
 }
 

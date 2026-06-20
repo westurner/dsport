@@ -3,20 +3,30 @@
 //! These tests mirror the Python MarkupSafe test suite
 //! (tests/test_markupsafe.py) to ensure API and behaviour parity.
 
-use markupsafers::{escape, escape_silent, soft_str, Markup};
+use markupsafers::{Markup, escape, escape_silent, soft_str};
 
 // ── escape() ─────────────────────────────────────────────────────────────────
 
 #[test]
-fn escape_ampersand() { assert_eq!(escape("&").as_str(), "&amp;"); }
+fn escape_ampersand() {
+    assert_eq!(escape("&").as_str(), "&amp;");
+}
 #[test]
-fn escape_less_than() { assert_eq!(escape("<").as_str(), "&lt;"); }
+fn escape_less_than() {
+    assert_eq!(escape("<").as_str(), "&lt;");
+}
 #[test]
-fn escape_greater_than() { assert_eq!(escape(">").as_str(), "&gt;"); }
+fn escape_greater_than() {
+    assert_eq!(escape(">").as_str(), "&gt;");
+}
 #[test]
-fn escape_double_quote() { assert_eq!(escape("\"").as_str(), "&#34;"); }
+fn escape_double_quote() {
+    assert_eq!(escape("\"").as_str(), "&#34;");
+}
 #[test]
-fn escape_single_quote() { assert_eq!(escape("'").as_str(), "&#39;"); }
+fn escape_single_quote() {
+    assert_eq!(escape("'").as_str(), "&#39;");
+}
 
 #[test]
 fn escape_mixed_special_chars() {
@@ -132,10 +142,7 @@ fn join_escapes_items() {
 #[test]
 fn join_markup_items_no_escape() {
     let sep = Markup::from_safe(" | ");
-    let result = sep.join_markup([
-        Markup::from_safe("<a>"),
-        Markup::from_safe("<b>"),
-    ]);
+    let result = sep.join_markup([Markup::from_safe("<a>"), Markup::from_safe("<b>")]);
     assert_eq!(result.as_str(), "<a> | <b>");
 }
 

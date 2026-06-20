@@ -25,31 +25,43 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)^#.*", COMMENT),
-        Rule::token_to(r"(?m)^[^\s#:|]+", NAME_TAG, NewState::Push(vec![r"names"])),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-    ]);
-    m.insert(r"names", vec![
-        Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
-        Rule::token_to(r"(?m):", PUNCTUATION, NewState::Push(vec![r"defs"])),
-        Rule::token(r"(?m)\|", PUNCTUATION),
-        Rule::token(r"(?m)[^:|]+", NAME_ATTRIBUTE),
-    ]);
-    m.insert(r"defs", vec![
-        Rule::bygroups(r"(?m)(\\)(\n[ \t]*)", vec![Some(TEXT), Some(WHITESPACE)]),
-        Rule::token_to(r"(?m)\n[ \t]*", WHITESPACE, NewState::Pop(2)),
-        Rule::bygroups(r"(?m)(#)([0-9]+)", vec![Some(OPERATOR), Some(NUMBER)]),
-        Rule::token_to(r"(?m)=", OPERATOR, NewState::Push(vec![r"data"])),
-        Rule::token(r"(?m):", PUNCTUATION),
-        Rule::token(r"(?m)[^\s:=#]+", NAME_CLASS),
-    ]);
-    m.insert(r"data", vec![
-        Rule::token(r"(?m)\\072", LITERAL),
-        Rule::token_to(r"(?m):", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)[^:\\]+", LITERAL),
-        Rule::token(r"(?m).", LITERAL),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)^#.*", COMMENT),
+            Rule::token_to(r"(?m)^[^\s#:|]+", NAME_TAG, NewState::Push(vec![r"names"])),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"names",
+        vec![
+            Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
+            Rule::token_to(r"(?m):", PUNCTUATION, NewState::Push(vec![r"defs"])),
+            Rule::token(r"(?m)\|", PUNCTUATION),
+            Rule::token(r"(?m)[^:|]+", NAME_ATTRIBUTE),
+        ],
+    );
+    m.insert(
+        r"defs",
+        vec![
+            Rule::bygroups(r"(?m)(\\)(\n[ \t]*)", vec![Some(TEXT), Some(WHITESPACE)]),
+            Rule::token_to(r"(?m)\n[ \t]*", WHITESPACE, NewState::Pop(2)),
+            Rule::bygroups(r"(?m)(#)([0-9]+)", vec![Some(OPERATOR), Some(NUMBER)]),
+            Rule::token_to(r"(?m)=", OPERATOR, NewState::Push(vec![r"data"])),
+            Rule::token(r"(?m):", PUNCTUATION),
+            Rule::token(r"(?m)[^\s:=#]+", NAME_CLASS),
+        ],
+    );
+    m.insert(
+        r"data",
+        vec![
+            Rule::token(r"(?m)\\072", LITERAL),
+            Rule::token_to(r"(?m):", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?m)[^:\\]+", LITERAL),
+            Rule::token(r"(?m).", LITERAL),
+        ],
+    );
     Table(m)
 }
 

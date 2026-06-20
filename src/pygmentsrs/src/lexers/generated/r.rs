@@ -25,33 +25,56 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"comments", vec![
-        Rule::token(r"(?m)#.*$", COMMENT_SINGLE),
-    ]);
-    m.insert(r"valid_name", vec![
-        Rule::token(r"(?m)`[^`\\]*(?:\\.[^`\\]*)*`|(?:[a-zA-Z]|\.[A-Za-z_.])[\w.]*|\.", NAME),
-    ]);
-    m.insert(r"function_name", vec![
-        Rule::token(r"(?m)(`[^`\\]*(?:\\.[^`\\]*)*`|(?:[a-zA-Z]|\.[A-Za-z_.])[\w.]*|\.)\s*(?=\()", NAME_FUNCTION),
-    ]);
-    m.insert(r"punctuation", vec![
-        Rule::token(r"(?m)\[{1,2}|\]{1,2}|\(|\)|;|,", PUNCTUATION),
-    ]);
-    m.insert(r"keywords", vec![
-        Rule::token(r"(?m)(if|else|for|while|repeat|in|next|break|return|switch|function)(?![\w.])", KEYWORD_RESERVED),
-    ]);
-    m.insert(r"operators", vec![
-        Rule::token(r"(?m)<<?-|->>?|-|==|<=|>=|\|>|<|>|&&?|!=|\|\|?|\?", OPERATOR),
-        Rule::token(r"(?m)\*|\+|\^|/|!|%[^%]*%|=|~|\$|@|:{1,3}", OPERATOR),
-    ]);
+    m.insert(r"comments", vec![Rule::token(r"(?m)#.*$", COMMENT_SINGLE)]);
+    m.insert(
+        r"valid_name",
+        vec![Rule::token(
+            r"(?m)`[^`\\]*(?:\\.[^`\\]*)*`|(?:[a-zA-Z]|\.[A-Za-z_.])[\w.]*|\.",
+            NAME,
+        )],
+    );
+    m.insert(
+        r"function_name",
+        vec![Rule::token(
+            r"(?m)(`[^`\\]*(?:\\.[^`\\]*)*`|(?:[a-zA-Z]|\.[A-Za-z_.])[\w.]*|\.)\s*(?=\()",
+            NAME_FUNCTION,
+        )],
+    );
+    m.insert(
+        r"punctuation",
+        vec![Rule::token(r"(?m)\[{1,2}|\]{1,2}|\(|\)|;|,", PUNCTUATION)],
+    );
+    m.insert(
+        r"keywords",
+        vec![Rule::token(
+            r"(?m)(if|else|for|while|repeat|in|next|break|return|switch|function)(?![\w.])",
+            KEYWORD_RESERVED,
+        )],
+    );
+    m.insert(
+        r"operators",
+        vec![
+            Rule::token(
+                r"(?m)<<?-|->>?|-|==|<=|>=|\|>|<|>|&&?|!=|\|\|?|\?",
+                OPERATOR,
+            ),
+            Rule::token(r"(?m)\*|\+|\^|/|!|%[^%]*%|=|~|\$|@|:{1,3}", OPERATOR),
+        ],
+    );
     m.insert(r"builtin_symbols", vec![
         Rule::token(r"(?m)(NULL|NA(_(integer|real|complex|character)_)?|letters|LETTERS|Inf|TRUE|FALSE|NaN|pi|\.\.(\.|[0-9]+))(?![\w.])", KEYWORD_CONSTANT),
         Rule::token(r"(?m)(T|F)\b", NAME_BUILTIN_PSEUDO),
     ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?m)0[xX][a-fA-F0-9]+([pP][0-9]+)?[Li]?", NUMBER_HEX),
-        Rule::token(r"(?m)[+-]?([0-9]+(\.[0-9]+)?|\.[0-9]+|\.)([eE][+-]?[0-9]+)?[Li]?", NUMBER),
-    ]);
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(r"(?m)0[xX][a-fA-F0-9]+([pP][0-9]+)?[Li]?", NUMBER_HEX),
+            Rule::token(
+                r"(?m)[+-]?([0-9]+(\.[0-9]+)?|\.[0-9]+|\.)([eE][+-]?[0-9]+)?[Li]?",
+                NUMBER,
+            ),
+        ],
+    );
     m.insert(r"statements", vec![
         Rule::token(r"(?m)#.*$", COMMENT_SINGLE),
         Rule::token(r"(?m)\s+", WHITESPACE),
@@ -86,12 +109,22 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\{|\}", PUNCTUATION),
         Rule::token(r"(?m).", TEXT),
     ]);
-    m.insert(r"string_squote", vec![
-        Rule::token_to(r"(?m)([^\'\\]|\\.)*\'", STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"string_dquote", vec![
-        Rule::token_to(r#"(?m)([^"\\]|\\.)*""#, STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"string_squote",
+        vec![Rule::token_to(
+            r"(?m)([^\'\\]|\\.)*\'",
+            STRING,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"string_dquote",
+        vec![Rule::token_to(
+            r#"(?m)([^"\\]|\\.)*""#,
+            STRING,
+            NewState::Pop(1),
+        )],
+    );
     Table(m)
 }
 

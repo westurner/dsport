@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use jinja2rs::environment::Environment;
 use serde_json::json;
 
@@ -52,9 +52,7 @@ fn render_benchmarks(c: &mut Criterion) {
     group.bench_function("simple", |b| {
         let env = Environment::new();
         let ctx = json!({"name": "World"});
-        b.iter(|| {
-            black_box(env.render_str(black_box(simple_template()), black_box(&ctx)))
-        });
+        b.iter(|| black_box(env.render_str(black_box(simple_template()), black_box(&ctx))));
     });
 
     // Medium complexity render
@@ -67,9 +65,7 @@ fn render_benchmarks(c: &mut Criterion) {
                 {"name": "Item 3", "active": true},
             ]
         });
-        b.iter(|| {
-            black_box(env.render_str(black_box(medium_template()), black_box(&ctx)))
-        });
+        b.iter(|| black_box(env.render_str(black_box(medium_template()), black_box(&ctx))));
     });
 
     // Complex render with real data
@@ -104,9 +100,7 @@ fn render_benchmarks(c: &mut Criterion) {
         let env = Environment::new();
         let ctx = json!({"text": "hello world this is a test message for filtering"});
         let template = "{{ text | upper | wordwrap(10) }}";
-        b.iter(|| {
-            black_box(env.render_str(black_box(template), black_box(&ctx)))
-        });
+        b.iter(|| black_box(env.render_str(black_box(template), black_box(&ctx))));
     });
 
     // Render with nested data access
@@ -122,9 +116,7 @@ fn render_benchmarks(c: &mut Criterion) {
             }
         });
         let template = "{{ level1.level2.level3.value }}";
-        b.iter(|| {
-            black_box(env.render_str(black_box(template), black_box(&ctx)))
-        });
+        b.iter(|| black_box(env.render_str(black_box(template), black_box(&ctx))));
     });
 
     group.finish();
@@ -135,19 +127,23 @@ fn render_many_iterations(c: &mut Criterion) {
     group.sample_size(100);
 
     for item_count in [10, 50, 100, 500].iter() {
-        group.bench_with_input(BenchmarkId::from_parameter(item_count), item_count, |b, &count| {
-            let env = Environment::new();
-            let items: Vec<_> = (0..count)
-                .map(|i| json!({"id": i, "name": format!("Item {}", i), "active": i % 2 == 0}))
-                .collect();
-            let ctx = json!({"items": items});
-            let template = r#"
+        group.bench_with_input(
+            BenchmarkId::from_parameter(item_count),
+            item_count,
+            |b, &count| {
+                let env = Environment::new();
+                let items: Vec<_> = (0..count)
+                    .map(|i| json!({"id": i, "name": format!("Item {}", i), "active": i % 2 == 0}))
+                    .collect();
+                let ctx = json!({"items": items});
+                let template = r#"
 {% for item in items %}
   [{{ item.id }}] {{ item.name }} {% if item.active %}ACTIVE{% endif %}
 {% endfor %}
 "#;
-            b.iter(|| black_box(env.render_str(black_box(template), black_box(&ctx))));
-        });
+                b.iter(|| black_box(env.render_str(black_box(template), black_box(&ctx))));
+            },
+        );
     }
 
     group.finish();

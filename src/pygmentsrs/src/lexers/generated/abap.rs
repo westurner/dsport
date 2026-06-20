@@ -25,16 +25,22 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"common", vec![
-        Rule::token(r"(?im)\s+", WHITESPACE),
-        Rule::token(r"(?im)^\*.*$", COMMENT_SINGLE),
-        Rule::token(r#"(?im)\".*?\n"#, COMMENT_SINGLE),
-        Rule::token(r"(?im)##\w+", COMMENT_SPECIAL),
-    ]);
-    m.insert(r"variable-names", vec![
-        Rule::token(r"(?im)<\S+>", NAME_VARIABLE),
-        Rule::token(r"(?im)\w[\w~]*(?:(\[\])|->\*)?", NAME_VARIABLE),
-    ]);
+    m.insert(
+        r"common",
+        vec![
+            Rule::token(r"(?im)\s+", WHITESPACE),
+            Rule::token(r"(?im)^\*.*$", COMMENT_SINGLE),
+            Rule::token(r#"(?im)\".*?\n"#, COMMENT_SINGLE),
+            Rule::token(r"(?im)##\w+", COMMENT_SPECIAL),
+        ],
+    );
+    m.insert(
+        r"variable-names",
+        vec![
+            Rule::token(r"(?im)<\S+>", NAME_VARIABLE),
+            Rule::token(r"(?im)\w[\w~]*(?:(\[\])|->\*)?", NAME_VARIABLE),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?im)\s+", WHITESPACE),
         Rule::token(r"(?im)^\*.*$", COMMENT_SINGLE),

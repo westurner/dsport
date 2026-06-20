@@ -72,13 +72,16 @@ impl I18nProvider {
     pub fn ngettext(&self, singular: &str, plural: &str, n: usize) -> String {
         // Try to look up plural forms
         let plurals = self.plural_forms.lock().unwrap();
-        
+
         // First, try to find an entry indexed by the singular form
         if let Some(forms) = plurals.get(singular) {
             // Simple plural rule: use singular (0) for n=1, plural (1) otherwise
             // (This is a simplification; full i18n would use CLDR plural rules)
             return if n == 1 {
-                forms.get(0).cloned().unwrap_or_else(|| singular.to_string())
+                forms
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| singular.to_string())
             } else {
                 forms.get(1).cloned().unwrap_or_else(|| plural.to_string())
             };
@@ -133,11 +136,7 @@ impl Object for GettextGlobal {
         ObjectRepr::Plain
     }
 
-    fn call(
-        self: &Arc<Self>,
-        _state: &State<'_, '_>,
-        args: &[Value],
-    ) -> Result<Value, Error> {
+    fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
         if args.is_empty() {
             return Err(Error::new(
                 ErrorKind::MissingArgument,
@@ -177,11 +176,7 @@ impl Object for NgettextGlobal {
         ObjectRepr::Plain
     }
 
-    fn call(
-        self: &Arc<Self>,
-        _state: &State<'_, '_>,
-        args: &[Value],
-    ) -> Result<Value, Error> {
+    fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
         if args.len() < 3 {
             return Err(Error::new(
                 ErrorKind::MissingArgument,
@@ -190,10 +185,12 @@ impl Object for NgettextGlobal {
         }
         let singular = args[0].to_string();
         let plural = args[1].to_string();
-        let n = args[2]
-            .as_i64()
-            .ok_or_else(|| Error::new(ErrorKind::InvalidOperation, "ngettext() n must be an integer"))?
-            as usize;
+        let n = args[2].as_i64().ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidOperation,
+                "ngettext() n must be an integer",
+            )
+        })? as usize;
 
         Ok(Value::from(self.provider.ngettext(&singular, &plural, n)))
     }
@@ -239,7 +236,10 @@ mod tests {
     fn test_ngettext_with_forms() {
         let provider = I18nProvider::new();
         let mut forms = HashMap::new();
-        forms.insert("item".to_string(), vec!["artículo".to_string(), "artículos".to_string()]);
+        forms.insert(
+            "item".to_string(),
+            vec!["artículo".to_string(), "artículos".to_string()],
+        );
         provider.load_plural_forms(forms);
 
         assert_eq!(provider.ngettext("item", "items", 1), "artículo");

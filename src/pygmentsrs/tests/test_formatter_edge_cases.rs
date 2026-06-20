@@ -1,6 +1,5 @@
 /// Edge case tests to improve branch coverage on formatters
 /// These tests target uncovered branches identified by llvm-cov
-
 use pygmentsrs::formatters::registry::format_native;
 use pygmentsrs::token::*;
 
@@ -55,7 +54,10 @@ fn test_formatter_with_special_characters() {
     if let Some(html) = format_native("html", special_tokens) {
         // Should contain escaped entities
         let has_entities = html.contains("&lt;") || html.contains("&gt;") || html.contains("&amp;");
-        assert!(has_entities, "HTML formatter should escape special characters");
+        assert!(
+            has_entities,
+            "HTML formatter should escape special characters"
+        );
     }
 }
 
@@ -71,11 +73,7 @@ fn test_formatter_with_long_lines() {
 
     for formatter in formatters {
         if let Some(output) = format_native(formatter, long_tokens) {
-            assert!(
-                !output.is_empty(),
-                "{} should handle long lines",
-                formatter
-            );
+            assert!(!output.is_empty(), "{} should handle long lines", formatter);
             // Output should still be valid (not malformed)
             assert!(
                 output.len() > 0,
@@ -90,20 +88,16 @@ fn test_formatter_with_long_lines() {
 fn test_formatter_with_unicode() {
     // Test formatters with Unicode characters
     let unicode_tokens = &[
-        (STRING_DOUBLE, "你好世界".to_string()), // Chinese
+        (STRING_DOUBLE, "你好世界".to_string()),       // Chinese
         (COMMENT_SINGLE, "مرحبا بالعالم".to_string()), // Arabic
-        (KEYWORD, "🎉🚀".to_string()), // Emojis
+        (KEYWORD, "🎉🚀".to_string()),                 // Emojis
     ];
 
     let formatters = vec!["html", "terminal", "latex"];
 
     for formatter in formatters {
         if let Some(output) = format_native(formatter, unicode_tokens) {
-            assert!(
-                !output.is_empty(),
-                "{} should handle Unicode",
-                formatter
-            );
+            assert!(!output.is_empty(), "{} should handle Unicode", formatter);
         }
     }
 }
@@ -123,11 +117,7 @@ fn test_formatter_with_newlines() {
 
     for formatter in formatters {
         if let Some(output) = format_native(formatter, newline_tokens) {
-            assert!(
-                !output.is_empty(),
-                "{} should handle newlines",
-                formatter
-            );
+            assert!(!output.is_empty(), "{} should handle newlines", formatter);
         }
     }
 }
@@ -151,10 +141,7 @@ fn test_html_formatter_structure_complete() {
             "Should have HTML tags"
         );
         // All special chars should be escaped in content
-        assert!(
-            !html.contains("<<"),
-            "Should escape nested angle brackets"
-        );
+        assert!(!html.contains("<<"), "Should escape nested angle brackets");
     }
 }
 
@@ -215,19 +202,14 @@ fn test_bbcode_formatter_tag_closing() {
         // Count opening and closing tags
         let open_count = bbcode.matches("[color").count();
         let close_count = bbcode.matches("[/color").count();
-        assert_eq!(
-            open_count, close_count,
-            "BBCode tags should be balanced"
-        );
+        assert_eq!(open_count, close_count, "BBCode tags should be balanced");
     }
 }
 
 #[test]
 fn test_pango_formatter_xml_escaping() {
     // Verify Pango formatter properly escapes XML entities
-    let tokens = &[
-        (TEXT, r#"<>&"'"#.to_string()),
-    ];
+    let tokens = &[(TEXT, r#"<>&"'"#.to_string())];
 
     if let Some(pango) = format_native("pango", tokens) {
         // Should contain escaped XML entities
@@ -250,10 +232,7 @@ fn test_irc_formatter_color_codes() {
 
     if let Some(irc) = format_native("irc", tokens) {
         // Should contain IRC color code markers (\x03)
-        assert!(
-            !irc.is_empty(),
-            "IRC formatter should produce output"
-        );
+        assert!(!irc.is_empty(), "IRC formatter should produce output");
     }
 }
 
@@ -268,10 +247,7 @@ fn test_groff_formatter_macro_generation() {
 
     if let Some(groff) = format_native("groff", tokens) {
         // Should contain Groff color definitions and formatting
-        assert!(
-            !groff.is_empty(),
-            "Groff formatter should produce output"
-        );
+        assert!(!groff.is_empty(), "Groff formatter should produce output");
     }
 }
 
@@ -286,10 +262,7 @@ fn test_rtf_formatter_control_chars() {
 
     if let Some(rtf) = format_native("rtf", tokens) {
         // Should properly escape control characters
-        assert!(
-            !rtf.is_empty(),
-            "RTF should handle control chars"
-        );
+        assert!(!rtf.is_empty(), "RTF should handle control chars");
         // RTF should use hex escapes for control chars
         assert!(
             rtf.contains("\\") || !rtf.contains("\x00"),
@@ -308,17 +281,14 @@ fn test_null_formatter_transparent() {
 
     if let Some(output) = format_native("text", tokens) {
         // For null formatter, output might be empty or minimal
-        let _ = output;  // Suppress unused warnings
+        let _ = output; // Suppress unused warnings
     }
 }
 
 #[test]
 fn test_raw_token_formatter() {
     // Raw token formatter should output token info
-    let tokens = &[
-        (KEYWORD, "if".to_string()),
-        (NAME, "x".to_string()),
-    ];
+    let tokens = &[(KEYWORD, "if".to_string()), (NAME, "x".to_string())];
 
     if let Some(output) = format_native("raw", tokens) {
         // Should include token information
@@ -450,10 +420,7 @@ fn test_formatter_escape_edge_cases() {
 
     if let Some(latex) = format_native("latex", edge_cases) {
         // LaTeX should escape its special chars
-        assert!(
-            !latex.is_empty(),
-            "LaTeX should escape edge cases"
-        );
+        assert!(!latex.is_empty(), "LaTeX should escape edge cases");
     }
 }
 
@@ -473,11 +440,7 @@ fn test_formatter_preserves_content() {
                 || output.contains("hello") // might be split
                 || output.contains("42")
                 || output.contains("==");
-            assert!(
-                has_content,
-                "{} should preserve token content",
-                formatter
-            );
+            assert!(has_content, "{} should preserve token content", formatter);
         }
     }
 }

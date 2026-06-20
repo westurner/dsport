@@ -25,16 +25,63 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?ms)[^{]+", OTHER),
-        Rule::token_to(r"(?ms)\{\{", COMMENT_PREPROC, NewState::Push(vec![r"var"])),
-        Rule::token(r"(?ms)\{#.*?#\}", COMMENT),
-        Rule::bygroups(r"(?ms)(\{%)(-?\s*)(comment)(\s*-?)(%\})(.*?)(\{%)(-?\s*)(endcomment)(\s*-?)(%\})", vec![Some(COMMENT_PREPROC), Some(TEXT), Some(KEYWORD), Some(TEXT), Some(COMMENT_PREPROC), Some(COMMENT), Some(COMMENT_PREPROC), Some(TEXT), Some(KEYWORD), Some(TEXT), Some(COMMENT_PREPROC)]),
-        Rule::bygroups(r"(?ms)(\{%)(-?\s*)(raw)(\s*-?)(%\})(.*?)(\{%)(-?\s*)(endraw)(\s*-?)(%\})", vec![Some(COMMENT_PREPROC), Some(TEXT), Some(KEYWORD), Some(TEXT), Some(COMMENT_PREPROC), Some(TEXT), Some(COMMENT_PREPROC), Some(TEXT), Some(KEYWORD), Some(TEXT), Some(COMMENT_PREPROC)]),
-        Rule::bygroups_to(r"(?ms)(\{%)(-?\s*)(filter)(\s+)([a-zA-Z_]\w*)", vec![Some(COMMENT_PREPROC), Some(TEXT), Some(KEYWORD), Some(TEXT), Some(NAME_FUNCTION)], NewState::Push(vec![r"block"])),
-        Rule::bygroups_to(r"(?ms)(\{%)(-?\s*)([a-zA-Z_]\w*)", vec![Some(COMMENT_PREPROC), Some(TEXT), Some(KEYWORD)], NewState::Push(vec![r"block"])),
-        Rule::token(r"(?ms)\{", OTHER),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?ms)[^{]+", OTHER),
+            Rule::token_to(r"(?ms)\{\{", COMMENT_PREPROC, NewState::Push(vec![r"var"])),
+            Rule::token(r"(?ms)\{#.*?#\}", COMMENT),
+            Rule::bygroups(
+                r"(?ms)(\{%)(-?\s*)(comment)(\s*-?)(%\})(.*?)(\{%)(-?\s*)(endcomment)(\s*-?)(%\})",
+                vec![
+                    Some(COMMENT_PREPROC),
+                    Some(TEXT),
+                    Some(KEYWORD),
+                    Some(TEXT),
+                    Some(COMMENT_PREPROC),
+                    Some(COMMENT),
+                    Some(COMMENT_PREPROC),
+                    Some(TEXT),
+                    Some(KEYWORD),
+                    Some(TEXT),
+                    Some(COMMENT_PREPROC),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?ms)(\{%)(-?\s*)(raw)(\s*-?)(%\})(.*?)(\{%)(-?\s*)(endraw)(\s*-?)(%\})",
+                vec![
+                    Some(COMMENT_PREPROC),
+                    Some(TEXT),
+                    Some(KEYWORD),
+                    Some(TEXT),
+                    Some(COMMENT_PREPROC),
+                    Some(TEXT),
+                    Some(COMMENT_PREPROC),
+                    Some(TEXT),
+                    Some(KEYWORD),
+                    Some(TEXT),
+                    Some(COMMENT_PREPROC),
+                ],
+            ),
+            Rule::bygroups_to(
+                r"(?ms)(\{%)(-?\s*)(filter)(\s+)([a-zA-Z_]\w*)",
+                vec![
+                    Some(COMMENT_PREPROC),
+                    Some(TEXT),
+                    Some(KEYWORD),
+                    Some(TEXT),
+                    Some(NAME_FUNCTION),
+                ],
+                NewState::Push(vec![r"block"]),
+            ),
+            Rule::bygroups_to(
+                r"(?ms)(\{%)(-?\s*)([a-zA-Z_]\w*)",
+                vec![Some(COMMENT_PREPROC), Some(TEXT), Some(KEYWORD)],
+                NewState::Push(vec![r"block"]),
+            ),
+            Rule::token(r"(?ms)\{", OTHER),
+        ],
+    );
     m.insert(r"varnames", vec![
         Rule::bygroups(r"(?ms)(\|)(\s*)([a-zA-Z_]\w*)", vec![Some(OPERATOR), Some(TEXT), Some(NAME_FUNCTION)]),
         Rule::bygroups(r"(?ms)(is)(\s+)(not)?(\s+)?([a-zA-Z_]\w*)", vec![Some(KEYWORD), Some(TEXT), Some(KEYWORD), Some(TEXT), Some(NAME_FUNCTION)]),

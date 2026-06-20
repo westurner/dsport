@@ -25,24 +25,39 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"commentsandwhitespace", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)<!--", COMMENT),
-        Rule::token(r"(?ms)//.*?\n", COMMENT_SINGLE),
-        Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"slashstartsregex", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)<!--", COMMENT),
-        Rule::token(r"(?ms)//.*?\n", COMMENT_SINGLE),
-        Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
-        Rule::token_to(r"(?ms)/(\\.|[^\[/\\\n]|\[(\\.|[^\]\\\n])*])+/([gim]+\b|\B)", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)(?=/)", TEXT, NewState::Push(vec![r"#pop", r"badregex"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"badregex", vec![
-        Rule::token_to(r"(?ms)\n", TEXT, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"commentsandwhitespace",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)<!--", COMMENT),
+            Rule::token(r"(?ms)//.*?\n", COMMENT_SINGLE),
+            Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"slashstartsregex",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)<!--", COMMENT),
+            Rule::token(r"(?ms)//.*?\n", COMMENT_SINGLE),
+            Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
+            Rule::token_to(
+                r"(?ms)/(\\.|[^\[/\\\n]|\[(\\.|[^\]\\\n])*])+/([gim]+\b|\B)",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)(?=/)",
+                TEXT,
+                NewState::Push(vec![r"#pop", r"badregex"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"badregex",
+        vec![Rule::token_to(r"(?ms)\n", TEXT, NewState::Pop(1))],
+    );
     m.insert(r"root", vec![
         Rule::token_to(r"(?ms)^(?=\s|/|<!--)", TEXT, NewState::Push(vec![r"slashstartsregex"])),
         Rule::token(r"(?ms)\s+", TEXT),

@@ -25,12 +25,23 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?im)\s+", WHITESPACE),
-        Rule::token(r"(?im)//.*?\n", COMMENT_SINGLE),
-        Rule::bygroups(r"(?im)([a-z0-9-]+)(:)([ \t]*)(.*(?:\n[ \t].+)*)", vec![Some(NAME_ATTRIBUTE), Some(OPERATOR), Some(WHITESPACE), Some(STRING)]),
-        Rule::default(NewState::Push(vec![r"code"])),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?im)\s+", WHITESPACE),
+            Rule::token(r"(?im)//.*?\n", COMMENT_SINGLE),
+            Rule::bygroups(
+                r"(?im)([a-z0-9-]+)(:)([ \t]*)(.*(?:\n[ \t].+)*)",
+                vec![
+                    Some(NAME_ATTRIBUTE),
+                    Some(OPERATOR),
+                    Some(WHITESPACE),
+                    Some(STRING),
+                ],
+            ),
+            Rule::default(NewState::Push(vec![r"code"])),
+        ],
+    );
     m.insert(r"code", vec![
         Rule::token(r"(?im)\s+", WHITESPACE),
         Rule::bygroups(r"(?im)(//.*?)(\n)", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)]),
@@ -56,23 +67,35 @@ fn build_table() -> Table {
         Rule::token(r"(?im)\$\\?[\w!&*<>|^$%@\-+~?/=]+", NAME_CONSTANT),
         Rule::token(r"(?im)\\?[\w!&*<>|^$%@\-+~?/=]+", NAME),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?im)[^*/]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?im)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?im)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?im)[*/]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"keyword", vec![
-        Rule::token_to(r#"(?im)""#, STRING_SYMBOL, NewState::Pop(1)),
-        Rule::token(r#"(?im)[^\\"]+"#, STRING_SYMBOL),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?im)\\([\\abfnrtv"\']|x[a-f0-9]{2,4}|[0-7]{1,3})"#, STRING_ESCAPE),
-        Rule::token(r#"(?im)[^\\"\n]+"#, STRING),
-        Rule::token(r"(?im)\\\n", STRING),
-        Rule::token(r"(?im)\\", STRING),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?im)[^*/]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?im)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?im)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?im)[*/]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"keyword",
+        vec![
+            Rule::token_to(r#"(?im)""#, STRING_SYMBOL, NewState::Pop(1)),
+            Rule::token(r#"(?im)[^\\"]+"#, STRING_SYMBOL),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
+            Rule::token(
+                r#"(?im)\\([\\abfnrtv"\']|x[a-f0-9]{2,4}|[0-7]{1,3})"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token(r#"(?im)[^\\"\n]+"#, STRING),
+            Rule::token(r"(?im)\\\n", STRING),
+            Rule::token(r"(?im)\\", STRING),
+        ],
+    );
     Table(m)
 }
 

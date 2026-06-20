@@ -25,14 +25,55 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::bygroups_g(r"(?ms)(<%[@=#!:]?)(.*?)(%>)", vec![Some(GroupAction::Token(NAME_TAG)), Some(GroupAction::UsingLexer { alias: "javascript", state: None }), Some(GroupAction::Token(NAME_TAG))]),
-        Rule::bygroups(r"(?ms)(<%\$)(.*?)(:)(.*?)(%>)", vec![Some(NAME_TAG), Some(NAME_FUNCTION), Some(PUNCTUATION), Some(STRING), Some(NAME_TAG)]),
-        Rule::bygroups(r"(?ms)(<%--)(.*?)(--%>)", vec![Some(NAME_TAG), Some(COMMENT_MULTILINE), Some(NAME_TAG)]),
-        Rule::bygroups_g(r"(?ms)(<script.*?>)(.*?)(</script>)", vec![Some(GroupAction::UsingLexer { alias: "html", state: None }), Some(GroupAction::UsingLexer { alias: "javascript", state: None }), Some(GroupAction::UsingLexer { alias: "html", state: None })]),
-        Rule::using_lexer(r"(?ms)(.+?)(?=<)", "html", None),
-        Rule::using_lexer(r"(?ms).+", "html", None),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::bygroups_g(
+                r"(?ms)(<%[@=#!:]?)(.*?)(%>)",
+                vec![
+                    Some(GroupAction::Token(NAME_TAG)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "javascript",
+                        state: None,
+                    }),
+                    Some(GroupAction::Token(NAME_TAG)),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?ms)(<%\$)(.*?)(:)(.*?)(%>)",
+                vec![
+                    Some(NAME_TAG),
+                    Some(NAME_FUNCTION),
+                    Some(PUNCTUATION),
+                    Some(STRING),
+                    Some(NAME_TAG),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?ms)(<%--)(.*?)(--%>)",
+                vec![Some(NAME_TAG), Some(COMMENT_MULTILINE), Some(NAME_TAG)],
+            ),
+            Rule::bygroups_g(
+                r"(?ms)(<script.*?>)(.*?)(</script>)",
+                vec![
+                    Some(GroupAction::UsingLexer {
+                        alias: "html",
+                        state: None,
+                    }),
+                    Some(GroupAction::UsingLexer {
+                        alias: "javascript",
+                        state: None,
+                    }),
+                    Some(GroupAction::UsingLexer {
+                        alias: "html",
+                        state: None,
+                    }),
+                ],
+            ),
+            Rule::using_lexer(r"(?ms)(.+?)(?=<)", "html", None),
+            Rule::using_lexer(r"(?ms).+", "html", None),
+        ],
+    );
     Table(m)
 }
 

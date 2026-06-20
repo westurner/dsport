@@ -59,16 +59,25 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)(multianewarray|newarray)(?=[ \n\t\r:=]|$)", KEYWORD_RESERVED, NewState::Push(vec![r"descriptor/convert-dots"])),
         Rule::token_to(r"(?m)tableswitch(?=[ \n\t\r:=]|$)", KEYWORD_RESERVED, NewState::Push(vec![r"table"])),
     ]);
-    m.insert(r"quote", vec![
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token(r"(?m)\\u[\da-fA-F]{4}", STRING_ESCAPE),
-        Rule::token(r"(?m)[^'\\]+", STRING_SINGLE),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\([nrtfb"\'\\]|u[\da-fA-F]{4}|[0-3]?[0-7]{1,2})"#, STRING_ESCAPE),
-        Rule::token(r#"(?m)[^"\\]+"#, STRING_DOUBLE),
-    ]);
+    m.insert(
+        r"quote",
+        vec![
+            Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
+            Rule::token(r"(?m)\\u[\da-fA-F]{4}", STRING_ESCAPE),
+            Rule::token(r"(?m)[^'\\]+", STRING_SINGLE),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(
+                r#"(?m)\\([nrtfb"\'\\]|u[\da-fA-F]{4}|[0-3]?[0-7]{1,2})"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token(r#"(?m)[^"\\]+"#, STRING_DOUBLE),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?m)\n+", WHITESPACE),
         Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Push(vec![r"quote"])),
@@ -473,15 +482,25 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)[^ \n\t\r:=\[)L]+", KEYWORD_TYPE, NewState::Pop(1)),
         Rule::default(NewState::Pop(1)),
     ]);
-    m.insert(r"descriptors/convert-dots", vec![
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::default(NewState::Push(vec![r"descriptor/convert-dots"])),
-    ]);
-    m.insert(r"enclosing-method", vec![
-        Rule::token(r"(?m)(?:[ \n\t\r]+)", WHITESPACE),
-        Rule::token_to(r"(?m)(?=[^ \n\t\r:=]*\()", TEXT, NewState::Push(vec![r"#pop", r"invocation"])),
-        Rule::default(NewState::Push(vec![r"#pop", r"class/convert-dots"])),
-    ]);
+    m.insert(
+        r"descriptors/convert-dots",
+        vec![
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::default(NewState::Push(vec![r"descriptor/convert-dots"])),
+        ],
+    );
+    m.insert(
+        r"enclosing-method",
+        vec![
+            Rule::token(r"(?m)(?:[ \n\t\r]+)", WHITESPACE),
+            Rule::token_to(
+                r"(?m)(?=[^ \n\t\r:=]*\()",
+                TEXT,
+                NewState::Push(vec![r"#pop", r"invocation"]),
+            ),
+            Rule::default(NewState::Push(vec![r"#pop", r"class/convert-dots"])),
+        ],
+    );
     m.insert(r"field", vec![
         Rule::token_to(r"(?m)static(?=[ \n\t\r:=]|$)", KEYWORD_RESERVED, NewState::Push(vec![r"#pop", r"static"])),
         Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),

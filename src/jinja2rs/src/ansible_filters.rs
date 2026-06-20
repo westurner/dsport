@@ -34,10 +34,10 @@
 //! | `from_yaml` | 🟡 stub | Requires serde_yaml |
 
 use minijinja::Value;
-use serde_json::to_string_pretty;
-use std::path::Path;
 use regex::Regex;
+use serde_json::to_string_pretty;
 use serde_yaml;
+use std::path::Path;
 
 /// Pretty-print a value as JSON.
 ///
@@ -121,7 +121,10 @@ pub fn path_join(base: Value, component: Value) -> Value {
 /// ```
 ///
 /// Recursively merges nested dictionaries, combining arrays where both values are objects.
-fn recursive_merge(base: &mut serde_json::Map<String, serde_json::Value>, other: &serde_json::Map<String, serde_json::Value>) {
+fn recursive_merge(
+    base: &mut serde_json::Map<String, serde_json::Value>,
+    other: &serde_json::Map<String, serde_json::Value>,
+) {
     for (key, other_value) in other {
         match base.get_mut(key) {
             Some(base_value) => {
@@ -146,10 +149,7 @@ fn recursive_merge(base: &mut serde_json::Map<String, serde_json::Value>, other:
     }
 }
 
-pub fn combine(
-    dict1: Value,
-    dict2: Value,
-) -> Result<Value, minijinja::Error> {
+pub fn combine(dict1: Value, dict2: Value) -> Result<Value, minijinja::Error> {
     // Convert to serde_json values for merging
     let dict1_json = serde_json::to_value(&dict1).map_err(|e| {
         minijinja::Error::new(
@@ -157,7 +157,7 @@ pub fn combine(
             format!("Failed to convert first dict: {}", e),
         )
     })?;
-    
+
     let dict2_json = serde_json::to_value(&dict2).map_err(|e| {
         minijinja::Error::new(
             minijinja::ErrorKind::InvalidOperation,
@@ -168,18 +168,22 @@ pub fn combine(
     // Both must be objects
     let mut base_obj = match dict1_json {
         serde_json::Value::Object(obj) => obj,
-        _ => return Err(minijinja::Error::new(
-            minijinja::ErrorKind::InvalidOperation,
-            "First argument to combine must be a dict".to_string(),
-        )),
+        _ => {
+            return Err(minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                "First argument to combine must be a dict".to_string(),
+            ));
+        }
     };
 
     let other_obj = match dict2_json {
         serde_json::Value::Object(obj) => obj,
-        _ => return Err(minijinja::Error::new(
-            minijinja::ErrorKind::InvalidOperation,
-            "Second argument to combine must be a dict".to_string(),
-        )),
+        _ => {
+            return Err(minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                "Second argument to combine must be a dict".to_string(),
+            ));
+        }
     };
 
     // Recursive merge
@@ -232,7 +236,10 @@ pub fn regex_replace(text: Value, pattern: Value, replacement: Value) -> Value {
     let replacement_str = replacement.to_string();
 
     match Regex::new(&pattern_str) {
-        Ok(re) => Value::from(re.replace_all(&text_str, replacement_str.as_str()).to_string()),
+        Ok(re) => Value::from(
+            re.replace_all(&text_str, replacement_str.as_str())
+                .to_string(),
+        ),
         Err(_) => Value::from(text_str),
     }
 }
@@ -365,12 +372,12 @@ mod tests {
         dict1_map.insert("a", Value::from(1));
         dict1_map.insert("b", Value::from(2));
         let dict1 = Value::from(dict1_map);
-        
+
         let mut dict2_map = BTreeMap::new();
         dict2_map.insert("b", Value::from(3));
         dict2_map.insert("c", Value::from(4));
         let dict2 = Value::from(dict2_map);
-        
+
         let result = combine(dict1, dict2);
         assert!(result.is_ok(), "combine should succeed");
         let merged = result.unwrap();
@@ -382,18 +389,18 @@ mod tests {
     fn test_combine_nested() {
         let mut nested1 = BTreeMap::new();
         nested1.insert("x", Value::from(1));
-        
+
         let mut dict1 = BTreeMap::new();
         dict1.insert("nested", Value::from(nested1));
         dict1.insert("a", Value::from(1));
-        
+
         let mut nested2 = BTreeMap::new();
         nested2.insert("y", Value::from(2));
-        
+
         let mut dict2 = BTreeMap::new();
         dict2.insert("nested", Value::from(nested2));
         dict2.insert("b", Value::from(2));
-        
+
         let result = combine(Value::from(dict1), Value::from(dict2));
         assert!(result.is_ok());
         let merged_str = result.unwrap().to_string();
@@ -475,10 +482,10 @@ mod tests {
         data_map.insert("key", Value::from("value"));
         data_map.insert("number", Value::from(42));
         let data = Value::from(data_map);
-        
+
         let result = to_nice_yaml(data);
         let result_str = result.to_string();
-        
+
         // YAML output should contain the key and value
         assert!(result_str.contains("key") && result_str.contains("value"));
     }
@@ -487,10 +494,10 @@ mod tests {
     fn test_to_nice_yaml_with_array() {
         let array = vec![Value::from(1), Value::from(2), Value::from(3)];
         let data = Value::from(array);
-        
+
         let result = to_nice_yaml(data);
         let result_str = result.to_string();
-        
+
         // YAML output should contain the values
         assert!(!result_str.contains("[ERROR") && !result_str.is_empty());
     }
@@ -500,19 +507,18 @@ mod tests {
         let yaml_str = Value::from("key: value\nnumber: 42");
         let result = from_yaml(yaml_str);
         let result_str = result.to_string();
-        
+
         // Result should contain parsed values
         assert!(result_str.contains("key") || result_str.contains("value"));
     }
 
     #[test]
     fn test_from_yaml_complex() {
-        let yaml_str = Value::from(
-            "users:\n  - name: alice\n    age: 30\n  - name: bob\n    age: 25"
-        );
+        let yaml_str =
+            Value::from("users:\n  - name: alice\n    age: 30\n  - name: bob\n    age: 25");
         let result = from_yaml(yaml_str);
         let result_str = result.to_string();
-        
+
         // Result should contain parsed data
         assert!(!result_str.contains("[ERROR"));
     }
@@ -522,7 +528,7 @@ mod tests {
         let yaml_str = Value::from("{ invalid yaml: [");
         let result = from_yaml(yaml_str);
         let result_str = result.to_string();
-        
+
         // Should have an error indicator
         assert!(result_str.contains("[ERROR") || !result_str.is_empty());
     }

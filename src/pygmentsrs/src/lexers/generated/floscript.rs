@@ -46,23 +46,35 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\d+j?", NUMBER_INTEGER),
         Rule::token(r"(?m)#.+$", COMMENT_SINGLE),
     ]);
-    m.insert(r"name", vec![
-        Rule::token(r"(?m)@[\w.]+", NAME_DECORATOR),
-        Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
-    ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?m)(\d+\.\d*|\d*\.\d+)([eE][+-]?[0-9]+)?j?", NUMBER_FLOAT),
-        Rule::token(r"(?m)\d+[eE][+-]?[0-9]+j?", NUMBER_FLOAT),
-        Rule::token(r"(?m)0[0-7]+j?", NUMBER_OCT),
-        Rule::token(r"(?m)0[bB][01]+", NUMBER_BIN),
-        Rule::token(r"(?m)0[xX][a-fA-F0-9]+", NUMBER_HEX),
-        Rule::token(r"(?m)\d+L", TokenType::new(&["Literal", "Number", "Integer", "Long"])),
-        Rule::token(r"(?m)\d+j?", NUMBER_INTEGER),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^"]+"#, STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"name",
+        vec![
+            Rule::token(r"(?m)@[\w.]+", NAME_DECORATOR),
+            Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
+        ],
+    );
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(r"(?m)(\d+\.\d*|\d*\.\d+)([eE][+-]?[0-9]+)?j?", NUMBER_FLOAT),
+            Rule::token(r"(?m)\d+[eE][+-]?[0-9]+j?", NUMBER_FLOAT),
+            Rule::token(r"(?m)0[0-7]+j?", NUMBER_OCT),
+            Rule::token(r"(?m)0[bB][01]+", NUMBER_BIN),
+            Rule::token(r"(?m)0[xX][a-fA-F0-9]+", NUMBER_HEX),
+            Rule::token(
+                r"(?m)\d+L",
+                TokenType::new(&["Literal", "Number", "Integer", "Long"]),
+            ),
+            Rule::token(r"(?m)\d+j?", NUMBER_INTEGER),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^"]+"#, STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

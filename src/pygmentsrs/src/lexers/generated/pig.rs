@@ -57,14 +57,18 @@ fn build_table() -> Table {
     m.insert(r"builtins", vec![
         Rule::token(r"(?im)(AVG|BinStorage|cogroup|CONCAT|copyFromLocal|copyToLocal|COUNT|cross|DIFF|MAX|MIN|PigDump|PigStorage|SIZE|SUM|TextLoader|TOKENIZE)\b", NAME_BUILTIN),
     ]);
-    m.insert(r"punct", vec![
-        Rule::token(r"(?im)[;(){}\[\]]", PUNCTUATION),
-    ]);
-    m.insert(r"operators", vec![
-        Rule::token(r"(?im)[#=,./%+\-?]", OPERATOR),
-        Rule::token(r"(?im)(eq|gt|lt|gte|lte|neq|matches)\b", OPERATOR),
-        Rule::token(r"(?im)(==|<=|<|>=|>|!=)", OPERATOR),
-    ]);
+    m.insert(
+        r"punct",
+        vec![Rule::token(r"(?im)[;(){}\[\]]", PUNCTUATION)],
+    );
+    m.insert(
+        r"operators",
+        vec![
+            Rule::token(r"(?im)[#=,./%+\-?]", OPERATOR),
+            Rule::token(r"(?im)(eq|gt|lt|gte|lte|neq|matches)\b", OPERATOR),
+            Rule::token(r"(?im)(==|<=|<|>=|>|!=)", OPERATOR),
+        ],
+    );
     Table(m)
 }
 

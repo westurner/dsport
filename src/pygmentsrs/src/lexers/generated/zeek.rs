@@ -64,19 +64,36 @@ fn build_table() -> Table {
         Rule::bygroups(r"(?m)([a-zA-Z_]\w*)(::)", vec![Some(NAME), Some(PUNCTUATION)]),
         Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
     ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::bygroups(r"(?m)(\\)(\n)", vec![Some(TEXT), Some(WHITESPACE)]),
-    ]);
-    m.insert(r"comments", vec![
-        Rule::token(r"(?m)#.*$", COMMENT),
-    ]);
-    m.insert(r"directives", vec![
-        Rule::token(r"(?m)@(load-plugin|load-sigs|load|unload)\b.*$", COMMENT_PREPROC),
-        Rule::token(r"(?m)@(DEBUG|DIR|FILENAME|deprecated|if|ifdef|ifndef|else|endif)\b", COMMENT_PREPROC),
-        Rule::bygroups(r"(?m)(@prefixes)(\s*)((\+?=).*)$", vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(COMMENT_PREPROC)]),
-    ]);
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::bygroups(r"(?m)(\\)(\n)", vec![Some(TEXT), Some(WHITESPACE)]),
+        ],
+    );
+    m.insert(r"comments", vec![Rule::token(r"(?m)#.*$", COMMENT)]);
+    m.insert(
+        r"directives",
+        vec![
+            Rule::token(
+                r"(?m)@(load-plugin|load-sigs|load|unload)\b.*$",
+                COMMENT_PREPROC,
+            ),
+            Rule::token(
+                r"(?m)@(DEBUG|DIR|FILENAME|deprecated|if|ifdef|ifndef|else|endif)\b",
+                COMMENT_PREPROC,
+            ),
+            Rule::bygroups(
+                r"(?m)(@prefixes)(\s*)((\+?=).*)$",
+                vec![
+                    Some(COMMENT_PREPROC),
+                    Some(WHITESPACE),
+                    Some(COMMENT_PREPROC),
+                ],
+            ),
+        ],
+    );
     m.insert(r"attributes", vec![
         Rule::token(r"(?m)&(add_func|create_expire|de(?:fault|lete_func|precated)|e(?:ncrypt|rror_handler|xpire_func)|log|mergeable|optional|p(?:ersistent|riority)|r(?:aw_output|e(?:ad_expire|def)|otate_(?:interval|size))|synchronized|type_column|write_expire)\b", KEYWORD_PSEUDO),
     ]);
@@ -93,44 +110,81 @@ fn build_table() -> Table {
         Rule::token(r"(?m)(global|local|const|option)\b", KEYWORD_DECLARATION),
         Rule::bygroups(r"(?m)(module)(\s+)(([A-Za-z_]\w*)(?:::([A-Za-z_]\w*))*)\b", vec![Some(KEYWORD_NAMESPACE), Some(WHITESPACE), Some(NAME_NAMESPACE)]),
     ]);
-    m.insert(r"literals", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
-        Rule::token_to(r"(?m)/(?=.*/)", STRING_REGEX, NewState::Push(vec![r"regex"])),
-        Rule::token(r"(?m)(T|F)\b", KEYWORD_CONSTANT),
-        Rule::token(r"(?m)\d{1,5}/(udp|tcp|icmp|unknown)\b", NUMBER),
-        Rule::token(r"(?m)(\d{1,3}.){3}(\d{1,3})\b", NUMBER),
-        Rule::token(r"(?m)\[([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?((\d{1,3}.){3}(\d{1,3}))?\]", NUMBER),
-        Rule::token(r"(?m)0[xX][0-9a-fA-F]+\b", NUMBER_HEX),
-        Rule::token(r"(?m)((\d*\.?\d+)|(\d+\.?\d*))([eE][-+]?\d+)?\s*(day|hr|min|sec|msec|usec)s?\b", NUMBER_FLOAT),
-        Rule::token(r"(?m)((\d*\.?\d+)|(\d+\.?\d*))([eE][-+]?\d+)?\b", NUMBER_FLOAT),
-        Rule::token(r"(?m)(\d+)\b", NUMBER_INTEGER),
-        Rule::token(r"(?m)[A-Za-z0-9][-A-Za-z0-9]*(\.[A-Za-z0-9][-A-Za-z0-9]*)+", STRING),
-    ]);
-    m.insert(r"operators", vec![
-        Rule::token(r"(?m)[!%*/+<=>~|&^-]", OPERATOR),
-        Rule::token(r"(?m)([-+=&|]{2}|[+=!><-]=)", OPERATOR),
-        Rule::token(r"(?m)(in|as|is|of)\b", OPERATOR_WORD),
-        Rule::token(r"(?m)\??\$", OPERATOR),
-    ]);
-    m.insert(r"punctuation", vec![
-        Rule::token(r"(?m)[{}()\[\],;.]", PUNCTUATION),
-        Rule::token(r"(?m)[?:]", PUNCTUATION),
-    ]);
-    m.insert(r"identifiers", vec![
-        Rule::bygroups(r"(?m)([a-zA-Z_]\w*)(::)", vec![Some(NAME), Some(PUNCTUATION)]),
-        Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token(r"(?m)%-?[0-9]*(\.[0-9]+)?[DTd-gsx]", STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r"(?m).", STRING),
-    ]);
-    m.insert(r"regex", vec![
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token_to(r"(?m)/", STRING_REGEX, NewState::Pop(1)),
-        Rule::token(r"(?m).", STRING_REGEX),
-    ]);
+    m.insert(
+        r"literals",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
+            Rule::token_to(
+                r"(?m)/(?=.*/)",
+                STRING_REGEX,
+                NewState::Push(vec![r"regex"]),
+            ),
+            Rule::token(r"(?m)(T|F)\b", KEYWORD_CONSTANT),
+            Rule::token(r"(?m)\d{1,5}/(udp|tcp|icmp|unknown)\b", NUMBER),
+            Rule::token(r"(?m)(\d{1,3}.){3}(\d{1,3})\b", NUMBER),
+            Rule::token(
+                r"(?m)\[([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?((\d{1,3}.){3}(\d{1,3}))?\]",
+                NUMBER,
+            ),
+            Rule::token(r"(?m)0[xX][0-9a-fA-F]+\b", NUMBER_HEX),
+            Rule::token(
+                r"(?m)((\d*\.?\d+)|(\d+\.?\d*))([eE][-+]?\d+)?\s*(day|hr|min|sec|msec|usec)s?\b",
+                NUMBER_FLOAT,
+            ),
+            Rule::token(
+                r"(?m)((\d*\.?\d+)|(\d+\.?\d*))([eE][-+]?\d+)?\b",
+                NUMBER_FLOAT,
+            ),
+            Rule::token(r"(?m)(\d+)\b", NUMBER_INTEGER),
+            Rule::token(
+                r"(?m)[A-Za-z0-9][-A-Za-z0-9]*(\.[A-Za-z0-9][-A-Za-z0-9]*)+",
+                STRING,
+            ),
+        ],
+    );
+    m.insert(
+        r"operators",
+        vec![
+            Rule::token(r"(?m)[!%*/+<=>~|&^-]", OPERATOR),
+            Rule::token(r"(?m)([-+=&|]{2}|[+=!><-]=)", OPERATOR),
+            Rule::token(r"(?m)(in|as|is|of)\b", OPERATOR_WORD),
+            Rule::token(r"(?m)\??\$", OPERATOR),
+        ],
+    );
+    m.insert(
+        r"punctuation",
+        vec![
+            Rule::token(r"(?m)[{}()\[\],;.]", PUNCTUATION),
+            Rule::token(r"(?m)[?:]", PUNCTUATION),
+        ],
+    );
+    m.insert(
+        r"identifiers",
+        vec![
+            Rule::bygroups(
+                r"(?m)([a-zA-Z_]\w*)(::)",
+                vec![Some(NAME), Some(PUNCTUATION)],
+            ),
+            Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token(r"(?m)%-?[0-9]*(\.[0-9]+)?[DTd-gsx]", STRING_ESCAPE),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r"(?m).", STRING),
+        ],
+    );
+    m.insert(
+        r"regex",
+        vec![
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token_to(r"(?m)/", STRING_REGEX, NewState::Pop(1)),
+            Rule::token(r"(?m).", STRING_REGEX),
+        ],
+    );
     Table(m)
 }
 

@@ -521,14 +521,14 @@
 //!     -V, --version               Show version
 
 use clap::Parser;
+use jinja2rs::ansible_inventory::{Inventory, InventorySource};
+use jinja2rs::compat::KubernetesInventorySource;
+use jinja2rs::kubernetes_inventory::KubernetesManifest;
+use serde_yaml;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
-use jinja2rs::ansible_inventory::{Inventory, InventorySource};
-use jinja2rs::kubernetes_inventory::KubernetesManifest;
-use jinja2rs::compat::KubernetesInventorySource;
-use serde_yaml;
 
 /// Compatibility mode for template rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -644,7 +644,10 @@ impl SourceWithStrategy {
                     path: PathBuf::from(spec),
                     strategy: None,
                 })
-            } else if strategy_str.chars().all(|c| c.is_alphabetic() || c == '-' || c == '_') {
+            } else if strategy_str
+                .chars()
+                .all(|c| c.is_alphabetic() || c == '-' || c == '_')
+            {
                 // Looks like a strategy
                 let strategy = MergeStrategy::from_str(strategy_str)?;
                 Ok(SourceWithStrategy {
@@ -944,9 +947,18 @@ fn merge_json_values_last_wins(
 
                 if let Some(base_val) = base_map.get_mut(key) {
                     let old_val = base_val.clone();
-                    merge_json_values_last_wins(base_val, other_val.clone(), merge_diff_log, &full_path);
+                    merge_json_values_last_wins(
+                        base_val,
+                        other_val.clone(),
+                        merge_diff_log,
+                        &full_path,
+                    );
                     if merge_diff_log && *base_val != old_val {
-                        eprintln!("[merge-diff] Modified: {} (was: {})", full_path, old_val.to_string().chars().take(50).collect::<String>());
+                        eprintln!(
+                            "[merge-diff] Modified: {} (was: {})",
+                            full_path,
+                            old_val.to_string().chars().take(50).collect::<String>()
+                        );
                     }
                 } else {
                     if merge_diff_log {
@@ -1008,21 +1020,44 @@ fn merge_json_values_merge_lists(
                     if let serde_json::Value::Array(base_arr) = base_val {
                         if let serde_json::Value::Array(other_arr) = &other_val {
                             if merge_diff_log {
-                                eprintln!("[merge-diff] Merged arrays at {}: {} + {} items", full_path, base_arr.len(), other_arr.len());
+                                eprintln!(
+                                    "[merge-diff] Merged arrays at {}: {} + {} items",
+                                    full_path,
+                                    base_arr.len(),
+                                    other_arr.len()
+                                );
                             }
                             base_arr.extend(other_arr.clone());
                         } else {
                             let old_val = base_val.clone();
-                            merge_json_values_merge_lists(base_val, other_val.clone(), merge_diff_log, &full_path);
+                            merge_json_values_merge_lists(
+                                base_val,
+                                other_val.clone(),
+                                merge_diff_log,
+                                &full_path,
+                            );
                             if merge_diff_log && *base_val != old_val {
-                                eprintln!("[merge-diff] Modified: {} (was: {})", full_path, old_val.to_string().chars().take(50).collect::<String>());
+                                eprintln!(
+                                    "[merge-diff] Modified: {} (was: {})",
+                                    full_path,
+                                    old_val.to_string().chars().take(50).collect::<String>()
+                                );
                             }
                         }
                     } else {
                         let old_val = base_val.clone();
-                        merge_json_values_merge_lists(base_val, other_val.clone(), merge_diff_log, &full_path);
+                        merge_json_values_merge_lists(
+                            base_val,
+                            other_val.clone(),
+                            merge_diff_log,
+                            &full_path,
+                        );
                         if merge_diff_log && *base_val != old_val {
-                            eprintln!("[merge-diff] Modified: {} (was: {})", full_path, old_val.to_string().chars().take(50).collect::<String>());
+                            eprintln!(
+                                "[merge-diff] Modified: {} (was: {})",
+                                full_path,
+                                old_val.to_string().chars().take(50).collect::<String>()
+                            );
                         }
                     }
                 } else {
@@ -1035,7 +1070,12 @@ fn merge_json_values_merge_lists(
         }
         (serde_json::Value::Array(base_arr), serde_json::Value::Array(other_arr)) => {
             if merge_diff_log {
-                eprintln!("[merge-diff] Merged arrays at {}: {} + {} items", path, base_arr.len(), other_arr.len());
+                eprintln!(
+                    "[merge-diff] Merged arrays at {}: {} + {} items",
+                    path,
+                    base_arr.len(),
+                    other_arr.len()
+                );
             }
             base_arr.extend(other_arr.clone());
         }
@@ -1062,8 +1102,11 @@ fn main() {
         !args.manifest.is_empty(),
         args.manifest_stdin,
         !args.manifest_inline.is_empty(),
-    ].iter().filter(|&&x| x).count();
-    
+    ]
+    .iter()
+    .filter(|&&x| x)
+    .count();
+
     if manifest_sources > 1 && !args.allow_layering {
         eprintln!("Error: Cannot specify multiple manifest sources");
         eprintln!("Use only one of: --manifest <FILE>, --manifest-stdin, or --manifest-inline");
@@ -1077,8 +1120,11 @@ fn main() {
         !args.inventory.is_empty(),
         args.inventory_stdin,
         !args.inventory_inline.is_empty(),
-    ].iter().filter(|&&x| x).count();
-    
+    ]
+    .iter()
+    .filter(|&&x| x)
+    .count();
+
     if inventory_sources > 1 && !args.allow_layering {
         eprintln!("Error: Cannot specify multiple inventory sources");
         eprintln!("Use only one of: --inventory <FILE>, --inventory-stdin, or --inventory-inline");
@@ -1114,9 +1160,15 @@ fn main() {
     // Add custom variables from --set flags
     for var_def in &args.set {
         if let Some((key, value)) = var_def.split_once('=') {
-            context_json.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+            context_json.insert(
+                key.to_string(),
+                serde_json::Value::String(value.to_string()),
+            );
         } else {
-            eprintln!("Invalid variable format: '{}' (expected KEY=VALUE)", var_def);
+            eprintln!(
+                "Invalid variable format: '{}' (expected KEY=VALUE)",
+                var_def
+            );
             std::process::exit(1);
         }
     }
@@ -1125,7 +1177,7 @@ fn main() {
     if !args.data_file.is_empty() {
         let mut merged_data = serde_json::Value::Object(serde_json::Map::new());
         let mut first_wins_encountered = false;
-        
+
         for (idx, data_spec) in args.data_file.iter().enumerate() {
             let source = match SourceWithStrategy::parse(data_spec) {
                 Ok(s) => s,
@@ -1135,25 +1187,38 @@ fn main() {
                 }
             };
             let effective_strategy = source.get_strategy(args.merge_strategy);
-            
+
             // If first-wins has been encountered in a previous source, skip all remaining sources
             if first_wins_encountered {
-                eprintln!("[j2substrs] Data file '{}' skipped (first-wins strategy from earlier source)", source.path.display());
+                eprintln!(
+                    "[j2substrs] Data file '{}' skipped (first-wins strategy from earlier source)",
+                    source.path.display()
+                );
                 continue;
             }
-            
+
             // Track if this source is using first-wins for next iteration
             if idx == 0 && effective_strategy == MergeStrategy::FirstWins {
                 first_wins_encountered = true;
             }
-            
+
             match fs::read_to_string(&source.path) {
                 Ok(content) => {
                     match serde_yaml::from_str::<serde_json::Value>(&content) {
                         Ok(data) => {
                             // Merge data into manifest according to effective merge strategy
-                            merge_json_values_with_strategy(&mut merged_data, data, effective_strategy, args.merge_diff_log, "manifest".to_string());
-                            eprintln!("[j2substrs] Data file '{}' loaded with {} merge strategy", source.path.display(), effective_strategy);
+                            merge_json_values_with_strategy(
+                                &mut merged_data,
+                                data,
+                                effective_strategy,
+                                args.merge_diff_log,
+                                "manifest".to_string(),
+                            );
+                            eprintln!(
+                                "[j2substrs] Data file '{}' loaded with {} merge strategy",
+                                source.path.display(),
+                                effective_strategy
+                            );
                         }
                         Err(e) => {
                             eprintln!("Error parsing data file '{}': {}", source.path.display(), e);
@@ -1167,7 +1232,7 @@ fn main() {
                 }
             }
         }
-        
+
         context_json.insert("manifest".to_string(), merged_data);
     }
 
@@ -1175,25 +1240,29 @@ fn main() {
     for var_def in &args.data_var {
         if let Some((var_name, file_path)) = var_def.split_once('=') {
             match fs::read_to_string(file_path) {
-                Ok(content) => {
-                    match serde_yaml::from_str::<serde_json::Value>(&content) {
-                        Ok(data) => {
-                            context_json.insert(var_name.to_string(), data);
-                            eprintln!("[j2substrs] Data file '{}' loaded into '{}' variable", file_path, var_name);
-                        }
-                        Err(e) => {
-                            eprintln!("Error parsing data file '{}': {}", file_path, e);
-                            std::process::exit(1);
-                        }
+                Ok(content) => match serde_yaml::from_str::<serde_json::Value>(&content) {
+                    Ok(data) => {
+                        context_json.insert(var_name.to_string(), data);
+                        eprintln!(
+                            "[j2substrs] Data file '{}' loaded into '{}' variable",
+                            file_path, var_name
+                        );
                     }
-                }
+                    Err(e) => {
+                        eprintln!("Error parsing data file '{}': {}", file_path, e);
+                        std::process::exit(1);
+                    }
+                },
                 Err(e) => {
                     eprintln!("Error reading data file '{}': {}", file_path, e);
                     std::process::exit(1);
                 }
             }
         } else {
-            eprintln!("Invalid data-var format: '{}' (expected NAME=FILE)", var_def);
+            eprintln!(
+                "Invalid data-var format: '{}' (expected NAME=FILE)",
+                var_def
+            );
             std::process::exit(1);
         }
     }
@@ -1202,18 +1271,19 @@ fn main() {
     if let Some(var_name) = &args.data_stdin {
         let mut stdin_content = String::new();
         match io::stdin().read_to_string(&mut stdin_content) {
-            Ok(_) => {
-                match serde_yaml::from_str::<serde_json::Value>(&stdin_content) {
-                    Ok(data) => {
-                        context_json.insert(var_name.clone(), data);
-                        eprintln!("[j2substrs] Data from stdin loaded into '{}' variable", var_name);
-                    }
-                    Err(e) => {
-                        eprintln!("Error parsing stdin data: {}", e);
-                        std::process::exit(1);
-                    }
+            Ok(_) => match serde_yaml::from_str::<serde_json::Value>(&stdin_content) {
+                Ok(data) => {
+                    context_json.insert(var_name.clone(), data);
+                    eprintln!(
+                        "[j2substrs] Data from stdin loaded into '{}' variable",
+                        var_name
+                    );
                 }
-            }
+                Err(e) => {
+                    eprintln!("Error parsing stdin data: {}", e);
+                    std::process::exit(1);
+                }
+            },
             Err(e) => {
                 eprintln!("Error reading from stdin: {}", e);
                 std::process::exit(1);
@@ -1222,10 +1292,12 @@ fn main() {
     }
 
     // Load inventory if provided and mode is ansible
-    if args.mode == Mode::Ansible && (!args.inventory.is_empty() || args.inventory_stdin || !args.inventory_inline.is_empty()) {
+    if args.mode == Mode::Ansible
+        && (!args.inventory.is_empty() || args.inventory_stdin || !args.inventory_inline.is_empty())
+    {
         let mut sources: Vec<(InventorySource, MergeStrategy)> = Vec::new();
         let mut first_wins_encountered = false;
-        
+
         // Collect all sources with their per-source strategies
         for inventory_spec in &args.inventory {
             let source_spec = match SourceWithStrategy::parse(inventory_spec) {
@@ -1248,7 +1320,10 @@ fn main() {
         for (idx, (source, effective_strategy)) in sources.iter().enumerate() {
             // If first-wins has been encountered in a previous source, skip remaining sources
             if first_wins_encountered {
-                eprintln!("[j2substrs] Inventory source #{} skipped (first-wins strategy from earlier source)", idx + 1);
+                eprintln!(
+                    "[j2substrs] Inventory source #{} skipped (first-wins strategy from earlier source)",
+                    idx + 1
+                );
                 continue;
             }
 
@@ -1268,8 +1343,17 @@ fn main() {
                             if *effective_strategy == MergeStrategy::LastWins || idx == 0 {
                                 context_json.insert(k.clone(), v.clone());
                             } else if *effective_strategy == MergeStrategy::MergeLists {
-                                let mut existing = context_json.get(k).cloned().unwrap_or(serde_json::Value::Null);
-                                merge_json_values_with_strategy(&mut existing, v.clone(), *effective_strategy, args.merge_diff_log, k.clone());
+                                let mut existing = context_json
+                                    .get(k)
+                                    .cloned()
+                                    .unwrap_or(serde_json::Value::Null);
+                                merge_json_values_with_strategy(
+                                    &mut existing,
+                                    v.clone(),
+                                    *effective_strategy,
+                                    args.merge_diff_log,
+                                    k.clone(),
+                                );
                                 context_json.insert(k.clone(), existing);
                             }
                         }
@@ -1287,13 +1371,24 @@ fn main() {
 
                     // Add current inventory hostname if provided
                     if let Some(hostname) = &args.inventory_hostname {
-                        context_json.insert("inventory_hostname".to_string(), serde_json::Value::String(hostname.clone()));
+                        context_json.insert(
+                            "inventory_hostname".to_string(),
+                            serde_json::Value::String(hostname.clone()),
+                        );
                     }
-                    
+
                     if args.allow_layering && sources.len() > 1 {
-                        eprintln!("[j2substrs] Inventory source #{} loaded and merged with {} hosts ({})", idx + 1, inv.hosts.len(), effective_strategy);
+                        eprintln!(
+                            "[j2substrs] Inventory source #{} loaded and merged with {} hosts ({})",
+                            idx + 1,
+                            inv.hosts.len(),
+                            effective_strategy
+                        );
                     } else {
-                        eprintln!("[j2substrs] Inventory loaded with {} hosts", inv.hosts.len());
+                        eprintln!(
+                            "[j2substrs] Inventory loaded with {} hosts",
+                            inv.hosts.len()
+                        );
                     }
                 }
                 Err(e) => {
@@ -1306,10 +1401,12 @@ fn main() {
 
     // Load Kubernetes manifest if provided and mode is kubernetes
     // Load Kubernetes manifest in both Kubernetes and Ansible modes
-    if (args.mode == Mode::Kubernetes || args.mode == Mode::Ansible) && (!args.manifest.is_empty() || args.manifest_stdin || !args.manifest_inline.is_empty()) {
+    if (args.mode == Mode::Kubernetes || args.mode == Mode::Ansible)
+        && (!args.manifest.is_empty() || args.manifest_stdin || !args.manifest_inline.is_empty())
+    {
         let mut sources: Vec<(KubernetesInventorySource, MergeStrategy)> = Vec::new();
         let mut first_wins_encountered = false;
-        
+
         // Collect all sources with their per-source strategies
         for manifest_spec in &args.manifest {
             let source_spec = match SourceWithStrategy::parse(manifest_spec) {
@@ -1320,19 +1417,28 @@ fn main() {
                 }
             };
             let effective_strategy = source_spec.get_strategy(args.merge_strategy);
-            sources.push((KubernetesInventorySource::File(source_spec.path), effective_strategy));
+            sources.push((
+                KubernetesInventorySource::File(source_spec.path),
+                effective_strategy,
+            ));
         }
         if args.manifest_stdin {
             sources.push((KubernetesInventorySource::Stdin, args.merge_strategy));
         }
         for inline in &args.manifest_inline {
-            sources.push((KubernetesInventorySource::Inline(inline.clone()), args.merge_strategy));
+            sources.push((
+                KubernetesInventorySource::Inline(inline.clone()),
+                args.merge_strategy,
+            ));
         }
 
         for (idx, (source, effective_strategy)) in sources.iter().enumerate() {
             // If first-wins has been encountered in a previous source, skip remaining sources
             if first_wins_encountered {
-                eprintln!("[j2substrs] Kubernetes manifest source #{} skipped (first-wins strategy from earlier source)", idx + 1);
+                eprintln!(
+                    "[j2substrs] Kubernetes manifest source #{} skipped (first-wins strategy from earlier source)",
+                    idx + 1
+                );
                 continue;
             }
 
@@ -1347,14 +1453,31 @@ fn main() {
                     let k8s_vars = manifest.to_template_vars();
                     if let Some(obj) = k8s_vars.as_object() {
                         for (k, v) in obj {
-                            let mut existing = context_json.get(k).cloned().unwrap_or(serde_json::Value::Null);
-                            merge_json_values_with_strategy(&mut existing, v.clone(), *effective_strategy, args.merge_diff_log, k.clone());
+                            let mut existing = context_json
+                                .get(k)
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Null);
+                            merge_json_values_with_strategy(
+                                &mut existing,
+                                v.clone(),
+                                *effective_strategy,
+                                args.merge_diff_log,
+                                k.clone(),
+                            );
                             context_json.insert(k.clone(), existing);
                         }
                         if args.allow_layering && sources.len() > 1 {
-                            eprintln!("[j2substrs] Kubernetes manifest source #{} merged with {} resources ({})", idx + 1, manifest.resources.len(), effective_strategy);
+                            eprintln!(
+                                "[j2substrs] Kubernetes manifest source #{} merged with {} resources ({})",
+                                idx + 1,
+                                manifest.resources.len(),
+                                effective_strategy
+                            );
                         } else {
-                            eprintln!("[j2substrs] Kubernetes manifest loaded with {} resources", manifest.resources.len());
+                            eprintln!(
+                                "[j2substrs] Kubernetes manifest loaded with {} resources",
+                                manifest.resources.len()
+                            );
                         }
                     }
                 }
@@ -1367,7 +1490,9 @@ fn main() {
     }
 
     // Load Docker Compose file if provided and mode is docker-compose
-    if args.mode == Mode::DockerCompose && (!args.compose.is_empty() || args.compose_stdin || !args.compose_inline.is_empty()) {
+    if args.mode == Mode::DockerCompose
+        && (!args.compose.is_empty() || args.compose_stdin || !args.compose_inline.is_empty())
+    {
         let mut compose_data = serde_json::json!({});
         let mut first_wins_encountered = false;
 
@@ -1379,7 +1504,10 @@ fn main() {
                     Ok(s) => s,
                     Err(_) => continue,
                 };
-                eprintln!("[j2substrs] Docker Compose file '{}' skipped (first-wins strategy from earlier source)", source_spec.path.display());
+                eprintln!(
+                    "[j2substrs] Docker Compose file '{}' skipped (first-wins strategy from earlier source)",
+                    source_spec.path.display()
+                );
                 continue;
             }
 
@@ -1391,27 +1519,43 @@ fn main() {
                 }
             };
             let effective_strategy = source_spec.get_strategy(args.merge_strategy);
-            
+
             // Track if this source is using first-wins for next iteration
             if idx == 0 && effective_strategy == MergeStrategy::FirstWins {
                 first_wins_encountered = true;
             }
-            
+
             match fs::read_to_string(&source_spec.path) {
-                Ok(content) => {
-                    match serde_yaml::from_str::<serde_json::Value>(&content) {
-                        Ok(data) => {
-                            merge_json_values_with_strategy(&mut compose_data, data, effective_strategy, args.merge_diff_log, "docker_compose".to_string());
-                            eprintln!("[j2substrs] Docker Compose file '{}' loaded with {} merge strategy", source_spec.path.display(), effective_strategy);
-                        }
-                        Err(e) => {
-                            eprintln!("Error parsing Docker Compose file '{}': {}", source_spec.path.display(), e);
-                            std::process::exit(1);
-                        }
+                Ok(content) => match serde_yaml::from_str::<serde_json::Value>(&content) {
+                    Ok(data) => {
+                        merge_json_values_with_strategy(
+                            &mut compose_data,
+                            data,
+                            effective_strategy,
+                            args.merge_diff_log,
+                            "docker_compose".to_string(),
+                        );
+                        eprintln!(
+                            "[j2substrs] Docker Compose file '{}' loaded with {} merge strategy",
+                            source_spec.path.display(),
+                            effective_strategy
+                        );
                     }
-                }
+                    Err(e) => {
+                        eprintln!(
+                            "Error parsing Docker Compose file '{}': {}",
+                            source_spec.path.display(),
+                            e
+                        );
+                        std::process::exit(1);
+                    }
+                },
                 Err(e) => {
-                    eprintln!("Error reading Docker Compose file '{}': {}", source_spec.path.display(), e);
+                    eprintln!(
+                        "Error reading Docker Compose file '{}': {}",
+                        source_spec.path.display(),
+                        e
+                    );
                     std::process::exit(1);
                 }
             }
@@ -1421,32 +1565,40 @@ fn main() {
         if args.compose_stdin && !first_wins_encountered {
             let mut stdin_content = String::new();
             match io::stdin().read_to_string(&mut stdin_content) {
-                Ok(_) => {
-                    match serde_yaml::from_str::<serde_json::Value>(&stdin_content) {
-                        Ok(data) => {
-                            merge_json_values_with_strategy(&mut compose_data, data, args.merge_strategy, args.merge_diff_log, "docker_compose".to_string());
-                            eprintln!("[j2substrs] Docker Compose file loaded from stdin");
-                        }
-                        Err(e) => {
-                            eprintln!("Error parsing Docker Compose from stdin: {}", e);
-                            std::process::exit(1);
-                        }
+                Ok(_) => match serde_yaml::from_str::<serde_json::Value>(&stdin_content) {
+                    Ok(data) => {
+                        merge_json_values_with_strategy(
+                            &mut compose_data,
+                            data,
+                            args.merge_strategy,
+                            args.merge_diff_log,
+                            "docker_compose".to_string(),
+                        );
+                        eprintln!("[j2substrs] Docker Compose file loaded from stdin");
                     }
-                }
+                    Err(e) => {
+                        eprintln!("Error parsing Docker Compose from stdin: {}", e);
+                        std::process::exit(1);
+                    }
+                },
                 Err(e) => {
                     eprintln!("Error reading Docker Compose from stdin: {}", e);
                     std::process::exit(1);
                 }
             }
         } else if args.compose_stdin && first_wins_encountered {
-            eprintln!("[j2substrs] Docker Compose from stdin skipped (first-wins strategy from earlier source)");
+            eprintln!(
+                "[j2substrs] Docker Compose from stdin skipped (first-wins strategy from earlier source)"
+            );
         }
 
         // Load from inline
         for (idx, inline) in args.compose_inline.iter().enumerate() {
             // If first-wins has been encountered, skip remaining sources
             if first_wins_encountered {
-                eprintln!("[j2substrs] Inline Docker Compose skipped (first-wins strategy from earlier source)");
+                eprintln!(
+                    "[j2substrs] Inline Docker Compose skipped (first-wins strategy from earlier source)"
+                );
                 continue;
             }
 
@@ -1456,7 +1608,13 @@ fn main() {
                     if compose_idx == 0 && args.merge_strategy == MergeStrategy::FirstWins {
                         first_wins_encountered = true;
                     }
-                    merge_json_values_with_strategy(&mut compose_data, data, args.merge_strategy, args.merge_diff_log, "docker_compose".to_string());
+                    merge_json_values_with_strategy(
+                        &mut compose_data,
+                        data,
+                        args.merge_strategy,
+                        args.merge_diff_log,
+                        "docker_compose".to_string(),
+                    );
                     eprintln!("[j2substrs] Docker Compose from inline loaded");
                 }
                 Err(e) => {
@@ -1485,9 +1643,16 @@ fn main() {
                     }
                     *services_map = filtered_map;
 
-                    eprintln!("[j2substrs] Docker Compose services filtered by pattern '{}': {} matching services", pattern, services_map.len());
+                    eprintln!(
+                        "[j2substrs] Docker Compose services filtered by pattern '{}': {} matching services",
+                        pattern,
+                        services_map.len()
+                    );
                 } else {
-                    eprintln!("[j2substrs] Docker Compose loaded with {} services", services_map.len());
+                    eprintln!(
+                        "[j2substrs] Docker Compose loaded with {} services",
+                        services_map.len()
+                    );
                 }
             }
         }
@@ -1511,7 +1676,10 @@ fn main() {
             docker_vars.insert("volumes".to_string(), volumes.clone());
         }
 
-        context_json.insert("docker_compose".to_string(), serde_json::Value::Object(docker_vars));
+        context_json.insert(
+            "docker_compose".to_string(),
+            serde_json::Value::Object(docker_vars),
+        );
     }
 
     let json_ctx = serde_json::Value::Object(context_json);
@@ -1535,19 +1703,27 @@ fn main() {
             let ansible_mode = jinja2rs::compat::AnsibleMode {
                 method_syntax: true,
                 enable_validation: true,
-                inventory_source: args.inventory.first()
+                inventory_source: args
+                    .inventory
+                    .first()
                     .map(|p| jinja2rs::compat::AnsibleInventorySource::File(PathBuf::from(p)))
-                    .or_else(|| if args.inventory_stdin {
-                        Some(jinja2rs::compat::AnsibleInventorySource::Stdin)
-                    } else {
-                        None
+                    .or_else(|| {
+                        if args.inventory_stdin {
+                            Some(jinja2rs::compat::AnsibleInventorySource::Stdin)
+                        } else {
+                            None
+                        }
                     })
-                    .or_else(|| args.inventory_inline.first()
-                        .map(|c| jinja2rs::compat::AnsibleInventorySource::Inline(c.clone()))),
+                    .or_else(|| {
+                        args.inventory_inline
+                            .first()
+                            .map(|c| jinja2rs::compat::AnsibleInventorySource::Inline(c.clone()))
+                    }),
             };
             env.set_compat_mode(jinja2rs::compat::CompatMode::Ansible(ansible_mode));
             eprintln!("[j2substrs] Using ansible mode");
-            if !args.manifest.is_empty() || args.manifest_stdin || !args.manifest_inline.is_empty() {
+            if !args.manifest.is_empty() || args.manifest_stdin || !args.manifest_inline.is_empty()
+            {
                 eprintln!("[j2substrs] Ansible mode with Kubernetes manifest data loaded");
             }
         }
@@ -1555,16 +1731,26 @@ fn main() {
             let k8s_mode = jinja2rs::compat::KubernetesMode {
                 method_syntax: true,
                 enable_validation: true,
-                manifest_source: args.manifest.first()
+                manifest_source: args
+                    .manifest
+                    .first()
                     .map(|p| jinja2rs::compat::KubernetesInventorySource::File(PathBuf::from(p)))
-                    .or_else(|| if args.manifest_stdin {
-                        Some(jinja2rs::compat::KubernetesInventorySource::Stdin)
-                    } else {
-                        None
+                    .or_else(|| {
+                        if args.manifest_stdin {
+                            Some(jinja2rs::compat::KubernetesInventorySource::Stdin)
+                        } else {
+                            None
+                        }
                     })
-                    .or_else(|| args.manifest_inline.first()
-                        .map(|c| jinja2rs::compat::KubernetesInventorySource::Inline(c.clone()))),
-                namespace: args.namespace.clone().unwrap_or_else(|| "default".to_string()),
+                    .or_else(|| {
+                        args.manifest_inline
+                            .first()
+                            .map(|c| jinja2rs::compat::KubernetesInventorySource::Inline(c.clone()))
+                    }),
+                namespace: args
+                    .namespace
+                    .clone()
+                    .unwrap_or_else(|| "default".to_string()),
                 resource_kind_filter: args.resource_kind_filter.clone(),
             };
             env.set_compat_mode(jinja2rs::compat::CompatMode::Kubernetes(k8s_mode));
@@ -1602,7 +1788,7 @@ fn main() {
         eprintln!("\n=== PREVIEW OUTPUT ===");
         eprintln!("{}", "=".repeat(50));
         eprint!("{}", output);
-        eprintln!();  // Add newline after output
+        eprintln!(); // Add newline after output
         eprintln!("{}", "=".repeat(50));
 
         if let Some(output_path) = args.output {

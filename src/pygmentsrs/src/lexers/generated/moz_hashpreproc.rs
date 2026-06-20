@@ -25,26 +25,39 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token_to(r"(?m)^#", COMMENT_PREPROC, NewState::Push(vec![r"expr", r"exprstart"])),
-        Rule::token(r"(?m).+", OTHER),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token_to(
+                r"(?m)^#",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"expr", r"exprstart"]),
+            ),
+            Rule::token(r"(?m).+", OTHER),
+        ],
+    );
     m.insert(r"exprstart", vec![
         Rule::bygroups_to(r"(?m)(literal)(.*)", vec![Some(COMMENT_PREPROC), Some(TEXT)], NewState::Pop(2)),
         Rule::token_to(r"(?m)(define|e(?:l(?:if(?:(?:(?:(?:n)?)def)?)|se)|ndif|rror|xpand)|filter|i(?:f(?:(?:(?:(?:n)?)def)?)|nclude(?:(?:subst)?))|un(?:def|filter))", COMMENT_PREPROC, NewState::Pop(1)),
     ]);
-    m.insert(r"expr", vec![
-        Rule::token(r"(?m)(!(?:(?:=)?)|\&\&|==|\|\|)", OPERATOR),
-        Rule::bygroups(r"(?m)(defined)(\()", vec![Some(KEYWORD), Some(PUNCTUATION)]),
-        Rule::token(r"(?m)\)", PUNCTUATION),
-        Rule::token(r"(?m)[0-9]+", TokenType::new(&["Literal", "Number", "Decimal"])),
-        Rule::token(r"(?m)__\w+?__", NAME_VARIABLE),
-        Rule::token(r"(?m)@\w+?@", NAME_CLASS),
-        Rule::token(r"(?m)\w+", NAME),
-        Rule::token_to(r"(?m)\n", TEXT, NewState::Pop(1)),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r"(?m)\S", PUNCTUATION),
-    ]);
+    m.insert(
+        r"expr",
+        vec![
+            Rule::token(r"(?m)(!(?:(?:=)?)|\&\&|==|\|\|)", OPERATOR),
+            Rule::bygroups(r"(?m)(defined)(\()", vec![Some(KEYWORD), Some(PUNCTUATION)]),
+            Rule::token(r"(?m)\)", PUNCTUATION),
+            Rule::token(
+                r"(?m)[0-9]+",
+                TokenType::new(&["Literal", "Number", "Decimal"]),
+            ),
+            Rule::token(r"(?m)__\w+?__", NAME_VARIABLE),
+            Rule::token(r"(?m)@\w+?@", NAME_CLASS),
+            Rule::token(r"(?m)\w+", NAME),
+            Rule::token_to(r"(?m)\n", TEXT, NewState::Pop(1)),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r"(?m)\S", PUNCTUATION),
+        ],
+    );
     Table(m)
 }
 

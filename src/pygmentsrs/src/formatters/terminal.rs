@@ -6,16 +6,16 @@
 //! `IRCFormatter` — mIRC color codes
 //! `BBCodeFormatter` — BBCode markup
 
-use crate::token::TokenType;
-use super::color::{rgb_to_ansi16, rgb_to_ansi256, rgb_to_mirc, rgb_to_hex};
+use super::color::{rgb_to_ansi16, rgb_to_ansi256, rgb_to_hex, rgb_to_mirc};
 use super::style::Style;
+use crate::token::TokenType;
 
 pub struct TerminalFormatter;
 
 impl TerminalFormatter {
     pub fn format(&self, tokens: &[(TokenType, String)]) -> String {
         let mut out = String::new();
-        
+
         for (ttype, value) in tokens {
             let style = Style::from_token(*ttype);
             if let Some((r, g, b)) = style.fg_color {
@@ -28,7 +28,7 @@ impl TerminalFormatter {
                     format!("\x1b[{}m", 90 + (ansi_idx - 8))
                 };
                 out.push_str(&escape);
-                
+
                 if style.bold {
                     out.push_str("\x1b[1m");
                 }
@@ -39,14 +39,14 @@ impl TerminalFormatter {
                     out.push_str("\x1b[4m");
                 }
             }
-            
+
             out.push_str(value);
-            
+
             if style.fg_color.is_some() || style.bold || style.italic || style.underline {
                 out.push_str("\x1b[0m");
             }
         }
-        
+
         out
     }
 }
@@ -56,14 +56,14 @@ pub struct Terminal256Formatter;
 impl Terminal256Formatter {
     pub fn format(&self, tokens: &[(TokenType, String)]) -> String {
         let mut out = String::new();
-        
+
         for (ttype, value) in tokens {
             let style = Style::from_token(*ttype);
             if let Some((r, g, b)) = style.fg_color {
                 let ansi_idx = rgb_to_ansi256(r, g, b);
                 let escape = format!("\x1b[38;5;{}m", ansi_idx);
                 out.push_str(&escape);
-                
+
                 if style.bold {
                     out.push_str("\x1b[1m");
                 }
@@ -74,14 +74,14 @@ impl Terminal256Formatter {
                     out.push_str("\x1b[4m");
                 }
             }
-            
+
             out.push_str(value);
-            
+
             if style.fg_color.is_some() || style.bold || style.italic || style.underline {
                 out.push_str("\x1b[0m");
             }
         }
-        
+
         out
     }
 }
@@ -91,13 +91,13 @@ pub struct TerminalTrueColorFormatter;
 impl TerminalTrueColorFormatter {
     pub fn format(&self, tokens: &[(TokenType, String)]) -> String {
         let mut out = String::new();
-        
+
         for (ttype, value) in tokens {
             let style = Style::from_token(*ttype);
             if let Some((r, g, b)) = style.fg_color {
                 let escape = format!("\x1b[38;2;{};{};{}m", r, g, b);
                 out.push_str(&escape);
-                
+
                 if style.bold {
                     out.push_str("\x1b[1m");
                 }
@@ -108,14 +108,14 @@ impl TerminalTrueColorFormatter {
                     out.push_str("\x1b[4m");
                 }
             }
-            
+
             out.push_str(value);
-            
+
             if style.fg_color.is_some() || style.bold || style.italic || style.underline {
                 out.push_str("\x1b[0m");
             }
         }
-        
+
         out
     }
 }
@@ -125,15 +125,15 @@ pub struct IRCFormatter;
 impl IRCFormatter {
     pub fn format(&self, tokens: &[(TokenType, String)]) -> String {
         let mut out = String::new();
-        
+
         for (ttype, value) in tokens {
             let style = Style::from_token(*ttype);
-            
+
             if let Some((r, g, b)) = style.fg_color {
                 let mirc_idx = rgb_to_mirc(r, g, b);
                 // IRC color code: ^C foreground[,background]
                 out.push_str(&format!("\x03{:02}", mirc_idx));
-                
+
                 if style.bold {
                     out.push('\x02'); // bold
                 }
@@ -144,14 +144,14 @@ impl IRCFormatter {
                     out.push('\x1f'); // underline
                 }
             }
-            
+
             out.push_str(value);
-            
+
             if style.fg_color.is_some() || style.bold || style.italic || style.underline {
                 out.push('\x03'); // reset IRC codes
             }
         }
-        
+
         out
     }
 }
@@ -161,27 +161,27 @@ pub struct BBCodeFormatter;
 impl BBCodeFormatter {
     pub fn format(&self, tokens: &[(TokenType, String)]) -> String {
         let mut out = String::new();
-        
+
         for (ttype, value) in tokens {
             let style = Style::from_token(*ttype);
-            
+
             if let Some((r, g, b)) = style.fg_color {
                 let hex = rgb_to_hex(r, g, b);
                 out.push_str(&format!("[color={}]", hex));
             }
-            
+
             if style.bold {
                 out.push_str("[b]");
             }
-            
+
             if style.italic {
                 out.push_str("[i]");
             }
-            
+
             if style.underline {
                 out.push_str("[u]");
             }
-            
+
             // Escape BBCode special chars
             for c in value.chars() {
                 match c {
@@ -190,7 +190,7 @@ impl BBCodeFormatter {
                     _ => out.push(c),
                 }
             }
-            
+
             if style.underline {
                 out.push_str("[/u]");
             }
@@ -204,7 +204,7 @@ impl BBCodeFormatter {
                 out.push_str("[/color]");
             }
         }
-        
+
         out
     }
 }

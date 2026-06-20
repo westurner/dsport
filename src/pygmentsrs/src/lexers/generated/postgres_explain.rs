@@ -59,65 +59,128 @@ fn build_table() -> Table {
         Rule::token(r"(?m)(Inlining|Optimization|Expressions|Deforming|Generation|Emission|Total)", KEYWORD_PSEUDO),
         Rule::bygroups(r"(?m)(Trigger)( )(\S*)(:)( )", vec![Some(COMMENT_PREPROC), Some(WHITESPACE), Some(NAME_VARIABLE), Some(PUNCTUATION), Some(WHITESPACE)]),
     ]);
-    m.insert(r"expression", vec![
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::PushSame),
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)(never executed)", NAME_EXCEPTION),
-        Rule::token(r"(?m)[^)(]+", COMMENT),
-    ]);
-    m.insert(r"object_name", vec![
-        Rule::bygroups_to(r"(?m)(\(cost)(=?)", vec![Some(NAME_CLASS), Some(PUNCTUATION)], NewState::Push(vec![r"instrumentation"])),
-        Rule::bygroups_to(r"(?m)(\(actual)( )(=?)", vec![Some(NAME_CLASS), Some(WHITESPACE), Some(PUNCTUATION)], NewState::Push(vec![r"instrumentation"])),
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"expression"])),
-        Rule::token(r"(?m)(on)", PUNCTUATION),
-        Rule::token(r"(?m)\w+(\.\w+)*( USING \S+| \w+ USING \S+)", NAME_VARIABLE),
-        Rule::token(r#"(?m)\"?\w+\"?(?:\.\"?\w+\"?)?"#, NAME_VARIABLE),
-        Rule::token(r"(?m)\'\S*\'", NAME_VARIABLE),
-        Rule::token_to(r"(?m),\n", PUNCTUATION, NewState::Push(vec![r"object_name"])),
-        Rule::token_to(r"(?m),", PUNCTUATION, NewState::Push(vec![r"object_name"])),
-        Rule::token(r#"(?m)"\*SELECT\*( \d+)?"(.\w+)?"#, NAME_VARIABLE),
-        Rule::token(r#"(?m)"\*VALUES\*(_\d+)?"(.\w+)?"#, NAME_VARIABLE),
-        Rule::token(r#"(?m)"ANY_subquery""#, NAME_VARIABLE),
-        Rule::token(r"(?m)\$\d+", NAME_VARIABLE),
-        Rule::token(r"(?m)::\w+", NAME_VARIABLE),
-        Rule::token(r"(?m) +", WHITESPACE),
-        Rule::token(r#"(?m)""#, PUNCTUATION),
-        Rule::token(r"(?m)\[\.\.\.\]", PUNCTUATION),
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"predicate", vec![
-        Rule::bygroups_to(r"(?m)(\()([^\n]*)(\))", vec![Some(PUNCTUATION), Some(NAME_VARIABLE), Some(PUNCTUATION)], NewState::Pop(1)),
-        Rule::token_to(r"(?m)[^\n]*", NAME_VARIABLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"instrumentation", vec![
-        Rule::token(r"(?m)=|\.\.", PUNCTUATION),
-        Rule::token(r"(?m) +", WHITESPACE),
-        Rule::token(r"(?m)(rows|width|time|loops)", NAME_CLASS),
-        Rule::token(r"(?m)\d+\.\d+", NUMBER_FLOAT),
-        Rule::token(r"(?m)(\d+)", NUMBER_INTEGER),
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"conflict", vec![
-        Rule::bygroups(r"(?m)(Resolution: )(\w+)", vec![Some(COMMENT_PREPROC), Some(NAME_VARIABLE)]),
-        Rule::token_to(r"(?m)(Arbiter \w+:)", COMMENT_PREPROC, NewState::Push(vec![r"object_name"])),
-        Rule::token_to(r"(?m)(Filter: )", COMMENT_PREPROC, NewState::Push(vec![r"predicate"])),
-    ]);
-    m.insert(r"setting", vec![
-        Rule::bygroups(r"(?m)([a-z_]*?)(\s*)(=)(\s*)(\'.*?\')", vec![Some(NAME_ATTRIBUTE), Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE), Some(STRING)]),
-        Rule::token(r"(?m)\, ", PUNCTUATION),
-    ]);
-    m.insert(r"init_plan", vec![
-        Rule::token(r"(?m)\(", PUNCTUATION),
-        Rule::token(r"(?m)returns \$\d+(,\$\d+)?", NAME_VARIABLE),
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"sort", vec![
-        Rule::token(r"(?m):|kB", PUNCTUATION),
-        Rule::token(r"(?m)(quicksort|top-N|heapsort|Average|Memory|Peak)", TokenType::new(&["Comment", "Prepoc"])),
-        Rule::token(r"(?m)(external|merge|Disk|sort)", NAME_EXCEPTION),
-        Rule::token(r"(?m)(\d+)", NUMBER_INTEGER),
-        Rule::token(r"(?m) +", WHITESPACE),
-    ]);
+    m.insert(
+        r"expression",
+        vec![
+            Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::PushSame),
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?m)(never executed)", NAME_EXCEPTION),
+            Rule::token(r"(?m)[^)(]+", COMMENT),
+        ],
+    );
+    m.insert(
+        r"object_name",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)(\(cost)(=?)",
+                vec![Some(NAME_CLASS), Some(PUNCTUATION)],
+                NewState::Push(vec![r"instrumentation"]),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(\(actual)( )(=?)",
+                vec![Some(NAME_CLASS), Some(WHITESPACE), Some(PUNCTUATION)],
+                NewState::Push(vec![r"instrumentation"]),
+            ),
+            Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"expression"])),
+            Rule::token(r"(?m)(on)", PUNCTUATION),
+            Rule::token(r"(?m)\w+(\.\w+)*( USING \S+| \w+ USING \S+)", NAME_VARIABLE),
+            Rule::token(r#"(?m)\"?\w+\"?(?:\.\"?\w+\"?)?"#, NAME_VARIABLE),
+            Rule::token(r"(?m)\'\S*\'", NAME_VARIABLE),
+            Rule::token_to(
+                r"(?m),\n",
+                PUNCTUATION,
+                NewState::Push(vec![r"object_name"]),
+            ),
+            Rule::token_to(r"(?m),", PUNCTUATION, NewState::Push(vec![r"object_name"])),
+            Rule::token(r#"(?m)"\*SELECT\*( \d+)?"(.\w+)?"#, NAME_VARIABLE),
+            Rule::token(r#"(?m)"\*VALUES\*(_\d+)?"(.\w+)?"#, NAME_VARIABLE),
+            Rule::token(r#"(?m)"ANY_subquery""#, NAME_VARIABLE),
+            Rule::token(r"(?m)\$\d+", NAME_VARIABLE),
+            Rule::token(r"(?m)::\w+", NAME_VARIABLE),
+            Rule::token(r"(?m) +", WHITESPACE),
+            Rule::token(r#"(?m)""#, PUNCTUATION),
+            Rule::token(r"(?m)\[\.\.\.\]", PUNCTUATION),
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"predicate",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)(\()([^\n]*)(\))",
+                vec![Some(PUNCTUATION), Some(NAME_VARIABLE), Some(PUNCTUATION)],
+                NewState::Pop(1),
+            ),
+            Rule::token_to(r"(?m)[^\n]*", NAME_VARIABLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"instrumentation",
+        vec![
+            Rule::token(r"(?m)=|\.\.", PUNCTUATION),
+            Rule::token(r"(?m) +", WHITESPACE),
+            Rule::token(r"(?m)(rows|width|time|loops)", NAME_CLASS),
+            Rule::token(r"(?m)\d+\.\d+", NUMBER_FLOAT),
+            Rule::token(r"(?m)(\d+)", NUMBER_INTEGER),
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"conflict",
+        vec![
+            Rule::bygroups(
+                r"(?m)(Resolution: )(\w+)",
+                vec![Some(COMMENT_PREPROC), Some(NAME_VARIABLE)],
+            ),
+            Rule::token_to(
+                r"(?m)(Arbiter \w+:)",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"object_name"]),
+            ),
+            Rule::token_to(
+                r"(?m)(Filter: )",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"predicate"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"setting",
+        vec![
+            Rule::bygroups(
+                r"(?m)([a-z_]*?)(\s*)(=)(\s*)(\'.*?\')",
+                vec![
+                    Some(NAME_ATTRIBUTE),
+                    Some(WHITESPACE),
+                    Some(OPERATOR),
+                    Some(WHITESPACE),
+                    Some(STRING),
+                ],
+            ),
+            Rule::token(r"(?m)\, ", PUNCTUATION),
+        ],
+    );
+    m.insert(
+        r"init_plan",
+        vec![
+            Rule::token(r"(?m)\(", PUNCTUATION),
+            Rule::token(r"(?m)returns \$\d+(,\$\d+)?", NAME_VARIABLE),
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"sort",
+        vec![
+            Rule::token(r"(?m):|kB", PUNCTUATION),
+            Rule::token(
+                r"(?m)(quicksort|top-N|heapsort|Average|Memory|Peak)",
+                TokenType::new(&["Comment", "Prepoc"]),
+            ),
+            Rule::token(r"(?m)(external|merge|Disk|sort)", NAME_EXCEPTION),
+            Rule::token(r"(?m)(\d+)", NUMBER_INTEGER),
+            Rule::token(r"(?m) +", WHITESPACE),
+        ],
+    );
     Table(m)
 }
 

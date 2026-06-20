@@ -25,12 +25,32 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)^[ \t]*\n", WHITESPACE),
-        Rule::bygroups(r"(?m)^(#.*)(\n)", vec![Some(COMMENT_SINGLE), Some(WHITESPACE)]),
-        Rule::bygroups(r"(?m)(\[[^\]\n]+\])(\n)", vec![Some(KEYWORD), Some(WHITESPACE)]),
-        Rule::bygroups(r"(?m)([-A-Za-z0-9]+)(\[[^\] \t=]+\])?([ \t]*)(=)([ \t]*)([^\n]*)([ \t\n]*\n)", vec![Some(NAME_ATTRIBUTE), Some(NAME_NAMESPACE), Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE), Some(STRING), Some(WHITESPACE)]),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)^[ \t]*\n", WHITESPACE),
+            Rule::bygroups(
+                r"(?m)^(#.*)(\n)",
+                vec![Some(COMMENT_SINGLE), Some(WHITESPACE)],
+            ),
+            Rule::bygroups(
+                r"(?m)(\[[^\]\n]+\])(\n)",
+                vec![Some(KEYWORD), Some(WHITESPACE)],
+            ),
+            Rule::bygroups(
+                r"(?m)([-A-Za-z0-9]+)(\[[^\] \t=]+\])?([ \t]*)(=)([ \t]*)([^\n]*)([ \t\n]*\n)",
+                vec![
+                    Some(NAME_ATTRIBUTE),
+                    Some(NAME_NAMESPACE),
+                    Some(WHITESPACE),
+                    Some(OPERATOR),
+                    Some(WHITESPACE),
+                    Some(STRING),
+                    Some(WHITESPACE),
+                ],
+            ),
+        ],
+    );
     Table(m)
 }
 

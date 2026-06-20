@@ -25,27 +25,36 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?im)#.*", COMMENT_SINGLE),
-        Rule::token(r"(?im)[a-z]\w*", NAME_FUNCTION),
-        Rule::token_to(r"(?im)\(", PUNCTUATION, NewState::Push(vec![r"args-list"])),
-        Rule::token(r"(?im);", PUNCTUATION),
-        Rule::token(r"(?im)\s+", TEXT),
-    ]);
-    m.insert(r"args-list", vec![
-        Rule::token_to(r"(?im)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?im),", PUNCTUATION),
-        Rule::token(r"(?im)[a-z]\w*", NAME_VARIABLE),
-        Rule::token(r"(?im)=", OPERATOR),
-        Rule::token_to(r#"(?im)""#, STRING, NewState::Push(vec![r"string-literal"])),
-        Rule::token(r"(?im)[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]{1,3})?", NUMBER),
-        Rule::token(r"(?im)\s", WHITESPACE),
-    ]);
-    m.insert(r"string-literal", vec![
-        Rule::token(r#"(?im)\\[tnrfbae"\\]"#, STRING_ESCAPE),
-        Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?im)[^\\"]+"#, STRING),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?im)#.*", COMMENT_SINGLE),
+            Rule::token(r"(?im)[a-z]\w*", NAME_FUNCTION),
+            Rule::token_to(r"(?im)\(", PUNCTUATION, NewState::Push(vec![r"args-list"])),
+            Rule::token(r"(?im);", PUNCTUATION),
+            Rule::token(r"(?im)\s+", TEXT),
+        ],
+    );
+    m.insert(
+        r"args-list",
+        vec![
+            Rule::token_to(r"(?im)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?im),", PUNCTUATION),
+            Rule::token(r"(?im)[a-z]\w*", NAME_VARIABLE),
+            Rule::token(r"(?im)=", OPERATOR),
+            Rule::token_to(r#"(?im)""#, STRING, NewState::Push(vec![r"string-literal"])),
+            Rule::token(r"(?im)[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]{1,3})?", NUMBER),
+            Rule::token(r"(?im)\s", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"string-literal",
+        vec![
+            Rule::token(r#"(?im)\\[tnrfbae"\\]"#, STRING_ESCAPE),
+            Rule::token_to(r#"(?im)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?im)[^\\"]+"#, STRING),
+        ],
+    );
     Table(m)
 }
 

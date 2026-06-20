@@ -61,35 +61,77 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)`", STRING_BACKTICK, NewState::Push(vec![r"interp"])),
         Rule::token(r"(?ms)#[a-zA-Z_]\w*", NAME),
     ]);
-    m.insert(r"jsx", vec![
-        Rule::token(r"(?ms)</?>", PUNCTUATION),
-        Rule::bygroups_to(r"(?ms)(<)(\w+)(\.?)", vec![Some(PUNCTUATION), Some(NAME_TAG), Some(PUNCTUATION)], NewState::Push(vec![r"tag"])),
-        Rule::bygroups(r"(?ms)(</)(\w+)(>)", vec![Some(PUNCTUATION), Some(NAME_TAG), Some(PUNCTUATION)]),
-        Rule::bygroups_to(r"(?ms)(</)(\w+)", vec![Some(PUNCTUATION), Some(NAME_TAG)], NewState::Push(vec![r"fragment"])),
-    ]);
-    m.insert(r"commentsandwhitespace", vec![
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::token(r"(?ms)<!--", COMMENT),
-        Rule::token(r"(?ms)//.*?$", COMMENT_SINGLE),
-        Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"tag", vec![
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::bygroups_to(r"(?ms)([\w-]+)(\s*)(=)(\s*)", vec![Some(NAME_ATTRIBUTE), Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE)], NewState::Push(vec![r"attr"])),
-        Rule::token(r"(?ms)[{}]+", PUNCTUATION),
-        Rule::token(r"(?ms)[\w\.]+", NAME_ATTRIBUTE),
-        Rule::bygroups_to(r"(?ms)(/?)(\s*)(>)", vec![Some(PUNCTUATION), Some(TEXT), Some(PUNCTUATION)], NewState::Pop(1)),
-    ]);
-    m.insert(r"fragment", vec![
-        Rule::bygroups(r"(?ms)(.)(\w+)", vec![Some(PUNCTUATION), Some(NAME_ATTRIBUTE)]),
-        Rule::bygroups_to(r"(?ms)(>)", vec![Some(PUNCTUATION)], NewState::Pop(1)),
-    ]);
-    m.insert(r"attr", vec![
-        Rule::token_to(r"(?ms)\{", PUNCTUATION, NewState::Push(vec![r"expression"])),
-        Rule::token_to(r#"(?ms)".*?""#, STRING, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)'.*?'", STRING, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"jsx",
+        vec![
+            Rule::token(r"(?ms)</?>", PUNCTUATION),
+            Rule::bygroups_to(
+                r"(?ms)(<)(\w+)(\.?)",
+                vec![Some(PUNCTUATION), Some(NAME_TAG), Some(PUNCTUATION)],
+                NewState::Push(vec![r"tag"]),
+            ),
+            Rule::bygroups(
+                r"(?ms)(</)(\w+)(>)",
+                vec![Some(PUNCTUATION), Some(NAME_TAG), Some(PUNCTUATION)],
+            ),
+            Rule::bygroups_to(
+                r"(?ms)(</)(\w+)",
+                vec![Some(PUNCTUATION), Some(NAME_TAG)],
+                NewState::Push(vec![r"fragment"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"commentsandwhitespace",
+        vec![
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::token(r"(?ms)<!--", COMMENT),
+            Rule::token(r"(?ms)//.*?$", COMMENT_SINGLE),
+            Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"tag",
+        vec![
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::bygroups_to(
+                r"(?ms)([\w-]+)(\s*)(=)(\s*)",
+                vec![
+                    Some(NAME_ATTRIBUTE),
+                    Some(WHITESPACE),
+                    Some(OPERATOR),
+                    Some(WHITESPACE),
+                ],
+                NewState::Push(vec![r"attr"]),
+            ),
+            Rule::token(r"(?ms)[{}]+", PUNCTUATION),
+            Rule::token(r"(?ms)[\w\.]+", NAME_ATTRIBUTE),
+            Rule::bygroups_to(
+                r"(?ms)(/?)(\s*)(>)",
+                vec![Some(PUNCTUATION), Some(TEXT), Some(PUNCTUATION)],
+                NewState::Pop(1),
+            ),
+        ],
+    );
+    m.insert(
+        r"fragment",
+        vec![
+            Rule::bygroups(
+                r"(?ms)(.)(\w+)",
+                vec![Some(PUNCTUATION), Some(NAME_ATTRIBUTE)],
+            ),
+            Rule::bygroups_to(r"(?ms)(>)", vec![Some(PUNCTUATION)], NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"attr",
+        vec![
+            Rule::token_to(r"(?ms)\{", PUNCTUATION, NewState::Push(vec![r"expression"])),
+            Rule::token_to(r#"(?ms)".*?""#, STRING, NewState::Pop(1)),
+            Rule::token_to(r"(?ms)'.*?'", STRING, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     m.insert(r"expression", vec![
         Rule::token_to(r"(?ms)\{", PUNCTUATION, NewState::PushSame),
         Rule::token_to(r"(?ms)\}", PUNCTUATION, NewState::Pop(1)),
@@ -128,25 +170,44 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)`", STRING_BACKTICK, NewState::Push(vec![r"interp"])),
         Rule::token(r"(?ms)#[a-zA-Z_]\w*", NAME),
     ]);
-    m.insert(r"slashstartsregex", vec![
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::token(r"(?ms)<!--", COMMENT),
-        Rule::token(r"(?ms)//.*?$", COMMENT_SINGLE),
-        Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
-        Rule::token_to(r"(?ms)/(\\.|[^\[/\\\n]|\[(\\.|[^\]\\\n])*])+/([gimuysd]+\b|\B)", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)(?=/)", TEXT, NewState::Push(vec![r"#pop", r"badregex"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"badregex", vec![
-        Rule::token_to(r"(?ms)\n", WHITESPACE, NewState::Pop(1)),
-    ]);
-    m.insert(r"interp", vec![
-        Rule::token_to(r"(?ms)`", STRING_BACKTICK, NewState::Pop(1)),
-        Rule::token(r"(?ms)\\.", STRING_BACKTICK),
-        Rule::token_to(r"(?ms)\$\{", STRING_INTERPOL, NewState::Push(vec![r"interp-inside"])),
-        Rule::token(r"(?ms)\$", STRING_BACKTICK),
-        Rule::token(r"(?ms)[^`\\$]+", STRING_BACKTICK),
-    ]);
+    m.insert(
+        r"slashstartsregex",
+        vec![
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::token(r"(?ms)<!--", COMMENT),
+            Rule::token(r"(?ms)//.*?$", COMMENT_SINGLE),
+            Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
+            Rule::token_to(
+                r"(?ms)/(\\.|[^\[/\\\n]|\[(\\.|[^\]\\\n])*])+/([gimuysd]+\b|\B)",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)(?=/)",
+                TEXT,
+                NewState::Push(vec![r"#pop", r"badregex"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"badregex",
+        vec![Rule::token_to(r"(?ms)\n", WHITESPACE, NewState::Pop(1))],
+    );
+    m.insert(
+        r"interp",
+        vec![
+            Rule::token_to(r"(?ms)`", STRING_BACKTICK, NewState::Pop(1)),
+            Rule::token(r"(?ms)\\.", STRING_BACKTICK),
+            Rule::token_to(
+                r"(?ms)\$\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interp-inside"]),
+            ),
+            Rule::token(r"(?ms)\$", STRING_BACKTICK),
+            Rule::token(r"(?ms)[^`\\$]+", STRING_BACKTICK),
+        ],
+    );
     m.insert(r"interp-inside", vec![
         Rule::token_to(r"(?ms)\}", STRING_INTERPOL, NewState::Pop(1)),
         Rule::token(r"(?ms)</?>", PUNCTUATION),

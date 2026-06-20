@@ -99,8 +99,8 @@
 //!
 //! Using all layers together provides maximum security.
 
-use crate::sandbox::SandboxedEnvironment;
 use crate::environment::Environment;
+use crate::sandbox::SandboxedEnvironment;
 use std::time::Duration;
 
 /// Seccomp whitelist strictness level.
@@ -493,10 +493,13 @@ impl SandboxedEnvironmentBuilder {
     ///     .build();
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn with_read_path(mut self, path: impl Into<String>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn with_read_path(
+        mut self,
+        path: impl Into<String>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let path_str = path.into();
         validate_path_string(&path_str)?;
-        
+
         if self.path_policy.is_none() {
             self.path_policy = Some(PathPolicy::new());
         }
@@ -532,10 +535,13 @@ impl SandboxedEnvironmentBuilder {
     ///     .build();
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn with_write_path(mut self, path: impl Into<String>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn with_write_path(
+        mut self,
+        path: impl Into<String>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let path_str = path.into();
         validate_path_string(&path_str)?;
-        
+
         if self.path_policy.is_none() {
             self.path_policy = Some(PathPolicy::new());
         }
@@ -659,7 +665,11 @@ impl SandboxedEnvironmentBuilder {
     }
 
     /// Add a named template to the environment.
-    pub fn with_template(mut self, name: &'static str, source: &'static str) -> Result<Self, crate::errors::Jinja2Error> {
+    pub fn with_template(
+        mut self,
+        name: &'static str,
+        source: &'static str,
+    ) -> Result<Self, crate::errors::Jinja2Error> {
         self.environment.add_template(name, source)?;
         Ok(self)
     }
@@ -690,7 +700,7 @@ impl Default for SandboxedEnvironmentBuilder {
 
 /// Internal configuration for sandboxed environments.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]  // Fields are used when sandbox/seccomp/resource-limits features are enabled
+#[allow(dead_code)] // Fields are used when sandbox/seccomp/resource-limits features are enabled
 pub struct SandboxConfig {
     pub(crate) enable_seccomp: bool,
     pub(crate) seccomp_whitelist: SeccompWhitelist,
@@ -722,12 +732,16 @@ impl Default for SandboxConfig {
 // ============================================================================
 
 /// Minimal seccomp whitelist: essential syscalls only.
-#[allow(dead_code)]  // Used when seccomp feature is enabled
+#[allow(dead_code)] // Used when seccomp feature is enabled
 const SECCOMP_MINIMAL: &[&str] = &[
     // Memory management (essential for Rust runtime)
-    "brk", "mmap", "mprotect", "munmap",
+    "brk",
+    "mmap",
+    "mprotect",
+    "munmap",
     // I/O (essential for template I/O)
-    "read", "write",
+    "read",
+    "write",
     // File descriptors (cleanup)
     "close",
     // Process (exit)
@@ -737,19 +751,41 @@ const SECCOMP_MINIMAL: &[&str] = &[
 ];
 
 /// Broad seccomp whitelist: includes compatibility syscalls.
-#[allow(dead_code)]  // Used when seccomp feature is enabled
+#[allow(dead_code)] // Used when seccomp feature is enabled
 const SECCOMP_BROAD: &[&str] = &[
     // Memory management
-    "brk", "mmap", "mprotect", "munmap", "mremap",
+    "brk",
+    "mmap",
+    "mprotect",
+    "munmap",
+    "mremap",
     // I/O
-    "read", "write", "pread64", "pwrite64",
+    "read",
+    "write",
+    "pread64",
+    "pwrite64",
     // File descriptors
-    "close", "dup", "dup2", "dup3", "poll", "select", "pselect6",
-    "ppoll", "epoll_create", "epoll_ctl", "epoll_wait",
+    "close",
+    "dup",
+    "dup2",
+    "dup3",
+    "poll",
+    "select",
+    "pselect6",
+    "ppoll",
+    "epoll_create",
+    "epoll_ctl",
+    "epoll_wait",
     // Process
-    "exit_group", "rt_sigaction", "rt_sigprocmask", "rt_sigpending",
+    "exit_group",
+    "rt_sigaction",
+    "rt_sigprocmask",
+    "rt_sigpending",
     // Other safe operations
-    "futex", "get_random_bytes", "getrandom", "clock_gettime",
+    "futex",
+    "get_random_bytes",
+    "getrandom",
+    "clock_gettime",
 ];
 
 /// Enable seccomp whitelist filtering.
@@ -773,7 +809,7 @@ const SECCOMP_BROAD: &[&str] = &[
 /// This function is only available on Linux with kernel >= 3.17.
 /// On other platforms, it logs a warning and returns `Ok(())` without filtering.
 #[cfg(all(feature = "seccomp", unix, target_os = "linux"))]
-#[allow(dead_code)]  // Called only when seccomp feature is enabled
+#[allow(dead_code)] // Called only when seccomp feature is enabled
 fn enable_seccomp_whitelist(whitelist: SeccompWhitelist) -> Result<(), Box<dyn std::error::Error>> {
     use libseccomp::{ScmpAction, ScmpSyscall};
 
@@ -807,8 +843,10 @@ fn enable_seccomp_whitelist(whitelist: SeccompWhitelist) -> Result<(), Box<dyn s
 }
 
 #[cfg(not(all(feature = "seccomp", unix, target_os = "linux")))]
-#[allow(dead_code)]  // Stub implementation for platforms without seccomp
-fn enable_seccomp_whitelist(_whitelist: SeccompWhitelist) -> Result<(), Box<dyn std::error::Error>> {
+#[allow(dead_code)] // Stub implementation for platforms without seccomp
+fn enable_seccomp_whitelist(
+    _whitelist: SeccompWhitelist,
+) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "tracing")]
     tracing::warn!("seccomp: not available on this platform; skipping");
     Ok(())
@@ -824,21 +862,15 @@ fn enable_seccomp_whitelist(_whitelist: SeccompWhitelist) -> Result<(), Box<dyn 
 /// - `RLIMIT_AS`: Virtual memory limit (address space)
 /// - `RLIMIT_CPU`: CPU time limit
 #[cfg(all(feature = "resource-limits", unix, target_os = "linux"))]
-#[allow(dead_code)]  // Called only when resource-limits feature is enabled
+#[allow(dead_code)] // Called only when resource-limits feature is enabled
 fn set_resource_limits(memory_bytes: u64, cpu_secs: u64) -> Result<(), Box<dyn std::error::Error>> {
-    use nix::sys::resource::{setrlimit, Resource};
+    use nix::sys::resource::{Resource, setrlimit};
 
-    setrlimit(
-        Resource::RLIMIT_AS,
-        memory_bytes,
-        memory_bytes,
-    ).map_err(|e| format!("failed to set memory limit: {}", e))?;
+    setrlimit(Resource::RLIMIT_AS, memory_bytes, memory_bytes)
+        .map_err(|e| format!("failed to set memory limit: {}", e))?;
 
-    setrlimit(
-        Resource::RLIMIT_CPU,
-        cpu_secs,
-        cpu_secs,
-    ).map_err(|e| format!("failed to set CPU limit: {}", e))?;
+    setrlimit(Resource::RLIMIT_CPU, cpu_secs, cpu_secs)
+        .map_err(|e| format!("failed to set CPU limit: {}", e))?;
 
     #[cfg(feature = "tracing")]
     tracing::info!(
@@ -851,8 +883,11 @@ fn set_resource_limits(memory_bytes: u64, cpu_secs: u64) -> Result<(), Box<dyn s
 }
 
 #[cfg(not(all(feature = "resource-limits", unix, target_os = "linux")))]
-#[allow(dead_code)]  // Stub implementation for platforms without resource-limits
-fn set_resource_limits(_memory_bytes: u64, _cpu_secs: u64) -> Result<(), Box<dyn std::error::Error>> {
+#[allow(dead_code)] // Stub implementation for platforms without resource-limits
+fn set_resource_limits(
+    _memory_bytes: u64,
+    _cpu_secs: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "tracing")]
     tracing::warn!(
         "resource limits: not available on this platform; skipping memory={}, cpu={}",
@@ -908,7 +943,10 @@ fn validate_path_string(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     // Paths with .. could be used for escape, so warn about them
     if path.contains("..") {
         #[cfg(feature = "tracing")]
-        tracing::warn!("path contains '..': {}; be aware this could allow directory traversal", path);
+        tracing::warn!(
+            "path contains '..': {}; be aware this could allow directory traversal",
+            path
+        );
     }
 
     Ok(())
@@ -1022,8 +1060,8 @@ fn check_path_in_whitelist(
     allowed_paths: &[String],
     allow_symlinks: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use std::path::Path;  // {, PathBuf};
     use std::fs;
+    use std::path::Path; // {, PathBuf};
 
     let path_obj = Path::new(file_path);
 
@@ -1086,11 +1124,7 @@ fn check_path_in_whitelist(
                     return Ok(());
                 }
             }
-            Err(format!(
-                "path outside whitelist and cannot verify: {}",
-                file_path
-            )
-            .into())
+            Err(format!("path outside whitelist and cannot verify: {}", file_path).into())
         }
     }
 }
@@ -1500,40 +1534,35 @@ mod tests {
 
     #[test]
     fn test_builder_with_read_path_success() {
-        let result = SandboxedEnvironmentBuilder::new()
-            .with_read_path("/templates");
+        let result = SandboxedEnvironmentBuilder::new().with_read_path("/templates");
 
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_builder_with_read_path_invalid_empty() {
-        let result = SandboxedEnvironmentBuilder::new()
-            .with_read_path("");
+        let result = SandboxedEnvironmentBuilder::new().with_read_path("");
 
         assert!(result.is_err());
     }
 
     #[test]
     fn test_builder_with_write_path_success() {
-        let result = SandboxedEnvironmentBuilder::new()
-            .with_write_path("/output");
+        let result = SandboxedEnvironmentBuilder::new().with_write_path("/output");
 
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_builder_with_write_path_invalid_empty() {
-        let result = SandboxedEnvironmentBuilder::new()
-            .with_write_path("");
+        let result = SandboxedEnvironmentBuilder::new().with_write_path("");
 
         assert!(result.is_err());
     }
 
     #[test]
     fn test_builder_allow_symlinks_true() {
-        let builder = SandboxedEnvironmentBuilder::new()
-            .allow_symlinks(true);
+        let builder = SandboxedEnvironmentBuilder::new().allow_symlinks(true);
 
         let env = builder.build();
         assert!(env.config().path_policy.is_some());
@@ -1542,8 +1571,7 @@ mod tests {
 
     #[test]
     fn test_builder_allow_symlinks_false() {
-        let builder = SandboxedEnvironmentBuilder::new()
-            .allow_symlinks(false);
+        let builder = SandboxedEnvironmentBuilder::new().allow_symlinks(false);
 
         let env = builder.build();
         assert!(env.config().path_policy.is_some());
@@ -1570,7 +1598,10 @@ mod tests {
 
         assert!(builder.is_ok());
         let env = builder.unwrap().build();
-        assert_eq!(env.config().path_policy.as_ref().unwrap().read_paths.len(), 3);
+        assert_eq!(
+            env.config().path_policy.as_ref().unwrap().read_paths.len(),
+            3
+        );
     }
 
     #[test]
@@ -1582,7 +1613,10 @@ mod tests {
 
         assert!(builder.is_ok());
         let env = builder.unwrap().build();
-        assert_eq!(env.config().path_policy.as_ref().unwrap().write_paths.len(), 3);
+        assert_eq!(
+            env.config().path_policy.as_ref().unwrap().write_paths.len(),
+            3
+        );
     }
 
     #[test]
@@ -1636,8 +1670,7 @@ mod tests {
     #[test]
     fn test_path_policy_with_read_path_string_type() {
         // Test that with_read_path accepts &str
-        let policy = PathPolicy::new()
-            .with_read_path("/var/templates");
+        let policy = PathPolicy::new().with_read_path("/var/templates");
 
         assert_eq!(policy.read_paths[0], "/var/templates");
     }
@@ -1645,11 +1678,8 @@ mod tests {
     #[test]
     fn test_path_policy_with_read_path_string_owned() {
         // Test that with_read_path accepts String
-        let policy = PathPolicy::new()
-            .with_read_path(String::from("/var/templates"));
+        let policy = PathPolicy::new().with_read_path(String::from("/var/templates"));
 
         assert_eq!(policy.read_paths[0], "/var/templates");
     }
 }
-
-

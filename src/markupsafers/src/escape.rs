@@ -21,12 +21,12 @@ use crate::markup::Markup;
 #[inline]
 pub fn html_escape_char(c: char) -> Option<&'static str> {
     match c {
-        '&'  => Some("&amp;"),
-        '<'  => Some("&lt;"),
-        '>'  => Some("&gt;"),
-        '"'  => Some("&#34;"),
+        '&' => Some("&amp;"),
+        '<' => Some("&lt;"),
+        '>' => Some("&gt;"),
+        '"' => Some("&#34;"),
         '\'' => Some("&#39;"),
-        _    => None,
+        _ => None,
     }
 }
 
@@ -141,7 +141,9 @@ impl MarkupEscapeWriter {
 
     /// Create a writer with pre-allocated capacity.
     pub fn with_capacity(cap: usize) -> Self {
-        MarkupEscapeWriter { buf: String::with_capacity(cap) }
+        MarkupEscapeWriter {
+            buf: String::with_capacity(cap),
+        }
     }
 
     /// Consume the writer and return the accumulated `Markup`.

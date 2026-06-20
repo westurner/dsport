@@ -52,12 +52,15 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\\[ \t\n]", TEXT),
         Rule::token(r"(?m)[ \t]+", TEXT),
     ]);
-    m.insert(r"include", vec![
-        Rule::token(r"(?m)[\w/]+", NAME),
-        Rule::token(r"(?m),", PUNCTUATION),
-        Rule::token(r"(?m)[ \t]", TEXT),
-        Rule::token_to(r"(?m)[;\n]", TEXT, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"include",
+        vec![
+            Rule::token(r"(?m)[\w/]+", NAME),
+            Rule::token(r"(?m),", PUNCTUATION),
+            Rule::token(r"(?m)[ \t]", TEXT),
+            Rule::token_to(r"(?m)[;\n]", TEXT, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

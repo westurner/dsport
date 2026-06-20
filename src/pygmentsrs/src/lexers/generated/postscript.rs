@@ -43,16 +43,26 @@ fn build_table() -> Table {
         Rule::token(r"(?m)(a(?:bs|dd|load|r(?:c(?:(?:n)?)|ray)|tan)|b(?:egin|ind)|c(?:eiling|harpath|l(?:ip|osepath)|o(?:ncat(?:(?:matrix)?)|py|s)|ur(?:rent(?:linewidth|matrix|point)|veto)|v(?:[is]))|d(?:ef(?:(?:aultmatrix)?)|i(?:ct(?:(?:stackoverflow)?)|v)|transform|up)|e(?:nd|x(?:ch|ec|it|p))|f(?:i(?:ll|ndfont)|loor)|g(?:et(?:(?:interval)?)|restore|save|t)|i(?:d(?:entmatrix|iv|transform)|n(?:(?:de|vertmatri)x)|transform)|l(?:ength|ineto|n|o(?:ad|g|op))|m(?:atrix|o(?:d|veto)|ul)|ne(?:g|wpath)|p(?:ath(?:bbox|forall)|op|rint|stack|ut)|quit|r(?:an(?:d|gecheck)|curveto|e(?:peat|store)|lineto|moveto|o(?:ll|tate|und)|un)|s(?:ave|cale(?:(?:font)?)|et(?:dash|font|gray|line(?:cap|join|width)|matrix|rgbcolor)|h(?:fill|ow(?:(?:page)?))|in|qrt|t(?:ack|r(?:ingwidth|oke(?:(?:path)?)))|ub|yntaxerror)|t(?:r(?:ans(?:form|late)|uncate)|ypecheck)|undefined(?:(?:filename|result)?))(?=[()<>\[\]{}/%\s])", NAME_BUILTIN),
         Rule::token(r"(?m)\s+", WHITESPACE),
     ]);
-    m.insert(r"stringliteral", vec![
-        Rule::token(r"(?m)[^()\\]+", STRING),
-        Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
-        Rule::token_to(r"(?m)\(", STRING, NewState::PushSame),
-        Rule::token_to(r"(?m)\)", STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"escape", vec![
-        Rule::token_to(r"(?m)[0-8]{3}|n|r|t|b|f|\\|\(|\)", STRING_ESCAPE, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"stringliteral",
+        vec![
+            Rule::token(r"(?m)[^()\\]+", STRING),
+            Rule::token_to(r"(?m)\\", STRING_ESCAPE, NewState::Push(vec![r"escape"])),
+            Rule::token_to(r"(?m)\(", STRING, NewState::PushSame),
+            Rule::token_to(r"(?m)\)", STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"escape",
+        vec![
+            Rule::token_to(
+                r"(?m)[0-8]{3}|n|r|t|b|f|\\|\(|\)",
+                STRING_ESCAPE,
+                NewState::Pop(1),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

@@ -25,20 +25,118 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::bygroups(r"(?m)(.*?)(:)( +file format )(.*?)$", vec![Some(NAME_LABEL), Some(PUNCTUATION), Some(TEXT), Some(STRING)]),
-        Rule::bygroups(r"(?m)(Disassembly of section )(.*?)(:)$", vec![Some(TEXT), Some(NAME_LABEL), Some(PUNCTUATION)]),
-        Rule::bygroups(r"(?m)([0-9A-Za-z]+)( )(<)(.*?)([-+])(0[xX][A-Za-z0-9]+)(>:)$", vec![Some(NUMBER_HEX), Some(WHITESPACE), Some(PUNCTUATION), Some(NAME_FUNCTION), Some(PUNCTUATION), Some(NUMBER_HEX), Some(PUNCTUATION)]),
-        Rule::bygroups(r"(?m)([0-9A-Za-z]+)( )(<)(.*?)(>:)$", vec![Some(NUMBER_HEX), Some(WHITESPACE), Some(PUNCTUATION), Some(NAME_FUNCTION), Some(PUNCTUATION)]),
-        Rule::bygroups_g(r"(?m)( *)([0-9A-Za-z]+:)(\t)((?:[0-9A-Za-z][0-9A-Za-z] )+)( *	)([a-zA-Z].*?)$", vec![Some(GroupAction::Token(WHITESPACE)), Some(GroupAction::Token(NAME_LABEL)), Some(GroupAction::Token(WHITESPACE)), Some(GroupAction::Token(NUMBER_HEX)), Some(GroupAction::Token(WHITESPACE)), Some(GroupAction::UsingLexer { alias: "gas", state: None })]),
-        Rule::bygroups_g(r"(?m)( *)([0-9A-Za-z]+:)( *\t)([a-zA-Z].*?)$", vec![Some(GroupAction::Token(WHITESPACE)), Some(GroupAction::Token(NAME_LABEL)), Some(GroupAction::Token(WHITESPACE)), Some(GroupAction::UsingLexer { alias: "gas", state: None })]),
-        Rule::bygroups(r"(?m)( *)([0-9A-Za-z]+:)(\t)((?:[0-9A-Za-z][0-9A-Za-z] )+)( *)(.*?)$", vec![Some(WHITESPACE), Some(NAME_LABEL), Some(WHITESPACE), Some(NUMBER_HEX), Some(WHITESPACE), Some(STRING)]),
-        Rule::bygroups(r"(?m)( *)([0-9A-Za-z]+:)(\t)((?:[0-9A-Za-z][0-9A-Za-z] )+)$", vec![Some(WHITESPACE), Some(NAME_LABEL), Some(WHITESPACE), Some(NUMBER_HEX)]),
-        Rule::token(r"(?m)\t\.\.\.$", TEXT),
-        Rule::bygroups(r"(?m)(\t\t\t)([0-9A-Za-z]+:)( )([^\t]+)(\t)(.*?)([-+])(0x[0-9A-Za-z]+)$", vec![Some(WHITESPACE), Some(NAME_LABEL), Some(WHITESPACE), Some(NAME_PROPERTY), Some(WHITESPACE), Some(NAME_CONSTANT), Some(PUNCTUATION), Some(NUMBER_HEX)]),
-        Rule::bygroups(r"(?m)(\t\t\t)([0-9A-Za-z]+:)( )([^\t]+)(\t)(.*?)$", vec![Some(WHITESPACE), Some(NAME_LABEL), Some(WHITESPACE), Some(NAME_PROPERTY), Some(WHITESPACE), Some(NAME_CONSTANT)]),
-        Rule::token(r"(?m)[^\n]+\n", OTHER),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::bygroups(
+                r"(?m)(.*?)(:)( +file format )(.*?)$",
+                vec![
+                    Some(NAME_LABEL),
+                    Some(PUNCTUATION),
+                    Some(TEXT),
+                    Some(STRING),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?m)(Disassembly of section )(.*?)(:)$",
+                vec![Some(TEXT), Some(NAME_LABEL), Some(PUNCTUATION)],
+            ),
+            Rule::bygroups(
+                r"(?m)([0-9A-Za-z]+)( )(<)(.*?)([-+])(0[xX][A-Za-z0-9]+)(>:)$",
+                vec![
+                    Some(NUMBER_HEX),
+                    Some(WHITESPACE),
+                    Some(PUNCTUATION),
+                    Some(NAME_FUNCTION),
+                    Some(PUNCTUATION),
+                    Some(NUMBER_HEX),
+                    Some(PUNCTUATION),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?m)([0-9A-Za-z]+)( )(<)(.*?)(>:)$",
+                vec![
+                    Some(NUMBER_HEX),
+                    Some(WHITESPACE),
+                    Some(PUNCTUATION),
+                    Some(NAME_FUNCTION),
+                    Some(PUNCTUATION),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?m)( *)([0-9A-Za-z]+:)(\t)((?:[0-9A-Za-z][0-9A-Za-z] )+)( *	)([a-zA-Z].*?)$",
+                vec![
+                    Some(GroupAction::Token(WHITESPACE)),
+                    Some(GroupAction::Token(NAME_LABEL)),
+                    Some(GroupAction::Token(WHITESPACE)),
+                    Some(GroupAction::Token(NUMBER_HEX)),
+                    Some(GroupAction::Token(WHITESPACE)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "gas",
+                        state: None,
+                    }),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?m)( *)([0-9A-Za-z]+:)( *\t)([a-zA-Z].*?)$",
+                vec![
+                    Some(GroupAction::Token(WHITESPACE)),
+                    Some(GroupAction::Token(NAME_LABEL)),
+                    Some(GroupAction::Token(WHITESPACE)),
+                    Some(GroupAction::UsingLexer {
+                        alias: "gas",
+                        state: None,
+                    }),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?m)( *)([0-9A-Za-z]+:)(\t)((?:[0-9A-Za-z][0-9A-Za-z] )+)( *)(.*?)$",
+                vec![
+                    Some(WHITESPACE),
+                    Some(NAME_LABEL),
+                    Some(WHITESPACE),
+                    Some(NUMBER_HEX),
+                    Some(WHITESPACE),
+                    Some(STRING),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?m)( *)([0-9A-Za-z]+:)(\t)((?:[0-9A-Za-z][0-9A-Za-z] )+)$",
+                vec![
+                    Some(WHITESPACE),
+                    Some(NAME_LABEL),
+                    Some(WHITESPACE),
+                    Some(NUMBER_HEX),
+                ],
+            ),
+            Rule::token(r"(?m)\t\.\.\.$", TEXT),
+            Rule::bygroups(
+                r"(?m)(\t\t\t)([0-9A-Za-z]+:)( )([^\t]+)(\t)(.*?)([-+])(0x[0-9A-Za-z]+)$",
+                vec![
+                    Some(WHITESPACE),
+                    Some(NAME_LABEL),
+                    Some(WHITESPACE),
+                    Some(NAME_PROPERTY),
+                    Some(WHITESPACE),
+                    Some(NAME_CONSTANT),
+                    Some(PUNCTUATION),
+                    Some(NUMBER_HEX),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?m)(\t\t\t)([0-9A-Za-z]+:)( )([^\t]+)(\t)(.*?)$",
+                vec![
+                    Some(WHITESPACE),
+                    Some(NAME_LABEL),
+                    Some(WHITESPACE),
+                    Some(NAME_PROPERTY),
+                    Some(WHITESPACE),
+                    Some(NAME_CONSTANT),
+                ],
+            ),
+            Rule::token(r"(?m)[^\n]+\n", OTHER),
+        ],
+    );
     Table(m)
 }
 

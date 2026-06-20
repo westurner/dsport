@@ -36,56 +36,105 @@ fn build_table() -> Table {
         Rule::bygroups_to(r"(?m)^(Operator)([ \t]+)(?:(IN|CS|CH|HS)([ 	]+))?(?:([0-9]+[smhdw]?)([ 	]+))?([A-Z]+)([ 	]+)", vec![Some(NAME), Some(WHITESPACE), Some(NUMBER_INTEGER), Some(WHITESPACE), Some(NAME_CLASS), Some(WHITESPACE), Some(KEYWORD_TYPE), Some(WHITESPACE)], NewState::Push(vec![r"values"])),
         Rule::bygroups_to(r"(?m)^([^ \t\n]*)([ \t]+)(?:(IN|CS|CH|HS)([ 	]+))?(?:([0-9]+[smhdw]?)([ 	]+))?([A-Z]+)([ 	]+)", vec![Some(NAME), Some(WHITESPACE), Some(NUMBER_INTEGER), Some(WHITESPACE), Some(NAME_CLASS), Some(WHITESPACE), Some(KEYWORD_TYPE), Some(WHITESPACE)], NewState::Push(vec![r"values"])),
     ]);
-    m.insert(r"values", vec![
-        Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"nested"])),
-        Rule::bygroups(r"(?m)(;.*)", vec![Some(COMMENT_SINGLE)]),
-        Rule::token(r"(?m)[ \t]+", WHITESPACE),
-        Rule::token(r"(?m)@\b", OPERATOR),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
-        Rule::token(r"(?m)[0-9]+[smhdw]?$", NUMBER_INTEGER),
-        Rule::bygroups(r"(?m)([0-9]+[smhdw]?)([ \t]+)", vec![Some(NUMBER_INTEGER), Some(WHITESPACE)]),
-        Rule::token(r"(?m)\S+", LITERAL),
-    ]);
-    m.insert(r"simple-value", vec![
-        Rule::bygroups(r"(?m)(;.*)", vec![Some(COMMENT_SINGLE)]),
-        Rule::token(r"(?m)[ \t]+", WHITESPACE),
-        Rule::token(r"(?m)@\b", OPERATOR),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
-        Rule::token(r"(?m)[0-9]+[smhdw]?$", NUMBER_INTEGER),
-        Rule::bygroups(r"(?m)([0-9]+[smhdw]?)([ \t]+)", vec![Some(NUMBER_INTEGER), Some(WHITESPACE)]),
-        Rule::token(r"(?m)\S+", LITERAL),
-    ]);
-    m.insert(r"nested", vec![
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::bygroups(r"(?m)(;.*)", vec![Some(COMMENT_SINGLE)]),
-        Rule::token(r"(?m)[ \t]+", WHITESPACE),
-        Rule::token(r"(?m)@\b", OPERATOR),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
-        Rule::token(r"(?m)[0-9]+[smhdw]?$", NUMBER_INTEGER),
-        Rule::bygroups(r"(?m)([0-9]+[smhdw]?)([ \t]+)", vec![Some(NUMBER_INTEGER), Some(WHITESPACE)]),
-        Rule::token(r"(?m)\S+", LITERAL),
-        Rule::token(r"(?m)[\n]+", WHITESPACE),
-    ]);
-    m.insert(r"multiple-simple-values", vec![
-        Rule::bygroups(r"(?m)(;.*)", vec![Some(COMMENT_SINGLE)]),
-        Rule::token(r"(?m)[ \t]+", WHITESPACE),
-        Rule::token(r"(?m)@\b", OPERATOR),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
-        Rule::token(r"(?m)[0-9]+[smhdw]?$", NUMBER_INTEGER),
-        Rule::bygroups(r"(?m)([0-9]+[smhdw]?)([ \t]+)", vec![Some(NUMBER_INTEGER), Some(WHITESPACE)]),
-        Rule::token(r"(?m)\S+", LITERAL),
-        Rule::token(r"(?m)[\n]+", WHITESPACE),
-    ]);
-    m.insert(r"include", vec![
-        Rule::bygroups_to(r"(?m)([ \t]+)([^ \t\n]+)([ \t]+)([-\._a-zA-Z]+)([ \t]+)(;.*)?$", vec![Some(WHITESPACE), Some(COMMENT_PREPROCFILE), Some(WHITESPACE), Some(NAME), Some(WHITESPACE), Some(COMMENT_SINGLE)], NewState::Pop(1)),
-        Rule::bygroups_to(r"(?m)([ \t]+)([^ \t\n]+)([ \t\n]+)$", vec![Some(WHITESPACE), Some(COMMENT_PREPROCFILE), Some(WHITESPACE)], NewState::Pop(1)),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)\\""#, STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)[^"]+"#, STRING),
-    ]);
+    m.insert(
+        r"values",
+        vec![
+            Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"nested"])),
+            Rule::bygroups(r"(?m)(;.*)", vec![Some(COMMENT_SINGLE)]),
+            Rule::token(r"(?m)[ \t]+", WHITESPACE),
+            Rule::token(r"(?m)@\b", OPERATOR),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
+            Rule::token(r"(?m)[0-9]+[smhdw]?$", NUMBER_INTEGER),
+            Rule::bygroups(
+                r"(?m)([0-9]+[smhdw]?)([ \t]+)",
+                vec![Some(NUMBER_INTEGER), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?m)\S+", LITERAL),
+        ],
+    );
+    m.insert(
+        r"simple-value",
+        vec![
+            Rule::bygroups(r"(?m)(;.*)", vec![Some(COMMENT_SINGLE)]),
+            Rule::token(r"(?m)[ \t]+", WHITESPACE),
+            Rule::token(r"(?m)@\b", OPERATOR),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
+            Rule::token(r"(?m)[0-9]+[smhdw]?$", NUMBER_INTEGER),
+            Rule::bygroups(
+                r"(?m)([0-9]+[smhdw]?)([ \t]+)",
+                vec![Some(NUMBER_INTEGER), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?m)\S+", LITERAL),
+        ],
+    );
+    m.insert(
+        r"nested",
+        vec![
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::bygroups(r"(?m)(;.*)", vec![Some(COMMENT_SINGLE)]),
+            Rule::token(r"(?m)[ \t]+", WHITESPACE),
+            Rule::token(r"(?m)@\b", OPERATOR),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
+            Rule::token(r"(?m)[0-9]+[smhdw]?$", NUMBER_INTEGER),
+            Rule::bygroups(
+                r"(?m)([0-9]+[smhdw]?)([ \t]+)",
+                vec![Some(NUMBER_INTEGER), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?m)\S+", LITERAL),
+            Rule::token(r"(?m)[\n]+", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"multiple-simple-values",
+        vec![
+            Rule::bygroups(r"(?m)(;.*)", vec![Some(COMMENT_SINGLE)]),
+            Rule::token(r"(?m)[ \t]+", WHITESPACE),
+            Rule::token(r"(?m)@\b", OPERATOR),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Push(vec![r"string"])),
+            Rule::token(r"(?m)[0-9]+[smhdw]?$", NUMBER_INTEGER),
+            Rule::bygroups(
+                r"(?m)([0-9]+[smhdw]?)([ \t]+)",
+                vec![Some(NUMBER_INTEGER), Some(WHITESPACE)],
+            ),
+            Rule::token(r"(?m)\S+", LITERAL),
+            Rule::token(r"(?m)[\n]+", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"include",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)([ \t]+)([^ \t\n]+)([ \t]+)([-\._a-zA-Z]+)([ \t]+)(;.*)?$",
+                vec![
+                    Some(WHITESPACE),
+                    Some(COMMENT_PREPROCFILE),
+                    Some(WHITESPACE),
+                    Some(NAME),
+                    Some(WHITESPACE),
+                    Some(COMMENT_SINGLE),
+                ],
+                NewState::Pop(1),
+            ),
+            Rule::bygroups_to(
+                r"(?m)([ \t]+)([^ \t\n]+)([ \t\n]+)$",
+                vec![
+                    Some(WHITESPACE),
+                    Some(COMMENT_PREPROCFILE),
+                    Some(WHITESPACE),
+                ],
+                NewState::Pop(1),
+            ),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)\\""#, STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)[^"]+"#, STRING),
+        ],
+    );
     Table(m)
 }
 

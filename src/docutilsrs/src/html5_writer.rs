@@ -10,13 +10,17 @@
 use crate::doctree::{Doctree, NodeId, NodeKind};
 use std::fmt::Write as _;
 
-pub fn html5(tree: &Doctree, options: &crate::cli::Html5Options, common: &crate::cli::CommonOptions) -> String {
+pub fn html5(
+    tree: &Doctree,
+    options: &crate::cli::Html5Options,
+    common: &crate::cli::CommonOptions,
+) -> String {
     let mut out = String::new();
     let root = tree.root();
     for &c in &tree.node(root).children {
         emit(tree, c, &mut out, options, common);
     }
-    
+
     // Add generator / date string to end of document
     let include_generator = common.no_generator.is_none() && common.generator.is_some();
     let datestamp = get_datestamp(common);
@@ -33,11 +37,17 @@ pub fn html5(tree: &Doctree, options: &crate::cli::Html5Options, common: &crate:
             out.push('.');
         }
     }
-    
+
     out
 }
 
-fn emit(tree: &Doctree, id: NodeId, out: &mut String, options: &crate::cli::Html5Options, common: &crate::cli::CommonOptions) {
+fn emit(
+    tree: &Doctree,
+    id: NodeId,
+    out: &mut String,
+    options: &crate::cli::Html5Options,
+    common: &crate::cli::CommonOptions,
+) {
     let node = tree.node(id);
     match &node.kind {
         NodeKind::Text(s) => out.push_str(&escape(s)),
@@ -141,9 +151,25 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String, options: &crate::cli::Html
         NodeKind::Definition => wrap(tree, &node.children, "dd", out, options, common),
         NodeKind::FieldList => {
             if is_compactable(tree, id, options, true) {
-                wrap_with_class(tree, &node.children, "dl", "field-list simple", out, options, common)
+                wrap_with_class(
+                    tree,
+                    &node.children,
+                    "dl",
+                    "field-list simple",
+                    out,
+                    options,
+                    common,
+                )
             } else {
-                wrap_with_class(tree, &node.children, "dl", "field-list", out, options, common)
+                wrap_with_class(
+                    tree,
+                    &node.children,
+                    "dl",
+                    "field-list",
+                    out,
+                    options,
+                    common,
+                )
             }
         }
         NodeKind::Field => {
@@ -313,14 +339,20 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String, options: &crate::cli::Html
         NodeKind::FootnoteReference { refid, .. } => {
             let style = options.footnote_references.as_deref().unwrap_or("brackets");
             if style == "brackets" {
-                let _ = write!(out, "<a class=\"{style}\" href=\"#{refid}\" id=\"footnote-reference-1\" role=\"doc-noteref\">");
+                let _ = write!(
+                    out,
+                    "<a class=\"{style}\" href=\"#{refid}\" id=\"footnote-reference-1\" role=\"doc-noteref\">"
+                );
                 out.push_str("<span class=\"fn-bracket\">[</span>");
                 for &c in &node.children {
                     emit(tree, c, out, options, common);
                 }
                 out.push_str("<span class=\"fn-bracket\">]</span></a>");
             } else {
-                let _ = write!(out, "<a class=\"{style}\" href=\"#{refid}\" id=\"footnote-reference-1\" role=\"doc-noteref\">");
+                let _ = write!(
+                    out,
+                    "<a class=\"{style}\" href=\"#{refid}\" id=\"footnote-reference-1\" role=\"doc-noteref\">"
+                );
                 for &c in &node.children {
                     emit(tree, c, out, options, common);
                 }
@@ -364,7 +396,14 @@ fn emit(tree: &Doctree, id: NodeId, out: &mut String, options: &crate::cli::Html
     }
 }
 
-fn wrap(tree: &Doctree, children: &[NodeId], tag: &str, out: &mut String, options: &crate::cli::Html5Options, common: &crate::cli::CommonOptions) {
+fn wrap(
+    tree: &Doctree,
+    children: &[NodeId],
+    tag: &str,
+    out: &mut String,
+    options: &crate::cli::Html5Options,
+    common: &crate::cli::CommonOptions,
+) {
     let _ = write!(out, "<{tag}>");
     for &c in children {
         emit(tree, c, out, options, common);
@@ -388,7 +427,11 @@ fn escape(s: &str) -> String {
 
 fn get_math_backend(options: &crate::cli::Html5Options) -> mathrenderrs::MathBackend {
     if let Some(format) = &options.math_output {
-        let fmt = format.split_whitespace().next().unwrap_or("").to_lowercase();
+        let fmt = format
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_lowercase();
         match fmt.as_str() {
             "mathjax" => mathrenderrs::MathBackend::MathJax,
             "html" | "mathml" => mathrenderrs::MathBackend::Ratex, // Fallback since MathML isn't natively MathML here in our backend yet.

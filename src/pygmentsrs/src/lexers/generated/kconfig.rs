@@ -38,52 +38,104 @@ fn build_table() -> Table {
         Rule::token(r#"(?m)"(""|[^"])*""#, STRING_DOUBLE),
         Rule::token(r"(?m)\S+", TEXT),
     ]);
-    m.insert(r"help", vec![
-        Rule::token(r"(?m)\s*\n", TEXT),
-        Rule::token_to(r"(?m)(?:\t| {1,7}\t| {8}){7}.*\n", STRING_DOC, NewState::Push(vec![r"indent7"])),
-        Rule::token_to(r"(?m)(?:\t| {1,7}\t| {8}){6}.*\n", STRING_DOC, NewState::Push(vec![r"indent6"])),
-        Rule::token_to(r"(?m)(?:\t| {1,7}\t| {8}){5}.*\n", STRING_DOC, NewState::Push(vec![r"indent5"])),
-        Rule::token_to(r"(?m)(?:\t| {1,7}\t| {8}){4}.*\n", STRING_DOC, NewState::Push(vec![r"indent4"])),
-        Rule::token_to(r"(?m)(?:\t| {1,7}\t| {8}){3}.*\n", STRING_DOC, NewState::Push(vec![r"indent3"])),
-        Rule::token_to(r"(?m)(?:\t| {1,7}\t| {8}){2}.*\n", STRING_DOC, NewState::Push(vec![r"indent2"])),
-        Rule::token_to(r"(?m)(?:\t| {1,7}\t| {8}).*\n", STRING_DOC, NewState::Push(vec![r"indent1"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"indent7", vec![
-        Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){7}.*\n", STRING_DOC),
-        Rule::token(r"(?m)\s*\n", TEXT),
-        Rule::default(NewState::Pop(2)),
-    ]);
-    m.insert(r"indent6", vec![
-        Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){6}.*\n", STRING_DOC),
-        Rule::token(r"(?m)\s*\n", TEXT),
-        Rule::default(NewState::Pop(2)),
-    ]);
-    m.insert(r"indent5", vec![
-        Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){5}.*\n", STRING_DOC),
-        Rule::token(r"(?m)\s*\n", TEXT),
-        Rule::default(NewState::Pop(2)),
-    ]);
-    m.insert(r"indent4", vec![
-        Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){4}.*\n", STRING_DOC),
-        Rule::token(r"(?m)\s*\n", TEXT),
-        Rule::default(NewState::Pop(2)),
-    ]);
-    m.insert(r"indent3", vec![
-        Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){3}.*\n", STRING_DOC),
-        Rule::token(r"(?m)\s*\n", TEXT),
-        Rule::default(NewState::Pop(2)),
-    ]);
-    m.insert(r"indent2", vec![
-        Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){2}.*\n", STRING_DOC),
-        Rule::token(r"(?m)\s*\n", TEXT),
-        Rule::default(NewState::Pop(2)),
-    ]);
-    m.insert(r"indent1", vec![
-        Rule::token(r"(?m)(?:\t| {1,7}\t| {8}).*\n", STRING_DOC),
-        Rule::token(r"(?m)\s*\n", TEXT),
-        Rule::default(NewState::Pop(2)),
-    ]);
+    m.insert(
+        r"help",
+        vec![
+            Rule::token(r"(?m)\s*\n", TEXT),
+            Rule::token_to(
+                r"(?m)(?:\t| {1,7}\t| {8}){7}.*\n",
+                STRING_DOC,
+                NewState::Push(vec![r"indent7"]),
+            ),
+            Rule::token_to(
+                r"(?m)(?:\t| {1,7}\t| {8}){6}.*\n",
+                STRING_DOC,
+                NewState::Push(vec![r"indent6"]),
+            ),
+            Rule::token_to(
+                r"(?m)(?:\t| {1,7}\t| {8}){5}.*\n",
+                STRING_DOC,
+                NewState::Push(vec![r"indent5"]),
+            ),
+            Rule::token_to(
+                r"(?m)(?:\t| {1,7}\t| {8}){4}.*\n",
+                STRING_DOC,
+                NewState::Push(vec![r"indent4"]),
+            ),
+            Rule::token_to(
+                r"(?m)(?:\t| {1,7}\t| {8}){3}.*\n",
+                STRING_DOC,
+                NewState::Push(vec![r"indent3"]),
+            ),
+            Rule::token_to(
+                r"(?m)(?:\t| {1,7}\t| {8}){2}.*\n",
+                STRING_DOC,
+                NewState::Push(vec![r"indent2"]),
+            ),
+            Rule::token_to(
+                r"(?m)(?:\t| {1,7}\t| {8}).*\n",
+                STRING_DOC,
+                NewState::Push(vec![r"indent1"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"indent7",
+        vec![
+            Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){7}.*\n", STRING_DOC),
+            Rule::token(r"(?m)\s*\n", TEXT),
+            Rule::default(NewState::Pop(2)),
+        ],
+    );
+    m.insert(
+        r"indent6",
+        vec![
+            Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){6}.*\n", STRING_DOC),
+            Rule::token(r"(?m)\s*\n", TEXT),
+            Rule::default(NewState::Pop(2)),
+        ],
+    );
+    m.insert(
+        r"indent5",
+        vec![
+            Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){5}.*\n", STRING_DOC),
+            Rule::token(r"(?m)\s*\n", TEXT),
+            Rule::default(NewState::Pop(2)),
+        ],
+    );
+    m.insert(
+        r"indent4",
+        vec![
+            Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){4}.*\n", STRING_DOC),
+            Rule::token(r"(?m)\s*\n", TEXT),
+            Rule::default(NewState::Pop(2)),
+        ],
+    );
+    m.insert(
+        r"indent3",
+        vec![
+            Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){3}.*\n", STRING_DOC),
+            Rule::token(r"(?m)\s*\n", TEXT),
+            Rule::default(NewState::Pop(2)),
+        ],
+    );
+    m.insert(
+        r"indent2",
+        vec![
+            Rule::token(r"(?m)(?:\t| {1,7}\t| {8}){2}.*\n", STRING_DOC),
+            Rule::token(r"(?m)\s*\n", TEXT),
+            Rule::default(NewState::Pop(2)),
+        ],
+    );
+    m.insert(
+        r"indent1",
+        vec![
+            Rule::token(r"(?m)(?:\t| {1,7}\t| {8}).*\n", STRING_DOC),
+            Rule::token(r"(?m)\s*\n", TEXT),
+            Rule::default(NewState::Pop(2)),
+        ],
+    );
     Table(m)
 }
 

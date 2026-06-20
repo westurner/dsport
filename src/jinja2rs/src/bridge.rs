@@ -56,9 +56,7 @@ impl PyEnvironment {
         let ctx = pydict_to_json(context)?;
         self.inner
             .render_str(source, &ctx)
-            .map_err(|e| {
-                crate::errors::TemplateRuntimeError::new_err(e.to_string())
-            })
+            .map_err(|e| crate::errors::TemplateRuntimeError::new_err(e.to_string()))
     }
 
     /// Get a template by name. Requires the template to have been added via add_template().
@@ -164,15 +162,15 @@ fn pyobj_to_json(obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
         return Ok(serde_json::Value::Number(n.into()));
     }
     if let Ok(f) = obj.extract::<f64>() {
-        let num = serde_json::Number::from_f64(f)
-            .unwrap_or_else(|| serde_json::Number::from(0i64));
+        let num = serde_json::Number::from_f64(f).unwrap_or_else(|| serde_json::Number::from(0i64));
         return Ok(serde_json::Value::Number(num));
     }
     if let Ok(s) = obj.extract::<String>() {
         return Ok(serde_json::Value::String(s));
     }
     if let Ok(list) = obj.cast::<PyList>() {
-        let arr: PyResult<Vec<serde_json::Value>> = list.iter().map(|x| pyobj_to_json(&x)).collect();
+        let arr: PyResult<Vec<serde_json::Value>> =
+            list.iter().map(|x| pyobj_to_json(&x)).collect();
         return Ok(serde_json::Value::Array(arr?));
     }
     if let Ok(d) = obj.cast::<PyDict>() {
@@ -185,17 +183,32 @@ fn pyobj_to_json(obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
 /// Register the bridge classes and functions into the `jinja2rs` Python module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
-    
+
     m.add_class::<PyTemplate>()?;
     m.add_class::<PyEnvironment>()?;
     m.add_class::<PySandboxedEnvironment>()?;
 
     // Register exception types
-    m.add("TemplateNotFound", py.get_type::<crate::errors::TemplateNotFound>())?;
-    m.add("TemplateError", py.get_type::<crate::errors::TemplateError>())?;
-    m.add("TemplateSyntaxError", py.get_type::<crate::errors::TemplateSyntaxError>())?;
-    m.add("UndefinedError", py.get_type::<crate::errors::UndefinedError>())?;
-    m.add("TemplateRuntimeError", py.get_type::<crate::errors::TemplateRuntimeError>())?;
+    m.add(
+        "TemplateNotFound",
+        py.get_type::<crate::errors::TemplateNotFound>(),
+    )?;
+    m.add(
+        "TemplateError",
+        py.get_type::<crate::errors::TemplateError>(),
+    )?;
+    m.add(
+        "TemplateSyntaxError",
+        py.get_type::<crate::errors::TemplateSyntaxError>(),
+    )?;
+    m.add(
+        "UndefinedError",
+        py.get_type::<crate::errors::UndefinedError>(),
+    )?;
+    m.add(
+        "TemplateRuntimeError",
+        py.get_type::<crate::errors::TemplateRuntimeError>(),
+    )?;
 
     Ok(())
 }

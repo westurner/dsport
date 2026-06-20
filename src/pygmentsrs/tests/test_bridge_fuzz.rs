@@ -23,7 +23,9 @@ mod bridge_fuzz_tests {
     fn bridge_available() -> bool {
         use pyo3::prelude::*;
         Python::try_attach(|py| {
-            py.import("pygments").and_then(|_| py.import("pygments.lexers")).is_ok()
+            py.import("pygments")
+                .and_then(|_| py.import("pygments.lexers"))
+                .is_ok()
         })
         .unwrap_or(false)
     }
@@ -43,10 +45,8 @@ mod bridge_fuzz_tests {
         skip_if_needed!();
         // Test lex with random/invalid lexer names - should not panic
         let long_name = "a".repeat(1000);
-        let random_names: Vec<&str> = vec![
-            "xyzunknown", "12345", "!!!",  "", "   ", 
-            "\0", "نص", "😀",
-        ];
+        let random_names: Vec<&str> =
+            vec!["xyzunknown", "12345", "!!!", "", "   ", "\0", "نص", "😀"];
 
         for name in random_names {
             // Should either succeed or return None gracefully
@@ -54,7 +54,7 @@ mod bridge_fuzz_tests {
             // If it returns Some, it's a valid lexer; if None, that's also fine
             let _ = result;
         }
-        
+
         // Test with long name separately
         let result = bridge::lex(&long_name, "test code");
         let _ = result;
@@ -82,7 +82,7 @@ mod bridge_fuzz_tests {
             let result = bridge::lex("python", code);
             let _ = result;
         }
-        
+
         // Very long string as separate test
         let result = bridge::lex("python", &long_str);
         let _ = result;
@@ -94,16 +94,13 @@ mod bridge_fuzz_tests {
     fn fuzz_bridge_format_with_random_formatters() {
         skip_if_needed!();
         // Test format with random/invalid formatter names - should not panic
-        let random_formatters = vec![
-            "xyzunknown", "12345", "!!!",  "", "   ", 
-            "\0", "نص", "😀",
-        ];
-        
+        let random_formatters = vec!["xyzunknown", "12345", "!!!", "", "   ", "\0", "نص", "😀"];
+
         let tokens = vec![("Token.Text".to_string(), "test".to_string())];
 
         for formatter in random_formatters {
             let result = bridge::format(formatter, &tokens);
-            let _ = result;  // Should be None, not panic
+            let _ = result; // Should be None, not panic
         }
     }
 
@@ -134,7 +131,7 @@ mod bridge_fuzz_tests {
 
         for tokens in test_cases {
             let result = bridge::format("html", &tokens);
-            let _ = result;  // Should not panic
+            let _ = result; // Should not panic
         }
     }
 
@@ -144,14 +141,17 @@ mod bridge_fuzz_tests {
     fn fuzz_bridge_lex_all_known_aliases() {
         skip_if_needed!();
         // Test lex with various inputs against all known lexer aliases
-        let aliases = vec!["python", "javascript", "json", "shell", "cpp", "html", "xml"];
-        let long_code = "a".repeat(10000);
-        let codes: Vec<&str> = vec![
-            "",
-            "x",
-            "test\0code",
-            "🎉",
+        let aliases = vec![
+            "python",
+            "javascript",
+            "json",
+            "shell",
+            "cpp",
+            "html",
+            "xml",
         ];
+        let long_code = "a".repeat(10000);
+        let codes: Vec<&str> = vec!["", "x", "test\0code", "🎉"];
 
         for alias in aliases {
             for code in &codes {
@@ -159,7 +159,7 @@ mod bridge_fuzz_tests {
                 // Should not panic - may succeed or fail gracefully
                 let _ = result;
             }
-            
+
             // Test with long code separately
             let result = bridge::lex(alias, &long_code);
             let _ = result;
@@ -196,13 +196,19 @@ mod bridge_fuzz_tests {
         skip_if_needed!();
         // Same input should produce same output (no random behavior)
         let code = "x = 42";
-        
+
         let result1 = bridge::lex("python", code);
         let result2 = bridge::lex("python", code);
         let result3 = bridge::lex("python", code);
 
-        assert_eq!(result1, result2, "identical lex calls should produce identical results");
-        assert_eq!(result2, result3, "identical lex calls should produce identical results");
+        assert_eq!(
+            result1, result2,
+            "identical lex calls should produce identical results"
+        );
+        assert_eq!(
+            result2, result3,
+            "identical lex calls should produce identical results"
+        );
     }
 
     #[test]
@@ -229,11 +235,7 @@ mod bridge_fuzz_tests {
     fn fuzz_bridge_edge_case_null_bytes() {
         skip_if_needed!();
         // Test handling of null bytes in code
-        let codes_with_nulls = vec![
-            "code\0here",
-            "\0\0\0",
-            "start\0middle\0end",
-        ];
+        let codes_with_nulls = vec!["code\0here", "\0\0\0", "start\0middle\0end"];
 
         for code in codes_with_nulls {
             let result = bridge::lex("python", code);
@@ -247,7 +249,7 @@ mod bridge_fuzz_tests {
         skip_if_needed!();
         // Test with extremely long inputs
         let long_code = "x = 1\n".repeat(100000); // ~600KB
-        
+
         let result = bridge::lex("python", &long_code);
         // Should handle or gracefully fail
         let _ = result;
@@ -257,22 +259,15 @@ mod bridge_fuzz_tests {
     fn fuzz_bridge_edge_case_unicode_everywhere() {
         skip_if_needed!();
         // Test with unicode in all positions
-        let unicode_codes: Vec<&str> = vec![
-            "🎉",
-            "نص",
-            "日本語",
-            "你好",
-            "مرحبا",
-            "Здравствуй",
-        ];
-        
+        let unicode_codes: Vec<&str> = vec!["🎉", "نص", "日本語", "你好", "مرحبا", "Здравствуй"];
+
         let repeated_emoji = "🎉".repeat(100);
 
         for code in unicode_codes {
             let result = bridge::lex("python", code);
             let _ = result;
         }
-        
+
         // Test with repeated emoji separately
         let result = bridge::lex("python", &repeated_emoji);
         let _ = result;
@@ -283,9 +278,9 @@ mod bridge_fuzz_tests {
         skip_if_needed!();
         // Test with mixed line ending styles
         let codes = vec![
-            "a\nb\nc",           // \n
-            "a\r\nb\r\nc",       // \r\n
-            "a\rb\rc",           // \r
+            "a\nb\nc",          // \n
+            "a\r\nb\r\nc",      // \r\n
+            "a\rb\rc",          // \r
             "a\n\r\nb\r\nc\ne", // mixed
         ];
 
@@ -305,7 +300,7 @@ mod bridge_fuzz_tests {
             "\n",
             "   \t\t\n\n   ",
             "\r\n\r\n\r\n",
-            "\x0b\x0c\x1c",  // Form feed, vertical tab, etc.
+            "\x0b\x0c\x1c", // Form feed, vertical tab, etc.
         ];
 
         for code in whitespace_codes {
@@ -332,7 +327,7 @@ mod bridge_fuzz_tests {
         skip_if_needed!();
         // Rapid sequential format calls - stress test
         let tokens = vec![("Token.Number".to_string(), "42".to_string())];
-        
+
         for _ in 0..100 {
             let result = bridge::format("html", &tokens);
             assert!(result.is_some(), "rapid format call failed");
@@ -345,7 +340,7 @@ mod bridge_fuzz_tests {
         // Alternating lex and format calls - stress test interactions
         for i in 0..50 {
             let code = format!("x = {}", i);
-            
+
             if let Some(tokens) = bridge::lex("python", &code) {
                 let _ = bridge::format("html", &tokens);
             }
@@ -358,8 +353,15 @@ mod bridge_fuzz_tests {
         // Lex the same code with many different languages
         let code = "x = 42";
         let languages = vec![
-            "python", "javascript", "json", "shell", 
-            "cpp", "java", "ruby", "go", "rust",
+            "python",
+            "javascript",
+            "json",
+            "shell",
+            "cpp",
+            "java",
+            "ruby",
+            "go",
+            "rust",
         ];
 
         for lang in languages {

@@ -39,57 +39,152 @@ fn build_table() -> Table {
         Rule::token(r#"(?m)[^\s#${}\[\]:=+?.@\\"\']+"#, TEXT),
         Rule::token(r"(?m).", TEXT),
     ]);
-    m.insert(r"include-line", vec![
-        Rule::token(r"(?m)[ \t]+", WHITESPACE),
-        Rule::token(r"(?m)\\\n", TEXT),
-        Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\$\{@", STRING_INTERPOL, NewState::Push(vec![r"py-interp"])),
-        Rule::bygroups(r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})", vec![Some(STRING_INTERPOL), Some(NAME_VARIABLE), Some(STRING_INTERPOL)]),
-        Rule::token(r"(?m)[^\s$]+", STRING),
-    ]);
-    m.insert(r"interp", vec![
-        Rule::token_to(r"(?m)\$\{@", STRING_INTERPOL, NewState::Push(vec![r"py-interp"])),
-        Rule::bygroups(r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})", vec![Some(STRING_INTERPOL), Some(NAME_VARIABLE), Some(STRING_INTERPOL)]),
-    ]);
-    m.insert(r"statement", vec![
-        Rule::token(r"(?m)[ \t]+", WHITESPACE),
-        Rule::token(r"(?m)\\\n", TEXT),
-        Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
-        Rule::token(r"(?m)(after|before)\b", KEYWORD),
-        Rule::token_to(r"(?m)\$\{@", STRING_INTERPOL, NewState::Push(vec![r"py-interp"])),
-        Rule::bygroups(r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})", vec![Some(STRING_INTERPOL), Some(NAME_VARIABLE), Some(STRING_INTERPOL)]),
-        Rule::token(r"(?m)[^\s$\\]+", NAME),
-    ]);
-    m.insert(r"value", vec![
-        Rule::token(r"(?m)[ \t]+", WHITESPACE),
-        Rule::token(r"(?m)\\\n", STRING_ESCAPE),
-        Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"string-double"])),
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Push(vec![r"string-single"])),
-        Rule::token_to(r"(?m)\$\{@", STRING_INTERPOL, NewState::Push(vec![r"py-interp"])),
-        Rule::bygroups(r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})", vec![Some(STRING_INTERPOL), Some(NAME_VARIABLE), Some(STRING_INTERPOL)]),
-        Rule::token(r#"(?m)[^\s"\'$\\]+"#, STRING),
-    ]);
-    m.insert(r"string-double", vec![
-        Rule::token(r"(?m)\\\n", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\$\{@", STRING_INTERPOL, NewState::Push(vec![r"py-interp"])),
-        Rule::bygroups(r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})", vec![Some(STRING_INTERPOL), Some(NAME_VARIABLE), Some(STRING_INTERPOL)]),
-        Rule::token(r#"(?m)[^"\\$]+"#, STRING_DOUBLE),
-    ]);
-    m.insert(r"string-single", vec![
-        Rule::token(r"(?m)\\\n", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\$\{@", STRING_INTERPOL, NewState::Push(vec![r"py-interp"])),
-        Rule::bygroups(r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})", vec![Some(STRING_INTERPOL), Some(NAME_VARIABLE), Some(STRING_INTERPOL)]),
-        Rule::token(r"(?m)[^'\\$]+", STRING_SINGLE),
-    ]);
-    m.insert(r"py-interp", vec![
-        Rule::token_to(r"(?m)\}", STRING_INTERPOL, NewState::Pop(1)),
-        Rule::using_lexer(r"(?m)[^}]+", "python", None),
-    ]);
+    m.insert(
+        r"include-line",
+        vec![
+            Rule::token(r"(?m)[ \t]+", WHITESPACE),
+            Rule::token(r"(?m)\\\n", TEXT),
+            Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)\$\{@",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"py-interp"]),
+            ),
+            Rule::bygroups(
+                r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})",
+                vec![
+                    Some(STRING_INTERPOL),
+                    Some(NAME_VARIABLE),
+                    Some(STRING_INTERPOL),
+                ],
+            ),
+            Rule::token(r"(?m)[^\s$]+", STRING),
+        ],
+    );
+    m.insert(
+        r"interp",
+        vec![
+            Rule::token_to(
+                r"(?m)\$\{@",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"py-interp"]),
+            ),
+            Rule::bygroups(
+                r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})",
+                vec![
+                    Some(STRING_INTERPOL),
+                    Some(NAME_VARIABLE),
+                    Some(STRING_INTERPOL),
+                ],
+            ),
+        ],
+    );
+    m.insert(
+        r"statement",
+        vec![
+            Rule::token(r"(?m)[ \t]+", WHITESPACE),
+            Rule::token(r"(?m)\\\n", TEXT),
+            Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
+            Rule::token(r"(?m)(after|before)\b", KEYWORD),
+            Rule::token_to(
+                r"(?m)\$\{@",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"py-interp"]),
+            ),
+            Rule::bygroups(
+                r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})",
+                vec![
+                    Some(STRING_INTERPOL),
+                    Some(NAME_VARIABLE),
+                    Some(STRING_INTERPOL),
+                ],
+            ),
+            Rule::token(r"(?m)[^\s$\\]+", NAME),
+        ],
+    );
+    m.insert(
+        r"value",
+        vec![
+            Rule::token(r"(?m)[ \t]+", WHITESPACE),
+            Rule::token(r"(?m)\\\n", STRING_ESCAPE),
+            Rule::token_to(r"(?m)\n", WHITESPACE, NewState::Pop(1)),
+            Rule::token_to(
+                r#"(?m)""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"string-double"]),
+            ),
+            Rule::token_to(
+                r"(?m)'",
+                STRING_SINGLE,
+                NewState::Push(vec![r"string-single"]),
+            ),
+            Rule::token_to(
+                r"(?m)\$\{@",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"py-interp"]),
+            ),
+            Rule::bygroups(
+                r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})",
+                vec![
+                    Some(STRING_INTERPOL),
+                    Some(NAME_VARIABLE),
+                    Some(STRING_INTERPOL),
+                ],
+            ),
+            Rule::token(r#"(?m)[^\s"\'$\\]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"string-double",
+        vec![
+            Rule::token(r"(?m)\\\n", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)\$\{@",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"py-interp"]),
+            ),
+            Rule::bygroups(
+                r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})",
+                vec![
+                    Some(STRING_INTERPOL),
+                    Some(NAME_VARIABLE),
+                    Some(STRING_INTERPOL),
+                ],
+            ),
+            Rule::token(r#"(?m)[^"\\$]+"#, STRING_DOUBLE),
+        ],
+    );
+    m.insert(
+        r"string-single",
+        vec![
+            Rule::token(r"(?m)\\\n", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+            Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)\$\{@",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"py-interp"]),
+            ),
+            Rule::bygroups(
+                r"(?m)(\$\{)([A-Za-z0-9_\-:.+/]+)(\})",
+                vec![
+                    Some(STRING_INTERPOL),
+                    Some(NAME_VARIABLE),
+                    Some(STRING_INTERPOL),
+                ],
+            ),
+            Rule::token(r"(?m)[^'\\$]+", STRING_SINGLE),
+        ],
+    );
+    m.insert(
+        r"py-interp",
+        vec![
+            Rule::token_to(r"(?m)\}", STRING_INTERPOL, NewState::Pop(1)),
+            Rule::using_lexer(r"(?m)[^}]+", "python", None),
+        ],
+    );
     Table(m)
 }
 

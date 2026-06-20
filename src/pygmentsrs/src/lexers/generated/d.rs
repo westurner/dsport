@@ -63,12 +63,15 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
         Rule::bygroups(r"(?m)(#line)(\s)(.*)(\n)", vec![Some(COMMENT_SPECIAL), Some(WHITESPACE), Some(COMMENT_SPECIAL), Some(WHITESPACE)]),
     ]);
-    m.insert(r"nested_comment", vec![
-        Rule::token(r"(?m)[^+/]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\+", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\+/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[+/]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"nested_comment",
+        vec![
+            Rule::token(r"(?m)[^+/]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\+", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\+/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[+/]", COMMENT_MULTILINE),
+        ],
+    );
     m.insert(r"token_string", vec![
         Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::Push(vec![r"token_string_nest"])),
         Rule::token_to(r"(?m)\}", STRING, NewState::Pop(1)),
@@ -149,46 +152,86 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
         Rule::bygroups(r"(?m)(#line)(\s)(.*)(\n)", vec![Some(COMMENT_SPECIAL), Some(WHITESPACE), Some(COMMENT_SPECIAL), Some(WHITESPACE)]),
     ]);
-    m.insert(r"delimited_bracket", vec![
-        Rule::token(r"(?m)[^\[\]]+", STRING),
-        Rule::token_to(r"(?m)\[", STRING, NewState::Push(vec![r"delimited_inside_bracket"])),
-        Rule::token_to(r#"(?m)\]""#, STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"delimited_inside_bracket", vec![
-        Rule::token(r"(?m)[^\[\]]+", STRING),
-        Rule::token_to(r"(?m)\[", STRING, NewState::PushSame),
-        Rule::token_to(r"(?m)\]", STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"delimited_parenthesis", vec![
-        Rule::token(r"(?m)[^()]+", STRING),
-        Rule::token_to(r"(?m)\(", STRING, NewState::Push(vec![r"delimited_inside_parenthesis"])),
-        Rule::token_to(r#"(?m)\)""#, STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"delimited_inside_parenthesis", vec![
-        Rule::token(r"(?m)[^()]+", STRING),
-        Rule::token_to(r"(?m)\(", STRING, NewState::PushSame),
-        Rule::token_to(r"(?m)\)", STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"delimited_angle", vec![
-        Rule::token(r"(?m)[^<>]+", STRING),
-        Rule::token_to(r"(?m)<", STRING, NewState::Push(vec![r"delimited_inside_angle"])),
-        Rule::token_to(r#"(?m)>""#, STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"delimited_inside_angle", vec![
-        Rule::token(r"(?m)[^<>]+", STRING),
-        Rule::token_to(r"(?m)<", STRING, NewState::PushSame),
-        Rule::token_to(r"(?m)>", STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"delimited_curly", vec![
-        Rule::token(r"(?m)[^{}]+", STRING),
-        Rule::token_to(r"(?m)\{", STRING, NewState::Push(vec![r"delimited_inside_curly"])),
-        Rule::token_to(r#"(?m)\}""#, STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"delimited_inside_curly", vec![
-        Rule::token(r"(?m)[^{}]+", STRING),
-        Rule::token_to(r"(?m)\{", STRING, NewState::PushSame),
-        Rule::token_to(r"(?m)\}", STRING, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"delimited_bracket",
+        vec![
+            Rule::token(r"(?m)[^\[\]]+", STRING),
+            Rule::token_to(
+                r"(?m)\[",
+                STRING,
+                NewState::Push(vec![r"delimited_inside_bracket"]),
+            ),
+            Rule::token_to(r#"(?m)\]""#, STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"delimited_inside_bracket",
+        vec![
+            Rule::token(r"(?m)[^\[\]]+", STRING),
+            Rule::token_to(r"(?m)\[", STRING, NewState::PushSame),
+            Rule::token_to(r"(?m)\]", STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"delimited_parenthesis",
+        vec![
+            Rule::token(r"(?m)[^()]+", STRING),
+            Rule::token_to(
+                r"(?m)\(",
+                STRING,
+                NewState::Push(vec![r"delimited_inside_parenthesis"]),
+            ),
+            Rule::token_to(r#"(?m)\)""#, STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"delimited_inside_parenthesis",
+        vec![
+            Rule::token(r"(?m)[^()]+", STRING),
+            Rule::token_to(r"(?m)\(", STRING, NewState::PushSame),
+            Rule::token_to(r"(?m)\)", STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"delimited_angle",
+        vec![
+            Rule::token(r"(?m)[^<>]+", STRING),
+            Rule::token_to(
+                r"(?m)<",
+                STRING,
+                NewState::Push(vec![r"delimited_inside_angle"]),
+            ),
+            Rule::token_to(r#"(?m)>""#, STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"delimited_inside_angle",
+        vec![
+            Rule::token(r"(?m)[^<>]+", STRING),
+            Rule::token_to(r"(?m)<", STRING, NewState::PushSame),
+            Rule::token_to(r"(?m)>", STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"delimited_curly",
+        vec![
+            Rule::token(r"(?m)[^{}]+", STRING),
+            Rule::token_to(
+                r"(?m)\{",
+                STRING,
+                NewState::Push(vec![r"delimited_inside_curly"]),
+            ),
+            Rule::token_to(r#"(?m)\}""#, STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"delimited_inside_curly",
+        vec![
+            Rule::token(r"(?m)[^{}]+", STRING),
+            Rule::token_to(r"(?m)\{", STRING, NewState::PushSame),
+            Rule::token_to(r"(?m)\}", STRING, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

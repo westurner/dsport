@@ -40,12 +40,15 @@ fn build_table() -> Table {
         Rule::token(r"(?m)!=|==|<<|>>|:=|[-~+/*%=<>&^|\.(){},?:\[\]$\\;#]", OPERATOR),
         Rule::token(r"(?m)[\w-]+", TEXT),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^*/#]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*|#\[", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/|#\]", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/#]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^*/#]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*|#\[", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/|#\]", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/#]", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

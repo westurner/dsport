@@ -25,28 +25,45 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)//.*", TokenType::new(&["Comment", "Singleline"])),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::Push(vec![r"comment"])),
-        Rule::token(r"(?m)[0-9]+", NUMBER),
-        Rule::token(r"(?m)(!=|(?:[<=>])=|[*+\-.<=>?\^~])", OPERATOR),
-        Rule::token(r"(?m)(\#(?:<=|[#<]))", NAME_TAG),
-        Rule::token(r"(?m)#[0-9a-f]*_?", NAME_TAG),
-        Rule::token(r"(?m)\$[01]*_?", NAME_TAG),
-        Rule::token(r"(?m)[a-zA-Z_][0-9a-zA-Z_]*", NAME),
-        Rule::token(r"(?m)[;():\[\]{}]", PUNCTUATION),
-    ]);
-    m.insert(r"comments", vec![
-        Rule::token(r"(?m)//.*", TokenType::new(&["Comment", "Singleline"])),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::Push(vec![r"comment"])),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^/*]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)//.*", TokenType::new(&["Comment", "Singleline"])),
+            Rule::token_to(
+                r"(?m)/\*",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"comment"]),
+            ),
+            Rule::token(r"(?m)[0-9]+", NUMBER),
+            Rule::token(r"(?m)(!=|(?:[<=>])=|[*+\-.<=>?\^~])", OPERATOR),
+            Rule::token(r"(?m)(\#(?:<=|[#<]))", NAME_TAG),
+            Rule::token(r"(?m)#[0-9a-f]*_?", NAME_TAG),
+            Rule::token(r"(?m)\$[01]*_?", NAME_TAG),
+            Rule::token(r"(?m)[a-zA-Z_][0-9a-zA-Z_]*", NAME),
+            Rule::token(r"(?m)[;():\[\]{}]", PUNCTUATION),
+        ],
+    );
+    m.insert(
+        r"comments",
+        vec![
+            Rule::token(r"(?m)//.*", TokenType::new(&["Comment", "Singleline"])),
+            Rule::token_to(
+                r"(?m)/\*",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"comment"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^/*]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

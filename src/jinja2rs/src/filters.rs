@@ -100,7 +100,11 @@ pub fn slice_index(values: Value, slices: usize) -> Value {
         total += 1 + sub_len;
     }
 
-    let items_per_slice = if total == 0 { 1 } else { (total + slices - 1) / slices };
+    let items_per_slice = if total == 0 {
+        1
+    } else {
+        (total + slices - 1) / slices
+    };
     let mut result: Vec<Value> = Vec::with_capacity(slices);
     let mut offset = 0usize;
 
@@ -179,7 +183,12 @@ pub fn filesizeformat(value: Value, binary: Option<bool>) -> String {
 /// Examples:
 /// - `"hello\nworld"|indent(2)` → `"hello\n  world"`
 /// - `"hello\nworld"|indent(2, true)` → `"  hello\n  world"`
-pub fn indent(value: Value, width: Option<u64>, first: Option<bool>, blank: Option<bool>) -> String {
+pub fn indent(
+    value: Value,
+    width: Option<u64>,
+    first: Option<bool>,
+    blank: Option<bool>,
+) -> String {
     let s = value.to_string();
     let width = width.unwrap_or(4) as usize;
     let first = first.unwrap_or(false);
@@ -210,7 +219,11 @@ pub fn indent(value: Value, width: Option<u64>, first: Option<bool>, blank: Opti
 ///
 /// Examples:
 /// - `"hello world test"|wordwrap(5)` → `"hello\nworld\ntest"`
-pub fn wordwrap(value: &Value, width: Option<u64>, break_long_words: Option<bool>) -> Result<String, minijinja::Error> {
+pub fn wordwrap(
+    value: &Value,
+    width: Option<u64>,
+    break_long_words: Option<bool>,
+) -> Result<String, minijinja::Error> {
     let s = value.to_string();
     let width = width.unwrap_or(79) as usize;
     let break_long = break_long_words.unwrap_or(false);
@@ -294,8 +307,9 @@ pub fn xmlattr(attrs: Value) -> String {
     if let Ok(json_str) = serde_json::to_string(&attrs) {
         if let Ok(serde_json::Value::Object(map)) = serde_json::from_str(&json_str) {
             for (key, val) in map.iter() {
-                let escaped = val.to_string()
-                    .trim_matches('"')  // JSON serialization adds quotes
+                let escaped = val
+                    .to_string()
+                    .trim_matches('"') // JSON serialization adds quotes
                     .replace('&', "&amp;")
                     .replace('<', "&lt;")
                     .replace('>', "&gt;")
@@ -415,20 +429,32 @@ mod tests {
         assert_eq!(filesizeformat(Value::from(512.0), Some(true)), "512 B");
         assert_eq!(filesizeformat(Value::from(1024.0), Some(true)), "1.0 KiB");
         assert_eq!(filesizeformat(Value::from(1536.0), Some(true)), "1.5 KiB");
-        assert_eq!(filesizeformat(Value::from(1048576.0), Some(true)), "1.0 MiB");
+        assert_eq!(
+            filesizeformat(Value::from(1048576.0), Some(true)),
+            "1.0 MiB"
+        );
     }
 
     #[test]
     fn test_filesizeformat_decimal() {
         assert_eq!(filesizeformat(Value::from(1000.0), Some(false)), "1.0 kB");
         assert_eq!(filesizeformat(Value::from(1500.0), Some(false)), "1.5 kB");
-        assert_eq!(filesizeformat(Value::from(1000000.0), Some(false)), "1.0 MB");
+        assert_eq!(
+            filesizeformat(Value::from(1000000.0), Some(false)),
+            "1.0 MB"
+        );
     }
 
     #[test]
     fn test_filesizeformat_large() {
-        assert_eq!(filesizeformat(Value::from(1099511627776.0), Some(true)), "1.0 TiB");
-        assert_eq!(filesizeformat(Value::from(1000000000000.0), Some(false)), "1.0 TB");
+        assert_eq!(
+            filesizeformat(Value::from(1099511627776.0), Some(true)),
+            "1.0 TiB"
+        );
+        assert_eq!(
+            filesizeformat(Value::from(1000000000000.0), Some(false)),
+            "1.0 TB"
+        );
     }
 
     #[test]
@@ -439,20 +465,35 @@ mod tests {
 
     #[test]
     fn test_indent_default() {
-        assert_eq!(indent(Value::from("hello\nworld"), None, None, None), "hello\n    world");
-        assert_eq!(indent(Value::from("hello\nworld"), Some(2), None, None), "hello\n  world");
+        assert_eq!(
+            indent(Value::from("hello\nworld"), None, None, None),
+            "hello\n    world"
+        );
+        assert_eq!(
+            indent(Value::from("hello\nworld"), Some(2), None, None),
+            "hello\n  world"
+        );
     }
 
     #[test]
     fn test_indent_first_line() {
-        assert_eq!(indent(Value::from("hello\nworld"), Some(2), Some(true), None), "  hello\n  world");
+        assert_eq!(
+            indent(Value::from("hello\nworld"), Some(2), Some(true), None),
+            "  hello\n  world"
+        );
     }
 
     #[test]
     fn test_indent_blank_lines() {
         let input = "hello\n\nworld";
-        assert_eq!(indent(Value::from(input), Some(2), Some(false), Some(false)), "hello\n\n  world");
-        assert_eq!(indent(Value::from(input), Some(2), Some(false), Some(true)), "hello\n  \n  world");
+        assert_eq!(
+            indent(Value::from(input), Some(2), Some(false), Some(false)),
+            "hello\n\n  world"
+        );
+        assert_eq!(
+            indent(Value::from(input), Some(2), Some(false), Some(true)),
+            "hello\n  \n  world"
+        );
     }
 
     #[test]
@@ -532,4 +573,3 @@ mod tests {
         assert!(encoded.contains("lang=en"));
     }
 }
-

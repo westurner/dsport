@@ -42,35 +42,56 @@ fn build_table() -> Table {
         Rule::token(r"(?im)\$|[^0-9|\/|\-](\-\=|\+\=|\*\=|\\\=|\=|\=\=|\=\=\=|\+|\-|\*|\\|\+\=|\>|\<)[^\>|\/]", OPERATOR),
         Rule::token(r"(?im)(\||\(|\)|\,|\;|\=|\-|\+|\*|\/|\>|\<|\:)", OPERATOR),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?im)\#.*", COMMENT_SINGLE),
-        Rule::token(r"(?im)/\*(.|\n)*?\*/", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?im)\#.*", COMMENT_SINGLE),
+            Rule::token(r"(?im)/\*(.|\n)*?\*/", COMMENT_MULTILINE),
+        ],
+    );
     m.insert(r"keywords", vec![
         Rule::token(r"(?im)(?<!\.)(A(?:CCUM|N(?:[DY])|PI|S(?:(?:C)?)|VG)|B(?:A(?:G|TCH)|ETWEEN|O(?:OL|TH)|REAK|Y)|C(?:A(?:SE|TCH)|O(?:ALESCE|MPRESS|NTINUE|UNT)|REATE)|D(?:ATETIME(?:(?:_(?:ADD|SUB))?)|E(?:LETE|SC)|ISTRIBUTED|O(?:(?:UBLE)?))|E(?:DGE|LSE|ND|SCAPE|XCEPTION)|F(?:ALSE|IL(?:E|TER)|LOAT|OR(?:(?:EACH)?)|ROM)|G(?:R(?:APH|OUP)|SQL_(?:INT_M(?:AX|IN)|UINT_MAX))|HAVING|I(?:N(?:SERT|T(?:(?:ER(?:PRET|SECT|VAL)|O)?))|SEMPTY|[FNS])|JSON(?:ARRAY|OBJECT)|L(?:ASTHOP|EADING|I(?:KE|(?:MI|S)T)|O(?:AD_ACCUM|G))|M(?:A(?:TCH|[PX])|IN(?:(?:US)?))|N(?:O(?:[TW])|ULL)|O(?:FFSET|R(?:(?:DER)?))|P(?:ATH|ER|INNED|OST(?:(?:[\-_])ACCUM)|RI(?:MARY_ID|NT))|QUERY|R(?:A(?:(?:IS|NG)E)|E(?:PLACE|SET_COLLECTION_ACCUM|TURN(?:(?:S)?))|UN)|S(?:AMPLE|E(?:LECT(?:(?:_VERTEX)?)|T)|RC|T(?:ATIC|RING)|UM|YNTAX)|T(?:A(?:(?:GSTG|RGE)T)|HEN|O(?:(?:_(?:CSV|DATETIME))?)|R(?:AILING|IM|UE|Y)|UPLE|YPEDEF)|U(?:INT|NION|PDATE)|V(?:ALUES|ERTEX)|W(?:H(?:E(?:N|RE)|ILE)|ITH))\b", KEYWORD),
     ]);
-    m.insert(r"clauses", vec![
-        Rule::token(r"(?im)(accum|having|limit|order|postAccum|(?:sampl|wher)e)", NAME_BUILTIN),
-    ]);
+    m.insert(
+        r"clauses",
+        vec![Rule::token(
+            r"(?im)(accum|having|limit|order|postAccum|(?:sampl|wher)e)",
+            NAME_BUILTIN,
+        )],
+    );
     m.insert(r"accums", vec![
         Rule::token(r"(?im)((?:MapA|(?:a(?:nd|rray|vg)|b(?:ag|itwise(?:and|or))|groupby|heap|list|m(?:ax|in)|or|s(?:et|um))a)ccum)", NAME_BUILTIN),
     ]);
-    m.insert(r"relations", vec![
-        Rule::bygroups_g(r"(?im)(-\s?)(\(.*\:\w?\))(\s?-)", vec![Some(GroupAction::Token(OPERATOR)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(OPERATOR))]),
-        Rule::token(r"(?im)->|<-", OPERATOR),
-        Rule::token(r"(?im)[.*{}\[\]\<\>\_]", PUNCTUATION),
-    ]);
-    m.insert(r"strings", vec![
-        Rule::token(r#"(?im)"([^"\\]|\\.)*""#, STRING),
-        Rule::token(r"(?im)@{1,2}\w+", NAME_VARIABLE),
-    ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?im)\s+", WHITESPACE),
-    ]);
-    m.insert(r"barewords", vec![
-        Rule::token(r"(?im)[a-z]\w*", NAME),
-        Rule::token(r"(?im)(\d+\.\d+|\d+)", NUMBER),
-    ]);
+    m.insert(
+        r"relations",
+        vec![
+            Rule::bygroups_g(
+                r"(?im)(-\s?)(\(.*\:\w?\))(\s?-)",
+                vec![
+                    Some(GroupAction::Token(OPERATOR)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(OPERATOR)),
+                ],
+            ),
+            Rule::token(r"(?im)->|<-", OPERATOR),
+            Rule::token(r"(?im)[.*{}\[\]\<\>\_]", PUNCTUATION),
+        ],
+    );
+    m.insert(
+        r"strings",
+        vec![
+            Rule::token(r#"(?im)"([^"\\]|\\.)*""#, STRING),
+            Rule::token(r"(?im)@{1,2}\w+", NAME_VARIABLE),
+        ],
+    );
+    m.insert(r"whitespace", vec![Rule::token(r"(?im)\s+", WHITESPACE)]);
+    m.insert(
+        r"barewords",
+        vec![
+            Rule::token(r"(?im)[a-z]\w*", NAME),
+            Rule::token(r"(?im)(\d+\.\d+|\d+)", NUMBER),
+        ],
+    );
     m.insert(r"operators", vec![
         Rule::token(r"(?im)\$|[^0-9|\/|\-](\-\=|\+\=|\*\=|\\\=|\=|\=\=|\=\=\=|\+|\-|\*|\\|\+\=|\>|\<)[^\>|\/]", OPERATOR),
         Rule::token(r"(?im)(\||\(|\)|\,|\;|\=|\-|\+|\*|\/|\>|\<|\:)", OPERATOR),

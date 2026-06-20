@@ -705,15 +705,19 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)(?:[_a-zA-Z]\w*)", NAME_CONSTANT),
         Rule::default(NewState::Pop(2)),
     ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?ms)""""#, STRING_DOUBLE, NewState::Push(vec![r"tdqs"])),
-        Rule::token_to(r"(?ms)'''", STRING_SINGLE, NewState::Push(vec![r"tsqs"])),
-        Rule::token_to(r#"(?ms)""#, STRING_DOUBLE, NewState::Push(vec![r"dqs"])),
-        Rule::token_to(r"(?ms)'", STRING_SINGLE, NewState::Push(vec![r"sqs"])),
-    ]);
-    m.insert(r":", vec![
-        Rule::token_to(r"(?ms):", PUNCTUATION, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?ms)""""#, STRING_DOUBLE, NewState::Push(vec![r"tdqs"])),
+            Rule::token_to(r"(?ms)'''", STRING_SINGLE, NewState::Push(vec![r"tsqs"])),
+            Rule::token_to(r#"(?ms)""#, STRING_DOUBLE, NewState::Push(vec![r"dqs"])),
+            Rule::token_to(r"(?ms)'", STRING_SINGLE, NewState::Push(vec![r"sqs"])),
+        ],
+    );
+    m.insert(
+        r":",
+        vec![Rule::token_to(r"(?ms):", PUNCTUATION, NewState::Pop(1))],
+    );
     m.insert(r"function-name", vec![
         Rule::token(r"(?ms)(<<([^>]|>>>|>(?!>))*>>)+", STRING_INTERPOL),
         Rule::token_to(r"(?ms)(?=(?:[_a-zA-Z]\w*)?(?:\\|\s|(?://(?:[^\\\n]|\\+[\w\W])*$)|(?:/\*(?:[^*]|\*(?!/))*\*/))*[({])", TEXT, NewState::Pop(1)),
@@ -817,9 +821,13 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)<<\s*(as\s+decreasingly\s+likely\s+outcomes|cycling|else|end|first\s+time|one\s+of|only|or|otherwise|(sticky|(then\s+)?(purely\s+)?at)\s+random|stopping|(then\s+)?(half\s+)?shuffled|\|\|)\s*>>", STRING_INTERPOL),
         Rule::token_to(r#"(?ms)<<(%(_((?:\\(?:[\n\\<>"\'^v bnrt]|u[\da-fA-F]{,4}|x[\da-fA-F]{,2}|[0-3]?[0-7]{1,2}))|\\?.)|[\-+ ,#]|\[\d*\]?)*\d*\.?\d*((?:\\(?:[\n\\<>"\'^v bnrt]|u[\da-fA-F]{,4}|x[\da-fA-F]{,2}|[0-3]?[0-7]{1,2}))|\\?.)|\s*((else|otherwise)\s+)?(if|unless)\b)?"#, STRING_INTERPOL, NewState::Push(vec![r"block/embed", r"more/embed", r"main"])),
     ]);
-    m.insert(r"s/entity", vec![
-        Rule::token(r"(?ms)(?i)&(#(x[\da-f]+|\d+)|[a-z][\da-z]*);?", NAME_ENTITY),
-    ]);
+    m.insert(
+        r"s/entity",
+        vec![Rule::token(
+            r"(?ms)(?i)&(#(x[\da-f]+|\d+)|[a-z][\da-z]*);?",
+            NAME_ENTITY,
+        )],
+    );
     m.insert(r"tdqs", vec![
         Rule::token_to(r#"(?ms)"{3,}"#, STRING_DOUBLE, NewState::Pop(1)),
         Rule::token(r#"(?ms)\\"+"#, STRING_ESCAPE),
@@ -1160,28 +1168,40 @@ fn build_table() -> Table {
         Rule::token(r#"(?ms)\{\{|\}\}|(?:\\(?:[\n\\<>"\'^v bnrt]|u[\da-fA-F]{,4}|x[\da-fA-F]{,2}|[0-3]?[0-7]{1,2}))"#, STRING_ESCAPE),
         Rule::token(r#"(?ms)["\'\s&{<}\\]"#, STRING_OTHER),
     ]);
-    m.insert(r"tdqr", vec![
-        Rule::token(r#"(?ms)[^\\"]+"#, STRING_REGEX),
-        Rule::token(r#"(?ms)\\"*"#, STRING_REGEX),
-        Rule::token_to(r#"(?ms)"{3,}"#, STRING_REGEX, NewState::Pop(1)),
-        Rule::token(r#"(?ms)""#, STRING_REGEX),
-    ]);
-    m.insert(r"tsqr", vec![
-        Rule::token(r"(?ms)[^\\']+", STRING_REGEX),
-        Rule::token(r"(?ms)\\'*", STRING_REGEX),
-        Rule::token_to(r"(?ms)'{3,}", STRING_REGEX, NewState::Pop(1)),
-        Rule::token(r"(?ms)'", STRING_REGEX),
-    ]);
-    m.insert(r"dqr", vec![
-        Rule::token(r#"(?ms)[^\\"]+"#, STRING_REGEX),
-        Rule::token(r#"(?ms)\\"?"#, STRING_REGEX),
-        Rule::token_to(r#"(?ms)""#, STRING_REGEX, NewState::Pop(1)),
-    ]);
-    m.insert(r"sqr", vec![
-        Rule::token(r"(?ms)[^\\']+", STRING_REGEX),
-        Rule::token(r"(?ms)\\'?", STRING_REGEX),
-        Rule::token_to(r"(?ms)'", STRING_REGEX, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"tdqr",
+        vec![
+            Rule::token(r#"(?ms)[^\\"]+"#, STRING_REGEX),
+            Rule::token(r#"(?ms)\\"*"#, STRING_REGEX),
+            Rule::token_to(r#"(?ms)"{3,}"#, STRING_REGEX, NewState::Pop(1)),
+            Rule::token(r#"(?ms)""#, STRING_REGEX),
+        ],
+    );
+    m.insert(
+        r"tsqr",
+        vec![
+            Rule::token(r"(?ms)[^\\']+", STRING_REGEX),
+            Rule::token(r"(?ms)\\'*", STRING_REGEX),
+            Rule::token_to(r"(?ms)'{3,}", STRING_REGEX, NewState::Pop(1)),
+            Rule::token(r"(?ms)'", STRING_REGEX),
+        ],
+    );
+    m.insert(
+        r"dqr",
+        vec![
+            Rule::token(r#"(?ms)[^\\"]+"#, STRING_REGEX),
+            Rule::token(r#"(?ms)\\"?"#, STRING_REGEX),
+            Rule::token_to(r#"(?ms)""#, STRING_REGEX, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"sqr",
+        vec![
+            Rule::token(r"(?ms)[^\\']+", STRING_REGEX),
+            Rule::token(r"(?ms)\\'?", STRING_REGEX),
+            Rule::token_to(r"(?ms)'", STRING_REGEX, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

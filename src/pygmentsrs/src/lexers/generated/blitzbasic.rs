@@ -49,11 +49,14 @@ fn build_table() -> Table {
         Rule::token(r"(?im)\b(Asc|C(?:ase|hr)|D(?:ata|e(?:fault|lete))|E(?:ach|lse(?:(?:If)?)|nd(?:(?:If)?)|xit)|F(?:or(?:(?:ever)?)|unction)|Go(?:sub|to)|I(?:f|n(?:clude|sert))|Len|Ne(?:w|xt)|Re(?:ad|peat|store|turn)|S(?:elect|tep)|T(?:hen|o|ype)|Until|W(?:end|hile))\b", KEYWORD_RESERVED),
         Rule::bygroups(r"(?im)([a-z]\w*)(?:([ \t]*)(@{1,2}|[#$%])|([ \t]*)([.])([ \t]*)(?:([a-z]\w*)))?", vec![Some(NAME_VARIABLE), Some(WHITESPACE), Some(KEYWORD_TYPE), Some(WHITESPACE), Some(PUNCTUATION), Some(WHITESPACE), Some(NAME_CLASS)]),
     ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?im)"""#, STRING_DOUBLE),
-        Rule::token_to(r#"(?im)"C?"#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r#"(?im)[^"\n]+"#, STRING_DOUBLE),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?im)"""#, STRING_DOUBLE),
+            Rule::token_to(r#"(?im)"C?"#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(r#"(?im)[^"\n]+"#, STRING_DOUBLE),
+        ],
+    );
     Table(m)
 }
 

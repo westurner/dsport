@@ -48,13 +48,16 @@ fn build_table() -> Table {
         Rule::token(r"(?m)([A-Z][A-Z0-9_]*)", NAME_CLASS),
         Rule::token(r"(?m)\n+", WHITESPACE),
     ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?m)0[xX][a-fA-F0-9]+", NUMBER_HEX),
-        Rule::token(r"(?m)0[bB][01]+", NUMBER_BIN),
-        Rule::token(r"(?m)0[cC][0-7]+", NUMBER_OCT),
-        Rule::token(r"(?m)([0-9]+\.[0-9]*)|([0-9]*\.[0-9]+)", NUMBER_FLOAT),
-        Rule::token(r"(?m)[0-9]+", NUMBER_INTEGER),
-    ]);
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(r"(?m)0[xX][a-fA-F0-9]+", NUMBER_HEX),
+            Rule::token(r"(?m)0[bB][01]+", NUMBER_BIN),
+            Rule::token(r"(?m)0[cC][0-7]+", NUMBER_OCT),
+            Rule::token(r"(?m)([0-9]+\.[0-9]*)|([0-9]*\.[0-9]+)", NUMBER_FLOAT),
+            Rule::token(r"(?m)[0-9]+", NUMBER_INTEGER),
+        ],
+    );
     Table(m)
 }
 

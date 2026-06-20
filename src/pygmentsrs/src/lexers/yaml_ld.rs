@@ -23,9 +23,9 @@
 
 use crate::lexer::Lexer;
 use crate::token::{
-    self, COMMENT_SINGLE, KEYWORD_CONSTANT, NAME_CONSTANT, NAME_DECORATOR,
-    NAME_NAMESPACE, NAME_TAG, NUMBER_FLOAT, NUMBER_INTEGER, PUNCTUATION, PUNCTUATION_INDICATOR,
-    SCALAR_PLAIN, STRING, STRING_DOUBLE, STRING_SINGLE, TokenType, WHITESPACE,
+    self, COMMENT_SINGLE, KEYWORD_CONSTANT, NAME_CONSTANT, NAME_DECORATOR, NAME_NAMESPACE,
+    NAME_TAG, NUMBER_FLOAT, NUMBER_INTEGER, PUNCTUATION, PUNCTUATION_INDICATOR, SCALAR_PLAIN,
+    STRING, STRING_DOUBLE, STRING_SINGLE, TokenType, WHITESPACE,
 };
 
 // ── JSON-LD keywords (the `@keyword` set from JSON-LD 1.1) ─────────────────
@@ -80,16 +80,16 @@ const HTML_KEY_HINTS: &[&str] = &["html", "template", "snippet", "markup"];
 
 fn is_markdown_key(k: &str) -> bool {
     let lower = k.to_lowercase();
-    MARKDOWN_KEY_HINTS
-        .iter()
-        .any(|h| lower == *h || lower.ends_with(&format!("_{h}")) || lower.ends_with(&format!("-{h}")))
+    MARKDOWN_KEY_HINTS.iter().any(|h| {
+        lower == *h || lower.ends_with(&format!("_{h}")) || lower.ends_with(&format!("-{h}"))
+    })
 }
 
 fn is_html_key(k: &str) -> bool {
     let lower = k.to_lowercase();
-    HTML_KEY_HINTS
-        .iter()
-        .any(|h| lower == *h || lower.ends_with(&format!("_{h}")) || lower.ends_with(&format!("-{h}")))
+    HTML_KEY_HINTS.iter().any(|h| {
+        lower == *h || lower.ends_with(&format!("_{h}")) || lower.ends_with(&format!("-{h}"))
+    })
 }
 
 // ── YAML scalar value classification helpers ────────────────────────────────
@@ -100,8 +100,24 @@ fn is_yaml_null(s: &str) -> bool {
 fn is_yaml_bool(s: &str) -> bool {
     matches!(
         s,
-        "true" | "True" | "TRUE" | "false" | "False" | "FALSE" | "yes" | "Yes"
-            | "YES" | "no" | "No" | "NO" | "on" | "On" | "ON" | "off" | "Off" | "OFF"
+        "true"
+            | "True"
+            | "TRUE"
+            | "false"
+            | "False"
+            | "FALSE"
+            | "yes"
+            | "Yes"
+            | "YES"
+            | "no"
+            | "No"
+            | "NO"
+            | "on"
+            | "On"
+            | "ON"
+            | "off"
+            | "Off"
+            | "OFF"
     )
 }
 fn is_yaml_int(s: &str) -> bool {
@@ -125,8 +141,18 @@ fn is_yaml_float(s: &str) -> bool {
     let s = s.trim();
     matches!(
         s,
-        ".inf" | ".Inf" | ".INF" | "-.inf" | "-.Inf" | "-.INF" | "+.inf"
-            | "+.Inf" | "+.INF" | ".nan" | ".NaN" | ".NAN"
+        ".inf"
+            | ".Inf"
+            | ".INF"
+            | "-.inf"
+            | "-.Inf"
+            | "-.INF"
+            | "+.inf"
+            | "+.Inf"
+            | "+.INF"
+            | ".nan"
+            | ".NaN"
+            | ".NAN"
     ) || {
         let s2 = s.strip_prefix(['+', '-']).unwrap_or(s);
         s2.contains('.')
@@ -143,7 +169,9 @@ fn is_iri_like(s: &str) -> bool {
         || s.starts_with("_:")
         || s.starts_with("urn:")
         || s.starts_with("doi:")
-        || (s.contains(':') && !s.contains(' ') && s.chars().next().map_or(false, |c| c.is_alphabetic()))
+        || (s.contains(':')
+            && !s.contains(' ')
+            && s.chars().next().map_or(false, |c| c.is_alphabetic()))
 }
 
 // ── Token type for IRI values ───────────────────────────────────────────────
@@ -197,7 +225,11 @@ impl Lexer for YamlLdLexer {
 
             // ── Sequence entry ('-' item) ─────────────────────────────────
             if let Some(rest) = trimmed.strip_prefix("- ").or_else(|| {
-                if trimmed == "-" || trimmed.starts_with("-\n") { Some(&trimmed[1..]) } else { None }
+                if trimmed == "-" || trimmed.starts_with("-\n") {
+                    Some(&trimmed[1..])
+                } else {
+                    None
+                }
             }) {
                 if indent_len > 0 {
                     out.push((WHITESPACE, line[..indent_len].to_string()));
@@ -230,7 +262,9 @@ impl Lexer for YamlLdLexer {
                     // Block scalar (`|` or `>`)
                     out.push((WHITESPACE, " ".to_string()));
                     out.push((PUNCTUATION_INDICATOR, bi.to_string()));
-                    if let Some(newline) = trimmed.strip_prefix(&format!("{key_part}: {bi}")).map(str::to_string)
+                    if let Some(newline) = trimmed
+                        .strip_prefix(&format!("{key_part}: {bi}"))
+                        .map(str::to_string)
                         .or_else(|| Some("\n".to_string()))
                     {
                         out.push((WHITESPACE, newline));
@@ -240,7 +274,12 @@ impl Lexer for YamlLdLexer {
 
                     if !scalar_content.is_empty() {
                         if is_markdown_key(&bare_key) {
-                            dispatch_embedded(&scalar_content, "markdown", indent_len + 2, &mut out);
+                            dispatch_embedded(
+                                &scalar_content,
+                                "markdown",
+                                indent_len + 2,
+                                &mut out,
+                            );
                         } else if is_html_key(&bare_key) {
                             dispatch_embedded(&scalar_content, "html", indent_len + 2, &mut out);
                         } else {
@@ -621,7 +660,11 @@ where
 
 /// Emit block scalar content as-is (as `Name.Constant` chunks, matching
 /// the Pygments YAML lexer's convention).
-fn emit_block_scalar_content(content: &str, scalar_indent: usize, out: &mut Vec<(TokenType, String)>) {
+fn emit_block_scalar_content(
+    content: &str,
+    scalar_indent: usize,
+    out: &mut Vec<(TokenType, String)>,
+) {
     for line in content.split_inclusive('\n') {
         if line.trim().is_empty() {
             out.push((WHITESPACE, line.to_string()));
@@ -650,7 +693,12 @@ fn emit_block_scalar_content(content: &str, scalar_indent: usize, out: &mut Vec<
 /// Dispatch a block scalar to an embedded lexer (markdown or html).
 /// The `scalar_indent` bytes are stripped from each non-empty line before
 /// lexing, then re-emitted as `Text` (to mirror RST's do_insertions style).
-fn dispatch_embedded(content: &str, lang: &str, scalar_indent: usize, out: &mut Vec<(TokenType, String)>) {
+fn dispatch_embedded(
+    content: &str,
+    lang: &str,
+    scalar_indent: usize,
+    out: &mut Vec<(TokenType, String)>,
+) {
     use crate::lexers::registry::get_lexer_by_name;
 
     let lang_leaked: &'static str = Box::leak(lang.to_string().into_boxed_str());
@@ -665,7 +713,10 @@ fn dispatch_embedded(content: &str, lang: &str, scalar_indent: usize, out: &mut 
                 let indent = line.len() - line.trim_start().len();
                 let strip = indent.min(scalar_indent);
                 if strip > 0 {
-                    insertions.push((stripped.len(), vec![(token::WHITESPACE, line[..strip].to_string())]));
+                    insertions.push((
+                        stripped.len(),
+                        vec![(token::WHITESPACE, line[..strip].to_string())],
+                    ));
                 }
                 stripped.push_str(&line[strip..]);
             }

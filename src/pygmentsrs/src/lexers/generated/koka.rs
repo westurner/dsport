@@ -56,12 +56,22 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)'", STRING_CHAR, NewState::Push(vec![r"char"])),
         Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"string"])),
     ]);
-    m.insert(r"whitespace", vec![
-        Rule::bygroups(r"(?m)(\n\s*)(#.*)$", vec![Some(WHITESPACE), Some(COMMENT_PREPROC)]),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::Push(vec![r"comment"])),
-        Rule::token(r"(?m)//.*$", COMMENT_SINGLE),
-    ]);
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::bygroups(
+                r"(?m)(\n\s*)(#.*)$",
+                vec![Some(WHITESPACE), Some(COMMENT_PREPROC)],
+            ),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(
+                r"(?m)/\*",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"comment"]),
+            ),
+            Rule::token(r"(?m)//.*$", COMMENT_SINGLE),
+        ],
+    );
     m.insert(r"alias-type", vec![
         Rule::token(r"(?m)=", KEYWORD),
         Rule::token_to(r"(?m)[(\[<]", NAME_ATTRIBUTE, NewState::Push(vec![r"type-nested"])),
@@ -146,39 +156,54 @@ fn build_table() -> Table {
         Rule::token(r"(?m)::|->|[.:|]", NAME_ATTRIBUTE),
         Rule::default(NewState::Pop(1)),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^/*]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"litstring", vec![
-        Rule::token(r#"(?m)[^"]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?m)"""#, STRING_ESCAPE),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^\\"\n]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?m)\\[nrt\\"\']"#, STRING_ESCAPE),
-        Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\U[0-9a-fA-F]{6}", STRING_ESCAPE),
-        Rule::token_to(r#"(?m)["\n]"#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"escape-sequence", vec![
-        Rule::token(r#"(?m)\\[nrt\\"\']"#, STRING_ESCAPE),
-        Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\U[0-9a-fA-F]{6}", STRING_ESCAPE),
-    ]);
-    m.insert(r"char", vec![
-        Rule::token(r"(?m)[^\\\'\n]+", STRING_CHAR),
-        Rule::token(r#"(?m)\\[nrt\\"\']"#, STRING_ESCAPE),
-        Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
-        Rule::token(r"(?m)\\U[0-9a-fA-F]{6}", STRING_ESCAPE),
-        Rule::token_to(r"(?m)[\'\n]", STRING_CHAR, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^/*]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"litstring",
+        vec![
+            Rule::token(r#"(?m)[^"]+"#, STRING_DOUBLE),
+            Rule::token(r#"(?m)"""#, STRING_ESCAPE),
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^\\"\n]+"#, STRING_DOUBLE),
+            Rule::token(r#"(?m)\\[nrt\\"\']"#, STRING_ESCAPE),
+            Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\U[0-9a-fA-F]{6}", STRING_ESCAPE),
+            Rule::token_to(r#"(?m)["\n]"#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"escape-sequence",
+        vec![
+            Rule::token(r#"(?m)\\[nrt\\"\']"#, STRING_ESCAPE),
+            Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\U[0-9a-fA-F]{6}", STRING_ESCAPE),
+        ],
+    );
+    m.insert(
+        r"char",
+        vec![
+            Rule::token(r"(?m)[^\\\'\n]+", STRING_CHAR),
+            Rule::token(r#"(?m)\\[nrt\\"\']"#, STRING_ESCAPE),
+            Rule::token(r"(?m)\\x[0-9a-fA-F]{2}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\u[0-9a-fA-F]{4}", STRING_ESCAPE),
+            Rule::token(r"(?m)\\U[0-9a-fA-F]{6}", STRING_ESCAPE),
+            Rule::token_to(r"(?m)[\'\n]", STRING_CHAR, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

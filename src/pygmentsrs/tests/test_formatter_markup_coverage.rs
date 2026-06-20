@@ -1,13 +1,13 @@
 //! Comprehensive branch coverage tests for formatter markup
 //! Target: Cover LaTeX, RTF, SVG, Pango escape sequences and edge cases
-//! 
+//!
 //! The formatter markup module (src/pygmentsrs/src/formatters/markup.rs) handles:
 //! - LaTeX escape sequences (control chars, special chars, math mode)
 //! - RTF escape sequences (color table, font table, hex escapes)
 //! - Pango markup (XML entities, text decorations)
 //! - Groff/man page markup
 //! - SVG/XML formatting (dimension calculations, font metrics)
-//! 
+//!
 //! Tests cover all escape paths, special character handling, and edge cases.
 
 use pygmentsrs::formatters::registry::format_native;
@@ -15,12 +15,9 @@ use pygmentsrs::token::*;
 
 fn format_with(name: &str, _src: &str) -> String {
     // Create a simple token set representing plain text
-    let tokens = vec![
-        (TEXT, _src.to_string()),
-    ];
-    
-    format_native(name, &tokens)
-        .unwrap_or_default()
+    let tokens = vec![(TEXT, _src.to_string())];
+
+    format_native(name, &tokens).unwrap_or_default()
 }
 
 // ============================================================================
@@ -191,7 +188,7 @@ fn test_rtf_high_byte_values() {
 }
 
 // ============================================================================
-// SVG Formatter Tests  
+// SVG Formatter Tests
 // ============================================================================
 
 #[test]
@@ -256,7 +253,7 @@ fn test_svg_width_height_calculations() {
     // SVG uses 7.2 pixels per char, verify reasonable output
     let output = format_with("svg", "short");
     assert!(!output.is_empty());
-    
+
     let long = "verylongstringtotestwidthcalculations";
     let output_long = format_with("svg", long);
     assert!(!output_long.is_empty());

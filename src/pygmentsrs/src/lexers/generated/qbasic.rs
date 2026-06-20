@@ -56,18 +56,30 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[\[\]{}(),;]", PUNCTUATION),
         Rule::token(r"(?m)[\w]+", NAME_VARIABLE_GLOBAL),
     ]);
-    m.insert(r"declarations", vec![
-        Rule::token(r"(?m)\b(DATA|LET)(?=\(|\b)", KEYWORD_DECLARATION),
-    ]);
+    m.insert(
+        r"declarations",
+        vec![Rule::token(
+            r"(?m)\b(DATA|LET)(?=\(|\b)",
+            KEYWORD_DECLARATION,
+        )],
+    );
     m.insert(r"functions", vec![
         Rule::token(r"(?m)\b(ABS|ASC|ATN|CDBL|CHR\$|CINT|CLNG|COMMAND\$|COS|CSNG|CSRLIN|CVD|CVDMBF|CVI|CVL|CVS|CVSMBF|DATE\$|ENVIRON\$|EOF|ERDEV|ERDEV\$|ERL|ERR|EXP|FILEATTR|FIX|FRE|FREEFILE|HEX\$|INKEY\$|INP|INPUT\$|INSTR|INT|IOCTL\$|LBOUND|LCASE\$|LEFT\$|LEN|LOC|LOF|LOG|LPOS|LTRIM\$|MID\$|MKD\$|MKDMBF\$|MKI\$|MKL\$|MKS\$|MKSMBF\$|OCT\$|PEEK|PEN|PLAY|PMAP|POINT|POS|RIGHT\$|RND|RTRIM\$|SADD|SCREEN|SEEK|SETMEM|SGN|SIN|SPACE\$|SPC|SQR|STICK|STR\$|STRIG|STRING\$|TAB|TAN|TIME\$|TIMER|UBOUND|UCASE\$|VAL|VARPTR|VARPTR\$|VARSEG)(?=\(|\b)", KEYWORD_RESERVED),
     ]);
-    m.insert(r"metacommands", vec![
-        Rule::token(r"(?m)\b(\$DYNAMIC|\$INCLUDE|\$STATIC)(?=\(|\b)", KEYWORD_CONSTANT),
-    ]);
-    m.insert(r"operators", vec![
-        Rule::token(r"(?m)\b(AND|EQV|IMP|NOT|OR|XOR)(?=\(|\b)", OPERATOR_WORD),
-    ]);
+    m.insert(
+        r"metacommands",
+        vec![Rule::token(
+            r"(?m)\b(\$DYNAMIC|\$INCLUDE|\$STATIC)(?=\(|\b)",
+            KEYWORD_CONSTANT,
+        )],
+    );
+    m.insert(
+        r"operators",
+        vec![Rule::token(
+            r"(?m)\b(AND|EQV|IMP|NOT|OR|XOR)(?=\(|\b)",
+            OPERATOR_WORD,
+        )],
+    );
     m.insert(r"statements", vec![
         Rule::token(r"(?m)\b(BEEP|BLOAD|BSAVE|CALL|CALL\ ABSOLUTE|CALL\ INTERRUPT|CALLS|CHAIN|CHDIR|CIRCLE|CLEAR|CLOSE|CLS|COLOR|COM|COMMON|CONST|DATA|DATE\$|DECLARE|DEF\ FN|DEF\ SEG|DEFDBL|DEFINT|DEFLNG|DEFSNG|DEFSTR|DEF|DIM|DO|LOOP|DRAW|END|ENVIRON|ERASE|ERROR|EXIT|FIELD|FILES|FOR|NEXT|FUNCTION|GET|GOSUB|GOTO|IF|THEN|INPUT|INPUT\ \#|IOCTL|KEY|KEY|KILL|LET|LINE|LINE\ INPUT|LINE\ INPUT\ \#|LOCATE|LOCK|UNLOCK|LPRINT|LSET|MID\$|MKDIR|NAME|ON\ COM|ON\ ERROR|ON\ KEY|ON\ PEN|ON\ PLAY|ON\ STRIG|ON\ TIMER|ON\ UEVENT|ON|OPEN|OPEN\ COM|OPTION\ BASE|OUT|PAINT|PALETTE|PCOPY|PEN|PLAY|POKE|PRESET|PRINT|PRINT\ \#|PRINT\ USING|PSET|PUT|PUT|RANDOMIZE|READ|REDIM|REM|RESET|RESTORE|RESUME|RETURN|RMDIR|RSET|RUN|SCREEN|SEEK|SELECT\ CASE|SHARED|SHELL|SLEEP|SOUND|STATIC|STOP|STRIG|SUB|SWAP|SYSTEM|TIME\$|TIMER|TROFF|TRON|TYPE|UEVENT|UNLOCK|VIEW|WAIT|WHILE|WEND|WIDTH|WINDOW|WRITE)\b", KEYWORD_RESERVED),
     ]);

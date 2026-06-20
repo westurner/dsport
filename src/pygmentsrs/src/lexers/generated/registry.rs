@@ -25,20 +25,56 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)Windows Registry Editor.*", TEXT),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)[;#].*", COMMENT_SINGLE),
-        Rule::bygroups(r"(?m)(\[)(-?)(HKEY_[A-Z_]+)(.*?\])$", vec![Some(KEYWORD), Some(OPERATOR), Some(NAME_BUILTIN), Some(KEYWORD)]),
-        Rule::bygroups_to(r#"(?m)("(?:\\"|\\\\|[^"])+")([ \t]*)(=)([ \t]*)"#, vec![Some(NAME_ATTRIBUTE), Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE)], NewState::Push(vec![r"value"])),
-        Rule::bygroups_to(r"(?m)(.*?)([ \t]*)(=)([ \t]*)", vec![Some(NAME_ATTRIBUTE), Some(WHITESPACE), Some(OPERATOR), Some(WHITESPACE)], NewState::Push(vec![r"value"])),
-    ]);
-    m.insert(r"value", vec![
-        Rule::token_to(r"(?m)-", OPERATOR, NewState::Pop(1)),
-        Rule::bygroups_to(r"(?m)(dword|hex(?:\([0-9a-fA-F]\))?)(:)([0-9a-fA-F,]+)", vec![Some(NAME_VARIABLE), Some(PUNCTUATION), Some(NUMBER)], NewState::Pop(1)),
-        Rule::token_to(r"(?m).+", STRING, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)Windows Registry Editor.*", TEXT),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)[;#].*", COMMENT_SINGLE),
+            Rule::bygroups(
+                r"(?m)(\[)(-?)(HKEY_[A-Z_]+)(.*?\])$",
+                vec![
+                    Some(KEYWORD),
+                    Some(OPERATOR),
+                    Some(NAME_BUILTIN),
+                    Some(KEYWORD),
+                ],
+            ),
+            Rule::bygroups_to(
+                r#"(?m)("(?:\\"|\\\\|[^"])+")([ \t]*)(=)([ \t]*)"#,
+                vec![
+                    Some(NAME_ATTRIBUTE),
+                    Some(WHITESPACE),
+                    Some(OPERATOR),
+                    Some(WHITESPACE),
+                ],
+                NewState::Push(vec![r"value"]),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(.*?)([ \t]*)(=)([ \t]*)",
+                vec![
+                    Some(NAME_ATTRIBUTE),
+                    Some(WHITESPACE),
+                    Some(OPERATOR),
+                    Some(WHITESPACE),
+                ],
+                NewState::Push(vec![r"value"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"value",
+        vec![
+            Rule::token_to(r"(?m)-", OPERATOR, NewState::Pop(1)),
+            Rule::bygroups_to(
+                r"(?m)(dword|hex(?:\([0-9a-fA-F]\))?)(:)([0-9a-fA-F,]+)",
+                vec![Some(NAME_VARIABLE), Some(PUNCTUATION), Some(NUMBER)],
+                NewState::Pop(1),
+            ),
+            Rule::token_to(r"(?m).+", STRING, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

@@ -47,66 +47,134 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*", NAME),
         Rule::token(r"(?m)\$[A-Z_a-z][0-9A-Z_a-z-]*", NAME_VARIABLE),
     ]);
-    m.insert(r"import-path", vec![
-        Rule::token_to(r#"(?m)"([^"]|\\.)*""#, STRING_SYMBOL, NewState::Push(vec![r"root"])),
-    ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
-        Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
-    ]);
-    m.insert(r"_tmp_0", vec![
-        Rule::token_to(r#"(?m)"([^"]|\\.)*""#, STRING_SYMBOL, NewState::Push(vec![r"root"])),
-        Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
-        Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
-    ]);
-    m.insert(r"import-alias", vec![
-        Rule::token_to(r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*", NAME_NAMESPACE, NewState::Push(vec![r"root"])),
-    ]);
-    m.insert(r"_tmp_1", vec![
-        Rule::token_to(r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*", NAME_NAMESPACE, NewState::Push(vec![r"root"])),
-        Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
-        Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
-    ]);
-    m.insert(r"constant", vec![
-        Rule::token_to(r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*", NAME_VARIABLE, NewState::Push(vec![r"root"])),
-    ]);
-    m.insert(r"_tmp_2", vec![
-        Rule::token_to(r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*", NAME_VARIABLE, NewState::Push(vec![r"root"])),
-        Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
-        Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
-    ]);
-    m.insert(r"function", vec![
-        Rule::token_to(r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*", NAME_FUNCTION, NewState::Push(vec![r"_tmp_4"])),
-    ]);
-    m.insert(r"function-parameter-list", vec![
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"_tmp_5"])),
-    ]);
-    m.insert(r"function-parameters", vec![
-        Rule::token(r"(?m),", PUNCTUATION),
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Push(vec![r"root"])),
-        Rule::token(r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*", NAME_VARIABLE),
-    ]);
-    m.insert(r"_tmp_5", vec![
-        Rule::token(r"(?m),", PUNCTUATION),
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Push(vec![r"root"])),
-        Rule::token(r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*", NAME_VARIABLE),
-        Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
-        Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
-    ]);
-    m.insert(r"_tmp_4", vec![
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"_tmp_5"])),
-        Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
-        Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
-    ]);
-    m.insert(r"_tmp_3", vec![
-        Rule::token_to(r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*", NAME_FUNCTION, NewState::Push(vec![r"_tmp_4"])),
-        Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
-        Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r"(?m)\\.", STRING_ESCAPE),
-    ]);
+    m.insert(
+        r"import-path",
+        vec![Rule::token_to(
+            r#"(?m)"([^"]|\\.)*""#,
+            STRING_SYMBOL,
+            NewState::Push(vec![r"root"]),
+        )],
+    );
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
+            Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
+        ],
+    );
+    m.insert(
+        r"_tmp_0",
+        vec![
+            Rule::token_to(
+                r#"(?m)"([^"]|\\.)*""#,
+                STRING_SYMBOL,
+                NewState::Push(vec![r"root"]),
+            ),
+            Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
+            Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
+        ],
+    );
+    m.insert(
+        r"import-alias",
+        vec![Rule::token_to(
+            r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*",
+            NAME_NAMESPACE,
+            NewState::Push(vec![r"root"]),
+        )],
+    );
+    m.insert(
+        r"_tmp_1",
+        vec![
+            Rule::token_to(
+                r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*",
+                NAME_NAMESPACE,
+                NewState::Push(vec![r"root"]),
+            ),
+            Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
+            Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
+        ],
+    );
+    m.insert(
+        r"constant",
+        vec![Rule::token_to(
+            r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*",
+            NAME_VARIABLE,
+            NewState::Push(vec![r"root"]),
+        )],
+    );
+    m.insert(
+        r"_tmp_2",
+        vec![
+            Rule::token_to(
+                r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*",
+                NAME_VARIABLE,
+                NewState::Push(vec![r"root"]),
+            ),
+            Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
+            Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
+        ],
+    );
+    m.insert(
+        r"function",
+        vec![Rule::token_to(
+            r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*",
+            NAME_FUNCTION,
+            NewState::Push(vec![r"_tmp_4"]),
+        )],
+    );
+    m.insert(
+        r"function-parameter-list",
+        vec![Rule::token_to(
+            r"(?m)\(",
+            PUNCTUATION,
+            NewState::Push(vec![r"_tmp_5"]),
+        )],
+    );
+    m.insert(
+        r"function-parameters",
+        vec![
+            Rule::token(r"(?m),", PUNCTUATION),
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Push(vec![r"root"])),
+            Rule::token(r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*", NAME_VARIABLE),
+        ],
+    );
+    m.insert(
+        r"_tmp_5",
+        vec![
+            Rule::token(r"(?m),", PUNCTUATION),
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Push(vec![r"root"])),
+            Rule::token(r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*", NAME_VARIABLE),
+            Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
+            Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
+        ],
+    );
+    m.insert(
+        r"_tmp_4",
+        vec![
+            Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"_tmp_5"])),
+            Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
+            Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
+        ],
+    );
+    m.insert(
+        r"_tmp_3",
+        vec![
+            Rule::token_to(
+                r"(?m)[A-Z_a-z][0-9A-Z_a-z-]*",
+                NAME_FUNCTION,
+                NewState::Push(vec![r"_tmp_4"]),
+            ),
+            Rule::token(r"(?m)[\t\n\f\r ]+", WHITESPACE),
+            Rule::token(r"(?m)//.*(\n|\Z)", COMMENT_SINGLE),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(r"(?m)\\.", STRING_ESCAPE),
+        ],
+    );
     Table(m)
 }
 

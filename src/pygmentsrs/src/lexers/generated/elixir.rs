@@ -86,70 +86,201 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)%\{", PUNCTUATION, NewState::Push(vec![r"map_key"])),
         Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::Push(vec![r"tuple"])),
     ]);
-    m.insert(r"sigils", vec![
-        Rule::bygroups_to(r#"(?m)(~[a-z])(""")"#, vec![Some(STRING_OTHER), Some(STRING_HEREDOC)], NewState::Push(vec![r"triquot-end", r"triquot-intp"])),
-        Rule::bygroups_to(r#"(?m)(~[A-Z])(""")"#, vec![Some(STRING_OTHER), Some(STRING_HEREDOC)], NewState::Push(vec![r"triquot-end", r"triquot-no-intp"])),
-        Rule::bygroups_to(r"(?m)(~[a-z])(''')", vec![Some(STRING_OTHER), Some(STRING_HEREDOC)], NewState::Push(vec![r"triapos-end", r"triapos-intp"])),
-        Rule::bygroups_to(r"(?m)(~[A-Z])(''')", vec![Some(STRING_OTHER), Some(STRING_HEREDOC)], NewState::Push(vec![r"triapos-end", r"triapos-no-intp"])),
-        Rule::token_to(r"(?m)~[a-z]\{", STRING_OTHER, NewState::Push(vec![r"cb-intp"])),
-        Rule::token_to(r"(?m)~[A-Z]\{", STRING_OTHER, NewState::Push(vec![r"cb-no-intp"])),
-        Rule::token_to(r"(?m)~[a-z]\[", STRING_OTHER, NewState::Push(vec![r"sb-intp"])),
-        Rule::token_to(r"(?m)~[A-Z]\[", STRING_OTHER, NewState::Push(vec![r"sb-no-intp"])),
-        Rule::token_to(r"(?m)~[a-z]\(", STRING_OTHER, NewState::Push(vec![r"pa-intp"])),
-        Rule::token_to(r"(?m)~[A-Z]\(", STRING_OTHER, NewState::Push(vec![r"pa-no-intp"])),
-        Rule::token_to(r"(?m)~[a-z]<", STRING_OTHER, NewState::Push(vec![r"ab-intp"])),
-        Rule::token_to(r"(?m)~[A-Z]<", STRING_OTHER, NewState::Push(vec![r"ab-no-intp"])),
-        Rule::token_to(r"(?m)~[a-z]/", STRING_OTHER, NewState::Push(vec![r"slas-intp"])),
-        Rule::token_to(r"(?m)~[A-Z]/", STRING_OTHER, NewState::Push(vec![r"slas-no-intp"])),
-        Rule::token_to(r"(?m)~[a-z]\|", STRING_OTHER, NewState::Push(vec![r"pipe-intp"])),
-        Rule::token_to(r"(?m)~[A-Z]\|", STRING_OTHER, NewState::Push(vec![r"pipe-no-intp"])),
-        Rule::token_to(r#"(?m)~[a-z]""#, STRING_OTHER, NewState::Push(vec![r"quot-intp"])),
-        Rule::token_to(r#"(?m)~[A-Z]""#, STRING_OTHER, NewState::Push(vec![r"quot-no-intp"])),
-        Rule::token_to(r"(?m)~[a-z]'", STRING_OTHER, NewState::Push(vec![r"apos-intp"])),
-        Rule::token_to(r"(?m)~[A-Z]'", STRING_OTHER, NewState::Push(vec![r"apos-no-intp"])),
-    ]);
-    m.insert(r"heredoc_double", vec![
-        Rule::bygroups_to(r#"(?m)^(\s*)(""")"#, vec![Some(WHITESPACE), Some(STRING_HEREDOC)], NewState::Pop(1)),
-        Rule::token(r"(?m)[^#\\\n]+", STRING_HEREDOC),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_HEREDOC),
-        Rule::token(r"(?m)\n+", STRING_HEREDOC),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"heredoc_interpol", vec![
-        Rule::token(r"(?m)[^#\\\n]+", STRING_HEREDOC),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_HEREDOC),
-        Rule::token(r"(?m)\n+", STRING_HEREDOC),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"escapes", vec![
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-    ]);
-    m.insert(r"interpol", vec![
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"heredoc_single", vec![
-        Rule::token_to(r"(?m)^\s*'''", STRING_HEREDOC, NewState::Pop(1)),
-        Rule::token(r"(?m)[^#\\\n]+", STRING_HEREDOC),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_HEREDOC),
-        Rule::token(r"(?m)\n+", STRING_HEREDOC),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"heredoc_no_interpol", vec![
-        Rule::token(r"(?m)[^\\\n]+", STRING_HEREDOC),
-        Rule::token(r"(?m)\\.", STRING_HEREDOC),
-        Rule::token(r"(?m)\n+", WHITESPACE),
-    ]);
+    m.insert(
+        r"sigils",
+        vec![
+            Rule::bygroups_to(
+                r#"(?m)(~[a-z])(""")"#,
+                vec![Some(STRING_OTHER), Some(STRING_HEREDOC)],
+                NewState::Push(vec![r"triquot-end", r"triquot-intp"]),
+            ),
+            Rule::bygroups_to(
+                r#"(?m)(~[A-Z])(""")"#,
+                vec![Some(STRING_OTHER), Some(STRING_HEREDOC)],
+                NewState::Push(vec![r"triquot-end", r"triquot-no-intp"]),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(~[a-z])(''')",
+                vec![Some(STRING_OTHER), Some(STRING_HEREDOC)],
+                NewState::Push(vec![r"triapos-end", r"triapos-intp"]),
+            ),
+            Rule::bygroups_to(
+                r"(?m)(~[A-Z])(''')",
+                vec![Some(STRING_OTHER), Some(STRING_HEREDOC)],
+                NewState::Push(vec![r"triapos-end", r"triapos-no-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[a-z]\{",
+                STRING_OTHER,
+                NewState::Push(vec![r"cb-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[A-Z]\{",
+                STRING_OTHER,
+                NewState::Push(vec![r"cb-no-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[a-z]\[",
+                STRING_OTHER,
+                NewState::Push(vec![r"sb-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[A-Z]\[",
+                STRING_OTHER,
+                NewState::Push(vec![r"sb-no-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[a-z]\(",
+                STRING_OTHER,
+                NewState::Push(vec![r"pa-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[A-Z]\(",
+                STRING_OTHER,
+                NewState::Push(vec![r"pa-no-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[a-z]<",
+                STRING_OTHER,
+                NewState::Push(vec![r"ab-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[A-Z]<",
+                STRING_OTHER,
+                NewState::Push(vec![r"ab-no-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[a-z]/",
+                STRING_OTHER,
+                NewState::Push(vec![r"slas-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[A-Z]/",
+                STRING_OTHER,
+                NewState::Push(vec![r"slas-no-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[a-z]\|",
+                STRING_OTHER,
+                NewState::Push(vec![r"pipe-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[A-Z]\|",
+                STRING_OTHER,
+                NewState::Push(vec![r"pipe-no-intp"]),
+            ),
+            Rule::token_to(
+                r#"(?m)~[a-z]""#,
+                STRING_OTHER,
+                NewState::Push(vec![r"quot-intp"]),
+            ),
+            Rule::token_to(
+                r#"(?m)~[A-Z]""#,
+                STRING_OTHER,
+                NewState::Push(vec![r"quot-no-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[a-z]'",
+                STRING_OTHER,
+                NewState::Push(vec![r"apos-intp"]),
+            ),
+            Rule::token_to(
+                r"(?m)~[A-Z]'",
+                STRING_OTHER,
+                NewState::Push(vec![r"apos-no-intp"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"heredoc_double",
+        vec![
+            Rule::bygroups_to(
+                r#"(?m)^(\s*)(""")"#,
+                vec![Some(WHITESPACE), Some(STRING_HEREDOC)],
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)[^#\\\n]+", STRING_HEREDOC),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_HEREDOC),
+            Rule::token(r"(?m)\n+", STRING_HEREDOC),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"heredoc_interpol",
+        vec![
+            Rule::token(r"(?m)[^#\\\n]+", STRING_HEREDOC),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_HEREDOC),
+            Rule::token(r"(?m)\n+", STRING_HEREDOC),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"escapes",
+        vec![
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+        ],
+    );
+    m.insert(
+        r"interpol",
+        vec![Rule::token_to(
+            r"(?m)#\{",
+            STRING_INTERPOL,
+            NewState::Push(vec![r"interpol_string"]),
+        )],
+    );
+    m.insert(
+        r"heredoc_single",
+        vec![
+            Rule::token_to(r"(?m)^\s*'''", STRING_HEREDOC, NewState::Pop(1)),
+            Rule::token(r"(?m)[^#\\\n]+", STRING_HEREDOC),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_HEREDOC),
+            Rule::token(r"(?m)\n+", STRING_HEREDOC),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"heredoc_no_interpol",
+        vec![
+            Rule::token(r"(?m)[^\\\n]+", STRING_HEREDOC),
+            Rule::token(r"(?m)\\.", STRING_HEREDOC),
+            Rule::token(r"(?m)\n+", WHITESPACE),
+        ],
+    );
     m.insert(r"interpol_string", vec![
         Rule::token_to(r"(?m)\}", STRING_INTERPOL, NewState::Pop(1)),
         Rule::token(r"(?m)\s+", WHITESPACE),
@@ -401,194 +532,386 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::Push(vec![r"tuple"])),
         Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
     ]);
-    m.insert(r"string_double", vec![
-        Rule::token(r#"(?m)[^#"\\]+"#, STRING_DOUBLE),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_DOUBLE),
-        Rule::bygroups_to(r#"(?m)(")"#, vec![Some(STRING_DOUBLE)], NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"string_single", vec![
-        Rule::token(r"(?m)[^#'\\]+", STRING_SINGLE),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_SINGLE),
-        Rule::bygroups_to(r"(?m)(')", vec![Some(STRING_SINGLE)], NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"string_double_atom", vec![
-        Rule::token(r#"(?m)[^#"\\]+"#, STRING_SYMBOL),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_SYMBOL),
-        Rule::bygroups_to(r#"(?m)(")"#, vec![Some(STRING_SYMBOL)], NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"string_single_atom", vec![
-        Rule::token(r"(?m)[^#'\\]+", STRING_SYMBOL),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_SYMBOL),
-        Rule::bygroups_to(r"(?m)(')", vec![Some(STRING_SYMBOL)], NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"triquot-end", vec![
-        Rule::token_to(r"(?m)[a-zA-Z]+", STRING_OTHER, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"triquot-intp", vec![
-        Rule::bygroups_to(r#"(?m)^(\s*)(""")"#, vec![Some(WHITESPACE), Some(STRING_HEREDOC)], NewState::Pop(1)),
-        Rule::token(r"(?m)[^#\\\n]+", STRING_HEREDOC),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_HEREDOC),
-        Rule::token(r"(?m)\n+", STRING_HEREDOC),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"triquot-no-intp", vec![
-        Rule::bygroups_to(r#"(?m)^(\s*)(""")"#, vec![Some(WHITESPACE), Some(STRING_HEREDOC)], NewState::Pop(1)),
-        Rule::token(r"(?m)[^\\\n]+", STRING_HEREDOC),
-        Rule::token(r"(?m)\\.", STRING_HEREDOC),
-        Rule::token(r"(?m)\n+", WHITESPACE),
-    ]);
-    m.insert(r"triapos-end", vec![
-        Rule::token_to(r"(?m)[a-zA-Z]+", STRING_OTHER, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"triapos-intp", vec![
-        Rule::bygroups_to(r"(?m)^(\s*)(''')", vec![Some(WHITESPACE), Some(STRING_HEREDOC)], NewState::Pop(1)),
-        Rule::token(r"(?m)[^#\\\n]+", STRING_HEREDOC),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_HEREDOC),
-        Rule::token(r"(?m)\n+", STRING_HEREDOC),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"triapos-no-intp", vec![
-        Rule::bygroups_to(r"(?m)^(\s*)(''')", vec![Some(WHITESPACE), Some(STRING_HEREDOC)], NewState::Pop(1)),
-        Rule::token(r"(?m)[^\\\n]+", STRING_HEREDOC),
-        Rule::token(r"(?m)\\.", STRING_HEREDOC),
-        Rule::token(r"(?m)\n+", WHITESPACE),
-    ]);
-    m.insert(r"cb-intp", vec![
-        Rule::token(r"(?m)[^#}\\]+", STRING_OTHER),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)\}[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"cb-no-intp", vec![
-        Rule::token(r"(?m)[^}\\]+", STRING_OTHER),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)\}[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-    ]);
-    m.insert(r"sb-intp", vec![
-        Rule::token(r"(?m)[^#\]\\]+", STRING_OTHER),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)\][a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"sb-no-intp", vec![
-        Rule::token(r"(?m)[^\]\\]+", STRING_OTHER),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)\][a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-    ]);
-    m.insert(r"pa-intp", vec![
-        Rule::token(r"(?m)[^#)\\]+", STRING_OTHER),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)\)[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"pa-no-intp", vec![
-        Rule::token(r"(?m)[^)\\]+", STRING_OTHER),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)\)[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-    ]);
-    m.insert(r"ab-intp", vec![
-        Rule::token(r"(?m)[^#>\\]+", STRING_OTHER),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)>[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"ab-no-intp", vec![
-        Rule::token(r"(?m)[^>\\]+", STRING_OTHER),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)>[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-    ]);
-    m.insert(r"slas-intp", vec![
-        Rule::token(r"(?m)[^#/\\]+", STRING_OTHER),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)/[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"slas-no-intp", vec![
-        Rule::token(r"(?m)[^/\\]+", STRING_OTHER),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)/[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-    ]);
-    m.insert(r"pipe-intp", vec![
-        Rule::token(r"(?m)[^#|\\]+", STRING_OTHER),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)\|[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"pipe-no-intp", vec![
-        Rule::token(r"(?m)[^|\\]+", STRING_OTHER),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)\|[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-    ]);
-    m.insert(r"quot-intp", vec![
-        Rule::token(r#"(?m)[^#"\\]+"#, STRING_OTHER),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r#"(?m)"[a-zA-Z]*"#, STRING_OTHER, NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"quot-no-intp", vec![
-        Rule::token(r#"(?m)[^"\\]+"#, STRING_OTHER),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r#"(?m)"[a-zA-Z]*"#, STRING_OTHER, NewState::Pop(1)),
-    ]);
-    m.insert(r"apos-intp", vec![
-        Rule::token(r"(?m)[^#'\\]+", STRING_OTHER),
-        Rule::bygroups(r"(?m)(\\x\{)([\da-fA-F]+)(\})", vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)]),
-        Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
-        Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)'[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-        Rule::token_to(r"(?m)#\{", STRING_INTERPOL, NewState::Push(vec![r"interpol_string"])),
-    ]);
-    m.insert(r"apos-no-intp", vec![
-        Rule::token(r"(?m)[^'\\]+", STRING_OTHER),
-        Rule::token(r"(?m)\\.", STRING_OTHER),
-        Rule::token_to(r"(?m)'[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"string_double",
+        vec![
+            Rule::token(r#"(?m)[^#"\\]+"#, STRING_DOUBLE),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_DOUBLE),
+            Rule::bygroups_to(r#"(?m)(")"#, vec![Some(STRING_DOUBLE)], NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"string_single",
+        vec![
+            Rule::token(r"(?m)[^#'\\]+", STRING_SINGLE),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_SINGLE),
+            Rule::bygroups_to(r"(?m)(')", vec![Some(STRING_SINGLE)], NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"string_double_atom",
+        vec![
+            Rule::token(r#"(?m)[^#"\\]+"#, STRING_SYMBOL),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_SYMBOL),
+            Rule::bygroups_to(r#"(?m)(")"#, vec![Some(STRING_SYMBOL)], NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"string_single_atom",
+        vec![
+            Rule::token(r"(?m)[^#'\\]+", STRING_SYMBOL),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_SYMBOL),
+            Rule::bygroups_to(r"(?m)(')", vec![Some(STRING_SYMBOL)], NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"triquot-end",
+        vec![
+            Rule::token_to(r"(?m)[a-zA-Z]+", STRING_OTHER, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"triquot-intp",
+        vec![
+            Rule::bygroups_to(
+                r#"(?m)^(\s*)(""")"#,
+                vec![Some(WHITESPACE), Some(STRING_HEREDOC)],
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)[^#\\\n]+", STRING_HEREDOC),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_HEREDOC),
+            Rule::token(r"(?m)\n+", STRING_HEREDOC),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"triquot-no-intp",
+        vec![
+            Rule::bygroups_to(
+                r#"(?m)^(\s*)(""")"#,
+                vec![Some(WHITESPACE), Some(STRING_HEREDOC)],
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)[^\\\n]+", STRING_HEREDOC),
+            Rule::token(r"(?m)\\.", STRING_HEREDOC),
+            Rule::token(r"(?m)\n+", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"triapos-end",
+        vec![
+            Rule::token_to(r"(?m)[a-zA-Z]+", STRING_OTHER, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"triapos-intp",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)^(\s*)(''')",
+                vec![Some(WHITESPACE), Some(STRING_HEREDOC)],
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)[^#\\\n]+", STRING_HEREDOC),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_HEREDOC),
+            Rule::token(r"(?m)\n+", STRING_HEREDOC),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"triapos-no-intp",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)^(\s*)(''')",
+                vec![Some(WHITESPACE), Some(STRING_HEREDOC)],
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)[^\\\n]+", STRING_HEREDOC),
+            Rule::token(r"(?m)\\.", STRING_HEREDOC),
+            Rule::token(r"(?m)\n+", WHITESPACE),
+        ],
+    );
+    m.insert(
+        r"cb-intp",
+        vec![
+            Rule::token(r"(?m)[^#}\\]+", STRING_OTHER),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)\}[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"cb-no-intp",
+        vec![
+            Rule::token(r"(?m)[^}\\]+", STRING_OTHER),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)\}[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"sb-intp",
+        vec![
+            Rule::token(r"(?m)[^#\]\\]+", STRING_OTHER),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)\][a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"sb-no-intp",
+        vec![
+            Rule::token(r"(?m)[^\]\\]+", STRING_OTHER),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)\][a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"pa-intp",
+        vec![
+            Rule::token(r"(?m)[^#)\\]+", STRING_OTHER),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)\)[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"pa-no-intp",
+        vec![
+            Rule::token(r"(?m)[^)\\]+", STRING_OTHER),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)\)[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"ab-intp",
+        vec![
+            Rule::token(r"(?m)[^#>\\]+", STRING_OTHER),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)>[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"ab-no-intp",
+        vec![
+            Rule::token(r"(?m)[^>\\]+", STRING_OTHER),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)>[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"slas-intp",
+        vec![
+            Rule::token(r"(?m)[^#/\\]+", STRING_OTHER),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)/[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"slas-no-intp",
+        vec![
+            Rule::token(r"(?m)[^/\\]+", STRING_OTHER),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)/[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"pipe-intp",
+        vec![
+            Rule::token(r"(?m)[^#|\\]+", STRING_OTHER),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)\|[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"pipe-no-intp",
+        vec![
+            Rule::token(r"(?m)[^|\\]+", STRING_OTHER),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)\|[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"quot-intp",
+        vec![
+            Rule::token(r#"(?m)[^#"\\]+"#, STRING_OTHER),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r#"(?m)"[a-zA-Z]*"#, STRING_OTHER, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"quot-no-intp",
+        vec![
+            Rule::token(r#"(?m)[^"\\]+"#, STRING_OTHER),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r#"(?m)"[a-zA-Z]*"#, STRING_OTHER, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"apos-intp",
+        vec![
+            Rule::token(r"(?m)[^#'\\]+", STRING_OTHER),
+            Rule::bygroups(
+                r"(?m)(\\x\{)([\da-fA-F]+)(\})",
+                vec![Some(STRING_ESCAPE), Some(NUMBER_HEX), Some(STRING_ESCAPE)],
+            ),
+            Rule::token(r"(?m)(\\x[\da-fA-F]{1,2})", STRING_ESCAPE),
+            Rule::token(r"(?m)(\\[abdefnrstv])", STRING_ESCAPE),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)'[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)#\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpol_string"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"apos-no-intp",
+        vec![
+            Rule::token(r"(?m)[^'\\]+", STRING_OTHER),
+            Rule::token(r"(?m)\\.", STRING_OTHER),
+            Rule::token_to(r"(?m)'[a-zA-Z]*", STRING_OTHER, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

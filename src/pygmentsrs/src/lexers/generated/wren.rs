@@ -46,20 +46,30 @@ fn build_table() -> Table {
         Rule::token(r#"(?ms)""".*?""""#, STRING),
         Rule::token_to(r#"(?ms)""#, STRING, NewState::Push(vec![r"string"])),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token_to(r"(?ms)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?ms)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?ms)([^*/]|\*(?!/)|/(?!\*))+", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?ms)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?ms)\\[\\%"0abefnrtv]"#, STRING_ESCAPE),
-        Rule::token(r"(?ms)\\x[a-fA-F0-9]{2}", STRING_ESCAPE),
-        Rule::token(r"(?ms)\\u[a-fA-F0-9]{4}", STRING_ESCAPE),
-        Rule::token(r"(?ms)\\U[a-fA-F0-9]{8}", STRING_ESCAPE),
-        Rule::token_to(r"(?ms)%\(", STRING_INTERPOL, NewState::Push(vec![r"interpolation"])),
-        Rule::token(r#"(?ms)[^\\"%]+"#, STRING),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token_to(r"(?ms)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?ms)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?ms)([^*/]|\*(?!/)|/(?!\*))+", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?ms)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?ms)\\[\\%"0abefnrtv]"#, STRING_ESCAPE),
+            Rule::token(r"(?ms)\\x[a-fA-F0-9]{2}", STRING_ESCAPE),
+            Rule::token(r"(?ms)\\u[a-fA-F0-9]{4}", STRING_ESCAPE),
+            Rule::token(r"(?ms)\\U[a-fA-F0-9]{8}", STRING_ESCAPE),
+            Rule::token_to(
+                r"(?ms)%\(",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interpolation"]),
+            ),
+            Rule::token(r#"(?ms)[^\\"%]+"#, STRING),
+        ],
+    );
     m.insert(r"interpolation", vec![
         Rule::token_to(r"(?ms)\)", STRING_INTERPOL, NewState::Pop(1)),
         Rule::token(r"(?ms)\s+", WHITESPACE),

@@ -18,7 +18,9 @@ use serde_json::json;
 #[test]
 fn test_variable_interpolation() {
     let env = Environment::new();
-    let out = env.render_str("Hello, {{ name }}!", json!({"name": "Sphinx"})).unwrap();
+    let out = env
+        .render_str("Hello, {{ name }}!", json!({"name": "Sphinx"}))
+        .unwrap();
     assert_snapshot!(out, @"Hello, Sphinx!");
 }
 
@@ -65,25 +67,22 @@ fn test_block_inheritance() {
 // ---------------------------------------------------------------------------
 
 #[rstest]
-#[case("true",  "true")]
+#[case("true", "true")]
 #[case("false", "false")]
-#[case("1",     "true")]
-#[case("yes",   "true")]
-#[case("no",    "false")]
+#[case("1", "true")]
+#[case("yes", "true")]
+#[case("no", "false")]
 fn test_tobool_filter(#[case] input: &str, #[case] expected: &str) {
     let env = Environment::new();
     let out = env
-        .render_str(
-            "{{ val|tobool }}",
-            json!({"val": input}),
-        )
+        .render_str("{{ val|tobool }}", json!({"val": input}))
         .unwrap();
     assert_eq!(out, expected);
 }
 
 #[rstest]
-#[case("42",   "42")]
-#[case("-7",   "-7")]
+#[case("42", "42")]
+#[case("-7", "-7")]
 #[case("nope", "0")]
 fn test_toint_filter(#[case] input: &str, #[case] expected: &str) {
     let env = Environment::new();
@@ -94,7 +93,7 @@ fn test_toint_filter(#[case] input: &str, #[case] expected: &str) {
 }
 
 #[rstest]
-#[case(0i64,  "0")]
+#[case(0i64, "0")]
 #[case(320i64, "320px")]
 fn test_todim_filter_int(#[case] input: i64, #[case] expected: &str) {
     let env = Environment::new();
@@ -120,7 +119,9 @@ fn test_html_autoescaping() {
     let mut env = Environment::new();
     env.add_template("escaped.html", "{{ content }}").unwrap();
     let tmpl = env.get_template("escaped.html").unwrap();
-    let out = tmpl.render(json!({"content": "<script>alert(1)</script>"})).unwrap();
+    let out = tmpl
+        .render(json!({"content": "<script>alert(1)</script>"}))
+        .unwrap();
     // minijinja auto-escapes .html templates by default
     assert_snapshot!(out, @"&lt;script&gt;alert(1)&lt;&#x2f;script&gt;");
 }
@@ -143,7 +144,11 @@ fn test_sandbox_undefined_strict() {
 #[test]
 fn test_idgen_in_template() {
     let mut env = Environment::new();
-    env.add_template("ids.html", "{{ idgen.next() }}-{{ idgen.next() }}-{{ idgen.current() }}").unwrap();
+    env.add_template(
+        "ids.html",
+        "{{ idgen.next() }}-{{ idgen.next() }}-{{ idgen.current() }}",
+    )
+    .unwrap();
     let tmpl = env.get_template("ids.html").unwrap();
     let out = tmpl.render(json!({})).unwrap();
     assert_snapshot!(out, @"1-2-2");

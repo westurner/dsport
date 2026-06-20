@@ -25,16 +25,42 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)(INCLUDE_TYPOSCRIPT)", NAME_CLASS),
-        Rule::token(r#"(?m)(EXT|FILE|LLL):[^}\n"]*"#, STRING),
-        Rule::bygroups(r"(?m)(.*)(###\w+###)(.*)", vec![Some(STRING), Some(NAME_CONSTANT), Some(STRING)]),
-        Rule::bygroups(r"(?m)(\{)(\$)((?:[\w\-]+\.)*)([\w\-]+)(\})", vec![Some(STRING_SYMBOL), Some(OPERATOR), Some(NAME_CONSTANT), Some(NAME_CONSTANT), Some(STRING_SYMBOL)]),
-        Rule::bygroups(r"(?m)(.*)(\{)([\w\-]+)(\s*:\s*)([\w\-]+)(\})(.*)", vec![Some(STRING), Some(STRING_SYMBOL), Some(NAME_CONSTANT), Some(OPERATOR), Some(NAME_CONSTANT), Some(STRING_SYMBOL), Some(STRING)]),
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::token(r"(?m)[<>,:=.*%+|]", STRING),
-        Rule::token(r#"(?m)[\w"\-!/&;(){}#]+"#, STRING),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)(INCLUDE_TYPOSCRIPT)", NAME_CLASS),
+            Rule::token(r#"(?m)(EXT|FILE|LLL):[^}\n"]*"#, STRING),
+            Rule::bygroups(
+                r"(?m)(.*)(###\w+###)(.*)",
+                vec![Some(STRING), Some(NAME_CONSTANT), Some(STRING)],
+            ),
+            Rule::bygroups(
+                r"(?m)(\{)(\$)((?:[\w\-]+\.)*)([\w\-]+)(\})",
+                vec![
+                    Some(STRING_SYMBOL),
+                    Some(OPERATOR),
+                    Some(NAME_CONSTANT),
+                    Some(NAME_CONSTANT),
+                    Some(STRING_SYMBOL),
+                ],
+            ),
+            Rule::bygroups(
+                r"(?m)(.*)(\{)([\w\-]+)(\s*:\s*)([\w\-]+)(\})(.*)",
+                vec![
+                    Some(STRING),
+                    Some(STRING_SYMBOL),
+                    Some(NAME_CONSTANT),
+                    Some(OPERATOR),
+                    Some(NAME_CONSTANT),
+                    Some(STRING_SYMBOL),
+                    Some(STRING),
+                ],
+            ),
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::token(r"(?m)[<>,:=.*%+|]", STRING),
+            Rule::token(r#"(?m)[\w"\-!/&;(){}#]+"#, STRING),
+        ],
+    );
     Table(m)
 }
 

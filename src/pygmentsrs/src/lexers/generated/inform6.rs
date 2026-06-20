@@ -25,137 +25,287 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token_to(r"(?ms)\A(!%[^\n  ]*[\n  ])+", COMMENT_PREPROC, NewState::Push(vec![r"directive"])),
-        Rule::default(NewState::Push(vec![r"directive"])),
-    ]);
-    m.insert(r"_whitespace", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-    ]);
-    m.insert(r"default", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)\[", PUNCTUATION, NewState::Push(vec![r"many-values"])),
-        Rule::token_to(r"(?ms):|(?=;)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?ms)<", PUNCTUATION),
-        Rule::default(NewState::Push(vec![r"expression", r"_expression"])),
-    ]);
-    m.insert(r"_expression", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)(?=sp\b)", TEXT, NewState::Pop(1)),
-        Rule::token_to(r#"(?ms)(?=["“”'‘’$0-9#a-zA-Z_])"#, TEXT, NewState::Push(vec![r"#pop", r"value"])),
-        Rule::token(r"(?ms)\+\+|[\-‐-—]{1,2}(?!>)|~~?", OPERATOR),
-        Rule::token_to(r"(?ms)(?=[()\[\-‐-—,?@{:;])", TEXT, NewState::Pop(1)),
-    ]);
-    m.insert(r"expression", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)\(", PUNCTUATION, NewState::Push(vec![r"expression", r"_expression"])),
-        Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\[", PUNCTUATION, NewState::Push(vec![r"#pop", r"statements", r"locals"])),
-        Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
-        Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
-        Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]", OPERATOR, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b", OPERATOR_WORD, NewState::Push(vec![r"_expression"])),
-        Rule::token(r"(?ms)sp\b", NAME),
-        Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
-        Rule::token(r"(?ms)[@{]", ERROR),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"_assembly-expression", vec![
-        Rule::token_to(r"(?ms)\(", PUNCTUATION, NewState::Push(vec![r"#push", r"_expression"])),
-        Rule::token(r"(?ms)[\[\]]", PUNCTUATION),
-        Rule::token_to(r"(?ms)[\-‐-—]>", PUNCTUATION, NewState::Push(vec![r"_expression"])),
-        Rule::token(r"(?ms)sp\b", KEYWORD_PSEUDO),
-        Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(3)),
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)\(", PUNCTUATION, NewState::Push(vec![r"expression", r"_expression"])),
-        Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\[", PUNCTUATION, NewState::Push(vec![r"#pop", r"statements", r"locals"])),
-        Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
-        Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
-        Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]", OPERATOR, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b", OPERATOR_WORD, NewState::Push(vec![r"_expression"])),
-        Rule::token(r"(?ms)sp\b", NAME),
-        Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
-        Rule::token(r"(?ms)[@{]", ERROR),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"_for-expression", vec![
-        Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(2)),
-        Rule::token_to(r"(?ms):", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)\(", PUNCTUATION, NewState::Push(vec![r"expression", r"_expression"])),
-        Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\[", PUNCTUATION, NewState::Push(vec![r"#pop", r"statements", r"locals"])),
-        Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
-        Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
-        Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]", OPERATOR, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b", OPERATOR_WORD, NewState::Push(vec![r"_expression"])),
-        Rule::token(r"(?ms)sp\b", NAME),
-        Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
-        Rule::token(r"(?ms)[@{]", ERROR),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"_keyword-expression", vec![
-        Rule::token_to(r"(?ms)(from|near|to)\b", KEYWORD, NewState::Push(vec![r"_expression"])),
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)\(", PUNCTUATION, NewState::Push(vec![r"expression", r"_expression"])),
-        Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\[", PUNCTUATION, NewState::Push(vec![r"#pop", r"statements", r"locals"])),
-        Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
-        Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
-        Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]", OPERATOR, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b", OPERATOR_WORD, NewState::Push(vec![r"_expression"])),
-        Rule::token(r"(?ms)sp\b", NAME),
-        Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
-        Rule::token(r"(?ms)[@{]", ERROR),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"_list-expression", vec![
-        Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)\(", PUNCTUATION, NewState::Push(vec![r"expression", r"_expression"])),
-        Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\[", PUNCTUATION, NewState::Push(vec![r"#pop", r"statements", r"locals"])),
-        Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
-        Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
-        Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]", OPERATOR, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b", OPERATOR_WORD, NewState::Push(vec![r"_expression"])),
-        Rule::token(r"(?ms)sp\b", NAME),
-        Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
-        Rule::token(r"(?ms)[@{]", ERROR),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"_object-expression", vec![
-        Rule::token_to(r"(?ms)has\b", KEYWORD_DECLARATION, NewState::Pop(1)),
-        Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)\(", PUNCTUATION, NewState::Push(vec![r"expression", r"_expression"])),
-        Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)\[", PUNCTUATION, NewState::Push(vec![r"#pop", r"statements", r"locals"])),
-        Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
-        Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
-        Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]", OPERATOR, NewState::Push(vec![r"_expression"])),
-        Rule::token_to(r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b", OPERATOR_WORD, NewState::Push(vec![r"_expression"])),
-        Rule::token(r"(?ms)sp\b", NAME),
-        Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
-        Rule::token(r"(?ms)[@{]", ERROR),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token_to(
+                r"(?ms)\A(!%[^\n  ]*[\n  ])+",
+                COMMENT_PREPROC,
+                NewState::Push(vec![r"directive"]),
+            ),
+            Rule::default(NewState::Push(vec![r"directive"])),
+        ],
+    );
+    m.insert(
+        r"_whitespace",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+        ],
+    );
+    m.insert(
+        r"default",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)\[",
+                PUNCTUATION,
+                NewState::Push(vec![r"many-values"]),
+            ),
+            Rule::token_to(r"(?ms):|(?=;)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?ms)<", PUNCTUATION),
+            Rule::default(NewState::Push(vec![r"expression", r"_expression"])),
+        ],
+    );
+    m.insert(
+        r"_expression",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(r"(?ms)(?=sp\b)", TEXT, NewState::Pop(1)),
+            Rule::token_to(
+                r#"(?ms)(?=["“”'‘’$0-9#a-zA-Z_])"#,
+                TEXT,
+                NewState::Push(vec![r"#pop", r"value"]),
+            ),
+            Rule::token(r"(?ms)\+\+|[\-‐-—]{1,2}(?!>)|~~?", OPERATOR),
+            Rule::token_to(r"(?ms)(?=[()\[\-‐-—,?@{:;])", TEXT, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"expression",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"expression", r"_expression"]),
+            ),
+            Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?ms)\[",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"statements", r"locals"]),
+            ),
+            Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
+            Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
+            Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
+            Rule::token_to(
+                r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]",
+                OPERATOR,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token_to(
+                r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b",
+                OPERATOR_WORD,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token(r"(?ms)sp\b", NAME),
+            Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
+            Rule::token(r"(?ms)[@{]", ERROR),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"_assembly-expression",
+        vec![
+            Rule::token_to(
+                r"(?ms)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"#push", r"_expression"]),
+            ),
+            Rule::token(r"(?ms)[\[\]]", PUNCTUATION),
+            Rule::token_to(
+                r"(?ms)[\-‐-—]>",
+                PUNCTUATION,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token(r"(?ms)sp\b", KEYWORD_PSEUDO),
+            Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(3)),
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"expression", r"_expression"]),
+            ),
+            Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?ms)\[",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"statements", r"locals"]),
+            ),
+            Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
+            Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
+            Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
+            Rule::token_to(
+                r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]",
+                OPERATOR,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token_to(
+                r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b",
+                OPERATOR_WORD,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token(r"(?ms)sp\b", NAME),
+            Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
+            Rule::token(r"(?ms)[@{]", ERROR),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"_for-expression",
+        vec![
+            Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(2)),
+            Rule::token_to(r"(?ms):", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"expression", r"_expression"]),
+            ),
+            Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?ms)\[",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"statements", r"locals"]),
+            ),
+            Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
+            Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
+            Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
+            Rule::token_to(
+                r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]",
+                OPERATOR,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token_to(
+                r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b",
+                OPERATOR_WORD,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token(r"(?ms)sp\b", NAME),
+            Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
+            Rule::token(r"(?ms)[@{]", ERROR),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"_keyword-expression",
+        vec![
+            Rule::token_to(
+                r"(?ms)(from|near|to)\b",
+                KEYWORD,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"expression", r"_expression"]),
+            ),
+            Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?ms)\[",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"statements", r"locals"]),
+            ),
+            Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
+            Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
+            Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
+            Rule::token_to(
+                r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]",
+                OPERATOR,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token_to(
+                r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b",
+                OPERATOR_WORD,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token(r"(?ms)sp\b", NAME),
+            Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
+            Rule::token(r"(?ms)[@{]", ERROR),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"_list-expression",
+        vec![
+            Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"expression", r"_expression"]),
+            ),
+            Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?ms)\[",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"statements", r"locals"]),
+            ),
+            Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
+            Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
+            Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
+            Rule::token_to(
+                r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]",
+                OPERATOR,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token_to(
+                r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b",
+                OPERATOR_WORD,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token(r"(?ms)sp\b", NAME),
+            Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
+            Rule::token(r"(?ms)[@{]", ERROR),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"_object-expression",
+        vec![
+            Rule::token_to(r"(?ms)has\b", KEYWORD_DECLARATION, NewState::Pop(1)),
+            Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"expression", r"_expression"]),
+            ),
+            Rule::token_to(r"(?ms)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?ms)\[",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"statements", r"locals"]),
+            ),
+            Rule::token(r"(?ms)>(?=(\s+|(![^\n  ]*))*[>;])", PUNCTUATION),
+            Rule::token(r"(?ms)\+\+|[\-‐-—]{2}(?!>)", OPERATOR),
+            Rule::token_to(r"(?ms),", PUNCTUATION, NewState::Push(vec![r"_expression"])),
+            Rule::token_to(
+                r"(?ms)&&?|\|\|?|[=~><]?=|[\-‐-—]{1,2}>?|\.\.?[&#]?|::|[<>+*/%]",
+                OPERATOR,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token_to(
+                r"(?ms)(has|hasnt|in|notin|ofclass|or|provides)\b",
+                OPERATOR_WORD,
+                NewState::Push(vec![r"_expression"]),
+            ),
+            Rule::token(r"(?ms)sp\b", NAME),
+            Rule::token_to(r"(?ms)\?~?", NAME_LABEL, NewState::Push(vec![r"label?"])),
+            Rule::token(r"(?ms)[@{]", ERROR),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     m.insert(r"value", vec![
         Rule::token(r"(?ms)\s+", TEXT),
         Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
@@ -203,14 +353,17 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME, NewState::Pop(1)),
         Rule::default(NewState::Pop(1)),
     ]);
-    m.insert(r"dictionary-word", vec![
-        Rule::token(r"(?ms)[~^]+|//[^'‘’]*", STRING_ESCAPE),
-        Rule::token(r"(?ms)[^~^/\\@({'‘’]+", STRING_SINGLE),
-        Rule::token(r"(?ms)[/({]", STRING_SINGLE),
-        Rule::token(r"(?ms)@\{[0-9a-fA-F]*\}", STRING_ESCAPE),
-        Rule::token(r"(?ms)@.{2}", STRING_ESCAPE),
-        Rule::token_to(r"(?ms)['‘’]", STRING_SINGLE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"dictionary-word",
+        vec![
+            Rule::token(r"(?ms)[~^]+|//[^'‘’]*", STRING_ESCAPE),
+            Rule::token(r"(?ms)[^~^/\\@({'‘’]+", STRING_SINGLE),
+            Rule::token(r"(?ms)[/({]", STRING_SINGLE),
+            Rule::token(r"(?ms)@\{[0-9a-fA-F]*\}", STRING_ESCAPE),
+            Rule::token(r"(?ms)@.{2}", STRING_ESCAPE),
+            Rule::token_to(r"(?ms)['‘’]", STRING_SINGLE, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"string", vec![
         Rule::token(r"(?ms)[~^]+", STRING_ESCAPE),
         Rule::token(r#"(?ms)[^~^\\@({"“”]+"#, STRING_DOUBLE),
@@ -221,12 +374,15 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)@(\\\s*[\n  ]\s*)*.(\\\s*[\n  ]\s*)*.", STRING_ESCAPE),
         Rule::token_to(r#"(?ms)["“”]"#, STRING_DOUBLE, NewState::Pop(1)),
     ]);
-    m.insert(r"plain-string", vec![
-        Rule::token(r#"(?ms)[^~^\\({\[\]"“”]+"#, STRING_DOUBLE),
-        Rule::token(r"(?ms)[~^({\[\]]", STRING_DOUBLE),
-        Rule::token(r"(?ms)\\", STRING_ESCAPE),
-        Rule::token_to(r#"(?ms)["“”]"#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"plain-string",
+        vec![
+            Rule::token(r#"(?ms)[^~^\\({\[\]"“”]+"#, STRING_DOUBLE),
+            Rule::token(r"(?ms)[~^({\[\]]", STRING_DOUBLE),
+            Rule::token(r"(?ms)\\", STRING_ESCAPE),
+            Rule::token_to(r#"(?ms)["“”]"#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"_constant", vec![
         Rule::token(r"(?ms)\s+", TEXT),
         Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
@@ -253,14 +409,21 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)(?i)(D(?:EBUG|ICT_(?:CHAR_SIZE|ENTRY_BYTES|(?:IS_UNICOD|WORD_SIZ)E)|OUBLE_(?:HI_(?:INFINITY|N(?:AN|INFINITY))|LO_(?:INFINITY|N(?:AN|INFINITY))))|FLOAT_(?:INFINITY|N(?:AN|INFINITY))|G(?:OBJ(?:FIELD_(?:CH(?:AIN|ILD)|NAME|P(?:ARENT|ROPTAB)|SIBLING)|_(?:EXT_START|TOTAL_LENGTH))|rammar__Version)|IN(?:DIV_PROP_START|FIX)|MODULE_MODE|NUM_ATTR_BYTES|STRICT_MODE|TARGET_(?:GLULX|ZCODE)|USE_MODULES|WORDSIZE|c(?:all|opy|reate)|destroy|false|infix__watching|n(?:ame|othing)|print(?:(?:_to_array)?)|re(?:create|maining)|s(?:e(?:lf|nder)|w__var|ys_(?:_glob(?:[012])|statusline_flag))|t(?:emp_(?:_global(?:[234])|global)|rue))\b", NAME_BUILTIN, NewState::Pop(1)),
         Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME, NewState::Pop(1)),
     ]);
-    m.insert(r"constant*", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token(r"(?ms),", PUNCTUATION),
-        Rule::token_to(r"(?ms)=", PUNCTUATION, NewState::Push(vec![r"value?"])),
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_CONSTANT, NewState::Push(vec![r"value?"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"constant*",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token(r"(?ms),", PUNCTUATION),
+            Rule::token_to(r"(?ms)=", PUNCTUATION, NewState::Push(vec![r"value?"])),
+            Rule::token_to(
+                r"(?ms)[a-zA-Z_]\w*",
+                NAME_CONSTANT,
+                NewState::Push(vec![r"value?"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     m.insert(r"_global", vec![
         Rule::token(r"(?ms)\s+", TEXT),
         Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
@@ -287,26 +450,40 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)(?i)(D(?:EBUG|ICT_(?:CHAR_SIZE|ENTRY_BYTES|(?:IS_UNICOD|WORD_SIZ)E)|OUBLE_(?:HI_(?:INFINITY|N(?:AN|INFINITY))|LO_(?:INFINITY|N(?:AN|INFINITY))))|FLOAT_(?:INFINITY|N(?:AN|INFINITY))|G(?:OBJ(?:FIELD_(?:CH(?:AIN|ILD)|NAME|P(?:ARENT|ROPTAB)|SIBLING)|_(?:EXT_START|TOTAL_LENGTH))|rammar__Version)|IN(?:DIV_PROP_START|FIX)|MODULE_MODE|NUM_ATTR_BYTES|STRICT_MODE|TARGET_(?:GLULX|ZCODE)|USE_MODULES|WORDSIZE|c(?:all|opy|reate)|destroy|false|infix__watching|n(?:ame|othing)|print(?:(?:_to_array)?)|re(?:create|maining)|s(?:e(?:lf|nder)|w__var|ys_(?:_glob(?:[012])|statusline_flag))|t(?:emp_(?:_global(?:[234])|global)|rue))\b", NAME_BUILTIN, NewState::Pop(1)),
         Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME, NewState::Pop(1)),
     ]);
-    m.insert(r"label?", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_LABEL, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"variable?", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_VARIABLE, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"obsolete-dictionary-word", vec![
-        Rule::token_to(r"(?ms)\S\w*", STRING_OTHER, NewState::Pop(1)),
-    ]);
-    m.insert(r"system-constant", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_BUILTIN, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"label?",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_LABEL, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"variable?",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_VARIABLE, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"obsolete-dictionary-word",
+        vec![Rule::token_to(
+            r"(?ms)\S\w*",
+            STRING_OTHER,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"system-constant",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_BUILTIN, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"directive", vec![
         Rule::token(r"(?ms)\s+", TEXT),
         Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
@@ -334,46 +511,80 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)(?i)zcharacter\b", KEYWORD, NewState::Push(vec![r"default", r"directive-keyword?", r"directive-keyword?"])),
         Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_CLASS, NewState::Push(vec![r"object-body", r"_object-head"])),
     ]);
-    m.insert(r"routine-name?", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_FUNCTION, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"locals", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?ms)\*", PUNCTUATION),
-        Rule::token_to(r#"(?ms)""#, STRING_DOUBLE, NewState::Push(vec![r"plain-string"])),
-        Rule::token(r"(?ms)[a-zA-Z_]\w*", NAME_VARIABLE),
-    ]);
-    m.insert(r"many-values", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token(r"(?ms);", PUNCTUATION),
-        Rule::token_to(r"(?ms)\]", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?ms):", ERROR),
-        Rule::default(NewState::Push(vec![r"expression", r"_expression"])),
-    ]);
-    m.insert(r"alias?", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)alias\b", KEYWORD, NewState::Push(vec![r"#pop", r"_constant"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"class-name", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)(?=[,;]|(class|has|private|with)\b)", TEXT, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"duplicates", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)\(", PUNCTUATION, NewState::Push(vec![r"#pop", r"expression", r"_expression"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"routine-name?",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_FUNCTION, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"locals",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?ms)\*", PUNCTUATION),
+            Rule::token_to(
+                r#"(?ms)""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"plain-string"]),
+            ),
+            Rule::token(r"(?ms)[a-zA-Z_]\w*", NAME_VARIABLE),
+        ],
+    );
+    m.insert(
+        r"many-values",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token(r"(?ms);", PUNCTUATION),
+            Rule::token_to(r"(?ms)\]", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?ms):", ERROR),
+            Rule::default(NewState::Push(vec![r"expression", r"_expression"])),
+        ],
+    );
+    m.insert(
+        r"alias?",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)alias\b",
+                KEYWORD,
+                NewState::Push(vec![r"#pop", r"_constant"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"class-name",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)(?=[,;]|(class|has|private|with)\b)",
+                TEXT,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME_CLASS, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"duplicates",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"expression", r"_expression"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     m.insert(r"_object-head", vec![
         Rule::token(r"(?ms)[\-‐-—]>", PUNCTUATION),
         Rule::token_to(r"(?ms)(class|has|private|with)\b", KEYWORD_DECLARATION, NewState::Pop(1)),
@@ -402,72 +613,143 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)(?i)(D(?:EBUG|ICT_(?:CHAR_SIZE|ENTRY_BYTES|(?:IS_UNICOD|WORD_SIZ)E)|OUBLE_(?:HI_(?:INFINITY|N(?:AN|INFINITY))|LO_(?:INFINITY|N(?:AN|INFINITY))))|FLOAT_(?:INFINITY|N(?:AN|INFINITY))|G(?:OBJ(?:FIELD_(?:CH(?:AIN|ILD)|NAME|P(?:ARENT|ROPTAB)|SIBLING)|_(?:EXT_START|TOTAL_LENGTH))|rammar__Version)|IN(?:DIV_PROP_START|FIX)|MODULE_MODE|NUM_ATTR_BYTES|STRICT_MODE|TARGET_(?:GLULX|ZCODE)|USE_MODULES|WORDSIZE|c(?:all|opy|reate)|destroy|false|infix__watching|n(?:ame|othing)|print(?:(?:_to_array)?)|re(?:create|maining)|s(?:e(?:lf|nder)|w__var|ys_(?:_glob(?:[012])|statusline_flag))|t(?:emp_(?:_global(?:[234])|global)|rue))\b", NAME_BUILTIN, NewState::Pop(1)),
         Rule::token_to(r"(?ms)[a-zA-Z_]\w*", NAME, NewState::Pop(1)),
     ]);
-    m.insert(r"object-body", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(2)),
-        Rule::token(r"(?ms),", PUNCTUATION),
-        Rule::token_to(r"(?ms)class\b", KEYWORD_DECLARATION, NewState::Push(vec![r"class-segment"])),
-        Rule::token(r"(?ms)(has|private|with)\b", KEYWORD_DECLARATION),
-        Rule::token(r"(?ms):", ERROR),
-        Rule::default(NewState::Push(vec![r"_object-expression", r"_expression"])),
-    ]);
-    m.insert(r"class-segment", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)(?=[,;]|(class|has|private|with)\b)", TEXT, NewState::Pop(1)),
-        Rule::token(r"(?ms)[a-zA-Z_]\w*", NAME_CLASS),
-        Rule::default(NewState::Push(vec![r"value"])),
-    ]);
-    m.insert(r"grammar", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)=", PUNCTUATION, NewState::Push(vec![r"#pop", r"default"])),
-        Rule::token_to(r"(?ms)\*", PUNCTUATION, NewState::Push(vec![r"#pop", r"grammar-line"])),
-        Rule::default(NewState::Push(vec![r"_directive-keyword"])),
-    ]);
-    m.insert(r"grammar-line", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?ms)[/*]", PUNCTUATION),
-        Rule::token_to(r"(?ms)[\-‐-—]>", PUNCTUATION, NewState::Push(vec![r"value"])),
-        Rule::token_to(r"(?ms)(noun|scope)\b", KEYWORD, NewState::Push(vec![r"=routine"])),
-        Rule::default(NewState::Push(vec![r"_directive-keyword"])),
-    ]);
-    m.insert(r"=routine", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)=", PUNCTUATION, NewState::Push(vec![r"routine-name?"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"manifest", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?ms),", PUNCTUATION),
-        Rule::token_to(r"(?ms)(?i)global\b", KEYWORD, NewState::Push(vec![r"_global"])),
-        Rule::default(NewState::Push(vec![r"_global"])),
-    ]);
-    m.insert(r"diagnostic", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r#"(?ms)["“”]"#, STRING_DOUBLE, NewState::Push(vec![r"#pop", r"message-string"])),
-        Rule::default(NewState::Push(vec![r"#pop", r"before-plain-string?", r"directive-keyword?"])),
-    ]);
-    m.insert(r"before-plain-string?", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r#"(?ms)["“”]"#, STRING_DOUBLE, NewState::Push(vec![r"#pop", r"plain-string"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"message-string", vec![
-        Rule::token(r"(?ms)[~^]+", STRING_ESCAPE),
-        Rule::token(r#"(?ms)[^~^\\({\[\]"“”]+"#, STRING_DOUBLE),
-        Rule::token(r"(?ms)[~^({\[\]]", STRING_DOUBLE),
-        Rule::token(r"(?ms)\\", STRING_ESCAPE),
-        Rule::token_to(r#"(?ms)["“”]"#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"object-body",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(2)),
+            Rule::token(r"(?ms),", PUNCTUATION),
+            Rule::token_to(
+                r"(?ms)class\b",
+                KEYWORD_DECLARATION,
+                NewState::Push(vec![r"class-segment"]),
+            ),
+            Rule::token(r"(?ms)(has|private|with)\b", KEYWORD_DECLARATION),
+            Rule::token(r"(?ms):", ERROR),
+            Rule::default(NewState::Push(vec![r"_object-expression", r"_expression"])),
+        ],
+    );
+    m.insert(
+        r"class-segment",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)(?=[,;]|(class|has|private|with)\b)",
+                TEXT,
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?ms)[a-zA-Z_]\w*", NAME_CLASS),
+            Rule::default(NewState::Push(vec![r"value"])),
+        ],
+    );
+    m.insert(
+        r"grammar",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)=",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"default"]),
+            ),
+            Rule::token_to(
+                r"(?ms)\*",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"grammar-line"]),
+            ),
+            Rule::default(NewState::Push(vec![r"_directive-keyword"])),
+        ],
+    );
+    m.insert(
+        r"grammar-line",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?ms)[/*]", PUNCTUATION),
+            Rule::token_to(
+                r"(?ms)[\-‐-—]>",
+                PUNCTUATION,
+                NewState::Push(vec![r"value"]),
+            ),
+            Rule::token_to(
+                r"(?ms)(noun|scope)\b",
+                KEYWORD,
+                NewState::Push(vec![r"=routine"]),
+            ),
+            Rule::default(NewState::Push(vec![r"_directive-keyword"])),
+        ],
+    );
+    m.insert(
+        r"=routine",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)=",
+                PUNCTUATION,
+                NewState::Push(vec![r"routine-name?"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"manifest",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?ms),", PUNCTUATION),
+            Rule::token_to(
+                r"(?ms)(?i)global\b",
+                KEYWORD,
+                NewState::Push(vec![r"_global"]),
+            ),
+            Rule::default(NewState::Push(vec![r"_global"])),
+        ],
+    );
+    m.insert(
+        r"diagnostic",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r#"(?ms)["“”]"#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"#pop", r"message-string"]),
+            ),
+            Rule::default(NewState::Push(vec![
+                r"#pop",
+                r"before-plain-string?",
+                r"directive-keyword?",
+            ])),
+        ],
+    );
+    m.insert(
+        r"before-plain-string?",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r#"(?ms)["“”]"#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"#pop", r"plain-string"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"message-string",
+        vec![
+            Rule::token(r"(?ms)[~^]+", STRING_ESCAPE),
+            Rule::token(r#"(?ms)[^~^\\({\[\]"“”]+"#, STRING_DOUBLE),
+            Rule::token(r"(?ms)[~^({\[\]]", STRING_DOUBLE),
+            Rule::token(r"(?ms)\\", STRING_ESCAPE),
+            Rule::token_to(r#"(?ms)["“”]"#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"_directive-keyword!", vec![
         Rule::token(r"(?ms)\s+", TEXT),
         Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
@@ -511,12 +793,18 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)[\-‐-—]{1,2}>|[+=]", PUNCTUATION, NewState::Pop(1)),
         Rule::default(NewState::Pop(1)),
     ]);
-    m.insert(r"property-keyword*", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token(r"(?ms)(additive|individual|long)\b(?=(\s*|(![^\n  ]*[\n  ]))*[_a-zA-Z])", KEYWORD),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"property-keyword*",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token(
+                r"(?ms)(additive|individual|long)\b(?=(\s*|(![^\n  ]*[\n  ]))*[_a-zA-Z])",
+                KEYWORD,
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     m.insert(r"trace-keyword?", vec![
         Rule::token(r"(?ms)\s+", TEXT),
         Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
@@ -551,42 +839,88 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)[a-zA-Z_]\w*(?=(\s+|(![^\n  ]*))*\))", NAME_FUNCTION, NewState::Pop(1)),
         Rule::default(NewState::Pop(1)),
     ]);
-    m.insert(r"(?", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)\(", PUNCTUATION, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"for", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Push(vec![r"_for-expression", r"_expression"])),
-        Rule::default(NewState::Push(vec![r"_for-expression", r"_expression"])),
-    ]);
-    m.insert(r"print-list", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?ms):", ERROR),
-        Rule::default(NewState::Push(vec![r"_list-expression", r"_expression", r"_list-expression", r"form"])),
-    ]);
-    m.insert(r"form", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r"(?ms)\(", PUNCTUATION, NewState::Push(vec![r"#pop", r"miscellaneous-keyword?"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"opcode", vec![
-        Rule::token(r"(?ms)\s+", TEXT),
-        Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
-        Rule::token_to(r#"(?ms)["“”]"#, STRING_DOUBLE, NewState::Push(vec![r"operands", r"plain-string"])),
-        Rule::token_to(r"(?ms)[\-‐-—]{1,2}>", PUNCTUATION, NewState::Push(vec![r"operands"])),
-        Rule::token_to(r"(?ms)[a-zA-Z_]\w*", KEYWORD, NewState::Push(vec![r"operands"])),
-    ]);
-    m.insert(r"operands", vec![
-        Rule::token(r"(?ms):", ERROR),
-        Rule::default(NewState::Push(vec![r"_assembly-expression", r"_expression"])),
-    ]);
+    m.insert(
+        r"(?",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(r"(?ms)\(", PUNCTUATION, NewState::Pop(1)),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"for",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms);",
+                PUNCTUATION,
+                NewState::Push(vec![r"_for-expression", r"_expression"]),
+            ),
+            Rule::default(NewState::Push(vec![r"_for-expression", r"_expression"])),
+        ],
+    );
+    m.insert(
+        r"print-list",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(r"(?ms);", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(r"(?ms):", ERROR),
+            Rule::default(NewState::Push(vec![
+                r"_list-expression",
+                r"_expression",
+                r"_list-expression",
+                r"form",
+            ])),
+        ],
+    );
+    m.insert(
+        r"form",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r"(?ms)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"miscellaneous-keyword?"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"opcode",
+        vec![
+            Rule::token(r"(?ms)\s+", TEXT),
+            Rule::token(r"(?ms)![^\n  ]*", COMMENT_SINGLE),
+            Rule::token_to(
+                r#"(?ms)["“”]"#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"operands", r"plain-string"]),
+            ),
+            Rule::token_to(
+                r"(?ms)[\-‐-—]{1,2}>",
+                PUNCTUATION,
+                NewState::Push(vec![r"operands"]),
+            ),
+            Rule::token_to(
+                r"(?ms)[a-zA-Z_]\w*",
+                KEYWORD,
+                NewState::Push(vec![r"operands"]),
+            ),
+        ],
+    );
+    m.insert(
+        r"operands",
+        vec![
+            Rule::token(r"(?ms):", ERROR),
+            Rule::default(NewState::Push(vec![
+                r"_assembly-expression",
+                r"_expression",
+            ])),
+        ],
+    );
     Table(m)
 }
 

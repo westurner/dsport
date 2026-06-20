@@ -1,6 +1,6 @@
 mod common;
 
-use docutilsrs::{latex, cli::LatexOptions};
+use docutilsrs::{cli::LatexOptions, latex};
 
 #[test]
 fn test_latex_coverage() {

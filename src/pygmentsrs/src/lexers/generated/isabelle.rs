@@ -58,35 +58,47 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)`", STRING_OTHER, NewState::Push(vec![r"fact"])),
         Rule::token(r"(?m)[^\s:|\[\]\-()=,+!?{}._][^\s:|\[\]\-()=,+!?{}]*", NAME),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^(*)]+", COMMENT),
-        Rule::token_to(r"(?m)\(\*", COMMENT, NewState::PushSame),
-        Rule::token_to(r"(?m)\*\)", COMMENT, NewState::Pop(1)),
-        Rule::token(r"(?m)[(*)]", COMMENT),
-    ]);
-    m.insert(r"cartouche", vec![
-        Rule::token(r"(?m)[^{*}\\‹›]+", STRING),
-        Rule::token_to(r"(?m)\\<open>", STRING_SYMBOL, NewState::PushSame),
-        Rule::token_to(r"(?m)\{\*|‹", STRING, NewState::PushSame),
-        Rule::token_to(r"(?m)\\<close>", STRING_SYMBOL, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\*\}|›", STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)\\<(\w|\^)*>", STRING_SYMBOL),
-        Rule::token(r"(?m)[{*}\\]", STRING),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token(r#"(?m)[^"\\]+"#, STRING),
-        Rule::token(r"(?m)\\<(\w|\^)*>", STRING_SYMBOL),
-        Rule::token(r#"(?m)\\""#, STRING),
-        Rule::token(r"(?m)\\", STRING),
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-    ]);
-    m.insert(r"fact", vec![
-        Rule::token(r"(?m)[^`\\]+", STRING_OTHER),
-        Rule::token(r"(?m)\\<(\w|\^)*>", STRING_SYMBOL),
-        Rule::token(r"(?m)\\`", STRING_OTHER),
-        Rule::token(r"(?m)\\", STRING_OTHER),
-        Rule::token_to(r"(?m)`", STRING_OTHER, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^(*)]+", COMMENT),
+            Rule::token_to(r"(?m)\(\*", COMMENT, NewState::PushSame),
+            Rule::token_to(r"(?m)\*\)", COMMENT, NewState::Pop(1)),
+            Rule::token(r"(?m)[(*)]", COMMENT),
+        ],
+    );
+    m.insert(
+        r"cartouche",
+        vec![
+            Rule::token(r"(?m)[^{*}\\‹›]+", STRING),
+            Rule::token_to(r"(?m)\\<open>", STRING_SYMBOL, NewState::PushSame),
+            Rule::token_to(r"(?m)\{\*|‹", STRING, NewState::PushSame),
+            Rule::token_to(r"(?m)\\<close>", STRING_SYMBOL, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\*\}|›", STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)\\<(\w|\^)*>", STRING_SYMBOL),
+            Rule::token(r"(?m)[{*}\\]", STRING),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token(r#"(?m)[^"\\]+"#, STRING),
+            Rule::token(r"(?m)\\<(\w|\^)*>", STRING_SYMBOL),
+            Rule::token(r#"(?m)\\""#, STRING),
+            Rule::token(r"(?m)\\", STRING),
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"fact",
+        vec![
+            Rule::token(r"(?m)[^`\\]+", STRING_OTHER),
+            Rule::token(r"(?m)\\<(\w|\^)*>", STRING_SYMBOL),
+            Rule::token(r"(?m)\\`", STRING_OTHER),
+            Rule::token(r"(?m)\\", STRING_OTHER),
+            Rule::token_to(r"(?m)`", STRING_OTHER, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

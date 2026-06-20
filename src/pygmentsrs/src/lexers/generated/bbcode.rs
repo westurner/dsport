@@ -25,17 +25,29 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)[^\[]+", TEXT),
-        Rule::token_to(r"(?m)\[/?\w+", KEYWORD, NewState::Push(vec![r"tag"])),
-        Rule::token(r"(?m)\[", TEXT),
-    ]);
-    m.insert(r"tag", vec![
-        Rule::token(r"(?m)\s+", TEXT),
-        Rule::bygroups(r#"(?m)(\w+)(=)("?[^\s"\]]+"?)"#, vec![Some(NAME_ATTRIBUTE), Some(OPERATOR), Some(STRING)]),
-        Rule::bygroups(r#"(?m)(=)("?[^\s"\]]+"?)"#, vec![Some(OPERATOR), Some(STRING)]),
-        Rule::token_to(r"(?m)\]", KEYWORD, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)[^\[]+", TEXT),
+            Rule::token_to(r"(?m)\[/?\w+", KEYWORD, NewState::Push(vec![r"tag"])),
+            Rule::token(r"(?m)\[", TEXT),
+        ],
+    );
+    m.insert(
+        r"tag",
+        vec![
+            Rule::token(r"(?m)\s+", TEXT),
+            Rule::bygroups(
+                r#"(?m)(\w+)(=)("?[^\s"\]]+"?)"#,
+                vec![Some(NAME_ATTRIBUTE), Some(OPERATOR), Some(STRING)],
+            ),
+            Rule::bygroups(
+                r#"(?m)(=)("?[^\s"\]]+"?)"#,
+                vec![Some(OPERATOR), Some(STRING)],
+            ),
+            Rule::token_to(r"(?m)\]", KEYWORD, NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

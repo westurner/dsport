@@ -25,60 +25,90 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"general", vec![
-        Rule::token(r"(?m)%.*?\n", COMMENT),
-        Rule::token(r"(?m)[{}]", NAME_BUILTIN),
-        Rule::token(r"(?m)[&_^]", NAME_BUILTIN),
-    ]);
-    m.insert(r"root", vec![
-        Rule::token_to(r"(?m)\\\[", STRING_BACKTICK, NewState::Push(vec![r"displaymath"])),
-        Rule::token_to(r"(?m)\\\(", STRING, NewState::Push(vec![r"inlinemath"])),
-        Rule::token_to(r"(?m)\$\$", STRING_BACKTICK, NewState::Push(vec![r"displaymath"])),
-        Rule::token_to(r"(?m)\$", STRING, NewState::Push(vec![r"inlinemath"])),
-        Rule::token_to(r"(?m)\\([a-zA-Z@_:]+|\S?)", KEYWORD, NewState::Push(vec![r"command"])),
-        Rule::token(r"(?m)\\$", KEYWORD),
-        Rule::token(r"(?m)%.*?\n", COMMENT),
-        Rule::token(r"(?m)[{}]", NAME_BUILTIN),
-        Rule::token(r"(?m)[&_^]", NAME_BUILTIN),
-        Rule::token(r"(?m)[^\\$%&_^{}]+", TEXT),
-    ]);
-    m.insert(r"math", vec![
-        Rule::token(r"(?m)\\([a-zA-Z]+|\S?)", NAME_VARIABLE),
-        Rule::token(r"(?m)%.*?\n", COMMENT),
-        Rule::token(r"(?m)[{}]", NAME_BUILTIN),
-        Rule::token(r"(?m)[&_^]", NAME_BUILTIN),
-        Rule::token(r"(?m)[0-9]+", NUMBER),
-        Rule::token(r"(?m)[-=!+*/()\[\]]", OPERATOR),
-        Rule::token(r"(?m)[^=!+*/()\[\]\\$%&_^{}0-9-]+", NAME_BUILTIN),
-    ]);
-    m.insert(r"inlinemath", vec![
-        Rule::token_to(r"(?m)\\\)", STRING, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\$", STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)\\([a-zA-Z]+|\S?)", NAME_VARIABLE),
-        Rule::token(r"(?m)%.*?\n", COMMENT),
-        Rule::token(r"(?m)[{}]", NAME_BUILTIN),
-        Rule::token(r"(?m)[&_^]", NAME_BUILTIN),
-        Rule::token(r"(?m)[0-9]+", NUMBER),
-        Rule::token(r"(?m)[-=!+*/()\[\]]", OPERATOR),
-        Rule::token(r"(?m)[^=!+*/()\[\]\\$%&_^{}0-9-]+", NAME_BUILTIN),
-    ]);
-    m.insert(r"displaymath", vec![
-        Rule::token_to(r"(?m)\\\]", STRING, NewState::Pop(1)),
-        Rule::token_to(r"(?m)\$\$", STRING, NewState::Pop(1)),
-        Rule::token(r"(?m)\$", NAME_BUILTIN),
-        Rule::token(r"(?m)\\([a-zA-Z]+|\S?)", NAME_VARIABLE),
-        Rule::token(r"(?m)%.*?\n", COMMENT),
-        Rule::token(r"(?m)[{}]", NAME_BUILTIN),
-        Rule::token(r"(?m)[&_^]", NAME_BUILTIN),
-        Rule::token(r"(?m)[0-9]+", NUMBER),
-        Rule::token(r"(?m)[-=!+*/()\[\]]", OPERATOR),
-        Rule::token(r"(?m)[^=!+*/()\[\]\\$%&_^{}0-9-]+", NAME_BUILTIN),
-    ]);
-    m.insert(r"command", vec![
-        Rule::token(r"(?m)\[.*?\]", NAME_ATTRIBUTE),
-        Rule::token(r"(?m)\*", KEYWORD),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"general",
+        vec![
+            Rule::token(r"(?m)%.*?\n", COMMENT),
+            Rule::token(r"(?m)[{}]", NAME_BUILTIN),
+            Rule::token(r"(?m)[&_^]", NAME_BUILTIN),
+        ],
+    );
+    m.insert(
+        r"root",
+        vec![
+            Rule::token_to(
+                r"(?m)\\\[",
+                STRING_BACKTICK,
+                NewState::Push(vec![r"displaymath"]),
+            ),
+            Rule::token_to(r"(?m)\\\(", STRING, NewState::Push(vec![r"inlinemath"])),
+            Rule::token_to(
+                r"(?m)\$\$",
+                STRING_BACKTICK,
+                NewState::Push(vec![r"displaymath"]),
+            ),
+            Rule::token_to(r"(?m)\$", STRING, NewState::Push(vec![r"inlinemath"])),
+            Rule::token_to(
+                r"(?m)\\([a-zA-Z@_:]+|\S?)",
+                KEYWORD,
+                NewState::Push(vec![r"command"]),
+            ),
+            Rule::token(r"(?m)\\$", KEYWORD),
+            Rule::token(r"(?m)%.*?\n", COMMENT),
+            Rule::token(r"(?m)[{}]", NAME_BUILTIN),
+            Rule::token(r"(?m)[&_^]", NAME_BUILTIN),
+            Rule::token(r"(?m)[^\\$%&_^{}]+", TEXT),
+        ],
+    );
+    m.insert(
+        r"math",
+        vec![
+            Rule::token(r"(?m)\\([a-zA-Z]+|\S?)", NAME_VARIABLE),
+            Rule::token(r"(?m)%.*?\n", COMMENT),
+            Rule::token(r"(?m)[{}]", NAME_BUILTIN),
+            Rule::token(r"(?m)[&_^]", NAME_BUILTIN),
+            Rule::token(r"(?m)[0-9]+", NUMBER),
+            Rule::token(r"(?m)[-=!+*/()\[\]]", OPERATOR),
+            Rule::token(r"(?m)[^=!+*/()\[\]\\$%&_^{}0-9-]+", NAME_BUILTIN),
+        ],
+    );
+    m.insert(
+        r"inlinemath",
+        vec![
+            Rule::token_to(r"(?m)\\\)", STRING, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\$", STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)\\([a-zA-Z]+|\S?)", NAME_VARIABLE),
+            Rule::token(r"(?m)%.*?\n", COMMENT),
+            Rule::token(r"(?m)[{}]", NAME_BUILTIN),
+            Rule::token(r"(?m)[&_^]", NAME_BUILTIN),
+            Rule::token(r"(?m)[0-9]+", NUMBER),
+            Rule::token(r"(?m)[-=!+*/()\[\]]", OPERATOR),
+            Rule::token(r"(?m)[^=!+*/()\[\]\\$%&_^{}0-9-]+", NAME_BUILTIN),
+        ],
+    );
+    m.insert(
+        r"displaymath",
+        vec![
+            Rule::token_to(r"(?m)\\\]", STRING, NewState::Pop(1)),
+            Rule::token_to(r"(?m)\$\$", STRING, NewState::Pop(1)),
+            Rule::token(r"(?m)\$", NAME_BUILTIN),
+            Rule::token(r"(?m)\\([a-zA-Z]+|\S?)", NAME_VARIABLE),
+            Rule::token(r"(?m)%.*?\n", COMMENT),
+            Rule::token(r"(?m)[{}]", NAME_BUILTIN),
+            Rule::token(r"(?m)[&_^]", NAME_BUILTIN),
+            Rule::token(r"(?m)[0-9]+", NUMBER),
+            Rule::token(r"(?m)[-=!+*/()\[\]]", OPERATOR),
+            Rule::token(r"(?m)[^=!+*/()\[\]\\$%&_^{}0-9-]+", NAME_BUILTIN),
+        ],
+    );
+    m.insert(
+        r"command",
+        vec![
+            Rule::token(r"(?m)\[.*?\]", NAME_ATTRIBUTE),
+            Rule::token(r"(?m)\*", KEYWORD),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

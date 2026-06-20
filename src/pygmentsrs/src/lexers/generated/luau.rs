@@ -25,15 +25,24 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token_to(r"(?m)#!.*", COMMENT_HASHBANG, NewState::Push(vec![r"base"])),
-        Rule::default(NewState::Push(vec![r"base"])),
-    ]);
-    m.insert(r"ws", vec![
-        Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
-        Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token_to(r"(?m)#!.*", COMMENT_HASHBANG, NewState::Push(vec![r"base"])),
+            Rule::default(NewState::Push(vec![r"base"])),
+        ],
+    );
+    m.insert(
+        r"ws",
+        vec![
+            Rule::token(
+                r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])",
+                COMMENT_MULTILINE,
+            ),
+            Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+        ],
+    );
     m.insert(r"base", vec![
         Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
         Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
@@ -95,23 +104,36 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*", NAME, NewState::Pop(1)),
         Rule::default(NewState::Pop(1)),
     ]);
-    m.insert(r"ternary", vec![
-        Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
-        Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r"(?m)else\b", KEYWORD_RESERVED, NewState::Pop(1)),
-        Rule::token_to(r"(?m)(elseif|then)\b", TokenType::new(&["Operator", "Reserved"]), NewState::Push(vec![r"expression"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"closing_brace_pop", vec![
-        Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"closing_parenthesis_pop", vec![
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"closing_gt_pop", vec![
-        Rule::token_to(r"(?m)>", PUNCTUATION, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"ternary",
+        vec![
+            Rule::token(
+                r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])",
+                COMMENT_MULTILINE,
+            ),
+            Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(r"(?m)else\b", KEYWORD_RESERVED, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)(elseif|then)\b",
+                TokenType::new(&["Operator", "Reserved"]),
+                NewState::Push(vec![r"expression"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"closing_brace_pop",
+        vec![Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1))],
+    );
+    m.insert(
+        r"closing_parenthesis_pop",
+        vec![Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1))],
+    );
+    m.insert(
+        r"closing_gt_pop",
+        vec![Rule::token_to(r"(?m)>", PUNCTUATION, NewState::Pop(1))],
+    );
     m.insert(r"closing_parenthesis_base", vec![
         Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
         Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
@@ -145,35 +167,95 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*", NAME),
         Rule::token_to(r"(?m)[\[.,]", PUNCTUATION, NewState::Push(vec![r"expression"])),
     ]);
-    m.insert(r"closing_parenthesis_type", vec![
-        Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
-        Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"closing_parenthesis_type"])),
-        Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::Push(vec![r"closing_brace_type"])),
-        Rule::token_to(r"(?m)<", PUNCTUATION, NewState::Push(vec![r"closing_gt_type"])),
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Push(vec![r"string_single"])),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"string_double"])),
-        Rule::token(r"(?m)[|&\.,\[\]:=]+", PUNCTUATION),
-        Rule::token(r"(?m)->", PUNCTUATION),
-        Rule::token_to(r"(?m)typeof\(", NAME_BUILTIN, NewState::Push(vec![r"closing_parenthesis_base", r"expression"])),
-        Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_CLASS),
-    ]);
-    m.insert(r"type", vec![
-        Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
-        Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"closing_parenthesis_type"])),
-        Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::Push(vec![r"closing_brace_type"])),
-        Rule::token_to(r"(?m)<", PUNCTUATION, NewState::Push(vec![r"closing_gt_type"])),
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Push(vec![r"string_single"])),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"string_double"])),
-        Rule::token(r"(?m)[|&\.,\[\]:=]+", PUNCTUATION),
-        Rule::token(r"(?m)->", PUNCTUATION),
-        Rule::token_to(r"(?m)typeof\(", NAME_BUILTIN, NewState::Push(vec![r"closing_parenthesis_base", r"expression"])),
-        Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_CLASS),
-    ]);
+    m.insert(
+        r"closing_parenthesis_type",
+        vec![
+            Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(
+                r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])",
+                COMMENT_MULTILINE,
+            ),
+            Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(
+                r"(?m)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_parenthesis_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)\{",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_brace_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)<",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_gt_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)'",
+                STRING_SINGLE,
+                NewState::Push(vec![r"string_single"]),
+            ),
+            Rule::token_to(
+                r#"(?m)""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"string_double"]),
+            ),
+            Rule::token(r"(?m)[|&\.,\[\]:=]+", PUNCTUATION),
+            Rule::token(r"(?m)->", PUNCTUATION),
+            Rule::token_to(
+                r"(?m)typeof\(",
+                NAME_BUILTIN,
+                NewState::Push(vec![r"closing_parenthesis_base", r"expression"]),
+            ),
+            Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_CLASS),
+        ],
+    );
+    m.insert(
+        r"type",
+        vec![
+            Rule::token(
+                r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])",
+                COMMENT_MULTILINE,
+            ),
+            Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(
+                r"(?m)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_parenthesis_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)\{",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_brace_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)<",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_gt_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)'",
+                STRING_SINGLE,
+                NewState::Push(vec![r"string_single"]),
+            ),
+            Rule::token_to(
+                r#"(?m)""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"string_double"]),
+            ),
+            Rule::token(r"(?m)[|&\.,\[\]:=]+", PUNCTUATION),
+            Rule::token(r"(?m)->", PUNCTUATION),
+            Rule::token_to(
+                r"(?m)typeof\(",
+                NAME_BUILTIN,
+                NewState::Push(vec![r"closing_parenthesis_base", r"expression"]),
+            ),
+            Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_CLASS),
+        ],
+    );
     m.insert(r"closing_brace_base", vec![
         Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
         Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
@@ -207,36 +289,96 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*", NAME),
         Rule::token_to(r"(?m)[\[.,]", PUNCTUATION, NewState::Push(vec![r"expression"])),
     ]);
-    m.insert(r"closing_brace_type", vec![
-        Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
-        Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"closing_parenthesis_type"])),
-        Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::Push(vec![r"closing_brace_type"])),
-        Rule::token_to(r"(?m)<", PUNCTUATION, NewState::Push(vec![r"closing_gt_type"])),
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Push(vec![r"string_single"])),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"string_double"])),
-        Rule::token(r"(?m)[|&\.,\[\]:=]+", PUNCTUATION),
-        Rule::token(r"(?m)->", PUNCTUATION),
-        Rule::token_to(r"(?m)typeof\(", NAME_BUILTIN, NewState::Push(vec![r"closing_parenthesis_base", r"expression"])),
-        Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_CLASS),
-    ]);
-    m.insert(r"closing_gt_type", vec![
-        Rule::token_to(r"(?m)>", PUNCTUATION, NewState::Pop(1)),
-        Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
-        Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"closing_parenthesis_type"])),
-        Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::Push(vec![r"closing_brace_type"])),
-        Rule::token_to(r"(?m)<", PUNCTUATION, NewState::Push(vec![r"closing_gt_type"])),
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Push(vec![r"string_single"])),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"string_double"])),
-        Rule::token(r"(?m)[|&\.,\[\]:=]+", PUNCTUATION),
-        Rule::token(r"(?m)->", PUNCTUATION),
-        Rule::token_to(r"(?m)typeof\(", NAME_BUILTIN, NewState::Push(vec![r"closing_parenthesis_base", r"expression"])),
-        Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_CLASS),
-    ]);
+    m.insert(
+        r"closing_brace_type",
+        vec![
+            Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(
+                r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])",
+                COMMENT_MULTILINE,
+            ),
+            Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(
+                r"(?m)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_parenthesis_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)\{",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_brace_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)<",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_gt_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)'",
+                STRING_SINGLE,
+                NewState::Push(vec![r"string_single"]),
+            ),
+            Rule::token_to(
+                r#"(?m)""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"string_double"]),
+            ),
+            Rule::token(r"(?m)[|&\.,\[\]:=]+", PUNCTUATION),
+            Rule::token(r"(?m)->", PUNCTUATION),
+            Rule::token_to(
+                r"(?m)typeof\(",
+                NAME_BUILTIN,
+                NewState::Push(vec![r"closing_parenthesis_base", r"expression"]),
+            ),
+            Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_CLASS),
+        ],
+    );
+    m.insert(
+        r"closing_gt_type",
+        vec![
+            Rule::token_to(r"(?m)>", PUNCTUATION, NewState::Pop(1)),
+            Rule::token(
+                r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])",
+                COMMENT_MULTILINE,
+            ),
+            Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(
+                r"(?m)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_parenthesis_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)\{",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_brace_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)<",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_gt_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)'",
+                STRING_SINGLE,
+                NewState::Push(vec![r"string_single"]),
+            ),
+            Rule::token_to(
+                r#"(?m)""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"string_double"]),
+            ),
+            Rule::token(r"(?m)[|&\.,\[\]:=]+", PUNCTUATION),
+            Rule::token(r"(?m)->", PUNCTUATION),
+            Rule::token_to(
+                r"(?m)typeof\(",
+                NAME_BUILTIN,
+                NewState::Push(vec![r"closing_parenthesis_base", r"expression"]),
+            ),
+            Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_CLASS),
+        ],
+    );
     m.insert(r"string_escape", vec![
         Rule::token(r"(?m)\\z\s*", STRING_ESCAPE),
         Rule::token(r#"(?m)\\(?:[abfnrtvz\\"\'`\{\n])|[\r\n]{1,2}|x[\da-fA-F]{2}|\d{1,3}|u\{\}[\da-fA-F]*\}"#, STRING_ESCAPE),
@@ -260,45 +402,113 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)`", STRING_BACKTICK, NewState::Pop(1)),
         Rule::token(r"(?m)[^\\`\{]+", STRING_BACKTICK),
     ]);
-    m.insert(r"func_name", vec![
-        Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
-        Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)[.:]", PUNCTUATION),
-        Rule::token(r"(?m)[a-zA-Z_]\w*(?=\s*[.:])", NAME_CLASS),
-        Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_FUNCTION),
-        Rule::token_to(r"(?m)<", PUNCTUATION, NewState::Push(vec![r"closing_gt_type"])),
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"type_start", vec![
-        Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
-        Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"#pop", r"closing_parenthesis_type"])),
-        Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::Push(vec![r"#pop", r"closing_brace_type"])),
-        Rule::token_to(r"(?m)<", PUNCTUATION, NewState::Push(vec![r"#pop", r"closing_gt_type"])),
-        Rule::token_to(r"(?m)'", STRING_SINGLE, NewState::Push(vec![r"#pop", r"string_single"])),
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Push(vec![r"#pop", r"string_double"])),
-        Rule::token_to(r"(?m)typeof\(", NAME_BUILTIN, NewState::Push(vec![r"#pop", r"closing_parenthesis_base", r"expression"])),
-        Rule::token_to(r"(?m)[a-zA-Z_]\w*", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"type_end", vec![
-        Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
-        Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token_to(r"(?m)[|&\.]", PUNCTUATION, NewState::Push(vec![r"type_start"])),
-        Rule::token_to(r"(?m)->", PUNCTUATION, NewState::Push(vec![r"type_start"])),
-        Rule::token_to(r"(?m)<", PUNCTUATION, NewState::Push(vec![r"closing_gt_type"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"type_declaration", vec![
-        Rule::token(r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])", COMMENT_MULTILINE),
-        Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_CLASS),
-        Rule::token_to(r"(?m)<", PUNCTUATION, NewState::Push(vec![r"closing_gt_type"])),
-        Rule::token_to(r"(?m)=", PUNCTUATION, NewState::Push(vec![r"#pop", r"type_end", r"type_start"])),
-    ]);
+    m.insert(
+        r"func_name",
+        vec![
+            Rule::token(
+                r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])",
+                COMMENT_MULTILINE,
+            ),
+            Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)[.:]", PUNCTUATION),
+            Rule::token(r"(?m)[a-zA-Z_]\w*(?=\s*[.:])", NAME_CLASS),
+            Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_FUNCTION),
+            Rule::token_to(
+                r"(?m)<",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_gt_type"]),
+            ),
+            Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"type_start",
+        vec![
+            Rule::token(
+                r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])",
+                COMMENT_MULTILINE,
+            ),
+            Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(
+                r"(?m)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"closing_parenthesis_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)\{",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"closing_brace_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)<",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"closing_gt_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)'",
+                STRING_SINGLE,
+                NewState::Push(vec![r"#pop", r"string_single"]),
+            ),
+            Rule::token_to(
+                r#"(?m)""#,
+                STRING_DOUBLE,
+                NewState::Push(vec![r"#pop", r"string_double"]),
+            ),
+            Rule::token_to(
+                r"(?m)typeof\(",
+                NAME_BUILTIN,
+                NewState::Push(vec![r"#pop", r"closing_parenthesis_base", r"expression"]),
+            ),
+            Rule::token_to(r"(?m)[a-zA-Z_]\w*", NAME_CLASS, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"type_end",
+        vec![
+            Rule::token(
+                r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])",
+                COMMENT_MULTILINE,
+            ),
+            Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token_to(
+                r"(?m)[|&\.]",
+                PUNCTUATION,
+                NewState::Push(vec![r"type_start"]),
+            ),
+            Rule::token_to(r"(?m)->", PUNCTUATION, NewState::Push(vec![r"type_start"])),
+            Rule::token_to(
+                r"(?m)<",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_gt_type"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"type_declaration",
+        vec![
+            Rule::token(
+                r"(?m)(?:--\[(?P<level>=*)\[[\w\W]*?\](?P=level)\])",
+                COMMENT_MULTILINE,
+            ),
+            Rule::token(r"(?m)(?:--.*$)", COMMENT_SINGLE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)[a-zA-Z_]\w*", NAME_CLASS),
+            Rule::token_to(
+                r"(?m)<",
+                PUNCTUATION,
+                NewState::Push(vec![r"closing_gt_type"]),
+            ),
+            Rule::token_to(
+                r"(?m)=",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"type_end", r"type_start"]),
+            ),
+        ],
+    );
     Table(m)
 }
 

@@ -19,7 +19,7 @@ use pygmentsrs::token::*;
 fn test_parse_color_all_named_colors() {
     // Test every named color path in color::parse_color
     use pygmentsrs::formatters::color::parse_color;
-    
+
     assert_eq!(parse_color("black"), (0, 0, 0));
     assert_eq!(parse_color("BLACK"), (0, 0, 0)); // case-insensitive
     assert_eq!(parse_color("red"), (255, 0, 0));
@@ -47,7 +47,7 @@ fn test_parse_color_all_named_colors() {
 #[test]
 fn test_parse_color_hex_variations() {
     use pygmentsrs::formatters::color::parse_color;
-    
+
     // Valid hex colors
     assert_eq!(parse_color("#000000"), (0, 0, 0));
     assert_eq!(parse_color("#FFFFFF"), (255, 255, 255));
@@ -55,14 +55,14 @@ fn test_parse_color_hex_variations() {
     assert_eq!(parse_color("#00FF00"), (0, 255, 0));
     assert_eq!(parse_color("#0000FF"), (0, 0, 255));
     assert_eq!(parse_color("#808080"), (128, 128, 128));
-    
+
     // Invalid hex (wrong length)
     assert_eq!(parse_color("#FFF"), (0, 0, 0)); // too short
     assert_eq!(parse_color("#FFFFFFFF"), (0, 0, 0)); // too long
-    
+
     // Invalid hex (bad chars)
     assert_eq!(parse_color("#GGGGGG"), (0, 0, 0));
-    
+
     // Unknown named color
     assert_eq!(parse_color("notacolor"), (0, 0, 0));
     assert_eq!(parse_color(""), (0, 0, 0));
@@ -75,17 +75,17 @@ fn test_parse_color_hex_variations() {
 #[test]
 fn test_rgb_to_ansi16_exact_matches() {
     use pygmentsrs::formatters::color::rgb_to_ansi16;
-    
+
     // Test colors that should match exactly or very closely to ANSI 16 palette
     let idx_black = rgb_to_ansi16(0, 0, 0);
     assert_eq!(idx_black, 0);
-    
+
     let idx_white = rgb_to_ansi16(255, 255, 255);
     assert_eq!(idx_white, 15);
-    
+
     let idx_red = rgb_to_ansi16(255, 0, 0);
     assert!(idx_red == 1 || idx_red == 9); // maroon or bright red
-    
+
     let idx_green = rgb_to_ansi16(0, 255, 0);
     assert!(idx_green == 2 || idx_green == 10); // green or bright green
 }
@@ -93,27 +93,27 @@ fn test_rgb_to_ansi16_exact_matches() {
 #[test]
 fn test_rgb_to_ansi16_boundary_colors() {
     use pygmentsrs::formatters::color::rgb_to_ansi16;
-    
+
     // Test with all 16 standard colors to ensure no panic and all valid indices
     let colors = [
-        (0, 0, 0),         // black
-        (128, 0, 0),       // maroon
-        (0, 128, 0),       // green
-        (128, 128, 0),     // olive
-        (0, 0, 128),       // navy
-        (128, 0, 128),     // purple
-        (0, 128, 128),     // teal
-        (192, 192, 192),   // silver
-        (128, 128, 128),   // gray
-        (255, 0, 0),       // red
-        (0, 255, 0),       // lime
-        (255, 255, 0),     // yellow
-        (0, 0, 255),       // blue
-        (255, 0, 255),     // magenta
-        (0, 255, 255),     // cyan
-        (255, 255, 255),   // white
+        (0, 0, 0),       // black
+        (128, 0, 0),     // maroon
+        (0, 128, 0),     // green
+        (128, 128, 0),   // olive
+        (0, 0, 128),     // navy
+        (128, 0, 128),   // purple
+        (0, 128, 128),   // teal
+        (192, 192, 192), // silver
+        (128, 128, 128), // gray
+        (255, 0, 0),     // red
+        (0, 255, 0),     // lime
+        (255, 255, 0),   // yellow
+        (0, 0, 255),     // blue
+        (255, 0, 255),   // magenta
+        (0, 255, 255),   // cyan
+        (255, 255, 255), // white
     ];
-    
+
     for (r, g, b) in &colors {
         let idx = rgb_to_ansi16(*r, *g, *b);
         assert!(idx < 16, "ANSI16 index {} out of range", idx);
@@ -127,22 +127,22 @@ fn test_rgb_to_ansi16_boundary_colors() {
 #[test]
 fn test_rgb_to_ansi256_grayscale_detection() {
     use pygmentsrs::formatters::color::rgb_to_ansi256;
-    
+
     // Pure grays (R=G=B should trigger grayscale path)
     // Test with values that won't overflow the grayscale calculation
-    let _idx_black = rgb_to_ansi256(0, 0, 0);      // gray=0, returns 16
+    let _idx_black = rgb_to_ansi256(0, 0, 0); // gray=0, returns 16
     let _idx_white = rgb_to_ansi256(255, 255, 255); // gray=255, returns 231
-    let _idx_gray = rgb_to_ansi256(100, 100, 100);  // gray=100, in safe range
+    let _idx_gray = rgb_to_ansi256(100, 100, 100); // gray=100, in safe range
     // Just verify no panics
 }
 
 #[test]
 fn test_rgb_to_ansi256_near_grayscale() {
     use pygmentsrs::formatters::color::rgb_to_ansi256;
-    
+
     // Near-grayscale (close R≈G≈B, within tolerance of 5)
     let _idx1 = rgb_to_ansi256(100, 101, 102); // near gray, should map to cube
-    let _idx2 = rgb_to_ansi256(50, 51, 50);    // near gray
+    let _idx2 = rgb_to_ansi256(50, 51, 50); // near gray
     let _idx3 = rgb_to_ansi256(180, 180, 181); // near gray, but high enough
     // Just verify no panics; these values should not overflow grayscale calc
 }
@@ -150,35 +150,47 @@ fn test_rgb_to_ansi256_near_grayscale() {
 #[test]
 fn test_rgb_to_ansi256_color_cube() {
     use pygmentsrs::formatters::color::rgb_to_ansi256;
-    
+
     // Test RGB cube (6×6×6 for colors that are not grayscale)
     let idx_red = rgb_to_ansi256(255, 0, 0);
-    assert!(idx_red >= 16 && idx_red < 232, "Red cube index {} out of range", idx_red);
-    
+    assert!(
+        idx_red >= 16 && idx_red < 232,
+        "Red cube index {} out of range",
+        idx_red
+    );
+
     let idx_green = rgb_to_ansi256(0, 255, 0);
-    assert!(idx_green >= 16 && idx_green < 232, "Green cube index {} out of range", idx_green);
-    
+    assert!(
+        idx_green >= 16 && idx_green < 232,
+        "Green cube index {} out of range",
+        idx_green
+    );
+
     let idx_blue = rgb_to_ansi256(0, 0, 255);
-    assert!(idx_blue >= 16 && idx_blue < 232, "Blue cube index {} out of range", idx_blue);
+    assert!(
+        idx_blue >= 16 && idx_blue < 232,
+        "Blue cube index {} out of range",
+        idx_blue
+    );
 }
 
 #[test]
 fn test_rgb_to_ansi256_cube_boundaries() {
     use pygmentsrs::formatters::color::rgb_to_ansi256;
-    
+
     // Test colors at different positions in the 6×6×6 cube
     let colors = vec![
-        (0, 0, 0),         // min (but grayscale)
-        (255, 0, 0),       // max red
-        (0, 255, 0),       // max green
-        (0, 0, 255),       // max blue
-        (85, 0, 0),        // 1/3 red
-        (170, 0, 0),       // 2/3 red
-        (255, 85, 0),      // mixed colors
-        (255, 255, 0),     // yellow
-        (128, 128, 255),   // light blue
+        (0, 0, 0),       // min (but grayscale)
+        (255, 0, 0),     // max red
+        (0, 255, 0),     // max green
+        (0, 0, 255),     // max blue
+        (85, 0, 0),      // 1/3 red
+        (170, 0, 0),     // 2/3 red
+        (255, 85, 0),    // mixed colors
+        (255, 255, 0),   // yellow
+        (128, 128, 255), // light blue
     ];
-    
+
     for (r, g, b) in colors {
         let _idx = rgb_to_ansi256(r, g, b);
         // Just verify no panics
@@ -192,7 +204,7 @@ fn test_rgb_to_ansi256_cube_boundaries() {
 #[test]
 fn test_rgb_to_mirc_all_colors() {
     use pygmentsrs::formatters::color::rgb_to_mirc;
-    
+
     // Test all standard MIRC colors
     let mirc_colors = [
         (255, 255, 255), // 00: white
@@ -212,7 +224,7 @@ fn test_rgb_to_mirc_all_colors() {
         (127, 127, 127), // 14: gray
         (192, 192, 192), // 15: light gray
     ];
-    
+
     for (r, g, b) in &mirc_colors {
         let idx = rgb_to_mirc(*r, *g, *b);
         assert!(idx < 16, "mIRC index {} out of range", idx);
@@ -222,14 +234,14 @@ fn test_rgb_to_mirc_all_colors() {
 #[test]
 fn test_rgb_to_mirc_edge_cases() {
     use pygmentsrs::formatters::color::rgb_to_mirc;
-    
+
     // Test some intermediate colors to ensure nearest neighbor works
     let idx1 = rgb_to_mirc(128, 128, 128);
     assert!(idx1 < 16);
-    
+
     let idx2 = rgb_to_mirc(200, 100, 50);
     assert!(idx2 < 16);
-    
+
     let idx3 = rgb_to_mirc(50, 200, 100);
     assert!(idx3 < 16);
 }
@@ -241,10 +253,8 @@ fn test_rgb_to_mirc_edge_cases() {
 #[test]
 fn test_terminal_formatter_with_bold() {
     // Test TerminalFormatter with a bold token
-    let tokens = vec![
-        (KEYWORD, "if".to_string()),
-    ];
-    
+    let tokens = vec![(KEYWORD, "if".to_string())];
+
     if let Some(output) = format_native("terminal", &tokens) {
         assert!(!output.is_empty());
     }
@@ -253,10 +263,8 @@ fn test_terminal_formatter_with_bold() {
 #[test]
 fn test_terminal_formatter_with_italic() {
     // Test TerminalFormatter with italic tokens
-    let tokens = vec![
-        (COMMENT, "# comment".to_string()),
-    ];
-    
+    let tokens = vec![(COMMENT, "# comment".to_string())];
+
     if let Some(output) = format_native("terminal", &tokens) {
         assert!(!output.is_empty());
     }
@@ -265,10 +273,8 @@ fn test_terminal_formatter_with_italic() {
 #[test]
 fn test_terminal_formatter_with_underline() {
     // Test TerminalFormatter with underlined tokens
-    let tokens = vec![
-        (STRING_DOUBLE, "\"hello\"".to_string()),
-    ];
-    
+    let tokens = vec![(STRING_DOUBLE, "\"hello\"".to_string())];
+
     if let Some(output) = format_native("terminal", &tokens) {
         assert!(!output.is_empty());
     }
@@ -282,7 +288,7 @@ fn test_terminal_formatter_combined_styles() {
         (COMMENT, "# comment".to_string()),
         (STRING_DOUBLE, "\"text\"".to_string()),
     ];
-    
+
     if let Some(output) = format_native("terminal", &tokens) {
         assert!(!output.is_empty());
     }
@@ -295,7 +301,7 @@ fn test_terminal_formatter_combined_styles() {
 #[test]
 fn test_rgb_to_hex_all_channels() {
     use pygmentsrs::formatters::color::rgb_to_hex;
-    
+
     assert_eq!(rgb_to_hex(255, 0, 0), "#ff0000");
     assert_eq!(rgb_to_hex(0, 255, 0), "#00ff00");
     assert_eq!(rgb_to_hex(0, 0, 255), "#0000ff");
@@ -313,16 +319,36 @@ fn test_rgb_to_hex_all_channels() {
 fn test_formatter_registry_all_formatters_callable() {
     // Test that all formatter names can be looked up and used
     let formatter_names = vec![
-        "html", "text", "raw", "tokens", "testcase",
-        "terminal", "terminal256", "256", "terminal16m", "truecolor",
-        "irc", "bbcode", "console",
-        "groff", "groff-256", "pango", "latex", "tex", "rtf", "svg",
+        "html",
+        "text",
+        "raw",
+        "tokens",
+        "testcase",
+        "terminal",
+        "terminal256",
+        "256",
+        "terminal16m",
+        "truecolor",
+        "irc",
+        "bbcode",
+        "console",
+        "groff",
+        "groff-256",
+        "pango",
+        "latex",
+        "tex",
+        "rtf",
+        "svg",
     ];
-    
+
     for name in formatter_names {
         let tokens = vec![(TEXT, "test".to_string())];
         if let Some(result) = format_native(name, &tokens) {
-            assert!(!result.is_empty(), "Formatter {} returned empty output", name);
+            assert!(
+                !result.is_empty(),
+                "Formatter {} returned empty output",
+                name
+            );
         }
     }
 }
@@ -341,7 +367,7 @@ fn test_style_attribute_combinations() {
         (NUMBER, "number"),
         (OPERATOR, "operator"),
     ];
-    
+
     for (token_type, _name) in test_cases {
         let tokens = vec![(token_type, "test".to_string())];
         // Just verify formatters can handle all token types
@@ -358,19 +384,12 @@ fn test_style_attribute_combinations() {
 #[test]
 fn test_style_from_various_token_types() {
     use pygmentsrs::formatters::style::Style;
-    
+
     // Test that Style::from_token doesn't panic for various token types
     let token_types = vec![
-        TEXT,
-        KEYWORD,
-        COMMENT,
-        STRING,
-        NUMBER,
-        OPERATOR,
-        NAME,
-        ERROR,
+        TEXT, KEYWORD, COMMENT, STRING, NUMBER, OPERATOR, NAME, ERROR,
     ];
-    
+
     for tt in token_types {
         let _style = Style::from_token(tt);
         // Just verify it doesn't panic
@@ -389,7 +408,7 @@ fn test_formatter_output_consistency() {
         (NAME, "hello".to_string()),
         (OPERATOR, ":".to_string()),
     ];
-    
+
     if let Some(output) = format_native("html", &tokens) {
         // Verify output is non-empty and contains expected structure
         assert!(!output.is_empty());
@@ -403,7 +422,10 @@ fn test_empty_token_list() {
     let tokens: Vec<(TokenType, String)> = vec![];
     if let Some(output) = format_native("html", &tokens) {
         // HTML formatter produces a wrapper div even for empty tokens
-        assert!(!output.is_empty(), "HTML formatter should produce wrapper for empty tokens");
+        assert!(
+            !output.is_empty(),
+            "HTML formatter should produce wrapper for empty tokens"
+        );
         assert!(output.contains("highlight"));
     }
 }
@@ -418,7 +440,7 @@ fn test_large_token_stream() {
             format!("token{} ", i),
         ));
     }
-    
+
     if let Some(output) = format_native("html", &tokens) {
         assert!(!output.is_empty());
     }
@@ -431,7 +453,7 @@ fn test_unicode_in_tokens() {
         (COMMENT, "# 🎉".to_string()),
         (TEXT, "العربية".to_string()),
     ];
-    
+
     if let Some(output) = format_native("html", &tokens) {
         assert!(!output.is_empty());
     }

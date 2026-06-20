@@ -46,24 +46,48 @@ fn build_table() -> Table {
         Rule::token(r"(?m)-?\d+(\.\d+)?(e[+-]?\d+)?", NUMBER),
         Rule::token(r"(?m)\w+", NAME),
     ]);
-    m.insert(r"includes", vec![
-        Rule::bygroups(r"(?m)(<)([^>]*)(>)", vec![Some(PUNCTUATION), Some(COMMENT_PREPROCFILE), Some(PUNCTUATION)]),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m):param: [a-zA-Z_]\w*|:returns?:|(FIXME|MARK|TODO):", COMMENT_SPECIAL),
-    ]);
-    m.insert(r"comment-single", vec![
-        Rule::token_to(r"(?m)\n", TEXT, NewState::Pop(1)),
-        Rule::token(r"(?m):param: [a-zA-Z_]\w*|:returns?:|(FIXME|MARK|TODO):", COMMENT_SPECIAL),
-        Rule::token(r"(?m)[^\n]+", COMMENT_SINGLE),
-    ]);
-    m.insert(r"comment-multi", vec![
-        Rule::token(r"(?m):param: [a-zA-Z_]\w*|:returns?:|(FIXME|MARK|TODO):", COMMENT_SPECIAL),
-        Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"includes",
+        vec![Rule::bygroups(
+            r"(?m)(<)([^>]*)(>)",
+            vec![
+                Some(PUNCTUATION),
+                Some(COMMENT_PREPROCFILE),
+                Some(PUNCTUATION),
+            ],
+        )],
+    );
+    m.insert(
+        r"comment",
+        vec![Rule::token(
+            r"(?m):param: [a-zA-Z_]\w*|:returns?:|(FIXME|MARK|TODO):",
+            COMMENT_SPECIAL,
+        )],
+    );
+    m.insert(
+        r"comment-single",
+        vec![
+            Rule::token_to(r"(?m)\n", TEXT, NewState::Pop(1)),
+            Rule::token(
+                r"(?m):param: [a-zA-Z_]\w*|:returns?:|(FIXME|MARK|TODO):",
+                COMMENT_SPECIAL,
+            ),
+            Rule::token(r"(?m)[^\n]+", COMMENT_SINGLE),
+        ],
+    );
+    m.insert(
+        r"comment-multi",
+        vec![
+            Rule::token(
+                r"(?m):param: [a-zA-Z_]\w*|:returns?:|(FIXME|MARK|TODO):",
+                COMMENT_SPECIAL,
+            ),
+            Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

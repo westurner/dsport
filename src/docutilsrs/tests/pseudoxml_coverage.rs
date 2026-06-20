@@ -1,6 +1,6 @@
 mod common;
 
-use docutilsrs::{pseudo_xml};
+use docutilsrs::pseudo_xml;
 
 #[test]
 fn test_pseudoxml_coverage() {

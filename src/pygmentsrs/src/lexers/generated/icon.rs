@@ -51,11 +51,17 @@ fn build_table() -> Table {
         Rule::token(r"(?m)<>|=>|[()|:;,.'`{}%\^&?]", PUNCTUATION),
         Rule::token(r"(?m)\n+", TEXT),
     ]);
-    m.insert(r"numbers", vec![
-        Rule::token(r"(?m)\b([+-]?([2-9]|[12][0-9]|3[0-6])[rR][0-9a-zA-Z]+)\b", NUMBER_HEX),
-        Rule::token(r"(?m)[+-]?[0-9]*\.([0-9]*)([Ee][+-]?[0-9]*)?", NUMBER_FLOAT),
-        Rule::token(r"(?m)\b([+-]?[0-9]+[KMGTPkmgtp]?)\b", NUMBER_INTEGER),
-    ]);
+    m.insert(
+        r"numbers",
+        vec![
+            Rule::token(
+                r"(?m)\b([+-]?([2-9]|[12][0-9]|3[0-6])[rR][0-9a-zA-Z]+)\b",
+                NUMBER_HEX,
+            ),
+            Rule::token(r"(?m)[+-]?[0-9]*\.([0-9]*)([Ee][+-]?[0-9]*)?", NUMBER_FLOAT),
+            Rule::token(r"(?m)\b([+-]?[0-9]+[KMGTPkmgtp]?)\b", NUMBER_INTEGER),
+        ],
+    );
     m.insert(r"subprogram", vec![
         Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"#pop", r"formal_part"])),
         Rule::token_to(r"(?m);", PUNCTUATION, NewState::Pop(1)),
@@ -85,9 +91,14 @@ fn build_table() -> Table {
         Rule::token(r"(?m)<>|=>|[()|:;,.'`{}%\^&?]", PUNCTUATION),
         Rule::token(r"(?m)\n+", TEXT),
     ]);
-    m.insert(r"type_def", vec![
-        Rule::token_to(r"(?m)\(", PUNCTUATION, NewState::Push(vec![r"formal_part"])),
-    ]);
+    m.insert(
+        r"type_def",
+        vec![Rule::token_to(
+            r"(?m)\(",
+            PUNCTUATION,
+            NewState::Push(vec![r"formal_part"]),
+        )],
+    );
     m.insert(r"formal_part", vec![
         Rule::token_to(r"(?m)\)", PUNCTUATION, NewState::Pop(1)),
         Rule::token(r"(?m)\w+", NAME_VARIABLE),

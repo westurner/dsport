@@ -16,7 +16,7 @@ use crate::errors::Jinja2Error;
 use crate::filters;
 use crate::globals;
 use crate::i18n;
-use crate::loaders::{FileSystemLoader, DjangoAppDirectoryLoader};
+use crate::loaders::{DjangoAppDirectoryLoader, FileSystemLoader};
 
 /// Template handle returned by [`Environment::get_template`].
 pub struct Template<'env> {
@@ -66,14 +66,32 @@ impl Environment {
         env.add_filter("urlencode", filters::urlencode);
 
         // Sphinx-specific and Phase 4 globals
-        env.add_global("idgen", minijinja::Value::from_object(globals::IdGen::new()));
-        env.add_global("accesskey", minijinja::Value::from_object(globals::AccessKey::new()));
-        env.add_global("debug", minijinja::Value::from_object(globals::Debug::new()));
-        
+        env.add_global(
+            "idgen",
+            minijinja::Value::from_object(globals::IdGen::new()),
+        );
+        env.add_global(
+            "accesskey",
+            minijinja::Value::from_object(globals::AccessKey::new()),
+        );
+        env.add_global(
+            "debug",
+            minijinja::Value::from_object(globals::Debug::new()),
+        );
+
         // Phase 4 global factories
-        env.add_global("cycler", minijinja::Value::from_object(globals::CyclerFactory::new()));
-        env.add_global("joiner", minijinja::Value::from_object(globals::JoinerFactory::new()));
-        env.add_global("lipsum", minijinja::Value::from_object(globals::LipsumFactory::new()));
+        env.add_global(
+            "cycler",
+            minijinja::Value::from_object(globals::CyclerFactory::new()),
+        );
+        env.add_global(
+            "joiner",
+            minijinja::Value::from_object(globals::JoinerFactory::new()),
+        );
+        env.add_global(
+            "lipsum",
+            minijinja::Value::from_object(globals::LipsumFactory::new()),
+        );
 
         Self {
             inner: env,
@@ -86,9 +104,8 @@ impl Environment {
         let mut env = Self::new();
         env.search_paths.push(path.into());
         let paths: Arc<Vec<PathBuf>> = Arc::new(env.search_paths.clone());
-        env.inner.set_loader(move |name| {
-            Ok(FileSystemLoader::load_source(&paths, name))
-        });
+        env.inner
+            .set_loader(move |name| Ok(FileSystemLoader::load_source(&paths, name)));
         env
     }
 
@@ -149,8 +166,7 @@ impl Environment {
         // ── Template loader ───────────────────────────────────────────────────
         if !config.app_directories.is_empty() {
             let loader = DjangoAppDirectoryLoader::new(config.app_directories.clone());
-            env.inner
-                .set_loader(loader.into_minijinja_loader());
+            env.inner.set_loader(loader.into_minijinja_loader());
         }
 
         env
@@ -160,42 +176,67 @@ impl Environment {
     fn register_django_filters(&mut self) {
         use filters::django as d;
         // String
-        self.inner.add_filter("upper",         d::upper);
-        self.inner.add_filter("lower",         d::lower);
-        self.inner.add_filter("capfirst",      d::capfirst);
-        self.inner.add_filter("title",         d::title);
-        self.inner.add_filter("slugify",       d::slugify);
-        self.inner.add_filter("truncatewords", |val: Value, n: i64| d::truncatewords(val, n));
-        self.inner.add_filter("truncatechars", |val: Value, n: i64| d::truncatechars(val, n));
-        self.inner.add_filter("wordcount",     d::wordcount);
-        self.inner.add_filter("wordwrap",      |val: Value, w: i64| d::wordwrap(val, w));
+        self.inner.add_filter("upper", d::upper);
+        self.inner.add_filter("lower", d::lower);
+        self.inner.add_filter("capfirst", d::capfirst);
+        self.inner.add_filter("title", d::title);
+        self.inner.add_filter("slugify", d::slugify);
+        self.inner
+            .add_filter("truncatewords", |val: Value, n: i64| {
+                d::truncatewords(val, n)
+            });
+        self.inner
+            .add_filter("truncatechars", |val: Value, n: i64| {
+                d::truncatechars(val, n)
+            });
+        self.inner.add_filter("wordcount", d::wordcount);
+        self.inner
+            .add_filter("wordwrap", |val: Value, w: i64| d::wordwrap(val, w));
         // Numeric
-        self.inner.add_filter("add",           |val: Value, n: i64| d::add(val, n));
-        self.inner.add_filter("floatformat",   |val: Value, digits: Option<i64>| d::floatformat(val, digits));
-        self.inner.add_filter("pluralize",     |val: Value, suf: Option<String>| d::pluralize(val, suf));
+        self.inner
+            .add_filter("add", |val: Value, n: i64| d::add(val, n));
+        self.inner
+            .add_filter("floatformat", |val: Value, digits: Option<i64>| {
+                d::floatformat(val, digits)
+            });
+        self.inner
+            .add_filter("pluralize", |val: Value, suf: Option<String>| {
+                d::pluralize(val, suf)
+            });
         // List
-        self.inner.add_filter("first",         d::first);
-        self.inner.add_filter("last",          d::last);
-        self.inner.add_filter("join",          |val: Value, sep: Option<String>| d::join(val, sep));
-        self.inner.add_filter("length",        d::length);
-        self.inner.add_filter("length_is",     |val: Value, n: i64| d::length_is(val, n));
+        self.inner.add_filter("first", d::first);
+        self.inner.add_filter("last", d::last);
+        self.inner
+            .add_filter("join", |val: Value, sep: Option<String>| d::join(val, sep));
+        self.inner.add_filter("length", d::length);
+        self.inner
+            .add_filter("length_is", |val: Value, n: i64| d::length_is(val, n));
         // Boolean / fallback
-        self.inner.add_filter("yesno",         |val: Value, m: Option<String>| d::yesno(val, m));
-        self.inner.add_filter("default",       |val: Value, fb: String| d::default(val, fb));
-        self.inner.add_filter("default_if_none", |val: Value, fb: String| d::default_if_none(val, fb));
+        self.inner
+            .add_filter("yesno", |val: Value, m: Option<String>| d::yesno(val, m));
+        self.inner
+            .add_filter("default", |val: Value, fb: String| d::default(val, fb));
+        self.inner
+            .add_filter("default_if_none", |val: Value, fb: String| {
+                d::default_if_none(val, fb)
+            });
         // HTML / escaping
-        self.inner.add_filter("escape",        d::escape);
-        self.inner.add_filter("e",             d::escape);
-        self.inner.add_filter("force_escape",  d::force_escape);
-        self.inner.add_filter("safe",          d::safe);
-        self.inner.add_filter("striptags",     d::striptags);
-        self.inner.add_filter("linebreaks",    d::linebreaks);
-        self.inner.add_filter("linebreaksbr",  d::linebreaksbr);
-        self.inner.add_filter("urlencode",     d::urlencode);
+        self.inner.add_filter("escape", d::escape);
+        self.inner.add_filter("e", d::escape);
+        self.inner.add_filter("force_escape", d::force_escape);
+        self.inner.add_filter("safe", d::safe);
+        self.inner.add_filter("striptags", d::striptags);
+        self.inner.add_filter("linebreaks", d::linebreaks);
+        self.inner.add_filter("linebreaksbr", d::linebreaksbr);
+        self.inner.add_filter("urlencode", d::urlencode);
     }
 
     /// Add a named template from a string (mirrors `env.add_template()`).
-    pub fn add_template(&mut self, name: &'static str, source: &'static str) -> Result<(), Jinja2Error> {
+    pub fn add_template(
+        &mut self,
+        name: &'static str,
+        source: &'static str,
+    ) -> Result<(), Jinja2Error> {
         self.inner.add_template(name, source)?;
         Ok(())
     }
@@ -220,7 +261,10 @@ impl Environment {
     /// Add a custom filter function (mirrors `env.filters[name] = fn`).
     pub fn add_filter<F>(&mut self, name: &'static str, f: F)
     where
-        F: minijinja::filters::Filter<minijinja::Value, (minijinja::Value,)> + Send + Sync + 'static,
+        F: minijinja::filters::Filter<minijinja::Value, (minijinja::Value,)>
+            + Send
+            + Sync
+            + 'static,
     {
         self.inner.add_filter(name, f);
     }
@@ -273,28 +317,28 @@ impl Environment {
             CompatMode::Ansible(cfg) => {
                 // Register Ansible filters
                 self.register_ansible_filters();
-                
+
                 // Set method syntax based on Ansible mode configuration
                 if cfg.method_syntax {
                     self.enable_jinja2_compat();
                 } else {
                     self.enable_minijinja_compat();
                 }
-                
+
                 // TODO: Add inventory support when cfg.inventory_source is Some
                 // TODO: Add YAML validation when cfg.enable_validation is true
             }
             CompatMode::Kubernetes(cfg) => {
                 // Register Kubernetes filters
                 self.register_kubernetes_filters();
-                
+
                 // Set method syntax based on Kubernetes mode configuration
                 if cfg.method_syntax {
                     self.enable_jinja2_compat();
                 } else {
                     self.enable_minijinja_compat();
                 }
-                
+
                 // TODO: Add manifest support when cfg.manifest_source is Some
                 // TODO: Add YAML validation when cfg.enable_validation is true
             }
@@ -312,44 +356,48 @@ impl Environment {
     fn register_ansible_filters(&mut self) {
         // to_nice_json returns Result - wrap in a filter-compatible closure
         self.inner.add_filter("to_nice_json", |val: Value| {
-            crate::ansible_filters::to_nice_json(val)
-                .unwrap_or_else(|_| Value::from(""))
+            crate::ansible_filters::to_nice_json(val).unwrap_or_else(|_| Value::from(""))
         });
-        
+
         // from_json returns Result - wrap in a filter-compatible closure
         self.inner.add_filter("from_json", |val: Value| {
-            crate::ansible_filters::from_json(val)
-                .unwrap_or_else(|_| Value::from(""))
+            crate::ansible_filters::from_json(val).unwrap_or_else(|_| Value::from(""))
         });
-        
+
         self.add_filter("quote", crate::ansible_filters::quote);
-        
+
         // path_join takes 2 arguments - wrap in closure accepting 2 args
-        self.inner.add_filter("path_join", |val: Value, other: Value| {
-            crate::ansible_filters::path_join(val, other)
-        });
-        
+        self.inner
+            .add_filter("path_join", |val: Value, other: Value| {
+                crate::ansible_filters::path_join(val, other)
+            });
+
         // combine takes 2 arguments - wrap in closure accepting 2 args
-        self.inner.add_filter("combine", |val: Value, other: Value| {
-            crate::ansible_filters::combine(val, other)
-                .unwrap_or_else(|_| Value::from(""))
-        });
-        
+        self.inner
+            .add_filter("combine", |val: Value, other: Value| {
+                crate::ansible_filters::combine(val, other).unwrap_or_else(|_| Value::from(""))
+            });
+
         // regex_search takes 2 arguments - wrap in closure accepting 2 args
-        self.inner.add_filter("regex_search", |val: Value, pattern: Value| {
-            crate::ansible_filters::regex_search(val, pattern)
-        });
-        
+        self.inner
+            .add_filter("regex_search", |val: Value, pattern: Value| {
+                crate::ansible_filters::regex_search(val, pattern)
+            });
+
         // regex_replace takes 3 arguments - wrap in closure accepting 3 args
-        self.inner.add_filter("regex_replace", |val: Value, pattern: Value, replacement: Value| {
-            crate::ansible_filters::regex_replace(val, pattern, replacement)
-        });
-        
+        self.inner.add_filter(
+            "regex_replace",
+            |val: Value, pattern: Value, replacement: Value| {
+                crate::ansible_filters::regex_replace(val, pattern, replacement)
+            },
+        );
+
         // regex_findall takes 2 arguments - wrap in closure accepting 2 args
-        self.inner.add_filter("regex_findall", |val: Value, pattern: Value| {
-            crate::ansible_filters::regex_findall(val, pattern)
-        });
-        
+        self.inner
+            .add_filter("regex_findall", |val: Value, pattern: Value| {
+                crate::ansible_filters::regex_findall(val, pattern)
+            });
+
         self.add_filter("to_nice_yaml", crate::ansible_filters::to_nice_yaml);
         self.add_filter("from_yaml", crate::ansible_filters::from_yaml);
     }
@@ -358,32 +406,43 @@ impl Environment {
     fn register_kubernetes_filters(&mut self) {
         // Workload introspection filters
         self.add_filter("replicas", crate::kubernetes_filters::replicas);
-        self.add_filter("container_image", crate::kubernetes_filters::container_image);
-        
+        self.add_filter(
+            "container_image",
+            crate::kubernetes_filters::container_image,
+        );
+
         // Metadata accessors
         self.inner.add_filter("label", |val: Value, key: Value| {
             crate::kubernetes_filters::label(val, key)
         });
-        
-        self.inner.add_filter("annotation", |val: Value, key: Value| {
-            crate::kubernetes_filters::annotation(val, key)
-        });
-        
+
+        self.inner
+            .add_filter("annotation", |val: Value, key: Value| {
+                crate::kubernetes_filters::annotation(val, key)
+            });
+
         // Resource kind/name/namespace accessors
         self.add_filter("k8s_kind", crate::kubernetes_filters::k8s_kind);
         self.add_filter("k8s_name", crate::kubernetes_filters::k8s_name);
         self.add_filter("k8s_namespace", crate::kubernetes_filters::k8s_namespace);
         self.add_filter("k8s_labels", crate::kubernetes_filters::k8s_labels);
-        self.add_filter("k8s_annotations", crate::kubernetes_filters::k8s_annotations);
-        
+        self.add_filter(
+            "k8s_annotations",
+            crate::kubernetes_filters::k8s_annotations,
+        );
+
         // Resource filtering and checking
-        self.inner.add_filter("k8s_in_namespace", |val: Value, namespace: Value| {
-            crate::kubernetes_filters::k8s_in_namespace(val, namespace)
-        });
-        
-        self.inner.add_filter("k8s_has_label", |val: Value, key: Value, expected_val: Value| {
-            crate::kubernetes_filters::k8s_has_label(val, key, expected_val)
-        });
+        self.inner
+            .add_filter("k8s_in_namespace", |val: Value, namespace: Value| {
+                crate::kubernetes_filters::k8s_in_namespace(val, namespace)
+            });
+
+        self.inner.add_filter(
+            "k8s_has_label",
+            |val: Value, key: Value, expected_val: Value| {
+                crate::kubernetes_filters::k8s_has_label(val, key, expected_val)
+            },
+        );
     }
 
     /// Enable Jinja2 compatibility mode explicitly.
@@ -414,4 +473,3 @@ impl Environment {
         // This is a no-op since minijinja doesn't support unknown methods by default
     }
 }
-

@@ -25,13 +25,16 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::bygroups(r"(?m)(\\)(\n)", vec![Some(TEXT), Some(WHITESPACE)]),
-        Rule::token(r"(?m)//(\n|(.|\n)*?[^\\]\n)", COMMENT),
-        Rule::token(r"(?m)/(\\\n)?\*(.|\n)*?\*(\\\n)?/", COMMENT),
-    ]);
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::bygroups(r"(?m)(\\)(\n)", vec![Some(TEXT), Some(WHITESPACE)]),
+            Rule::token(r"(?m)//(\n|(.|\n)*?[^\\]\n)", COMMENT),
+            Rule::token(r"(?m)/(\\\n)?\*(.|\n)*?\*(\\\n)?/", COMMENT),
+        ],
+    );
     m.insert(r"statements", vec![
         Rule::token(r#"(?m)"(\\\\|\\[^\\]|[^"\\])*""#, STRING),
         Rule::token_to(r"(?m)'", STRING, NewState::Push(vec![r"string"])),
@@ -108,15 +111,21 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::PushSame),
         Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
     ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\([\\abfnrtv"\'?]|x[a-fA-F0-9]{2,4}|[0-7]{1,3})"#, STRING_ESCAPE),
-        Rule::token(r"(?m)\n", STRING),
-        Rule::token(r"(?m)[^\\'\n]+", STRING),
-        Rule::token(r"(?m)\\\n", STRING),
-        Rule::token(r"(?m)\\n", STRING),
-        Rule::token(r"(?m)\\", STRING),
-    ]);
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r"(?m)'", STRING, NewState::Pop(1)),
+            Rule::token(
+                r#"(?m)\\([\\abfnrtv"\'?]|x[a-fA-F0-9]{2,4}|[0-7]{1,3})"#,
+                STRING_ESCAPE,
+            ),
+            Rule::token(r"(?m)\n", STRING),
+            Rule::token(r"(?m)[^\\'\n]+", STRING),
+            Rule::token(r"(?m)\\\n", STRING),
+            Rule::token(r"(?m)\\n", STRING),
+            Rule::token(r"(?m)\\", STRING),
+        ],
+    );
     Table(m)
 }
 

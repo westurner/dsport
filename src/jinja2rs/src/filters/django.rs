@@ -257,13 +257,21 @@ pub fn pluralize(value: Value, suffix: Option<String>) -> String {
     match suffix {
         None => {
             // Default: empty singular, "s" plural
-            if count == 1 { "".to_string() } else { "s".to_string() }
+            if count == 1 {
+                "".to_string()
+            } else {
+                "s".to_string()
+            }
         }
         Some(suf) => {
             let parts: Vec<&str> = suf.splitn(2, ',').collect();
             if parts.len() == 1 {
                 // Single suffix: empty singular, suffix plural
-                if count == 1 { "".to_string() } else { parts[0].to_string() }
+                if count == 1 {
+                    "".to_string()
+                } else {
+                    parts[0].to_string()
+                }
             } else {
                 // Two-part: first=singular, second=plural
                 if count == 1 {
@@ -300,9 +308,7 @@ pub fn last(value: Value) -> Value {
 pub fn join(value: Value, separator: Option<String>) -> String {
     let sep = separator.unwrap_or_else(|| "".to_string());
     if let Ok(iter) = value.try_iter() {
-        iter.map(|v| v.to_string())
-            .collect::<Vec<_>>()
-            .join(&sep)
+        iter.map(|v| v.to_string()).collect::<Vec<_>>().join(&sep)
     } else {
         value.to_string()
     }
@@ -334,8 +340,8 @@ pub fn length_is(value: Value, n: i64) -> bool {
 pub fn yesno(value: Value, mapping: Option<String>) -> String {
     let m = mapping.unwrap_or_else(|| "yes,no,maybe".to_string());
     let tokens: Vec<&str> = m.split(',').collect();
-    let yes   = tokens.first().copied().unwrap_or("yes");
-    let no    = tokens.get(1).copied().unwrap_or("no");
+    let yes = tokens.first().copied().unwrap_or("yes");
+    let no = tokens.get(1).copied().unwrap_or("no");
     let maybe = tokens.get(2).copied().unwrap_or(no);
 
     if value.is_undefined() || value.is_none() {
@@ -455,12 +461,12 @@ pub(crate) fn html_escape_str(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
-            '&'  => out.push_str("&amp;"),
-            '<'  => out.push_str("&lt;"),
-            '>'  => out.push_str("&gt;"),
-            '"'  => out.push_str("&#34;"),
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&#34;"),
             '\'' => out.push_str("&#39;"),
-            _    => out.push(c),
+            _ => out.push(c),
         }
     }
     out
@@ -509,16 +515,16 @@ mod tests {
             truncatewords(Value::from("one two three four"), 2),
             "one two\u{2026}"
         );
-        assert_eq!(
-            truncatewords(Value::from("short"), 5),
-            "short"
-        );
+        assert_eq!(truncatewords(Value::from("short"), 5), "short");
         assert_eq!(truncatewords(Value::from("anything"), 0), "");
     }
 
     #[test]
     fn test_truncatechars() {
-        assert_eq!(truncatechars(Value::from("Hello, World!"), 8), "Hello, \u{2026}");
+        assert_eq!(
+            truncatechars(Value::from("Hello, World!"), 8),
+            "Hello, \u{2026}"
+        );
         assert_eq!(truncatechars(Value::from("short"), 10), "short");
         assert_eq!(truncatechars(Value::from("hi"), 0), "");
     }
@@ -557,12 +563,18 @@ mod tests {
 
     #[test]
     fn test_floatformat_fixed() {
-        assert_eq!(floatformat(Value::from(3.14159_f64), Some(2)).unwrap(), "3.14");
+        assert_eq!(
+            floatformat(Value::from(3.14159_f64), Some(2)).unwrap(),
+            "3.14"
+        );
     }
 
     #[test]
     fn test_floatformat_strip() {
-        assert_eq!(floatformat(Value::from(3.14000_f64), Some(-2)).unwrap(), "3.14");
+        assert_eq!(
+            floatformat(Value::from(3.14000_f64), Some(-2)).unwrap(),
+            "3.14"
+        );
         assert_eq!(floatformat(Value::from(3.00_f64), Some(-2)).unwrap(), "3");
     }
 
@@ -643,7 +655,10 @@ mod tests {
 
     #[test]
     fn test_default_if_none() {
-        assert_eq!(default_if_none(Value::UNDEFINED, "fallback".into()), "fallback");
+        assert_eq!(
+            default_if_none(Value::UNDEFINED, "fallback".into()),
+            "fallback"
+        );
         assert_eq!(default_if_none(Value::from(""), "fallback".into()), "");
     }
 

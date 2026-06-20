@@ -56,18 +56,31 @@ fn build_table() -> Table {
         Rule::token(r"(?ms)[0-9]+[kMGTP]?", NUMBER_INTEGER),
         Rule::token(r"(?ms)\n", WHITESPACE),
     ]);
-    m.insert(r"class", vec![
-        Rule::token_to(r"(?ms)[A-Za-z_]\w*", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"import", vec![
-        Rule::token_to(r"(?ms)[a-z][\w.]*", NAME_NAMESPACE, NewState::Pop(1)),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?ms)[^*/]", COMMENT_MULTILINE),
-        Rule::token_to(r"(?ms)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?ms)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?ms)[*/]", COMMENT_MULTILINE),
-    ]);
+    m.insert(
+        r"class",
+        vec![Rule::token_to(
+            r"(?ms)[A-Za-z_]\w*",
+            NAME_CLASS,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"import",
+        vec![Rule::token_to(
+            r"(?ms)[a-z][\w.]*",
+            NAME_NAMESPACE,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?ms)[^*/]", COMMENT_MULTILINE),
+            Rule::token_to(r"(?ms)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?ms)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?ms)[*/]", COMMENT_MULTILINE),
+        ],
+    );
     Table(m)
 }
 

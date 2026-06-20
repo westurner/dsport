@@ -1,6 +1,6 @@
 mod common;
 
-use docutilsrs::{odt, cli::OdtOptions};
+use docutilsrs::{cli::OdtOptions, odt};
 
 #[test]
 fn test_odt_coverage() {

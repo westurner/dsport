@@ -32,14 +32,20 @@ fn build_table() -> Table {
         Rule::token_to(r"(?m)(c(?:(?:heckdepend|onflict)s)|depends|m(?:(?:akedepend|d5sum)s)|optdepends|provides|replaces|s(?:ha(?:(?:1|2(?:24|56)|384|512)sums)|ource))_\w+", KEYWORD, NewState::Push(vec![r"assignment"])),
         Rule::token_to(r"(?m)\w+", NAME_VARIABLE, NewState::Push(vec![r"assignment"])),
     ]);
-    m.insert(r"assignment", vec![
-        Rule::token(r"(?m) +", WHITESPACE),
-        Rule::token_to(r"(?m)=", OPERATOR, NewState::Push(vec![r"value"])),
-    ]);
-    m.insert(r"value", vec![
-        Rule::token(r"(?m) +", WHITESPACE),
-        Rule::token_to(r"(?m).*", TEXT, NewState::Pop(2)),
-    ]);
+    m.insert(
+        r"assignment",
+        vec![
+            Rule::token(r"(?m) +", WHITESPACE),
+            Rule::token_to(r"(?m)=", OPERATOR, NewState::Push(vec![r"value"])),
+        ],
+    );
+    m.insert(
+        r"value",
+        vec![
+            Rule::token(r"(?m) +", WHITESPACE),
+            Rule::token_to(r"(?m).*", TEXT, NewState::Pop(2)),
+        ],
+    );
     Table(m)
 }
 

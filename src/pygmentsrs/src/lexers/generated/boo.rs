@@ -53,21 +53,39 @@ fn build_table() -> Table {
         Rule::token(r"(?m)\d+L", TokenType::new(&["Literal", "Number", "Integer", "Long"])),
         Rule::token(r"(?m)\d+", NUMBER_INTEGER),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token_to(r"(?m)/[*]", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)[*]/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[^/*]", COMMENT_MULTILINE),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"funcname", vec![
-        Rule::token_to(r"(?m)[a-zA-Z_]\w*", NAME_FUNCTION, NewState::Pop(1)),
-    ]);
-    m.insert(r"classname", vec![
-        Rule::token_to(r"(?m)[a-zA-Z_]\w*", NAME_CLASS, NewState::Pop(1)),
-    ]);
-    m.insert(r"namespace", vec![
-        Rule::token_to(r"(?m)[a-zA-Z_][\w.]*", NAME_NAMESPACE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token_to(r"(?m)/[*]", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)[*]/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[^/*]", COMMENT_MULTILINE),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"funcname",
+        vec![Rule::token_to(
+            r"(?m)[a-zA-Z_]\w*",
+            NAME_FUNCTION,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"classname",
+        vec![Rule::token_to(
+            r"(?m)[a-zA-Z_]\w*",
+            NAME_CLASS,
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"namespace",
+        vec![Rule::token_to(
+            r"(?m)[a-zA-Z_][\w.]*",
+            NAME_NAMESPACE,
+            NewState::Pop(1),
+        )],
+    );
     Table(m)
 }
 

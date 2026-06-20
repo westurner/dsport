@@ -2,9 +2,9 @@
 //!
 //! Tests for gettext/ngettext translation globals.
 
-use rstest::{rstest, fixture};
 use jinja2rs::Environment;
 use jinja2rs::i18n::I18nProvider;
+use rstest::{fixture, rstest};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -25,7 +25,7 @@ fn env_with_i18n() -> Environment {
 #[fixture]
 fn env_with_translations() -> Environment {
     let provider = I18nProvider::new();
-    
+
     // Load some test translations
     let mut dict = HashMap::new();
     dict.insert("Hello".to_string(), "Hola".to_string());
@@ -73,7 +73,11 @@ fn test_gettext_untranslated(env_with_i18n: Environment, #[case] message: &str) 
 #[case("Hello", "Hola")]
 #[case("Good morning", "Buenos días")]
 #[case("Thank you", "Gracias")]
-fn test_gettext_translated(env_with_translations: Environment, #[case] msg: &str, #[case] expected: &str) {
+fn test_gettext_translated(
+    env_with_translations: Environment,
+    #[case] msg: &str,
+    #[case] expected: &str,
+) {
     let template = "{{ gettext(msg) }}";
     let out = env_with_translations
         .render_str(template, json!({"msg": msg}))
@@ -106,10 +110,7 @@ fn test_gettext_in_loop(env_with_translations: Environment) {
 {% endfor %}
 "#;
     let out = env_with_translations
-        .render_str(
-            template,
-            json!({"greetings": ["Hello", "Good morning"]}),
-        )
+        .render_str(template, json!({"greetings": ["Hello", "Good morning"]}))
         .expect("gettext in loop should work");
 
     assert!(out.contains("Hola"));
@@ -135,7 +136,12 @@ fn test_gettext_empty_message(env_with_i18n: Environment) {
 #[rstest]
 #[case(1, "file", "archivo")]
 #[case(1, "item", "elemento")]
-fn test_ngettext_singular(env_with_translations: Environment, #[case] n: i64, #[case] msg: &str, #[case] expected: &str) {
+fn test_ngettext_singular(
+    env_with_translations: Environment,
+    #[case] n: i64,
+    #[case] msg: &str,
+    #[case] expected: &str,
+) {
     let template = "{{ ngettext(singular, plural, count) }}";
     let out = env_with_translations
         .render_str(
@@ -152,7 +158,12 @@ fn test_ngettext_singular(env_with_translations: Environment, #[case] n: i64, #[
 #[case(2, "file", "archivos")]
 #[case(5, "item", "elementos")]
 #[case(100, "file", "archivos")]
-fn test_ngettext_plural(env_with_translations: Environment, #[case] n: i64, #[case] msg: &str, #[case] expected: &str) {
+fn test_ngettext_plural(
+    env_with_translations: Environment,
+    #[case] n: i64,
+    #[case] msg: &str,
+    #[case] expected: &str,
+) {
     let template = "{{ ngettext(singular, plural, count) }}";
     let out = env_with_translations
         .render_str(
@@ -179,10 +190,7 @@ fn test_ngettext_untranslated(
 ) {
     let template = "{{ ngettext(s, p, count) }}";
     let out = env_with_i18n
-        .render_str(
-            template,
-            json!({"s": singular, "p": plural, "count": n}),
-        )
+        .render_str(template, json!({"s": singular, "p": plural, "count": n}))
         .expect("ngettext untranslated should work");
 
     assert_eq!(out, expected);
@@ -242,7 +250,7 @@ fn test_provider_load_translations(env_with_translations: Environment) {
     let out = env_with_translations
         .render_str(template, json!({}))
         .expect("translations should be loaded");
-    
+
     assert_eq!(out, "Gracias");
 }
 
@@ -254,7 +262,7 @@ fn test_provider_load_plural_forms(env_with_translations: Environment) {
     let out = env_with_translations
         .render_str(template, json!({}))
         .expect("plural forms should be loaded");
-    
+
     assert_eq!(out, "elemento");
 }
 
@@ -309,7 +317,7 @@ fn test_i18n_with_conditionals(env_with_translations: Environment) {
 fn test_ngettext_missing_arguments(env_with_i18n: Environment) {
     let template = "{{ ngettext('file') }}";
     let result = env_with_i18n.render_str(template, json!({}));
-    
+
     // Should error due to missing arguments
     assert!(result.is_err());
 }

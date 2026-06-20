@@ -7,7 +7,11 @@
 use crate::doctree::{Doctree, NodeId, NodeKind};
 use std::fmt::Write as _;
 
-pub fn manpage(tree: &Doctree, _options: &crate::cli::ManOptions, _common: &crate::cli::CommonOptions) -> String {
+pub fn manpage(
+    tree: &Doctree,
+    _options: &crate::cli::ManOptions,
+    _common: &crate::cli::CommonOptions,
+) -> String {
     let mut out = String::new();
     let root = tree.root();
     let title = if let NodeKind::Document { title, .. } = &tree.node(root).kind {

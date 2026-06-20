@@ -25,10 +25,13 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"root", vec![
-        Rule::token(r"(?m)[)\]}]", ERROR),
-        Rule::token_to(r"(?m)(?!\Z)", TEXT, NewState::Push(vec![r"unquoted-datum"])),
-    ]);
+    m.insert(
+        r"root",
+        vec![
+            Rule::token(r"(?m)[)\]}]", ERROR),
+            Rule::token_to(r"(?m)(?!\Z)", TEXT, NewState::Push(vec![r"unquoted-datum"])),
+        ],
+    );
     m.insert(r"datum", vec![
         Rule::token(r"(?m)(?s)#;|#![ /]([^\\\n]|\\.)*", COMMENT),
         Rule::token(r"(?m);[^\n\r\x85\u2028\u2029]*", COMMENT_SINGLE),
@@ -55,15 +58,23 @@ fn build_table() -> Table {
         Rule::token(r#"(?m)(?i)\.(?=[()\[\]{}",\'`;\s])|#c[is]|#['`]|#,@?"#, OPERATOR),
         Rule::token_to(r"(?m)'|#[s&]|#hash(eqv?)?|#\d*(?=[(\[{])", OPERATOR, NewState::Push(vec![r"#pop", r"quoted-datum"])),
     ]);
-    m.insert(r"datum*", vec![
-        Rule::token(r"(?m)`|,@?", OPERATOR),
-        Rule::token_to(r#"(?m)(?:\|[^|]*\||\\[\w\W]|[^|\\()\[\]{}",\'`;\s]+)+"#, STRING_SYMBOL, NewState::Pop(1)),
-        Rule::token(r"(?m)[|\\]", ERROR),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"list", vec![
-        Rule::token_to(r"(?m)[)\]}]", PUNCTUATION, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"datum*",
+        vec![
+            Rule::token(r"(?m)`|,@?", OPERATOR),
+            Rule::token_to(
+                r#"(?m)(?:\|[^|]*\||\\[\w\W]|[^|\\()\[\]{}",\'`;\s]+)+"#,
+                STRING_SYMBOL,
+                NewState::Pop(1),
+            ),
+            Rule::token(r"(?m)[|\\]", ERROR),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"list",
+        vec![Rule::token_to(r"(?m)[)\]}]", PUNCTUATION, NewState::Pop(1))],
+    );
     m.insert(r"unquoted-datum", vec![
         Rule::token(r"(?m)(?s)#;|#![ /]([^\\\n]|\\.)*", COMMENT),
         Rule::token(r"(?m);[^\n\r\x85\u2028\u2029]*", COMMENT_SINGLE),
@@ -101,10 +112,13 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[|\\]", ERROR),
         Rule::default(NewState::Pop(1)),
     ]);
-    m.insert(r"unquoted-list", vec![
-        Rule::token_to(r"(?m)[)\]}]", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?m)(?!\Z)", TEXT, NewState::Push(vec![r"unquoted-datum"])),
-    ]);
+    m.insert(
+        r"unquoted-list",
+        vec![
+            Rule::token_to(r"(?m)[)\]}]", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(r"(?m)(?!\Z)", TEXT, NewState::Push(vec![r"unquoted-datum"])),
+        ],
+    );
     m.insert(r"quasiquoted-datum", vec![
         Rule::token(r"(?m)(?s)#;|#![ /]([^\\\n]|\\.)*", COMMENT),
         Rule::token(r"(?m);[^\n\r\x85\u2028\u2029]*", COMMENT_SINGLE),
@@ -138,10 +152,17 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[|\\]", ERROR),
         Rule::default(NewState::Pop(1)),
     ]);
-    m.insert(r"quasiquoted-list", vec![
-        Rule::token_to(r"(?m)[)\]}]", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?m)(?!\Z)", TEXT, NewState::Push(vec![r"quasiquoted-datum"])),
-    ]);
+    m.insert(
+        r"quasiquoted-list",
+        vec![
+            Rule::token_to(r"(?m)[)\]}]", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(
+                r"(?m)(?!\Z)",
+                TEXT,
+                NewState::Push(vec![r"quasiquoted-datum"]),
+            ),
+        ],
+    );
     m.insert(r"quoted-datum", vec![
         Rule::token(r"(?m)(?s)#;|#![ /]([^\\\n]|\\.)*", COMMENT),
         Rule::token(r"(?m);[^\n\r\x85\u2028\u2029]*", COMMENT_SINGLE),
@@ -173,20 +194,32 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[|\\]", ERROR),
         Rule::default(NewState::Pop(1)),
     ]);
-    m.insert(r"quoted-list", vec![
-        Rule::token_to(r"(?m)[)\]}]", PUNCTUATION, NewState::Pop(1)),
-        Rule::token_to(r"(?m)(?!\Z)", TEXT, NewState::Push(vec![r"quoted-datum"])),
-    ]);
-    m.insert(r"block-comment", vec![
-        Rule::token_to(r"(?m)#\|", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\|#", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[^#|]+|.", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
-        Rule::token(r"(?m)(?s)\\([0-7]{1,3}|x[\da-fA-F]{1,2}|u[\da-fA-F]{1,4}|U[\da-fA-F]{1,8}|.)", STRING_ESCAPE),
-        Rule::token(r#"(?m)[^\\"]+"#, STRING_DOUBLE),
-    ]);
+    m.insert(
+        r"quoted-list",
+        vec![
+            Rule::token_to(r"(?m)[)\]}]", PUNCTUATION, NewState::Pop(1)),
+            Rule::token_to(r"(?m)(?!\Z)", TEXT, NewState::Push(vec![r"quoted-datum"])),
+        ],
+    );
+    m.insert(
+        r"block-comment",
+        vec![
+            Rule::token_to(r"(?m)#\|", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\|#", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[^#|]+|.", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING_DOUBLE, NewState::Pop(1)),
+            Rule::token(
+                r"(?m)(?s)\\([0-7]{1,3}|x[\da-fA-F]{1,2}|u[\da-fA-F]{1,4}|U[\da-fA-F]{1,8}|.)",
+                STRING_ESCAPE,
+            ),
+            Rule::token(r#"(?m)[^\\"]+"#, STRING_DOUBLE),
+        ],
+    );
     Table(m)
 }
 

@@ -15,7 +15,7 @@
 //! are passed as `serde_json::Value` or any `Serialize` type.
 
 //use std::collections::HashMap;
-use std::path::{PathBuf};  // {, Path}
+use std::path::PathBuf; // {, Path}
 
 use serde::Serialize;
 //use serde_json::Value as JsonValue;
@@ -50,7 +50,11 @@ impl BuiltinTemplateLoader {
         let mut loader_chain: Vec<PathBuf> = Vec::new();
         loader_chain.extend(template_paths.iter().cloned());
         loader_chain.extend(theme_dirs.iter().cloned());
-        loader_chain.extend(theme_dirs.iter().filter_map(|p| p.parent().map(PathBuf::from)));
+        loader_chain.extend(
+            theme_dirs
+                .iter()
+                .filter_map(|p| p.parent().map(PathBuf::from)),
+        );
 
         let sphinx_loader = SphinxFileSystemLoader::with_paths(loader_chain.clone());
         let loader_fn = sphinx_loader.into_minijinja_loader();
@@ -62,18 +66,20 @@ impl BuiltinTemplateLoader {
         env.inner_mut().inner.add_filter("tobool", filters::tobool);
         env.inner_mut().inner.add_filter("toint", filters::toint);
         env.inner_mut().inner.add_filter("todim", filters::todim);
-        env.inner_mut().inner.add_filter("filesizeformat", filters::filesizeformat);
-        env.inner_mut().inner.add_filter("slice_index", filters::slice_index);
+        env.inner_mut()
+            .inner
+            .add_filter("filesizeformat", filters::filesizeformat);
+        env.inner_mut()
+            .inner
+            .add_filter("slice_index", filters::slice_index);
 
         // Register Sphinx globals
-        env.inner_mut().inner.add_global(
-            "idgen",
-            minijinja::Value::from_object(IdGen::new()),
-        );
-        env.inner_mut().inner.add_global(
-            "accesskey",
-            minijinja::Value::from_object(AccessKey::new()),
-        );
+        env.inner_mut()
+            .inner
+            .add_global("idgen", minijinja::Value::from_object(IdGen::new()));
+        env.inner_mut()
+            .inner
+            .add_global("accesskey", minijinja::Value::from_object(AccessKey::new()));
 
         Self {
             env,
@@ -84,7 +90,11 @@ impl BuiltinTemplateLoader {
     /// Render `template_name` with the given context.
     ///
     /// Mirrors `BuiltinTemplateLoader.render(template, context)`.
-    pub fn render<S: Serialize>(&self, template_name: &str, context: S) -> Result<String, Jinja2Error> {
+    pub fn render<S: Serialize>(
+        &self,
+        template_name: &str,
+        context: S,
+    ) -> Result<String, Jinja2Error> {
         let tmpl = self.env.get_template(template_name)?;
         tmpl.render(context)
     }

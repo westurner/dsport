@@ -75,28 +75,54 @@ fn build_table() -> Table {
     m.insert(r"keywords", vec![
         Rule::token(r"(?im)(create|order|match|limit|set|skip|start|return|with|where|delete|foreach|not|by|true|false)\b", KEYWORD),
     ]);
-    m.insert(r"relations", vec![
-        Rule::bygroups_g(r"(?im)(-\[)(.*?)(\]->)", vec![Some(GroupAction::Token(OPERATOR)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(OPERATOR))]),
-        Rule::bygroups_g(r"(?im)(<-\[)(.*?)(\]-)", vec![Some(GroupAction::Token(OPERATOR)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(OPERATOR))]),
-        Rule::bygroups_g(r"(?im)(-\[)(.*?)(\]-)", vec![Some(GroupAction::Token(OPERATOR)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(OPERATOR))]),
-        Rule::token(r"(?im)-->|<--|\[|\]", OPERATOR),
-        Rule::token(r"(?im)<|>|<>|=|<=|=>|\(|\)|\||:|,|;", PUNCTUATION),
-        Rule::token(r"(?im)[.*{}]", PUNCTUATION),
-    ]);
-    m.insert(r"strings", vec![
-        Rule::token(r#"(?im)([\'"])(?:\\[tbnrf\'"\\]|[^\\])*?\1"#, STRING),
-        Rule::token(r"(?im)`(?:``|[^`])+`", NAME_VARIABLE),
-    ]);
-    m.insert(r"whitespace", vec![
-        Rule::token(r"(?im)\s+", WHITESPACE),
-    ]);
-    m.insert(r"barewords", vec![
-        Rule::token(r"(?im)[a-z]\w*", NAME),
-        Rule::token(r"(?im)\d+", NUMBER),
-    ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?im)//.*$", COMMENT_SINGLE),
-    ]);
+    m.insert(
+        r"relations",
+        vec![
+            Rule::bygroups_g(
+                r"(?im)(-\[)(.*?)(\]->)",
+                vec![
+                    Some(GroupAction::Token(OPERATOR)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(OPERATOR)),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?im)(<-\[)(.*?)(\]-)",
+                vec![
+                    Some(GroupAction::Token(OPERATOR)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(OPERATOR)),
+                ],
+            ),
+            Rule::bygroups_g(
+                r"(?im)(-\[)(.*?)(\]-)",
+                vec![
+                    Some(GroupAction::Token(OPERATOR)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(OPERATOR)),
+                ],
+            ),
+            Rule::token(r"(?im)-->|<--|\[|\]", OPERATOR),
+            Rule::token(r"(?im)<|>|<>|=|<=|=>|\(|\)|\||:|,|;", PUNCTUATION),
+            Rule::token(r"(?im)[.*{}]", PUNCTUATION),
+        ],
+    );
+    m.insert(
+        r"strings",
+        vec![
+            Rule::token(r#"(?im)([\'"])(?:\\[tbnrf\'"\\]|[^\\])*?\1"#, STRING),
+            Rule::token(r"(?im)`(?:``|[^`])+`", NAME_VARIABLE),
+        ],
+    );
+    m.insert(r"whitespace", vec![Rule::token(r"(?im)\s+", WHITESPACE)]);
+    m.insert(
+        r"barewords",
+        vec![
+            Rule::token(r"(?im)[a-z]\w*", NAME),
+            Rule::token(r"(?im)\d+", NUMBER),
+        ],
+    );
+    m.insert(r"comment", vec![Rule::token(r"(?im)//.*$", COMMENT_SINGLE)]);
     Table(m)
 }
 

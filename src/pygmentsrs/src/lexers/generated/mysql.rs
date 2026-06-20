@@ -67,43 +67,68 @@ fn build_table() -> Table {
         Rule::token(r"(?im)[a-z]+", COMMENT_SPECIAL),
         Rule::token(r"(?im)\*", COMMENT_SPECIAL),
     ]);
-    m.insert(r"multiline-comment", vec![
-        Rule::token(r"(?im)[^*]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?im)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?im)\*", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"single-quoted-string", vec![
-        Rule::token(r"(?im)[^'\\]+", STRING_SINGLE),
-        Rule::token(r"(?im)''", STRING_ESCAPE),
-        Rule::token(r#"(?im)\\[0'"bnrtZ\\%_]"#, STRING_ESCAPE),
-        Rule::token_to(r"(?im)'", STRING_SINGLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"double-quoted-string", vec![
-        Rule::token(r#"(?im)[^"\\]+"#, STRING_DOUBLE),
-        Rule::token(r#"(?im)"""#, STRING_ESCAPE),
-        Rule::token(r#"(?im)\\[0'"bnrtZ\\%_]"#, STRING_ESCAPE),
-        Rule::token_to(r#"(?im)""#, STRING_DOUBLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"single-quoted-variable", vec![
-        Rule::token(r"(?im)[^']+", NAME_VARIABLE),
-        Rule::token(r"(?im)''", NAME_VARIABLE),
-        Rule::token_to(r"(?im)'", NAME_VARIABLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"double-quoted-variable", vec![
-        Rule::token(r#"(?im)[^"]+"#, NAME_VARIABLE),
-        Rule::token(r#"(?im)"""#, NAME_VARIABLE),
-        Rule::token_to(r#"(?im)""#, NAME_VARIABLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"backtick-quoted-variable", vec![
-        Rule::token(r"(?im)[^`]+", NAME_VARIABLE),
-        Rule::token(r"(?im)``", NAME_VARIABLE),
-        Rule::token_to(r"(?im)`", NAME_VARIABLE, NewState::Pop(1)),
-    ]);
-    m.insert(r"schema-object-name", vec![
-        Rule::token(r"(?im)[^`]+", TokenType::new(&["Name", "Quoted"])),
-        Rule::token(r"(?im)``", TokenType::new(&["Name", "Quoted", "Escape"])),
-        Rule::token_to(r"(?im)`", TokenType::new(&["Name", "Quoted"]), NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"multiline-comment",
+        vec![
+            Rule::token(r"(?im)[^*]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?im)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?im)\*", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"single-quoted-string",
+        vec![
+            Rule::token(r"(?im)[^'\\]+", STRING_SINGLE),
+            Rule::token(r"(?im)''", STRING_ESCAPE),
+            Rule::token(r#"(?im)\\[0'"bnrtZ\\%_]"#, STRING_ESCAPE),
+            Rule::token_to(r"(?im)'", STRING_SINGLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"double-quoted-string",
+        vec![
+            Rule::token(r#"(?im)[^"\\]+"#, STRING_DOUBLE),
+            Rule::token(r#"(?im)"""#, STRING_ESCAPE),
+            Rule::token(r#"(?im)\\[0'"bnrtZ\\%_]"#, STRING_ESCAPE),
+            Rule::token_to(r#"(?im)""#, STRING_DOUBLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"single-quoted-variable",
+        vec![
+            Rule::token(r"(?im)[^']+", NAME_VARIABLE),
+            Rule::token(r"(?im)''", NAME_VARIABLE),
+            Rule::token_to(r"(?im)'", NAME_VARIABLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"double-quoted-variable",
+        vec![
+            Rule::token(r#"(?im)[^"]+"#, NAME_VARIABLE),
+            Rule::token(r#"(?im)"""#, NAME_VARIABLE),
+            Rule::token_to(r#"(?im)""#, NAME_VARIABLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"backtick-quoted-variable",
+        vec![
+            Rule::token(r"(?im)[^`]+", NAME_VARIABLE),
+            Rule::token(r"(?im)``", NAME_VARIABLE),
+            Rule::token_to(r"(?im)`", NAME_VARIABLE, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"schema-object-name",
+        vec![
+            Rule::token(r"(?im)[^`]+", TokenType::new(&["Name", "Quoted"])),
+            Rule::token(r"(?im)``", TokenType::new(&["Name", "Quoted", "Escape"])),
+            Rule::token_to(
+                r"(?im)`",
+                TokenType::new(&["Name", "Quoted"]),
+                NewState::Pop(1),
+            ),
+        ],
+    );
     Table(m)
 }
 

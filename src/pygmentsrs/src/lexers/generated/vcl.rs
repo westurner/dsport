@@ -25,56 +25,111 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"probe", vec![
-        Rule::token_to(r#"(?m)L?""#, STRING, NewState::Push(vec![r"string"])),
-        Rule::token_to(r#"(?m)\{""#, STRING, NewState::Push(vec![r"multistring"])),
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)\\\n", TEXT),
-        Rule::token(r"(?m)#.*$", COMMENT),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::Push(vec![r"comment"])),
-        Rule::token(r"(?m)//.*$", COMMENT),
-        Rule::bygroups_g(r"(?m)(\.\w+)(\s*=\s*)([^;]*)(;)", vec![Some(GroupAction::Token(NAME_ATTRIBUTE)), Some(GroupAction::Token(OPERATOR)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(PUNCTUATION))]),
-        Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"whitespace", vec![
-        Rule::token_to(r#"(?m)L?""#, STRING, NewState::Push(vec![r"string"])),
-        Rule::token_to(r#"(?m)\{""#, STRING, NewState::Push(vec![r"multistring"])),
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)\\\n", TEXT),
-    ]);
-    m.insert(r"comments", vec![
-        Rule::token(r"(?m)#.*$", COMMENT),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::Push(vec![r"comment"])),
-        Rule::token(r"(?m)//.*$", COMMENT),
-    ]);
-    m.insert(r"acl", vec![
-        Rule::token_to(r#"(?m)L?""#, STRING, NewState::Push(vec![r"string"])),
-        Rule::token_to(r#"(?m)\{""#, STRING, NewState::Push(vec![r"multistring"])),
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)\\\n", TEXT),
-        Rule::token(r"(?m)#.*$", COMMENT),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::Push(vec![r"comment"])),
-        Rule::token(r"(?m)//.*$", COMMENT),
-        Rule::token(r"(?m)[!/]+", OPERATOR),
-        Rule::token(r"(?m);", PUNCTUATION),
-        Rule::token(r"(?m)\d+", NUMBER),
-        Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
-    ]);
-    m.insert(r"backend", vec![
-        Rule::token_to(r#"(?m)L?""#, STRING, NewState::Push(vec![r"string"])),
-        Rule::token_to(r#"(?m)\{""#, STRING, NewState::Push(vec![r"multistring"])),
-        Rule::token(r"(?m)\n", WHITESPACE),
-        Rule::token(r"(?m)\s+", WHITESPACE),
-        Rule::token(r"(?m)\\\n", TEXT),
-        Rule::bygroups(r"(?m)(\.probe)(\s*=\s*)(\w+)(;)", vec![Some(NAME_ATTRIBUTE), Some(OPERATOR), Some(NAME_VARIABLE_GLOBAL), Some(PUNCTUATION)]),
-        Rule::bygroups_to(r"(?m)(\.probe)(\s*=\s*)(\{)", vec![Some(NAME_ATTRIBUTE), Some(OPERATOR), Some(PUNCTUATION)], NewState::Push(vec![r"probe"])),
-        Rule::bygroups_g(r"(?m)(\.\w+\b)(\s*=\s*)([^;\s]*)(\s*;)", vec![Some(GroupAction::Token(NAME_ATTRIBUTE)), Some(GroupAction::Token(OPERATOR)), Some(GroupAction::UsingThis { state: None }), Some(GroupAction::Token(PUNCTUATION))]),
-        Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::PushSame),
-        Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"probe",
+        vec![
+            Rule::token_to(r#"(?m)L?""#, STRING, NewState::Push(vec![r"string"])),
+            Rule::token_to(r#"(?m)\{""#, STRING, NewState::Push(vec![r"multistring"])),
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)\\\n", TEXT),
+            Rule::token(r"(?m)#.*$", COMMENT),
+            Rule::token_to(
+                r"(?m)/\*",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"comment"]),
+            ),
+            Rule::token(r"(?m)//.*$", COMMENT),
+            Rule::bygroups_g(
+                r"(?m)(\.\w+)(\s*=\s*)([^;]*)(;)",
+                vec![
+                    Some(GroupAction::Token(NAME_ATTRIBUTE)),
+                    Some(GroupAction::Token(OPERATOR)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(PUNCTUATION)),
+                ],
+            ),
+            Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"whitespace",
+        vec![
+            Rule::token_to(r#"(?m)L?""#, STRING, NewState::Push(vec![r"string"])),
+            Rule::token_to(r#"(?m)\{""#, STRING, NewState::Push(vec![r"multistring"])),
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)\\\n", TEXT),
+        ],
+    );
+    m.insert(
+        r"comments",
+        vec![
+            Rule::token(r"(?m)#.*$", COMMENT),
+            Rule::token_to(
+                r"(?m)/\*",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"comment"]),
+            ),
+            Rule::token(r"(?m)//.*$", COMMENT),
+        ],
+    );
+    m.insert(
+        r"acl",
+        vec![
+            Rule::token_to(r#"(?m)L?""#, STRING, NewState::Push(vec![r"string"])),
+            Rule::token_to(r#"(?m)\{""#, STRING, NewState::Push(vec![r"multistring"])),
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)\\\n", TEXT),
+            Rule::token(r"(?m)#.*$", COMMENT),
+            Rule::token_to(
+                r"(?m)/\*",
+                COMMENT_MULTILINE,
+                NewState::Push(vec![r"comment"]),
+            ),
+            Rule::token(r"(?m)//.*$", COMMENT),
+            Rule::token(r"(?m)[!/]+", OPERATOR),
+            Rule::token(r"(?m);", PUNCTUATION),
+            Rule::token(r"(?m)\d+", NUMBER),
+            Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"backend",
+        vec![
+            Rule::token_to(r#"(?m)L?""#, STRING, NewState::Push(vec![r"string"])),
+            Rule::token_to(r#"(?m)\{""#, STRING, NewState::Push(vec![r"multistring"])),
+            Rule::token(r"(?m)\n", WHITESPACE),
+            Rule::token(r"(?m)\s+", WHITESPACE),
+            Rule::token(r"(?m)\\\n", TEXT),
+            Rule::bygroups(
+                r"(?m)(\.probe)(\s*=\s*)(\w+)(;)",
+                vec![
+                    Some(NAME_ATTRIBUTE),
+                    Some(OPERATOR),
+                    Some(NAME_VARIABLE_GLOBAL),
+                    Some(PUNCTUATION),
+                ],
+            ),
+            Rule::bygroups_to(
+                r"(?m)(\.probe)(\s*=\s*)(\{)",
+                vec![Some(NAME_ATTRIBUTE), Some(OPERATOR), Some(PUNCTUATION)],
+                NewState::Push(vec![r"probe"]),
+            ),
+            Rule::bygroups_g(
+                r"(?m)(\.\w+\b)(\s*=\s*)([^;\s]*)(\s*;)",
+                vec![
+                    Some(GroupAction::Token(NAME_ATTRIBUTE)),
+                    Some(GroupAction::Token(OPERATOR)),
+                    Some(GroupAction::UsingThis { state: None }),
+                    Some(GroupAction::Token(PUNCTUATION)),
+                ],
+            ),
+            Rule::token_to(r"(?m)\{", PUNCTUATION, NewState::PushSame),
+            Rule::token_to(r"(?m)\}", PUNCTUATION, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"statements", vec![
         Rule::token(r"(?m)(\d\.)?\d+[sdwhmy]", LITERAL_DATE),
         Rule::token(r"(?m)(\d\.)?\d+ms", LITERAL_DATE),
@@ -97,21 +152,30 @@ fn build_table() -> Table {
         Rule::bygroups_g(r"(?m)([a-zA-Z_]\w*)(\.)([a-zA-Z_]\w*)(\s*\(.*\))", vec![Some(GroupAction::Token(NAME_FUNCTION)), Some(GroupAction::Token(PUNCTUATION)), Some(GroupAction::Token(NAME_FUNCTION)), Some(GroupAction::UsingThis { state: None })]),
         Rule::token(r"(?m)[a-zA-Z_]\w*", NAME),
     ]);
-    m.insert(r"comment", vec![
-        Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)[^"\n]+"#, STRING),
-    ]);
-    m.insert(r"multistring", vec![
-        Rule::token(r#"(?m)[^"}]"#, STRING),
-        Rule::token_to(r#"(?m)"\}"#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)["}]"#, STRING),
-    ]);
+    m.insert(
+        r"comment",
+        vec![
+            Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)[^"\n]+"#, STRING),
+        ],
+    );
+    m.insert(
+        r"multistring",
+        vec![
+            Rule::token(r#"(?m)[^"}]"#, STRING),
+            Rule::token_to(r#"(?m)"\}"#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)["}]"#, STRING),
+        ],
+    );
     m.insert(r"root", vec![
         Rule::token_to(r#"(?m)L?""#, STRING, NewState::Push(vec![r"string"])),
         Rule::token_to(r#"(?m)\{""#, STRING, NewState::Push(vec![r"multistring"])),

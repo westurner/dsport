@@ -48,23 +48,39 @@ fn build_table() -> Table {
         Rule::token(r"(?m)_\d*", NAME),
         Rule::token(r"(?m)_?[a-z][\w\']*", NAME),
     ]);
-    m.insert(r"typename", vec![
-        Rule::bygroups_to(r"(?m)(iso|trn|ref|val|box|tag)?((?:\s)*)(_?[A-Z]\w*)", vec![Some(KEYWORD), Some(TEXT), Some(NAME_CLASS)], NewState::Pop(1)),
-    ]);
-    m.insert(r"methodname", vec![
-        Rule::bygroups_to(r"(?m)(iso|trn|ref|val|box|tag)?((?:\s)*)(_?[a-z]\w*)", vec![Some(KEYWORD), Some(TEXT), Some(NAME_FUNCTION)], NewState::Pop(1)),
-    ]);
-    m.insert(r"nested_comment", vec![
-        Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
-        Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
-        Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
-        Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"string", vec![
-        Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
-        Rule::token(r#"(?m)\\""#, STRING),
-        Rule::token(r#"(?m)[^\\"]+"#, STRING),
-    ]);
+    m.insert(
+        r"typename",
+        vec![Rule::bygroups_to(
+            r"(?m)(iso|trn|ref|val|box|tag)?((?:\s)*)(_?[A-Z]\w*)",
+            vec![Some(KEYWORD), Some(TEXT), Some(NAME_CLASS)],
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"methodname",
+        vec![Rule::bygroups_to(
+            r"(?m)(iso|trn|ref|val|box|tag)?((?:\s)*)(_?[a-z]\w*)",
+            vec![Some(KEYWORD), Some(TEXT), Some(NAME_FUNCTION)],
+            NewState::Pop(1),
+        )],
+    );
+    m.insert(
+        r"nested_comment",
+        vec![
+            Rule::token(r"(?m)[^*/]+", COMMENT_MULTILINE),
+            Rule::token_to(r"(?m)/\*", COMMENT_MULTILINE, NewState::PushSame),
+            Rule::token_to(r"(?m)\*/", COMMENT_MULTILINE, NewState::Pop(1)),
+            Rule::token(r"(?m)[*/]", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"string",
+        vec![
+            Rule::token_to(r#"(?m)""#, STRING, NewState::Pop(1)),
+            Rule::token(r#"(?m)\\""#, STRING),
+            Rule::token(r#"(?m)[^\\"]+"#, STRING),
+        ],
+    );
     Table(m)
 }
 

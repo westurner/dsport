@@ -25,24 +25,39 @@ static TABLE: OnceLock<Table> = OnceLock::new();
 
 fn build_table() -> Table {
     let mut m: HashMap<&'static str, Vec<Rule>> = HashMap::new();
-    m.insert(r"commentsandwhitespace", vec![
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::token(r"(?ms)<!--", COMMENT),
-        Rule::token(r"(?ms)//.*?$", COMMENT_SINGLE),
-        Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
-    ]);
-    m.insert(r"slashstartsregex", vec![
-        Rule::token(r"(?ms)\s+", WHITESPACE),
-        Rule::token(r"(?ms)<!--", COMMENT),
-        Rule::token(r"(?ms)//.*?$", COMMENT_SINGLE),
-        Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
-        Rule::token_to(r"(?ms)/(\\.|[^\[/\\\n]|\[(\\.|[^\]\\\n])*])+/([gimuysd]+\b|\B)", STRING_REGEX, NewState::Pop(1)),
-        Rule::token_to(r"(?ms)(?=/)", TEXT, NewState::Push(vec![r"#pop", r"badregex"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"badregex", vec![
-        Rule::token_to(r"(?ms)\n", WHITESPACE, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"commentsandwhitespace",
+        vec![
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::token(r"(?ms)<!--", COMMENT),
+            Rule::token(r"(?ms)//.*?$", COMMENT_SINGLE),
+            Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
+        ],
+    );
+    m.insert(
+        r"slashstartsregex",
+        vec![
+            Rule::token(r"(?ms)\s+", WHITESPACE),
+            Rule::token(r"(?ms)<!--", COMMENT),
+            Rule::token(r"(?ms)//.*?$", COMMENT_SINGLE),
+            Rule::token(r"(?ms)/\*.*?\*/", COMMENT_MULTILINE),
+            Rule::token_to(
+                r"(?ms)/(\\.|[^\[/\\\n]|\[(\\.|[^\]\\\n])*])+/([gimuysd]+\b|\B)",
+                STRING_REGEX,
+                NewState::Pop(1),
+            ),
+            Rule::token_to(
+                r"(?ms)(?=/)",
+                TEXT,
+                NewState::Push(vec![r"#pop", r"badregex"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"badregex",
+        vec![Rule::token_to(r"(?ms)\n", WHITESPACE, NewState::Pop(1))],
+    );
     m.insert(r"root", vec![
         Rule::token(r"(?ms)\A#! ?/.*?$", COMMENT_HASHBANG),
         Rule::token_to(r"(?ms)^(?=\s|/|<!--)", TEXT, NewState::Push(vec![r"slashstartsregex"])),
@@ -75,13 +90,20 @@ fn build_table() -> Table {
         Rule::token_to(r"(?ms)`", STRING_BACKTICK, NewState::Push(vec![r"interp"])),
         Rule::token(r"(?ms)#[a-zA-Z_]\w*", NAME),
     ]);
-    m.insert(r"interp", vec![
-        Rule::token_to(r"(?ms)`", STRING_BACKTICK, NewState::Pop(1)),
-        Rule::token(r"(?ms)\\.", STRING_BACKTICK),
-        Rule::token_to(r"(?ms)\$\{", STRING_INTERPOL, NewState::Push(vec![r"interp-inside"])),
-        Rule::token(r"(?ms)\$", STRING_BACKTICK),
-        Rule::token(r"(?ms)[^`\\$]+", STRING_BACKTICK),
-    ]);
+    m.insert(
+        r"interp",
+        vec![
+            Rule::token_to(r"(?ms)`", STRING_BACKTICK, NewState::Pop(1)),
+            Rule::token(r"(?ms)\\.", STRING_BACKTICK),
+            Rule::token_to(
+                r"(?ms)\$\{",
+                STRING_INTERPOL,
+                NewState::Push(vec![r"interp-inside"]),
+            ),
+            Rule::token(r"(?ms)\$", STRING_BACKTICK),
+            Rule::token(r"(?ms)[^`\\$]+", STRING_BACKTICK),
+        ],
+    );
     m.insert(r"interp-inside", vec![
         Rule::token_to(r"(?ms)\}", STRING_INTERPOL, NewState::Pop(1)),
         Rule::token(r"(?ms)\A#! ?/.*?$", COMMENT_HASHBANG),

@@ -50,40 +50,85 @@ fn build_table() -> Table {
         Rule::token(r"(?m)[a-zA-Z0-9_]+", NAME),
         Rule::token(r"(?m)[(), \n]+", TEXT),
     ]);
-    m.insert(r"global", vec![
-        Rule::token(r"(?m)\@[a-zA-Z0-9_.]+", NAME_VARIABLE_GLOBAL),
-    ]);
-    m.insert(r"integer", vec![
-        Rule::token(r"(?m)-?[0-9]+", NUMBER_INTEGER),
-    ]);
-    m.insert(r"constantint", vec![
-        Rule::token(r"(?m)-?[0-9]+", NUMBER_INTEGER),
-        Rule::token_to(r"(?m)(?=.)", TEXT, NewState::Pop(1)),
-    ]);
-    m.insert(r"constantfloat", vec![
-        Rule::token(r"(?m)-?[0-9]+\.[0-9]+(e[+-][0-9]+)?", NUMBER_FLOAT),
-        Rule::token_to(r"(?m)(?=.)", TEXT, NewState::Pop(1)),
-    ]);
-    m.insert(r"float", vec![
-        Rule::token(r"(?m)-?[0-9]+\.[0-9]+(e[+-][0-9]+)?", NUMBER_FLOAT),
-    ]);
-    m.insert(r"vreg", vec![
-        Rule::bygroups_to(r"(?m)( *)(:(?!:))", vec![Some(WHITESPACE), Some(KEYWORD)], NewState::Push(vec![r"#pop", r"vreg_bank_or_class"])),
-        Rule::bygroups_to(r"(?m)( *)(\()", vec![Some(WHITESPACE), Some(TEXT)], NewState::Push(vec![r"vreg_type"])),
-        Rule::token_to(r"(?m)(?=.)", TEXT, NewState::Pop(1)),
-    ]);
-    m.insert(r"vreg_bank_or_class", vec![
-        Rule::bygroups(r"(?m)( *)(_)", vec![Some(WHITESPACE), Some(NAME_VARIABLE_MAGIC)]),
-        Rule::bygroups(r"(?m)( *)([a-zA-Z0-9_]+)", vec![Some(WHITESPACE), Some(NAME_VARIABLE)]),
-        Rule::bygroups_to(r"(?m)( *)(\()", vec![Some(WHITESPACE), Some(TEXT)], NewState::Push(vec![r"vreg_type"])),
-        Rule::token_to(r"(?m)(?=.)", TEXT, NewState::Pop(1)),
-    ]);
-    m.insert(r"vreg_type", vec![
-        Rule::bygroups(r"(?m)( *)([sp][0-9]+)", vec![Some(WHITESPACE), Some(KEYWORD_TYPE)]),
-        Rule::bygroups(r"(?m)( *)(<[0-9]+ *x *[sp][0-9]+>)", vec![Some(WHITESPACE), Some(KEYWORD_TYPE)]),
-        Rule::token_to(r"(?m)\)", TEXT, NewState::Pop(1)),
-        Rule::token_to(r"(?m)(?=.)", TEXT, NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"global",
+        vec![Rule::token(r"(?m)\@[a-zA-Z0-9_.]+", NAME_VARIABLE_GLOBAL)],
+    );
+    m.insert(
+        r"integer",
+        vec![Rule::token(r"(?m)-?[0-9]+", NUMBER_INTEGER)],
+    );
+    m.insert(
+        r"constantint",
+        vec![
+            Rule::token(r"(?m)-?[0-9]+", NUMBER_INTEGER),
+            Rule::token_to(r"(?m)(?=.)", TEXT, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"constantfloat",
+        vec![
+            Rule::token(r"(?m)-?[0-9]+\.[0-9]+(e[+-][0-9]+)?", NUMBER_FLOAT),
+            Rule::token_to(r"(?m)(?=.)", TEXT, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"float",
+        vec![Rule::token(
+            r"(?m)-?[0-9]+\.[0-9]+(e[+-][0-9]+)?",
+            NUMBER_FLOAT,
+        )],
+    );
+    m.insert(
+        r"vreg",
+        vec![
+            Rule::bygroups_to(
+                r"(?m)( *)(:(?!:))",
+                vec![Some(WHITESPACE), Some(KEYWORD)],
+                NewState::Push(vec![r"#pop", r"vreg_bank_or_class"]),
+            ),
+            Rule::bygroups_to(
+                r"(?m)( *)(\()",
+                vec![Some(WHITESPACE), Some(TEXT)],
+                NewState::Push(vec![r"vreg_type"]),
+            ),
+            Rule::token_to(r"(?m)(?=.)", TEXT, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"vreg_bank_or_class",
+        vec![
+            Rule::bygroups(
+                r"(?m)( *)(_)",
+                vec![Some(WHITESPACE), Some(NAME_VARIABLE_MAGIC)],
+            ),
+            Rule::bygroups(
+                r"(?m)( *)([a-zA-Z0-9_]+)",
+                vec![Some(WHITESPACE), Some(NAME_VARIABLE)],
+            ),
+            Rule::bygroups_to(
+                r"(?m)( *)(\()",
+                vec![Some(WHITESPACE), Some(TEXT)],
+                NewState::Push(vec![r"vreg_type"]),
+            ),
+            Rule::token_to(r"(?m)(?=.)", TEXT, NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"vreg_type",
+        vec![
+            Rule::bygroups(
+                r"(?m)( *)([sp][0-9]+)",
+                vec![Some(WHITESPACE), Some(KEYWORD_TYPE)],
+            ),
+            Rule::bygroups(
+                r"(?m)( *)(<[0-9]+ *x *[sp][0-9]+>)",
+                vec![Some(WHITESPACE), Some(KEYWORD_TYPE)],
+            ),
+            Rule::token_to(r"(?m)\)", TEXT, NewState::Pop(1)),
+            Rule::token_to(r"(?m)(?=.)", TEXT, NewState::Pop(1)),
+        ],
+    );
     m.insert(r"mmo", vec![
         Rule::token(r"(?m)\(", TEXT),
         Rule::token(r"(?m) +", WHITESPACE),

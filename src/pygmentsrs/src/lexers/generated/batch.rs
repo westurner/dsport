@@ -92,9 +92,14 @@ fn build_table() -> Table {
         Rule::token(r"(?im)%%|\^[\n\x1a]?(\^!|[\w\W])", STRING_ESCAPE),
         Rule::token(r#"(?im)[^"%^\s\x1a\xa0,;=&<>|\d)]+|."#, TEXT),
     ]);
-    m.insert(r"call", vec![
-        Rule::bygroups_to(r"(?im)(:?)((?:(?:[^\s\x1a\xa0,;=&<>|+:^]|\^[\n\x1a]?[\w\W])*))", vec![Some(PUNCTUATION), Some(NAME_LABEL)], NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"call",
+        vec![Rule::bygroups_to(
+            r"(?im)(:?)((?:(?:[^\s\x1a\xa0,;=&<>|+:^]|\^[\n\x1a]?[\w\W])*))",
+            vec![Some(PUNCTUATION), Some(NAME_LABEL)],
+            NewState::Pop(1),
+        )],
+    );
     m.insert(r"label", vec![
         Rule::bygroups_to(r#"(?im)((?:(?:[^\s\x1a\xa0,;=&<>|+:^]|\^[\n\x1a]?[\w\W])*)?)((?:(?:"[^\n\x1a"]*(?:"|(?=[\n\x1a])))|(?:(?:%(?:\*|(?:~[a-z]*(?:\$[^:]+:)?)?\d|[^%:\n\x1a]+(?::(?:~(?:-?\d+)?(?:,(?:-?\d+)?)?|(?:[^%\n\x1a^]|\^[^%\n\x1a])[^=\n\x1a]*=(?:[^%\n\x1a^]|\^[^%\n\x1a])*)?)?%))|(?:\^?![^!:\n\x1a]+(?::(?:~(?:-?\d+)?(?:,(?:-?\d+)?)?|(?:[^!\n\x1a^]|\^[^!\n\x1a])[^=\n\x1a]*=(?:[^!\n\x1a^]|\^[^!\n\x1a])*)?)?\^?!))|\^[\n\x1a]?[\w\W]|[^"%^\n\x1a&<>|])*)"#, vec![Some(NAME_LABEL), Some(COMMENT_SINGLE)], NewState::Pop(1)),
     ]);
@@ -157,10 +162,17 @@ fn build_table() -> Table {
         Rule::token(r"(?im)%%|\^[\n\x1a]?(\^!|[\w\W])", STRING_ESCAPE),
         Rule::token(r#"(?im)[^"%^\s\x1a\xa0,;=&<>|\d)]+|."#, TEXT),
     ]);
-    m.insert(r"call/compound", vec![
-        Rule::token_to(r"(?im)(?=\))", TEXT, NewState::Pop(1)),
-        Rule::bygroups_to(r"(?im)(:?)((?:(?:[^\s\x1a\xa0,;=&<>|+:^)]|\^[\n\x1a]?[^)])*))", vec![Some(PUNCTUATION), Some(NAME_LABEL)], NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"call/compound",
+        vec![
+            Rule::token_to(r"(?im)(?=\))", TEXT, NewState::Pop(1)),
+            Rule::bygroups_to(
+                r"(?im)(:?)((?:(?:[^\s\x1a\xa0,;=&<>|+:^)]|\^[\n\x1a]?[^)])*))",
+                vec![Some(PUNCTUATION), Some(NAME_LABEL)],
+                NewState::Pop(1),
+            ),
+        ],
+    );
     m.insert(r"label/compound", vec![
         Rule::token_to(r"(?im)(?=\))", TEXT, NewState::Pop(1)),
         Rule::bygroups_to(r#"(?im)((?:(?:[^\s\x1a\xa0,;=&<>|+:^)]|\^[\n\x1a]?[^)])*)?)((?:(?:"[^\n\x1a"]*(?:"|(?=[\n\x1a])))|(?:(?:%(?:\*|(?:~[a-z]*(?:\$[^:]+:)?)?\d|[^%:\n\x1a]+(?::(?:~(?:-?\d+)?(?:,(?:-?\d+)?)?|(?:[^%\n\x1a^]|\^[^%\n\x1a])[^=\n\x1a]*=(?:[^%\n\x1a^]|\^[^%\n\x1a])*)?)?%))|(?:\^?![^!:\n\x1a]+(?::(?:~(?:-?\d+)?(?:,(?:-?\d+)?)?|(?:[^!\n\x1a^]|\^[^!\n\x1a])[^=\n\x1a]*=(?:[^!\n\x1a^]|\^[^!\n\x1a])*)?)?\^?!))|\^[\n\x1a]?[^)]|[^"%^\n\x1a&<>|)])*)"#, vec![Some(NAME_LABEL), Some(COMMENT_SINGLE)], NewState::Pop(1)),
@@ -258,16 +270,36 @@ fn build_table() -> Table {
         Rule::bygroups_g_to(r#"(?im)((?:(?:(?:\^[\n\x1a])?[\t\v\f\r ,;=\xa0])+)?)(==)((?:(?:(?:\^[\n\x1a])?[\t\v\f\r ,;=\xa0])+)?(?:[&<>|]+|(?:(?:"[^\n\x1a"]*(?:"|(?=[\n\x1a])))|(?:(?:%(?:\*|(?:~[a-z]*(?:\$[^:]+:)?)?\d|[^%:\n\x1a]+(?::(?:~(?:-?\d+)?(?:,(?:-?\d+)?)?|(?:[^%\n\x1a^]|\^[^%\n\x1a])[^=\n\x1a]*=(?:[^%\n\x1a^]|\^[^%\n\x1a])*)?)?%))|(?:\^?![^!:\n\x1a]+(?::(?:~(?:-?\d+)?(?:,(?:-?\d+)?)?|(?:[^!\n\x1a^]|\^[^!\n\x1a])[^=\n\x1a]*=(?:[^!\n\x1a^]|\^[^!\n\x1a])*)?)?\^?!))|(?:(?:(?:\^[\n\x1a]?)?[^"\s\x1a\xa0,;=&<>|])+))+))"#, vec![Some(GroupAction::UsingThis { state: Some(vec!["root", "text"]) }), Some(GroupAction::Token(OPERATOR)), Some(GroupAction::UsingThis { state: Some(vec!["root", "text"]) })], NewState::Pop(1)),
         Rule::bygroups_g_to(r#"(?im)((?:(?:(?:\^[\n\x1a])?[\t\v\f\r ,;=\xa0])+))((?:equ|geq|gtr|leq|lss|neq))((?:(?:(?:\^[\n\x1a])?[\t\v\f\r ,;=\xa0])+)(?:[&<>|]+|(?:(?:"[^\n\x1a"]*(?:"|(?=[\n\x1a])))|(?:(?:%(?:\*|(?:~[a-z]*(?:\$[^:]+:)?)?\d|[^%:\n\x1a]+(?::(?:~(?:-?\d+)?(?:,(?:-?\d+)?)?|(?:[^%\n\x1a^]|\^[^%\n\x1a])[^=\n\x1a]*=(?:[^%\n\x1a^]|\^[^%\n\x1a])*)?)?%))|(?:\^?![^!:\n\x1a]+(?::(?:~(?:-?\d+)?(?:,(?:-?\d+)?)?|(?:[^!\n\x1a^]|\^[^!\n\x1a])[^=\n\x1a]*=(?:[^!\n\x1a^]|\^[^!\n\x1a])*)?)?\^?!))|(?:(?:(?:\^[\n\x1a]?)?[^"\s\x1a\xa0,;=&<>|])+))+))"#, vec![Some(GroupAction::UsingThis { state: Some(vec!["root", "text"]) }), Some(GroupAction::Token(OPERATOR_WORD)), Some(GroupAction::UsingThis { state: Some(vec!["root", "text"]) })], NewState::Pop(1)),
     ]);
-    m.insert(r"(?", vec![
-        Rule::using_this(r"(?im)(?:(?:(?:\^[\n\x1a])?[\t\v\f\r ,;=\xa0])+)", Some(vec!["root", "text"])),
-        Rule::token_to(r"(?im)\(", PUNCTUATION, NewState::Push(vec![r"#pop", r"else?", r"root/compound"])),
-        Rule::default(NewState::Pop(1)),
-    ]);
-    m.insert(r"else?", vec![
-        Rule::using_this(r"(?im)(?:(?:(?:\^[\n\x1a])?[\t\v\f\r ,;=\xa0])+)", Some(vec!["root", "text"])),
-        Rule::token_to(r"(?im)else(?=\^?[\t\v\f\r ,;=\xa0]|[&<>|\n\x1a])", KEYWORD, NewState::Pop(1)),
-        Rule::default(NewState::Pop(1)),
-    ]);
+    m.insert(
+        r"(?",
+        vec![
+            Rule::using_this(
+                r"(?im)(?:(?:(?:\^[\n\x1a])?[\t\v\f\r ,;=\xa0])+)",
+                Some(vec!["root", "text"]),
+            ),
+            Rule::token_to(
+                r"(?im)\(",
+                PUNCTUATION,
+                NewState::Push(vec![r"#pop", r"else?", r"root/compound"]),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
+    m.insert(
+        r"else?",
+        vec![
+            Rule::using_this(
+                r"(?im)(?:(?:(?:\^[\n\x1a])?[\t\v\f\r ,;=\xa0])+)",
+                Some(vec!["root", "text"]),
+            ),
+            Rule::token_to(
+                r"(?im)else(?=\^?[\t\v\f\r ,;=\xa0]|[&<>|\n\x1a])",
+                KEYWORD,
+                NewState::Pop(1),
+            ),
+            Rule::default(NewState::Pop(1)),
+        ],
+    );
     Table(m)
 }
 

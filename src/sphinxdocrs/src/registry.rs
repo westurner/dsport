@@ -123,6 +123,27 @@ pub struct SphinxComponentRegistry {
     ///
     /// Mirrors `html_themes: dict[str, str]`.
     pub html_themes: HashMap<String, PathBuf>,
+
+    // ── P3 additions ─────────────────────────────────────────────────────────
+    /// Builders: name → class name string.
+    ///
+    /// Mirrors `builders: dict[str, type[Builder]]`.
+    pub builders: HashMap<String, String>,
+
+    /// Domains: name → class name string.
+    ///
+    /// Mirrors `domains: dict[str, type[Domain]]`.
+    pub domains: HashMap<String, String>,
+
+    /// Translators: builder name → translator class name.
+    ///
+    /// Mirrors `translators: dict[str, type[SphinxTranslator]]`.
+    pub translators: HashMap<String, String>,
+
+    /// HTML math renderers: name → (inline_visit_fn, block_visit_fn).
+    ///
+    /// Mirrors `html_math_renderers: dict[str, tuple[...]]`.
+    pub html_math_renderers: HashMap<String, (String, String)>,
 }
 
 impl SphinxComponentRegistry {
@@ -335,6 +356,78 @@ impl SphinxComponentRegistry {
     /// Mirrors `SphinxComponentRegistry.add_html_theme(name, theme_path)`.
     pub fn add_html_theme(&mut self, name: impl Into<String>, theme_path: impl Into<PathBuf>) {
         self.html_themes.insert(name.into(), theme_path.into());
+    }
+
+    // ── P3 additions: builders / domains / translators / math renderers ───────
+
+    /// Register a builder class name for a given builder name.
+    ///
+    /// Mirrors `SphinxComponentRegistry.add_builder(builder)` — stores the
+    /// class name string; resolves to a Python/Rust class at build time.
+    pub fn add_builder(&mut self, name: impl Into<String>, class_name: impl Into<String>) {
+        self.builders.insert(name.into(), class_name.into());
+    }
+
+    /// Return the registered builder class name for `name`, if any.
+    pub fn get_builder(&self, name: &str) -> Option<&str> {
+        self.builders.get(name).map(String::as_str)
+    }
+
+    /// Return `true` if a builder with `name` is registered.
+    pub fn has_builder(&self, name: &str) -> bool {
+        self.builders.contains_key(name)
+    }
+
+    /// Register a domain class name.
+    ///
+    /// Mirrors `SphinxComponentRegistry.add_domain(domain)`.
+    pub fn add_domain(&mut self, name: impl Into<String>, class_name: impl Into<String>) {
+        self.domains.insert(name.into(), class_name.into());
+    }
+
+    /// Return the registered domain class name for `name`, if any.
+    pub fn get_domain(&self, name: &str) -> Option<&str> {
+        self.domains.get(name).map(String::as_str)
+    }
+
+    /// Return `true` if a domain with `name` is registered.
+    pub fn has_domain(&self, name: &str) -> bool {
+        self.domains.contains_key(name)
+    }
+
+    /// Register a translator class name for a given builder.
+    ///
+    /// Mirrors `SphinxComponentRegistry.add_translator(name, translator)`.
+    pub fn add_translator(
+        &mut self,
+        builder_name: impl Into<String>,
+        translator_class: impl Into<String>,
+    ) {
+        self.translators
+            .insert(builder_name.into(), translator_class.into());
+    }
+
+    /// Return the translator class name for `builder_name`, if any.
+    pub fn get_translator(&self, builder_name: &str) -> Option<&str> {
+        self.translators.get(builder_name).map(String::as_str)
+    }
+
+    /// Register an HTML math renderer.
+    ///
+    /// Mirrors `SphinxComponentRegistry.add_html_math_renderer(name, ...)`.
+    pub fn add_html_math_renderer(
+        &mut self,
+        name: impl Into<String>,
+        inline_visit: impl Into<String>,
+        block_visit: impl Into<String>,
+    ) {
+        self.html_math_renderers
+            .insert(name.into(), (inline_visit.into(), block_visit.into()));
+    }
+
+    /// Return `true` if an HTML math renderer with `name` is registered.
+    pub fn has_html_math_renderer(&self, name: &str) -> bool {
+        self.html_math_renderers.contains_key(name)
     }
 }
 
@@ -619,5 +712,58 @@ mod tests {
         assert!(r.latex_packages.is_empty());
         assert!(r.latex_packages_after_hyperref.is_empty());
         assert!(r.html_themes.is_empty());
+        // P3 additions
+        assert!(r.builders.is_empty());
+        assert!(r.domains.is_empty());
+        assert!(r.translators.is_empty());
+        assert!(r.html_math_renderers.is_empty());
+    }
+
+    // ── P3 registry methods ───────────────────────────────────────────────────
+
+    #[test]
+    fn add_and_get_builder() {
+        let mut r = SphinxComponentRegistry::new();
+        r.add_builder("html", "sphinx.builders.html.StandaloneReader");
+        assert!(r.has_builder("html"));
+        assert_eq!(
+            r.get_builder("html"),
+            Some("sphinx.builders.html.StandaloneReader")
+        );
+        assert!(!r.has_builder("latex"));
+    }
+
+    #[test]
+    fn add_and_get_domain() {
+        let mut r = SphinxComponentRegistry::new();
+        r.add_domain("py", "sphinx.domains.python.PythonDomain");
+        assert!(r.has_domain("py"));
+        assert_eq!(
+            r.get_domain("py"),
+            Some("sphinx.domains.python.PythonDomain")
+        );
+        assert!(!r.has_domain("c"));
+    }
+
+    #[test]
+    fn add_and_get_translator() {
+        let mut r = SphinxComponentRegistry::new();
+        r.add_translator("html", "sphinx.writers.html5.HTML5Translator");
+        assert_eq!(
+            r.get_translator("html"),
+            Some("sphinx.writers.html5.HTML5Translator")
+        );
+        assert!(r.get_translator("latex").is_none());
+    }
+
+    #[test]
+    fn add_html_math_renderer() {
+        let mut r = SphinxComponentRegistry::new();
+        r.add_html_math_renderer("mathjax", "visit_math_mathjax", "visit_displaymath_mathjax");
+        assert!(r.has_html_math_renderer("mathjax"));
+        assert!(!r.has_html_math_renderer("imgmath"));
+        let (inline, block) = r.html_math_renderers.get("mathjax").unwrap();
+        assert_eq!(inline, "visit_math_mathjax");
+        assert_eq!(block, "visit_displaymath_mathjax");
     }
 }

@@ -10,9 +10,10 @@
 //! | `escape(text)` | [`escape`] | escapes RST special characters |
 //! | `textwidth(text, widechars)` | [`textwidth`] | east-Asian aware display width |
 //! | `heading(env, text, level)` | [`heading`] | renders a heading with underline |
+//! | `_prepend_prologue(content, prologue)` | [`prepend_prologue`] | insert prologue after docinfo |
+//! | `_append_epilogue(content, epilogue)` | [`append_epilogue`] | append epilogue with blank separator |
 //!
-//! **Deferred** (require docutils StringList or live Sphinx environment):
-//! `_prepend_prologue`, `_append_epilogue`, `default_role`.
+//! **Deferred** (requires live Sphinx role registry): `default_role`.
 
 use unicode_width::UnicodeWidthChar;
 
@@ -223,6 +224,88 @@ pub fn heading(text: &str, level: usize, language: Option<&str>) -> String {
     format!("{text}\n{}", sectioning_char.to_string().repeat(width))
 }
 
+// ── prologue / epilogue ───────────────────────────────────────────────────────
+
+/// A line in a `StringList`-compatible content buffer.
+///
+/// Each entry is `(text, source, lineno)` — the same shape as
+/// docutils' `StringList.items`.
+pub type ContentLine = (String, &'static str, usize);
+
+/// Prepend a prologue string to an RST content buffer.
+///
+/// The prologue is inserted *after* any docinfo field-list lines at the
+/// top (lines whose first character is `:`). A blank separator line is
+/// inserted after the docinfo block when one exists, and another after
+/// the prologue itself.
+///
+/// Mirrors `sphinx.util.rst._prepend_prologue`.
+///
+/// ```rust
+/// use sphinxdocrs::util_rst::{ContentLine, prepend_prologue};
+/// let mut content: Vec<ContentLine> = vec![
+///     ("Hello world.".into(), "<source>", 0),
+/// ];
+/// prepend_prologue(&mut content, ".. note::\n\n   A note.");
+/// assert_eq!(content[0].0, ".. note::");
+/// assert!(content.iter().any(|l| l.0 == "Hello world."));
+/// ```
+pub fn prepend_prologue(content: &mut Vec<ContentLine>, prologue: &str) {
+    if prologue.is_empty() {
+        return;
+    }
+    // Count leading docinfo lines (lines starting with ':').
+    let mut pos = 0usize;
+    for (line, _, _) in content.iter() {
+        if line.starts_with(':') {
+            pos += 1;
+        } else {
+            break;
+        }
+    }
+    // If docinfo present, insert a blank line after it.
+    if pos > 0 {
+        content.insert(pos, (String::new(), "<generated>", 0));
+        pos += 1;
+    }
+    // Insert prologue lines.
+    let prologue_lines: Vec<&str> = prologue.lines().collect();
+    let n = prologue_lines.len();
+    for (i, line) in prologue_lines.into_iter().enumerate() {
+        content.insert(pos + i, (line.to_string(), "<rst_prologue>", i));
+    }
+    // Blank separator after prologue.
+    content.insert(pos + n, (String::new(), "<generated>", 0));
+}
+
+/// Append an epilogue string to an RST content buffer.
+///
+/// A blank separator line is inserted before the epilogue.
+///
+/// Mirrors `sphinx.util.rst._append_epilogue`.
+///
+/// ```rust
+/// use sphinxdocrs::util_rst::{ContentLine, append_epilogue};
+/// let mut content: Vec<ContentLine> = vec![
+///     ("Hello world.".into(), "<source>", 0),
+/// ];
+/// append_epilogue(&mut content, ".. footer:: end");
+/// assert!(content.iter().any(|l| l.0 == ".. footer:: end"));
+/// ```
+pub fn append_epilogue(content: &mut Vec<ContentLine>, epilogue: &str) {
+    if epilogue.is_empty() {
+        return;
+    }
+    let (source, lineno) = content
+        .last()
+        .map(|(_, s, n)| (*s, *n))
+        .unwrap_or(("<generated>", 0));
+    content.push((String::new(), source, lineno + 1));
+    for (i, line) in epilogue.lines().collect::<Vec<_>>().into_iter().enumerate() {
+        content.push((line.to_string(), "<rst_epilogue>", i));
+    }
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -346,5 +429,86 @@ mod tests {
             heading("русский язык", 1, Some("ja")),
             "русский язык\n======================="
         );
+    }
+
+    // ── prepend_prologue ──────────────────────────────────────────────────────
+
+    #[test]
+    fn prepend_prologue_basic() {
+        let mut content: Vec<ContentLine> = vec![("Hello world.".into(), "<source>", 0)];
+        prepend_prologue(&mut content, ".. prologue::");
+        assert_eq!(content[0].0, ".. prologue::");
+        assert_eq!(content[1].0, ""); // blank separator
+        assert_eq!(content[2].0, "Hello world.");
+    }
+
+    #[test]
+    fn prepend_prologue_empty_is_noop() {
+        let mut content: Vec<ContentLine> = vec![("Hello.".into(), "<source>", 0)];
+        prepend_prologue(&mut content, "");
+        assert_eq!(content.len(), 1);
+    }
+
+    #[test]
+    fn prepend_prologue_after_docinfo() {
+        // Lines starting with ':' are docinfo — prologue goes after them.
+        let mut content: Vec<ContentLine> = vec![
+            (":author: Me".into(), "<source>", 0),
+            (":date: Today".into(), "<source>", 1),
+            ("".into(), "<source>", 2),
+            ("Body text.".into(), "<source>", 3),
+        ];
+        prepend_prologue(&mut content, ".. highlight:: python");
+        // docinfo lines come first unchanged
+        assert_eq!(content[0].0, ":author: Me");
+        assert_eq!(content[1].0, ":date: Today");
+        // blank after docinfo
+        assert_eq!(content[2].0, "");
+        // prologue next
+        assert_eq!(content[3].0, ".. highlight:: python");
+    }
+
+    #[test]
+    fn prepend_prologue_multiline() {
+        let mut content: Vec<ContentLine> = vec![("Body.".into(), "<source>", 0)];
+        prepend_prologue(&mut content, "line1\nline2");
+        assert_eq!(content[0].0, "line1");
+        assert_eq!(content[1].0, "line2");
+        assert_eq!(content[2].0, ""); // blank separator
+        assert_eq!(content[3].0, "Body.");
+    }
+
+    // ── append_epilogue ───────────────────────────────────────────────────────
+
+    #[test]
+    fn append_epilogue_basic() {
+        let mut content: Vec<ContentLine> = vec![("Body.".into(), "<source>", 0)];
+        append_epilogue(&mut content, ".. epilogue::");
+        assert_eq!(content[0].0, "Body.");
+        assert_eq!(content[1].0, ""); // blank separator
+        assert_eq!(content[2].0, ".. epilogue::");
+    }
+
+    #[test]
+    fn append_epilogue_empty_is_noop() {
+        let mut content: Vec<ContentLine> = vec![("Body.".into(), "<source>", 0)];
+        append_epilogue(&mut content, "");
+        assert_eq!(content.len(), 1);
+    }
+
+    #[test]
+    fn append_epilogue_empty_content() {
+        let mut content: Vec<ContentLine> = vec![];
+        append_epilogue(&mut content, "foot");
+        assert_eq!(content[0].0, ""); // blank separator
+        assert_eq!(content[1].0, "foot");
+    }
+
+    #[test]
+    fn append_epilogue_multiline() {
+        let mut content: Vec<ContentLine> = vec![("Body.".into(), "<source>", 0)];
+        append_epilogue(&mut content, "line1\nline2");
+        let texts: Vec<&str> = content.iter().map(|(t, _, _)| t.as_str()).collect();
+        assert_eq!(texts, ["Body.", "", "line1", "line2"]);
     }
 }

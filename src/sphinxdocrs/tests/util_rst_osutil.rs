@@ -14,14 +14,15 @@ use tempfile::TempDir;
 // ── util_rst imports ──────────────────────────────────────────────────────────
 
 use sphinxdocrs::util_rst::{
-    SECTIONING_CHARS, WIDECHARS_DEFAULT, WIDECHARS_JA, escape, heading, textwidth,
+    ContentLine, SECTIONING_CHARS, WIDECHARS_DEFAULT, WIDECHARS_JA, append_epilogue, escape,
+    heading, prepend_prologue, textwidth,
 };
 
 // ── util_osutil imports ───────────────────────────────────────────────────────
 
 use sphinxdocrs::util_osutil::{
-    FileAvoidWrite, SEP, canon_path, ensuredir, make_filename, make_filename_from_project, os_path,
-    path_stabilize, relative_uri,
+    FileAvoidWrite, SEP, canon_path, copyfile, ensuredir, make_filename,
+    make_filename_from_project, os_path, path_stabilize, relative_uri, relpath, rmtree,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -333,4 +334,188 @@ fn file_avoid_write_get_value() {
     let mut w = FileAvoidWrite::new(&path);
     write!(w, "hello").unwrap();
     assert_eq!(w.get_value(), b"hello");
+}
+
+// ── copyfile ──────────────────────────────────────────────────────────────────
+
+// Mirrors test_copyfile (test_util.py)
+
+#[test]
+fn copyfile_basic() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src.txt");
+    let dst = tmp.path().join("dst.txt");
+    std::fs::write(&src, b"hello").unwrap();
+    copyfile(&src, &dst, false).unwrap();
+    assert_eq!(std::fs::read(&dst).unwrap(), b"hello");
+}
+
+#[test]
+fn copyfile_nonexistent_source_errors() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("missing.txt");
+    let dst = tmp.path().join("dst.txt");
+    let err = copyfile(&src, &dst, false).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+}
+
+#[test]
+fn copyfile_identical_content_noop() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src.txt");
+    let dst = tmp.path().join("dst.txt");
+    std::fs::write(&src, b"same").unwrap();
+    std::fs::write(&dst, b"same").unwrap();
+    let mtime_before = std::fs::metadata(&dst).unwrap().modified().ok();
+    // Should be a no-op — content is identical.
+    copyfile(&src, &dst, false).unwrap();
+    // Content unchanged.
+    assert_eq!(std::fs::read(&dst).unwrap(), b"same");
+    let mtime_after = std::fs::metadata(&dst).unwrap().modified().ok();
+    assert_eq!(mtime_before, mtime_after);
+}
+
+#[test]
+fn copyfile_existing_dest_no_force_aborts() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src.txt");
+    let dst = tmp.path().join("dst.txt");
+    std::fs::write(&src, b"new").unwrap();
+    std::fs::write(&dst, b"old").unwrap();
+    let err = copyfile(&src, &dst, false).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+    // Original not overwritten.
+    assert_eq!(std::fs::read(&dst).unwrap(), b"old");
+}
+
+#[test]
+fn copyfile_existing_dest_force_overwrites() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src.txt");
+    let dst = tmp.path().join("dst.txt");
+    std::fs::write(&src, b"new").unwrap();
+    std::fs::write(&dst, b"old").unwrap();
+    copyfile(&src, &dst, true).unwrap();
+    assert_eq!(std::fs::read(&dst).unwrap(), b"new");
+}
+
+// ── relpath ───────────────────────────────────────────────────────────────────
+
+#[test]
+fn relpath_sibling_files() {
+    let tmp = TempDir::new().unwrap();
+    let base = tmp.path().join("a").join("b");
+    let target = tmp.path().join("a").join("c.txt");
+    // base/b relative to base → ".."  then c.txt → "../c.txt"
+    let rel = relpath(&target, &base);
+    assert!(
+        rel.to_str().unwrap().contains("c.txt"),
+        "got: {}",
+        rel.display()
+    );
+}
+
+#[test]
+fn relpath_same_path() {
+    let tmp = TempDir::new().unwrap();
+    let p = tmp.path().join("a").join("b.txt");
+    let rel = relpath(&p, &p);
+    assert_eq!(rel, PathBuf::from(""));
+}
+
+// ── rmtree ────────────────────────────────────────────────────────────────────
+
+#[test]
+fn rmtree_removes_directory() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("subdir");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(dir.join("file.txt"), b"data").unwrap();
+    rmtree(&dir, false).unwrap();
+    assert!(!dir.exists());
+}
+
+#[test]
+fn rmtree_ignore_errors_on_missing() {
+    let tmp = TempDir::new().unwrap();
+    let missing = tmp.path().join("does_not_exist");
+    // Should not error when ignore_errors=true.
+    rmtree(&missing, true).unwrap();
+}
+
+#[test]
+fn rmtree_error_on_missing_no_ignore() {
+    let tmp = TempDir::new().unwrap();
+    let missing = tmp.path().join("does_not_exist");
+    assert!(rmtree(&missing, false).is_err());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// util_rst — prologue / epilogue
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Mirrors test__prepend_prologue / test__append_epilogue from test_util_rst.py.
+
+#[test]
+fn prepend_prologue_inserts_before_body() {
+    let mut content: Vec<ContentLine> = vec![("Body text.".into(), "<source>", 0)];
+    prepend_prologue(&mut content, ".. highlight:: python");
+    let texts: Vec<&str> = content.iter().map(|(t, _, _)| t.as_str()).collect();
+    assert_eq!(texts[0], ".. highlight:: python");
+    assert_eq!(texts[1], ""); // blank separator
+    assert_eq!(texts[2], "Body text.");
+}
+
+#[test]
+fn prepend_prologue_multiline_prologue() {
+    let mut content: Vec<ContentLine> = vec![("Body.".into(), "<source>", 0)];
+    prepend_prologue(&mut content, "line1\nline2");
+    let texts: Vec<&str> = content.iter().map(|(t, _, _)| t.as_str()).collect();
+    assert_eq!(texts, ["line1", "line2", "", "Body."]);
+}
+
+#[test]
+fn prepend_prologue_after_docinfo() {
+    let mut content: Vec<ContentLine> = vec![
+        (":author: Me".into(), "<source>", 0),
+        ("".into(), "<source>", 1),
+        ("Body.".into(), "<source>", 2),
+    ];
+    prepend_prologue(&mut content, ".. epilogue-like::");
+    // First two lines are docinfo.
+    assert_eq!(content[0].0, ":author: Me");
+    // blank inserted after docinfo block
+    assert_eq!(content[1].0, "");
+    // prologue
+    assert_eq!(content[2].0, ".. epilogue-like::");
+}
+
+#[test]
+fn prepend_prologue_empty_noop() {
+    let mut content: Vec<ContentLine> = vec![("Body.".into(), "<source>", 0)];
+    prepend_prologue(&mut content, "");
+    assert_eq!(content.len(), 1);
+}
+
+#[test]
+fn append_epilogue_appends_after_body() {
+    let mut content: Vec<ContentLine> = vec![("Body.".into(), "<source>", 0)];
+    append_epilogue(&mut content, ".. footer::");
+    let texts: Vec<&str> = content.iter().map(|(t, _, _)| t.as_str()).collect();
+    assert_eq!(texts, ["Body.", "", ".. footer::"]);
+}
+
+#[test]
+fn append_epilogue_multiline() {
+    let mut content: Vec<ContentLine> = vec![("Body.".into(), "<source>", 0)];
+    append_epilogue(&mut content, "e1\ne2");
+    let texts: Vec<&str> = content.iter().map(|(t, _, _)| t.as_str()).collect();
+    assert_eq!(texts, ["Body.", "", "e1", "e2"]);
+}
+
+#[test]
+fn append_epilogue_empty_noop() {
+    let mut content: Vec<ContentLine> = vec![("Body.".into(), "<source>", 0)];
+    append_epilogue(&mut content, "");
+    assert_eq!(content.len(), 1);
 }

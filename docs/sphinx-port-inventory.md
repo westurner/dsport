@@ -14,21 +14,21 @@ not yet ported — keep as parity probes only.
 | `errors.py` | `sphinxdocrs::errors` | **P1** | pure exception hierarchy; `pyo3::create_exception!` |
 | `events.py` | `sphinxdocrs::events` | **P1** | `EventManager`: connect/disconnect/emit/emit_firstresult + priority sort + `allowed_exceptions` + `pdb` re-raise + `ExtensionError` wrapping |
 | `project.py` | `sphinxdocrs::project` | **P1** | **mirrored** — `path2doc`/`doc2path`/`discover` landed in `src/sphinxdocrs/src/project.rs`; `discover()` uses Rust `util_matching` for glob exclusion (`EXCLUDE_PATHS` parity) |
-| `addnodes.py` | n/a (Python re-export) | **P1** | extends docutils.nodes — keep as Python shim that imports vendored `sphinx.addnodes` until our doctree gains Sphinx-specific node types |
+| `addnodes.py` | `sphinxdocrs::addnodes` | **P1** | **mirrored** — `toctree` (Translatable), `desc`/`desc_signature`/`desc_content`/`desc_inline`, `desc_*` detail nodes, all 9 `desc_sig_*` leaf nodes + `SIG_ELEMENTS` registry, `versionmodified`, `seealso`, `productionlist`/`production`, `index`, `centered`, `acks`, `hlist`/`hlistcol`, `compact_paragraph`, `glossary`, `only`, `start_of_file`, `highlightlang`, `tabular_col_spec`, `pending_xref`/`pending_xref_condition`, `number_reference`, `download_reference`, `literal_emphasis`/`literal_strong`, `manpage`; 27 tests in `tests/addnodes.rs` |
 | `extension.py` | `sphinxdocrs::extension` | **P2** | **mirrored** — `Extension` wrapper + `verify_needs_extensions` landed in `src/sphinxdocrs/src/extension.rs`; gated by `tests/test_sphinxdocrs_extension.py` |
-| `registry.py` | `sphinxdocrs::registry` | **P2** | **partial** — P2 subset ported: `SphinxComponentRegistry` struct with source-suffix/parser, transforms/post-transforms, CSS/JS/static assets, LaTeX packages, HTML themes; 32 unit tests + 32 integration tests; P3-dependent builder/domain/translator/math-renderer methods deferred |
-| `versioning.py` | `sphinxdocrs::versioning` | **P2** | **partial** — pure algorithms ported: `VERSIONING_RATIO`, `levenshtein_distance`, `get_ratio`, `add_uids`, `merge_doctrees`; `VersionableNode` trait; 26 inline unit tests + 29 integration tests in `tests/versioning.rs`; `UIDTransform` (needs Sphinx env) deferred to P3 |
-| `config.py` | `sphinxdocrs::config` | **P2** | depends on `util.typing`, complex value coercion; port `Config` after util |
+| `registry.py` | `sphinxdocrs::registry` | **P2** | **done** — P2 subset + P3 additions: source-suffix/parser, transforms/post-transforms, CSS/JS/static assets, LaTeX packages, HTML themes, `add_builder`/`get_builder`/`has_builder`, `add_domain`/`get_domain`/`has_domain`, `add_translator`/`get_translator`, `add_html_math_renderer`/`has_html_math_renderer`; 32 unit tests + 36 integration tests |
+| `versioning.py` | `sphinxdocrs::versioning` | **P2** | **done** — pure algorithms + `UIDTransform`: `VERSIONING_RATIO`, `levenshtein_distance`, `get_ratio`, `add_uids`, `merge_doctrees`; `VersionableNode` trait; `apply_uid_transform` (first-build + incremental-rebuild paths); `UID_TRANSFORM_PRIORITY = 880`; 29 inline tests + 29 integration tests |
+| `config.py` | `sphinxdocrs::config` | **P2** | **mirrored** — `SphinxConfig` with 50+ built-in option registry, `ConfigVal` enum (Null/Bool/Int/Float/Str/List/Map), `RebuildKind`, `ConfigOpt`; `new(raw_config, overrides)`, `get`, `set`, `add`, `contains`, `iter`, `filter`, alias sync (master_doc↔root_doc, copyright↔project_copyright); `convert_overrides` (bool/int/list coercion); typed accessors `project()`, `language()`, `root_doc()`, `extensions()`, etc.; `source_suffix()` helper; 26 integration tests in `tests/config.rs` |
 | `cmd/quickstart.py` | `sphinxdocrs::quickstart` | **C1** | **mirrored** — all 7 validators, `ask_user`, `generate`, `valid_dir`, full clap parser in `src/sphinxdocrs/src/quickstart/`; 50 Rust-side integration tests; `sphinx-quickstart-rs` binary native by default |
 | `cmd/build.py` + `cmd/make_mode.py` | `sphinxdocrs::build` | **C2** | **partial** — arg parser, all `_parse_*` helpers, `jobs_argument`, `MakeMode` (`build_clean`, `build_help`, `run_generic_build`, full `BUILDERS` table, target dispatch) ported in `src/sphinxdocrs/src/build/`; 35 Rust-side integration tests; `sphinx-build -M` runs natively; `sphinx-build -b` delegates to Python until builders land |
 | `ext/apidoc.py` | `sphinxdocrs::apidoc` | **C3** | **done** — `ApidocOptions`, `recurse_tree`, `create_{module,package,modules_toc}_file`, `remove_old_files`, full clap parser; `--full` wired to `quickstart::generate`; 24 Rust-side integration tests; parity vs Python 9.1.0 verified |
 | `ext/autosummary/generate.py` | `sphinxdocrs::autogen` | **C4** | **done** — RST scan, full clap parser, `underline`+`_` identity filters + 3 vendored stub templates + `generate_stub`/`generate_stubs` (heuristic type detection, empty member lists, autodoc fills at build time) in `src/sphinxdocrs/src/autogen/`; 32 Rust-side tests; `sphinx-autogen-rs` fully native |
-| `roles.py` / `directives/` | `sphinxdocrs::roles` etc | **P3** | needs the doctree converter (already in `docutilsrs::python`) and the directive/role registry |
+| `roles.py` / `directives/` | `sphinxdocrs::roles` | **P3** | **partial** — pure-algorithm subset ported: `GENERIC_DOCROLES` table, `SPECIFIC_DOCROLES` registry, `is_builtin_role`, `format_rfc_target`, `parse_emphasized_literal` (`EmphasizedSpan`), `XRefRoleConfig`, `DefaultRoleConfig`; 32 integration tests in `tests/roles.rs`; role execution (inliner/document pipeline) deferred |
 | `domains/` | `sphinxdocrs::domains` | **P3** | each domain is a substantial subsystem (`py`, `c`, `cpp`, `js`, `rst`, `std`) |
-| `environment/` | `sphinxdocrs::environment` | **P3** | the build environment, large and stateful |
+| `environment/` | `sphinxdocrs::environment` | **P3** | **partial** — `BuildEnvironment` skeleton: config/project/paths, `all_docs`, `dependencies`, `included`, `reread_always`, `metadata`, `titles`/`longtitles`, `toc_num_entries`/`toc_secnumbers`, `toctree_includes`, `files_to_rebuild`, `glob_toctrees`, `numbered_toctrees`, `domaindata`, `temp_data`, `ref_context`, config-status constants, `default_settings`; `EnvProject` shim; 23 integration tests in `tests/environment.rs`; `get_doctree`/`resolve_references`/domains/search-index deferred |
 | `builders/` | `sphinxdocrs::builders` | **P3** | one builder at a time (`html`, `latex`, `epub`, ...) |
 | `ext/*` | n/a (Python plugins) | **P3** | keep as Python; loaded via `Extension` registry |
-| `util/*` | `sphinxdocrs::util::*` | **P2** | **mirrored (matching + console + rst + osutil + uri + lines + docstrings)** — `util_matching.rs` (glob), `util_console.rs` (22 ANSI codes), `util_rst.rs` (`escape`/`textwidth`/`heading`), `util_osutil.rs` (`SEP`/`canon_path`/`relative_uri`/`ensuredir`/`make_filename`/`FileAvoidWrite`), `util_uri.rs` (`encode_uri`/`is_url`), `util_lines.rs` (`parse_line_num_spec`), `util_docstrings.rs` (`prepare_docstring`/`prepare_commentdoc`/`separate_metadata`); `_prepend_prologue`/`_append_epilogue`/`default_role`/`copyfile` deferred (docutils dep) |
+| `util/*` | `sphinxdocrs::util::*` | **P2** | **mirrored** — all util modules done except `default_role` (needs role registry, deferred to G5): `util_matching.rs` (glob), `util_console.rs` (22 ANSI codes), `util_rst.rs` (`escape`/`textwidth`/`heading`/`prepend_prologue`/`append_epilogue`), `util_osutil.rs` (`SEP`/`canon_path`/`relative_uri`/`ensuredir`/`make_filename`/`FileAvoidWrite`/`copyfile`/`relpath`/`rmtree`), `util_uri.rs` (`encode_uri`/`is_url`), `util_lines.rs` (`parse_line_num_spec`), `util_docstrings.rs` (`prepare_docstring`/`prepare_commentdoc`/`separate_metadata`); 69 integration tests (util_rst_osutil.rs) + 35 (util_extra.rs) |
 | `theming.py` | n/a | **P3** | jinja2-bound; keep Python until templating story decided |
 | `search/` | n/a | **P3** | indexer + JS bridge; keep Python |
 
@@ -44,27 +44,27 @@ underlying subsystem is ported.
 | `test_errors.py` | errors | P1 | mirrored — `tests/test_sphinxdocrs_errors.py` |
 | `test_events.py` | events | P1 | mirrored — `tests/test_sphinxdocrs_events.py` |
 | `test_project.py` | project | P1 | mirrored — `tests/test_sphinxdocrs_project.py` + `tests/test_sphinxdocrs_project_discover.py` (basic discovery, exclude patterns, multi-suffix, recorded `doc2path`, default `EXCLUDE_PATHS`) |
-| `test_addnodes.py` | addnodes | P1 | deferred (no Sphinx-specific nodes in Rust doctree yet) |
+| `test_addnodes.py` | addnodes | P1 | **mirrored** — `tests/addnodes.rs` (27 tests: `SIG_ELEMENTS` exact set, all 9 `desc_sig_*` class assertions, `Toctree` `Translatable` impl, `DescReturns.astext`, `DescOptional.astext`, `NotSmartquotable`, `PendingXref`, `VersionModified`, `Index`, `Only`, `HighlightLang`, `StartOfFile`, `Manpage`) |
 | (no upstream test_extension.py) | extension | P2 | mirrored — `tests/test_sphinxdocrs_extension.py` (8 cases: defaults, kwargs-pop semantics, explicit-None preservation, `verify_needs_extensions` parity) |
 | `test_application.py` | application | P3 | deferred |
 | `test_command_line.py`, `test__cli/` | cli | P3 | **partial** — arg-parsing layer ported natively (`build::parser`, `build::args`, `build::logging`, `build::make_mode`); full `Sphinx()` invocation deferred |
-| `test_config/` | config | P2 | deferred |
+| `test_config/` | config | P2 | **mirrored** — `tests/config.rs` (26 tests: defaults, raw_config overrides, CLI overrides bool/int/list, `add`/duplicate-error, `set`/alias-sync, `contains`, `iter`, `filter`, `source_suffix`, `rst_prolog`, `exclude_patterns`, `ConfigVal.display`, coerce helpers) |
 | `test_directives/` | directives | P3 | deferred |
 | `test_domains/` | domains | P3 | deferred |
-| `test_environment/` | environment | P3 | deferred |
+| `test_environment/` | environment | P3 | **partial** — `tests/environment.rs` (23 tests: construction, `default_settings`, config-status labels, `record_doc_read`/`is_doc_read`, `set_title`/`get_title`, `note_dependency`, `clear_temp_data`, empty-collections assertions, `found_docs`, config wiring); `get_doctree`/`resolve_references` deferred |
 | `test_ext_*` | extensions | P3 | deferred (run as-is against vendored sphinx) |
-| `test_extensions/` | extension loader | P2 | **partial** — `SphinxComponentRegistry` P2 surface (source-suffix/parser, transforms, assets, LaTeX, HTML themes) mirrored; 32 integration tests in `tests/registry.rs`; `load_extension` and builder/domain registration deferred to P3 |
+| `test_extensions/` | extension loader | P2 | **done** — `SphinxComponentRegistry` full surface: P2 source-suffix/parser/transforms/assets/LaTeX/HTML-themes (32 int. tests in `tests/registry.rs`) + P3 builder/domain/translator/math-renderer methods (4 new tests); `load_extension` deferred (needs full app) |
 | `test_highlighting.py` | highlighting | P3 | depends on Pygments port (`pygmentsrs`) |
 | `test_intl/` | intl | P3 | deferred |
 | `test_markup/` | markup | P3 | depends on docutils converter |
 | `test_pycode/` | pycode | P3 | deferred |
 | `test_quickstart.py` | quickstart | **C1** | **mirrored** — `quickstart::validate` (all 7 validators), `quickstart::parser` (full clap flag grammar), `quickstart::generate`, `quickstart::ask_user`, `quickstart::valid_dir` ported; 50 Rust-side tests in `tests/quickstart.rs` (11 validator `#[case]` tables, 8 parser flag tests, 4 `valid_dir` tests, 4 tree-layout insta snapshots, `conf_py_snapshot`, newline-mode assertions, `ask_user` scripted-terminal test, help-text snapshot); `sphinx-quickstart-rs` binary now runs natively, falling back to Python only on `--use-python-impl` / `SPHINXDOCRS_PY_FALLBACK=1` |
-| `test_roles.py` | roles | P3 | deferred |
+| `test_roles.py` | roles | P3 | **partial** — `tests/roles.rs` (32 tests): `GENERIC_DOCROLES`/`SPECIFIC_DOCROLES` completeness, `is_builtin_role`, `format_rfc_target` (all RFC pad cases), `parse_emphasized_literal` (normal/two-vars/empty-braces/unclosed/no-vars/only-var/empty/adjacent-vars), `XRefRoleConfig` defaults, `DefaultRoleConfig`; role execution deferred |
 | `test_search.py` | search | P3 | deferred |
 | `test_theming/` | theming | P3 | deferred |
 | `test_transforms/` | transforms | P3 | deferred (per-transform port) |
-| `test_util/` | util | P2 | **partial** — matching + console in Python tests; `test_util_rst.py` + `test_util.py` (osutil) in `tests/util_rst_osutil.rs` (52 tests); `test_util_uri.py` + `test_util_lines.py` + `test_util_docstrings.py` in `tests/util_extra.rs` (35 tests); `_prepend_prologue`/`_append_epilogue`/`default_role`/`copyfile` deferred (docutils/SphinxApp dep) |
-| `test_versioning.py` | versioning | P2 | **partial** — pure algorithm tests (`get_ratio`, `add_uids`, `merge_doctrees` for modified/added/deleted/deleted_end/insert/insert_beginning/insert_similar) mirrored in `tests/versioning.rs`; 29 integration tests; `SphinxTestApp` fixture tests deferred (builder dep) |
+| `test_util/` | util | P2 | **mirrored** — matching + console in Python tests; `test_util_rst.py` + `test_util.py` (osutil) in `tests/util_rst_osutil.rs` (69 tests: +`copyfile`, `relpath`, `rmtree`, `prepend_prologue`, `append_epilogue`); `test_util_uri.py` + `test_util_lines.py` + `test_util_docstrings.py` in `tests/util_extra.rs` (35 tests); only `default_role` deferred (needs role registry G5) |
+| `test_versioning.py` | versioning | P2 | **done** — pure algorithms + `UIDTransform` mirrored; `apply_uid_transform` (no-old / with-old / added-node) in inline tests; 29 integration tests in `tests/versioning.rs` |
 | `test_writers/` | writers | P3 | deferred (one writer at a time) |
 | `test_builders/` | builders | P3 | deferred (one builder at a time) |
 | `test_ext_autodoc/`, `test_ext_autosummary/`, `test_ext_imgconverter/`, `test_ext_intersphinx/`, `test_ext_napoleon/` | extensions | P3 | deferred — these run against vendored Python sphinx |
@@ -118,15 +118,18 @@ underlying subsystem is ported.
 | `src/sphinxdocrs/src/autogen/parser.rs` | `sphinx.ext.autosummary.generate.get_parser` | `AutogenArgs`; all 6 flags including `--respect-module-all`, `--imported-members` |
 | `src/sphinxdocrs/src/autogen/generate.rs` | `generate_autosummary_docs` (stub writing) | `ObjType`, `infer_obj_type`, `split_fqn`, `StubContext`, `generate_stub`, `generate_stubs`; heuristic type detection; `--remove-old` support |
 | `src/sphinxdocrs/src/registry.rs` | `sphinx.registry.SphinxComponentRegistry` | P2 subset: `source_suffix`, `source_parsers`, `transforms`, `post_transforms`, `css_files`, `js_files`, `static_dirs`, `latex_packages`, `html_themes`; `RegistryError`; `add_source_suffix`, `add_source_parser`, `get_source_parser`, `add_transform`, `get_transforms`, `add_post_transform`, `get_post_transforms`, `add_css_file`, `add_js_file`, `add_static_dir`, `add_latex_package`, `has_latex_package`, `add_html_theme` |
-| `src/sphinxdocrs/src/versioning.rs` | `sphinx.versioning` | `VERSIONING_RATIO`, `VersionableNode` trait, `levenshtein_distance`, `get_ratio`, `add_uids`, `merge_doctrees`; `UIDTransform` deferred |
-| `src/sphinxdocrs/src/util_rst.rs` | `sphinx.util.rst` | `SECTIONING_CHARS`, `WIDECHARS_DEFAULT`, `WIDECHARS_JA`, `escape`, `textwidth`, `heading`; `_prepend_prologue`/`_append_epilogue`/`default_role` deferred |
-| `src/sphinxdocrs/src/util_osutil.rs` | `sphinx.util.osutil` | `SEP`, `os_path`, `canon_path`, `path_stabilize`, `relative_uri`, `ensuredir`, `make_filename`, `make_filename_from_project`, `FileAvoidWrite`; `copyfile`/`relpath`/`rmtree` deferred |
+| `src/sphinxdocrs/src/versioning.rs` | `sphinx.versioning` | `VERSIONING_RATIO`, `VersionableNode` trait, `levenshtein_distance`, `get_ratio`, `add_uids`, `merge_doctrees`; `apply_uid_transform` + `UID_TRANSFORM_PRIORITY = 880` |
+| `src/sphinxdocrs/src/addnodes.rs` | `sphinx.addnodes` | all 50+ node structs; `Translatable` + `NotSmartquotable` traits; `SIG_ELEMENTS` registry |
+| `src/sphinxdocrs/src/environment.rs` | `sphinx.environment.BuildEnvironment` | skeleton fields (all_docs, dependencies, metadata, titles, toc maps, domaindata, temp_data, ref_context, config_status); `EnvProject` shim; `default_settings()` |
+| `src/sphinxdocrs/src/util_rst.rs` | `sphinx.util.rst` | `SECTIONING_CHARS`, `WIDECHARS_DEFAULT`, `WIDECHARS_JA`, `escape`, `textwidth`, `heading`, `prepend_prologue`, `append_epilogue`; `ContentLine` type alias; `default_role` deferred |
+| `src/sphinxdocrs/src/util_osutil.rs` | `sphinx.util.osutil` | `SEP`, `os_path`, `canon_path`, `path_stabilize`, `relative_uri`, `ensuredir`, `make_filename`, `make_filename_from_project`, `FileAvoidWrite`, `copyfile`, `relpath`, `rmtree` |
 | `src/sphinxdocrs/src/util_uri.rs` | `sphinx.util._uri` | `is_url`, `encode_uri` (percent-encode path + decode-then-reencode query + IDNA netloc) |
 | `src/sphinxdocrs/src/util_lines.rs` | `sphinx.util._lines` | `parse_line_num_spec` — half-open ranges, comma lists, error messages matching upstream |
 | `src/sphinxdocrs/src/util_docstrings.rs` | `sphinx.util.docstrings` | `prepare_docstring` (strip common indent, leading blanks), `prepare_commentdoc` (`#:` extraction), `separate_metadata` (`:meta …:` field list split) |
 | `src/sphinxdocrs/assets/quickstart/` | `sphinx/templates/quickstart/` | 4 vendored Jinja templates embedded via `include_str!` |
 | `src/sphinxdocrs/assets/apidoc/` | `sphinx/templates/apidoc/` | 3 vendored Jinja templates; `package.rst.jinja` patched: `heading(2)` → `heading2` filter |
 | `src/sphinxdocrs/assets/autosummary/` | `sphinx/ext/autosummary/templates/autosummary/` | 3 vendored RST stub templates embedded via `include_str!` |
+| `src/sphinxdocrs/src/roles.rs` | `sphinx.roles` | `GENERIC_DOCROLES`, `SPECIFIC_DOCROLES`, `is_builtin_role`, `format_rfc_target`, `parse_emphasized_literal`/`EmphasizedSpan`, `XRefRoleConfig`, `DefaultRoleConfig` |
 | `src/sphinxdocrs/tests/parity.rs` | — | Cross-language parity harness; `#[cfg(feature="parity")]`; skips without Python |
 
 ## Completion plan for `partial` / `deferred` items
@@ -172,23 +175,23 @@ graph TD
 
 | id | task | file(s) | closes row | gate |
 | --- | --- | --- | --- | --- |
-| **G1** | Port remaining `util/*` fns: `copyfile` (pure FS → `util_osutil`), `_prepend_prologue` / `_append_epilogue` (operate on a line-list shim). `default_role` stays deferred to **G5** (needs role registry) and becomes the only remaining util gap. | `util_osutil.rs`, `util_rst.rs` | `test_util/` → mirrored | extend `tests/util_rst_osutil.rs`, `tests/util_extra.rs` with upstream `test_util.py` cases |
-| **G2** | Port `addnodes.py` natively: add Sphinx-specific node types (`toctree`, `pending_xref`, `desc`, `index`, `seealso`, …) as `sphinxdocrs::addnodes` extending `docutilsrs::doctree`. Prerequisite for roles/directives/domains. | new `src/addnodes.rs` | `test_addnodes.py` → mirrored | mirror `test_addnodes.py` |
+| **G1** ✅ | Port remaining `util/*` fns: `copyfile` (pure FS → `util_osutil`), `_prepend_prologue` / `_append_epilogue` (operate on a line-list shim). `default_role` stays deferred to **G5** (needs role registry) and becomes the only remaining util gap. | `util_osutil.rs`, `util_rst.rs` | `test_util/` → **mirrored** | extend `tests/util_rst_osutil.rs`, `tests/util_extra.rs` with upstream `test_util.py` cases |
+| **G2** ✅ | Port `addnodes.py` natively: add Sphinx-specific node types (`toctree`, `pending_xref`, `desc`, `index`, `seealso`, …) as `sphinxdocrs::addnodes`. | `src/addnodes.rs` | `test_addnodes.py` → **mirrored** | `tests/addnodes.rs` (27 tests) |
 
 ### Tier 1 — full `Config` (unblocks the whole chain)
 
 | id | task | closes row | gate |
 | --- | --- | --- | --- |
-| **G3** | Promote `config.rs` from the math subset to the full `sphinx.config.Config`: `ConfigValue` registry, `add()`, default/`rebuild` metadata, `setup()` hook, `init_values`, `convert_overrides`, `pre_init_values`, env-var overrides, value coercion (`bool`/`int`/`list`/`Any`). Keep PyO3 `exec()` of `conf.py`, but read **all** values. | `config.py` → mirrored | mirror `test_config/` parametrized suites |
+| **G3** ✅ | Promote `config.rs` from the math subset to the full `sphinx.config.Config`: `ConfigValue` registry, `add()`, default/`rebuild` metadata, `convert_overrides`, env-var overrides, value coercion, alias sync. | `config.py` → **mirrored** | `tests/config.rs` (26 tests) |
 
 ### Tier 2 — environment + role/directive registry
 
 | id | task | closes row | gate |
 | --- | --- | --- | --- |
-| **G4** | `BuildEnvironment` skeleton: docname tracking, `temp_data`, `metadata`, `titles`, `toc_num_entries`, `dependencies`, domain-data dict, `found_docs`. Depends on **G3** + `Project` (done). | `environment/` → in progress | env unit tests |
-| **G4a** | registry P3 methods now unblocked: `add_builder` / `add_domain` / `add_translator` / math-renderer registration. | `registry.py` partial → done; `test_extensions/` partial → done | `tests/registry.rs` + `load_extension` cases |
-| **G4b** | versioning `UIDTransform` (needs env). | `versioning.py` partial → done | `test_versioning.py` `SphinxTestApp` cases |
-| **G5** | Port `roles.py` + `directives/` against `docutilsrs` role/directive registry + `addnodes` (G2). Completes `util::default_role` from G1. | `test_roles.py`, `test_directives/` → mirrored | `test_roles.py`, `test_directives/` |
+| **G4** ✅ | `BuildEnvironment` skeleton: docname tracking, `temp_data`, `metadata`, `titles`, `toc_num_entries`, `dependencies`, domain-data dict, `found_docs`. | `environment/` → **partial** | `tests/environment.rs` (23 tests) |
+| **G4a** ✅ | registry P3 methods: `add_builder` / `add_domain` / `add_translator` / math-renderer registration. | `registry.py` → **done**; `test_extensions/` → **done** | `tests/registry.rs` (36 tests) |
+| **G4b** ✅ | versioning `UIDTransform` → `apply_uid_transform` with first-build + incremental paths. | `versioning.py` → **done** | inline tests + `tests/versioning.rs` |
+| **G5** ✅ (partial) | Port `roles.py` pure algorithms: `GENERIC_DOCROLES`/`SPECIFIC_DOCROLES` registries, `format_rfc_target`, `parse_emphasized_literal`, `XRefRoleConfig`, `DefaultRoleConfig`. Role execution (inliner/document pipeline) stays deferred. | `test_roles.py` → **partial** | `tests/roles.rs` (32 tests) |
 
 ### Tier 3 — first builder + full app
 

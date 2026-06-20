@@ -15,18 +15,21 @@
 
 use pyo3::prelude::*;
 
+pub mod addnodes;
 pub mod apidoc;
 pub mod assets;
 pub mod autogen;
 pub mod build;
 pub mod cli;
 pub mod config;
+pub mod environment;
 pub mod errors;
 pub mod events;
 pub mod extension;
 pub mod project;
 pub mod quickstart;
 pub mod registry;
+pub mod roles;
 pub mod util_console;
 pub mod util_docstrings;
 pub mod util_lines;
@@ -137,6 +140,8 @@ fn sphinxdocrs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_sphinx_autogen, m)?)?;
     Ok(())
 }
+
+// TODO: implement instead of "sub running" or delete?
 
 #[pyfunction(name = "main")]
 fn py_main() {

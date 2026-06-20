@@ -115,3 +115,146 @@ fn syntax_error_in_conf_is_config_error() {
     let msg = err.to_string();
     assert!(msg.contains("conf.py failed"), "msg: {msg}");
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SphinxConfig — full Config port tests
+// Mirrors sphinx/tests/test_config/test_config.py
+// ═════════════════════════════════════════════════════════════════════════════
+
+use rstest::*;
+use std::collections::HashMap;
+
+use sphinxdocrs::config::{ConfigVal, RebuildKind, SphinxConfig};
+
+// ── defaults ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn sphinx_config_default_project() {
+    let cfg = SphinxConfig::new_defaults();
+    assert_eq!(cfg.project(), "Project name not set");
+}
+
+#[test]
+fn sphinx_config_default_language() {
+    let cfg = SphinxConfig::new_defaults();
+    assert_eq!(cfg.language(), "en");
+}
+
+#[test]
+fn sphinx_config_default_root_doc() {
+    let cfg = SphinxConfig::new_defaults();
+    assert_eq!(cfg.root_doc(), "index");
+}
+
+#[test]
+fn sphinx_config_default_locale_dirs() {
+    let cfg = SphinxConfig::new_defaults();
+    let val = cfg.get("locale_dirs").unwrap();
+    if let ConfigVal::List(items) = val {
+        assert_eq!(items[0].as_str(), Some("locales"));
+    } else {
+        panic!("expected List");
+    }
+}
+
+#[test]
+fn sphinx_config_default_trim_footnote_false() {
+    let cfg = SphinxConfig::new_defaults();
+    assert_eq!(
+        cfg.get("trim_footnote_reference_space")
+            .and_then(|v| v.as_bool()),
+        Some(false)
+    );
+}
+
+#[test]
+fn sphinx_config_contains_known() {
+    let cfg = SphinxConfig::new_defaults();
+    assert!(cfg.contains("project"));
+    assert!(!cfg.contains("nonexisting_value"));
+}
+
+// ── overrides ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn sphinx_config_override_root_doc() {
+    let mut overrides = HashMap::new();
+    overrides.insert("root_doc".into(), "root".into());
+    let cfg = SphinxConfig::new(HashMap::new(), overrides);
+    assert_eq!(cfg.root_doc(), "root");
+}
+
+#[test]
+fn sphinx_config_override_csv_list() {
+    let mut overrides = HashMap::new();
+    overrides.insert("modindex_common_prefix".into(), "path1,path2".into());
+    let cfg = SphinxConfig::new(HashMap::new(), overrides);
+    if let ConfigVal::List(items) = cfg.get("modindex_common_prefix").unwrap() {
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].as_str(), Some("path1"));
+    } else {
+        panic!("expected List");
+    }
+}
+
+#[test]
+fn sphinx_config_override_bool_one() {
+    let mut overrides = HashMap::new();
+    overrides.insert("nitpicky".into(), "1".into());
+    let cfg = SphinxConfig::new(HashMap::new(), overrides);
+    assert!(cfg.nitpicky());
+}
+
+// ── add / duplicate ────────────────────────────────────────────────────────────
+
+#[test]
+fn sphinx_config_add_option_succeeds() {
+    let mut cfg = SphinxConfig::new_defaults();
+    cfg.add("myext_opt", ConfigVal::Bool(false), RebuildKind::Env, "")
+        .unwrap();
+    assert!(cfg.contains("myext_opt"));
+}
+
+#[test]
+fn sphinx_config_add_duplicate_errors() {
+    let mut cfg = SphinxConfig::new_defaults();
+    let err = cfg
+        .add(
+            "project",
+            ConfigVal::Str(String::new()),
+            RebuildKind::None,
+            "",
+        )
+        .unwrap_err();
+    assert!(err.contains("already present"));
+}
+
+// ── set / alias ────────────────────────────────────────────────────────────────
+
+#[test]
+fn sphinx_config_set_syncs_alias() {
+    let mut cfg = SphinxConfig::new_defaults();
+    cfg.set("master_doc", ConfigVal::Str("contents".into()));
+    assert_eq!(cfg.root_doc(), "contents");
+}
+
+// ── filter ────────────────────────────────────────────────────────────────────
+
+#[test]
+fn sphinx_config_filter_env_excludes_none_rebuild() {
+    let cfg = SphinxConfig::new_defaults();
+    let env_names: Vec<_> = cfg.filter(&RebuildKind::Env).map(|cv| cv.name).collect();
+    assert!(!env_names.contains(&"needs_sphinx".to_string()));
+    assert!(env_names.contains(&"project".to_string()));
+}
+
+// ── ConfigVal display ─────────────────────────────────────────────────────────
+
+#[rstest]
+#[case(ConfigVal::Bool(true), "True")]
+#[case(ConfigVal::Bool(false), "False")]
+#[case(ConfigVal::Null, "None")]
+#[case(ConfigVal::Int(7), "7")]
+fn sphinx_config_val_display(#[case] val: ConfigVal, #[case] expected: &str) {
+    assert_eq!(val.display(), expected);
+}

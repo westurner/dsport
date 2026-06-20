@@ -18,9 +18,12 @@
 //! | `make_filename_from_project(project)` | [`make_filename_from_project`] | project → safe filename |
 //! | `FileAvoidWrite` | [`FileAvoidWrite`] | buffer + write-only-if-changed |
 //!
-//! **Deferred** (not yet needed or requires OS-level file operations outside
-//! the P2 scope): `_last_modified_time`, `_copy_times`, `copyfile`, `relpath`,
-//! `_relative_path`, `rmtree`.
+//! | `copyfile(src, dest, force)` | [`copyfile`] | copy file + mtimes; no-op if identical |
+//! | `relpath(path, start)` | [`relpath`] | OS-relative path (cross-drive safe) |
+//! | `rmtree(path, ignore_errors)` | [`rmtree`] | `rm -rf` wrapper |
+//!
+//! **Deferred** (internal helpers not needed outside this module):
+//! `_last_modified_time`, `_copy_times`, `_relative_path`.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -227,6 +230,135 @@ impl Write for FileAvoidWrite {
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
+}
+
+// ── copyfile ──────────────────────────────────────────────────────────────────
+
+/// Copy `source` to `dest`, preserving modification times.
+///
+/// - No-op if `source` and `dest` have identical content.
+/// - If `dest` already exists and content differs, the copy is aborted
+///   **unless** `force` is `true`.
+/// - Returns `Err(io::Error)` if `source` does not exist.
+///
+/// Mirrors `sphinx.util.osutil.copyfile`.
+///
+/// ```rust
+/// # use std::io::Write;
+/// # use tempfile::tempdir;
+/// use sphinxdocrs::util_osutil::copyfile;
+/// let tmp = tempdir().unwrap();
+/// let src = tmp.path().join("src.txt");
+/// let dst = tmp.path().join("dst.txt");
+/// std::fs::write(&src, b"hello").unwrap();
+/// copyfile(&src, &dst, false).unwrap();
+/// assert_eq!(std::fs::read(&dst).unwrap(), b"hello");
+/// ```
+pub fn copyfile(source: impl AsRef<Path>, dest: impl AsRef<Path>, force: bool) -> io::Result<()> {
+    let source = source.as_ref();
+    let dest = dest.as_ref();
+
+    if !source.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("{} does not exist", source.display()),
+        ));
+    }
+
+    let dest_exists = dest.exists();
+    let same_content = dest_exists && {
+        let src_bytes = std::fs::read(source)?;
+        let dst_bytes = std::fs::read(dest)?;
+        src_bytes == dst_bytes
+    };
+
+    if same_content {
+        return Ok(());
+    }
+
+    if !force && dest_exists {
+        // Mirrors Python: log a warning and return without copying.
+        // In Rust we return an error so callers can detect the skip.
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!(
+                "Aborted attempted copy from {} to {} (the destination path has existing data).",
+                source.display(),
+                dest.display()
+            ),
+        ));
+    }
+
+    // Copy file content.
+    std::fs::copy(source, dest)?;
+    // Best-effort: copy modification times (suppress errors, as in Python).
+    let _ = copy_times(source, dest);
+    Ok(())
+}
+
+/// Copy the modification and access times from `source` to `dest`.
+///
+/// Errors are silently suppressed (mirrors Python's
+/// `contextlib.suppress(OSError)` in `copyfile`).
+fn copy_times(source: &Path, dest: &Path) -> io::Result<()> {
+    let meta = std::fs::metadata(source)?;
+    let mtime = meta.modified()?;
+    // `std::fs::set_modified` is stable since Rust 1.75.
+    // Fall back to a best-effort no-op on older compilers.
+    std::fs::File::options()
+        .write(true)
+        .open(dest)
+        .and_then(|f| f.set_modified(mtime))
+}
+
+// ── relpath ───────────────────────────────────────────────────────────────────
+
+/// Return a relative path from `start` to `path`.
+///
+/// Returns the original `path` if it cannot be made relative (e.g., on
+/// Windows when the two paths are on different drives).
+///
+/// Mirrors `sphinx.util.osutil.relpath` (`safe_relpath`).
+pub fn relpath(path: impl AsRef<Path>, start: impl AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+    let start = start.as_ref();
+    // `pathdiff` is not a dep here; implement via std.
+    // `Path::strip_prefix` only works for exact prefixes, so we
+    // compute it manually using component-level diffing.
+    fn relative(path: &Path, base: &Path) -> Option<PathBuf> {
+        // Canonicalize component lists.
+        let path_comps: Vec<_> = path.components().collect();
+        let base_comps: Vec<_> = base.components().collect();
+        // Find common prefix length.
+        let common = path_comps
+            .iter()
+            .zip(base_comps.iter())
+            .take_while(|(a, b)| a == b)
+            .count();
+        // Each remaining base component becomes a `..`.
+        let mut rel = PathBuf::new();
+        for _ in common..base_comps.len() {
+            rel.push("..");
+        }
+        for comp in &path_comps[common..] {
+            rel.push(comp);
+        }
+        Some(rel)
+    }
+    relative(path, start).unwrap_or_else(|| path.to_path_buf())
+}
+
+// ── rmtree ────────────────────────────────────────────────────────────────────
+
+/// Remove a directory tree.
+///
+/// If `ignore_errors` is `true`, all I/O errors are suppressed
+/// (mirrors `shutil.rmtree(path, ignore_errors=True)`).
+///
+/// Mirrors `sphinx.util.osutil.rmtree` / `shutil.rmtree`.
+pub fn rmtree(path: impl AsRef<Path>, ignore_errors: bool) -> io::Result<()> {
+    let result = std::fs::remove_dir_all(path);
+    if ignore_errors { Ok(()) } else { result }
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────

@@ -246,6 +246,45 @@ pub fn merge_doctrees<N: VersionableNode>(old_nodes: &mut [N], new_nodes: &mut [
     changed
 }
 
+// ── UIDTransform ──────────────────────────────────────────────────────────────
+
+/// Configuration for `UIDTransform`.
+///
+/// Mirrors `sphinx.versioning.UIDTransform` — a `SphinxTransform` that adds
+/// UIDs to all versioning-eligible nodes in a document.
+///
+/// In the Rust port this is not a full docutils `Transform` subclass but a
+/// plain struct that the caller invokes with a mutable slice of
+/// [`VersionableNode`]s and optional old-doctree data.
+///
+/// Mirrors the Python `default_priority = 880`.
+pub const UID_TRANSFORM_PRIORITY: u32 = 880;
+
+/// Apply UID transform to `new_nodes`.
+///
+/// If `old_nodes` is `None`, all new nodes receive fresh UIDs (the
+/// first-build path in Python: `list(add_uids(self.document, condition))`).
+///
+/// If `old_nodes` is `Some(slice)`, old UIDs are merged into `new_nodes`
+/// (the incremental rebuild path: `list(merge_doctrees(old, new, condition))`).
+///
+/// Returns the indices of nodes that were changed / added (same semantics as
+/// [`merge_doctrees`]).
+///
+/// Mirrors `UIDTransform.apply`.
+pub fn apply_uid_transform<N: VersionableNode>(
+    new_nodes: &mut [N],
+    old_nodes: Option<&mut Vec<N>>,
+) -> Vec<usize> {
+    match old_nodes {
+        None => {
+            add_uids(new_nodes);
+            Vec::new() // all are "new", none are "changed"
+        }
+        Some(old) => merge_doctrees(old, new_nodes),
+    }
+}
+
 // ── inline unit tests ─────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -581,5 +620,47 @@ mod tests {
         let changed = merge_doctrees(&mut old_nodes, &mut new_nodes);
         assert!(changed.is_empty());
         assert_eq!(new_nodes[0].uid().unwrap(), "fixed-uid-abc");
+    }
+
+    // ── apply_uid_transform ───────────────────────────────────────────────────
+
+    #[test]
+    fn uid_transform_no_old_assigns_new_uids() {
+        let mut nodes = vec![TestNode::new(P1), TestNode::new(P2)];
+        let changed = apply_uid_transform(&mut nodes, None);
+        assert!(
+            changed.is_empty(),
+            "no old: all are new, none counted as changed"
+        );
+        assert!(nodes[0].uid().is_some(), "node 0 should have uid");
+        assert!(nodes[1].uid().is_some(), "node 1 should have uid");
+    }
+
+    #[test]
+    fn uid_transform_with_old_reuses_uids() {
+        let mut old_nodes = vec![
+            TestNode::with_uid(P1, "uid-a"),
+            TestNode::with_uid(P2, "uid-b"),
+        ];
+        let mut new_nodes = vec![TestNode::new(P1), TestNode::new(P2)];
+        let _changed = apply_uid_transform(&mut new_nodes, Some(&mut old_nodes));
+        assert_eq!(new_nodes[0].uid().unwrap(), "uid-a");
+        assert_eq!(new_nodes[1].uid().unwrap(), "uid-b");
+    }
+
+    #[test]
+    fn uid_transform_with_added_node() {
+        let mut old_nodes = vec![TestNode::with_uid(P1, "uid-a")];
+        let mut new_nodes = vec![TestNode::new(P1), TestNode::new(P2)];
+        let changed = apply_uid_transform(&mut new_nodes, Some(&mut old_nodes));
+        // The second node is new, so it shows up in changed
+        assert!(
+            changed.contains(&1),
+            "index 1 should be changed/new: {changed:?}"
+        );
+        // First node reuses old uid
+        assert_eq!(new_nodes[0].uid().unwrap(), "uid-a");
+        // Second node gets fresh uid
+        assert!(new_nodes[1].uid().is_some());
     }
 }

@@ -1,9 +1,9 @@
 .PHONY: all build test develop clean \
-	build-docutils build-pygments build-sphinx build-mathrenderrs build-myst-md-rs \
-	test-cargo test-cargo-docutils test-cargo-pygments test-cargo-jinja2rs test-cargo-sphinx \
-	test-cargo-mathrenderrs test-cargo-myst-md-rs test-cargo-pygments-coverage \
-	test-coverage-pygments coverage-pygments \
-	develop-docutils develop-pygments develop-sphinx develop-myst-md-rs \
+	build-docutilsrs build-pygmentsrs build-sphinxdocrs build-mathrenderrs build-myst-md-rs \
+	test-cargo test-cargo-docutilsrs test-cargo-pygmentsrs test-cargo-jinja2rs test-cargo-sphinxdocrs \
+	test-cargo-mathrenderrs test-cargo-myst-md-rs test-cargo-pygmentsrs-coverage \
+	test-coverage-pygmentsrs coverage-pygmentsrs \
+	develop-docutilsrs develop-pygmentsrs develop-sphinxdocrs develop-myst-md-rs \
 	test2 test3
 
 REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -15,22 +15,32 @@ TEST2_PYTHON_CMD ?= CARGO_TERM_COLOR=always FORCE_COLOR=1 PYTEST_ADDOPTS=--color
 all: build
 
 # ========== BUILD ==========
-build: build-mathrenderrs build-pygments build-docutils build-myst-md-rs build-sphinx
+build: build-all
+
+build-all: build-all-cargo build-all-python
+
+build-all-cargo:
+	cargo build
+
+build-each: build-mathrenderrs build-pygmentsrs build-docutilsrs build-myst-md-rs build-sphinxdocrs
 
 build-mathrenderrs:
 	cd src/mathrenderrs && cargo build
 
-build-pygments:
+build-pygmentsrs:
 	cd src/pygmentsrs && cargo build
 
-build-docutils:
+build-docutilsrs:
 	cd src/docutilsrs && cargo build
 
 build-myst-md-rs:
 	cd src/myst-md-rs && cargo build
 
-build-sphinx:
+build-sphinxdocrs:
 	cd src/sphinxdocrs && cargo build
+
+build-all-python:
+	echo "#TODO"
 
 # ========== TEST ==========
 test:
@@ -58,17 +68,18 @@ test4:
 test-python-colors:
 	./shellwrap.sh -c "$(MAKE) test-python"
 
-test-cargo: test-cargo-mathrenderrs test-cargo-pygments test-cargo-docutils \
-	test-cargo-jinja2rs test-cargo-myst-md-rs test-cargo-sphinx
+test-cargo: test-cargo-mathrenderrs test-cargo-pygmentsrs test-cargo-docutilsrs \
+	test-cargo-jinja2rs test-cargo-myst-md-rs test-cargo-sphinxdocrs
 
 test-cargo-mathrenderrs:
 	cd src/mathrenderrs && cargo test
 
-test-cargo-pygments:
+test-cargo-pygmentsrs:
 	cd src/pygmentsrs && cargo test
 
 test-cargo-jinja2rs:
 	cd src/jinja2rs && cargo test --features sandbox,seccomp,resource-limits,python-callable-warnings
+
 
 
 install-cargo-llvm-cov:
@@ -76,14 +87,14 @@ install-cargo-llvm-cov:
 
 PYGMENTS_CARGO_OPTS=--ignore-filename-regex "src/lexers/generated"
 
-test-cargo-pygments-coverage:
+test-cargo-pygmentsrs-coverage:
 	@echo "=== Running pygmentsrs tests with LLVM coverage (branch + line) ==="
 	mkdir -p build/tests/pygmentsrs/coverage-report
 	cd src/pygmentsrs && \
 	cargo +nightly llvm-cov --branch --html --output-dir ../../build/tests/pygmentsrs/coverage-report --show-missing-lines $(PYGMENTS_CARGO_OPTS) 2>&1 | tee ../../build/tests/pygmentsrs/llvm-cov.log
 	echo "✅ Coverage report generated: build/tests/pygmentsrs/coverage-report/index.html"
 
-test-coverage-pygments: test-cargo-pygments-coverage
+test-coverage-pygmentsrs: test-cargo-pygmentsrs-coverage
 	@echo "=== LLVM Coverage Report Summary ===" && \
 	echo && \
 	echo "📊 Coverage Statistics:" && \
@@ -98,7 +109,7 @@ test-coverage-pygments: test-cargo-pygments-coverage
 	echo "📄 Full logs:" && \
 	ls -lh build/tests/pygmentsrs/
 
-coverage-pygments:
+coverage-pygmentsrs:
 	@COVERAGE_DIR="build/tests/pygmentsrs" && \
 	echo "=== Generating pygmentsrs branch coverage report ===" && \
 	mkdir -p "$$COVERAGE_DIR/coverage-report" && \
@@ -112,13 +123,13 @@ coverage-pygments:
 	echo "📊 Missing Lines Summary:" && \
 	( grep -A 5 "Missing" ../../$$COVERAGE_DIR/coverage-text.txt | head -20 || echo "(see HTML report for details)" )
 
-test-cargo-docutils:
+test-cargo-docutilsrs:
 	cd src/docutilsrs && cargo test
 
 test-cargo-myst-md-rs:
 	cd src/myst-md-rs && cargo test
 
-test-cargo-sphinx:
+test-cargo-sphinxdocrs:
 	cd src/sphinxdocrs && cargo test
 
 out_dir=.
@@ -129,18 +140,18 @@ test-python:
 	test -f "${out_dir}/src/cov.xml"
 
 # ========== DEVELOP (maturin) ==========
-develop: develop-pygments develop-docutils develop-myst-md-rs develop-sphinx
+develop: develop-pygmentsrs develop-docutilsrs develop-myst-md-rs develop-sphinxdocrs
 
-develop-pygments:
+develop-pygmentsrs:
 	cd src && .venv/bin/maturin develop --manifest-path pygmentsrs/Cargo.toml --release
 
-develop-docutils:
+develop-docutilsrs:
 	cd src && .venv/bin/maturin develop --manifest-path docutilsrs/Cargo.toml --release
 
 develop-myst-md-rs:
 	cd src && .venv/bin/maturin develop --manifest-path myst-md-rs/Cargo.toml --release
 
-develop-sphinx:
+develop-sphinxdocrs:
 	cd src && .venv/bin/maturin develop --manifest-path sphinxdocrs/Cargo.toml --release
 
 # ========== TODO  ==========
@@ -391,7 +402,11 @@ endif
 # MINIJINJA_REPO ?=   https://github.com/westurner/minijinja
 # JINJA2_REPO ?=      https://github.com/westurner/jinja2
 
-clone-upstream: clone-docutils clone-pygments clone-sphinx clone-ratex \
+clone-upstream: \
+	clone-docutils \
+	clone-pygments \
+	clone-sphinx \
+	clone-ratex \
 	clone-myst-parser \
 	clone-markdown-it-py \
 	clone-minijinja \
@@ -461,6 +476,8 @@ clone-jinja2:
 	else \
 		echo "$(JINJA2_PATH) already exists."; \
 	fi
+
+
 # ========== COVERAGE ==========
 cov: cov-docutilsrs cov-pygmentsrs cov-sphinxdocrs cov-mathrenderrs cov-myst-md-rs
 
@@ -478,3 +495,88 @@ cov-mathrenderrs:
 
 cov-myst-md-rs:
 	cd src/myst-md-rs && cargo llvm-cov --show-missing-lines
+
+
+# ========== prek ==========
+
+PREK=set -x; time prek --log-file tmp/prek.log
+PREK=set -x; RUSTC_WRAPPER=sccache time prek --log-file tmp/prek.log
+
+prek:
+	$(PREK)
+
+prek-python-develop-all: \
+	prek-python-develop-pygmentsrs \
+	prek-python-develop-docutilsrs \
+	prek-python-develop-sphinxdocrs 
+
+# How to update these:
+prek-print-makefile-tasks:
+	@printf '\n\n#####\n' | tee -a Makefile
+	@set -x; cat .pre-commit-config.yaml | grep 'id:' | awk '{ print ".PHONY: prek-"$$3"\nprek-"$$3":\n\t$$(PREK) "$$3"\n" }' | tee -a Makefile
+	@set -x; (echo ".PHONY: prek-python-develop-all"; echo "prek-python-develop-all:"; echo $$'\t''set -x; time $$(MAKE) \'; cat ./Makefile | grep '^prek-python-develop' | grep -v '^prek-python-develop-all' | sed 's/\(.*\):$$/\t\1 \\/') | tee -a Makefile
+
+
+
+
+#####
+.PHONY: prek-cargo-test
+prek-cargo-test:
+	$(PREK) cargo-test
+
+.PHONY: prek-cargo-fmt
+prek-cargo-fmt:
+	$(PREK) cargo-fmt
+
+.PHONY: prek-cargo-clippy
+prek-cargo-clippy:
+	$(PREK) cargo-clippy
+
+.PHONY: prek-python-test
+prek-python-test:
+	$(PREK) python-test
+
+.PHONY: prek-python-develop-pygmentsrs
+prek-python-develop-pygmentsrs:
+	$(PREK) python-develop-pygmentsrs
+
+.PHONY: prek-python-develop-docutilsrs
+prek-python-develop-docutilsrs:
+	$(PREK) python-develop-docutilsrs
+
+.PHONY: prek-python-develop-ratex-py
+prek-python-develop-ratex-py:
+	$(PREK) python-develop-ratex-py
+
+.PHONY: prek-python-develop-myst-md-rs
+prek-python-develop-myst-md-rs:
+	$(PREK) python-develop-myst-md-rs
+
+.PHONY: prek-python-develop-markupsafers
+prek-python-develop-markupsafers:
+	$(PREK) python-develop-markupsafers
+
+.PHONY: prek-python-develop-jinja2rs
+prek-python-develop-jinja2rs:
+	$(PREK) python-develop-jinja2rs
+
+.PHONY: prek-python-develop-mathrenderrs
+prek-python-develop-mathrenderrs:
+	$(PREK) python-develop-mathrenderrs
+
+.PHONY: prek-python-develop-sphinxdocrs
+prek-python-develop-sphinxdocrs:
+	$(PREK) python-develop-sphinxdocrs
+
+.PHONY: prek-python-develop-all
+prek-python-develop-all:
+	set -x; time $(MAKE) \
+	prek-python-develop-pygmentsrs \
+	prek-python-develop-docutilsrs \
+	prek-python-develop-ratex-py \
+	prek-python-develop-myst-md-rs \
+	prek-python-develop-markupsafers \
+	prek-python-develop-jinja2rs \
+	prek-python-develop-mathrenderrs \
+	prek-python-develop-sphinxdocrs
+

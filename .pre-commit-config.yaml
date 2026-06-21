@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: cargo-test
         name: cargo test
-        entry: bash -c 'cargo test --all-targets && cargo test --doc'
+        entry: bash -x -c 'cargo test --all-targets && cargo test --doc'
         language: system
         stages: [commit]
         pass_filenames: false
@@ -25,9 +25,18 @@ repos:
         pass_filenames: false
         always_run: true
 
+
+      - id: python-test
+        name: python test (pytest)
+        entry: bash -x -c 'src/.venv/bin/pytest -l tests/ -q --cov=. --cov-branch --cov-report=xml:cov.xml --junitxml=pytest-results.xml tests/'
+        language: system
+        stages: [commit]
+        pass_filenames: false
+        always_run: true
+
       - id: python-develop-pygmentsrs
         name: python develop pygmentsrs (maturin develop)
-        entry: bash -c 'cd src && .venv/bin/maturin develop --release --manifest-path pygmentsrs/Cargo.toml'
+        entry: bash -x -c 'src/.venv/bin/maturin develop --release --manifest-path=src/pygmentsrs/Cargo.toml'
         language: system
         stages: [commit]
         pass_filenames: false
@@ -35,7 +44,49 @@ repos:
 
       - id: python-develop-docutilsrs
         name: python develop docutilsrs (maturin develop)
-        entry: bash -c 'cd src && .venv/bin/maturin develop --release --manifest-path docutilsrs/Cargo.toml'
+        entry: bash -x -c 'src/.venv/bin/maturin develop --release --manifest-path=src/docutilsrs/Cargo.toml'
+        language: system
+        stages: [commit]
+        pass_filenames: false
+        always_run: true
+
+
+      - id: python-develop-ratex-py
+        name: python develop ratex-py (maturin develop)
+        entry: bash -x -c 'src/.venv/bin/maturin develop --release --manifest-path=src/RaTeX/crates/ratex-py/Cargo.toml'
+        language: system
+        stages: [commit]
+        pass_filenames: false
+        always_run: true
+
+
+      - id: python-develop-myst-md-rs
+        name: python develop myst-md-rs (maturin develop)
+        entry: bash -x -c 'src/.venv/bin/maturin develop --release --manifest-path=src/myst-md-rs/Cargo.toml'
+        language: system
+        stages: [commit]
+        pass_filenames: false
+        always_run: true
+
+      - id: python-develop-markupsafers
+        name: python develop markupsafers (maturin develop)
+        entry: bash -x -c 'src/.venv/bin/maturin develop --release --manifest-path=src/markupsafers/Cargo.toml'
+        language: system
+        stages: [commit]
+        pass_filenames: false
+        always_run: true
+
+      - id: python-develop-jinja2rs
+        name: python develop jinja2rs (maturin develop)
+        entry: bash -x -c 'src/.venv/bin/maturin develop --release --manifest-path=src/jinja2rs/Cargo.toml'
+        language: system
+        stages: [commit]
+        pass_filenames: false
+        always_run: true
+
+      - id: python-develop-mathrenderrs
+        name: python develop mathrenderrs (maturin develop)
+        entry: bash -x -c 'src/.venv/bin/maturin develop --release --manifest-path=src/mathrenderrs/Cargo.toml'
         language: system
         stages: [commit]
         pass_filenames: false
@@ -43,15 +94,7 @@ repos:
 
       - id: python-develop-sphinxdocrs
         name: python develop sphinxdocrs (maturin develop)
-        entry: bash -c 'cd src && .venv/bin/maturin develop --release --manifest-path sphinxdocrs/Cargo.toml'
-        language: system
-        stages: [commit]
-        pass_filenames: false
-        always_run: true
-
-      - id: python-test
-        name: python test (pytest)
-        entry: bash -c 'cd src && .venv/bin/pytest -l tests/ -q --cov=. --cov-branch --cov-report=xml:cov.xml --junitxml=pytest-results.xml tests/'
+        entry: bash -x -c 'src/.venv/bin/maturin develop --release --manifest-path=src/sphinxdocrs/Cargo.toml'
         language: system
         stages: [commit]
         pass_filenames: false

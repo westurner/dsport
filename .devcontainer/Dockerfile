@@ -7,7 +7,7 @@ ARG USER_GID=${USER_UID}
 # System packages needed for Rust/Python development and the devcontainer agent.
 RUN dnf -y install \
 		sudo passwd shadow-utils \
-		git make gcc gcc-c++ clang lld \
+		git make gcc gcc-c++ clang lld sccache \
 		pkgconf-pkg-config openssl-devel \
 		python3 python3-pip python3-devel python3-virtualenv \
 		libffi-devel zlib-devel xz-devel \
@@ -15,6 +15,7 @@ RUN dnf -y install \
 		ca-certificates curl which findutils \
 		procps-ng tar gzip xz \
 		ripgrep jq \
+		\
 	&& dnf clean all
 
 # Create the non-root user up-front so VS Code can attach as ${USERNAME}.

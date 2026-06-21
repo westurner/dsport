@@ -78,11 +78,21 @@ jobs:
       - run: ${{ github.workspace }}/src/.venv/bin/python -m pip install maturin pytest pytest-cov
       #- run: ${{ github.workspace }}/src/.venv/bin/python -m pip install -r requirements.txt
       - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
+        working-directory: src/pygmentsrs
+      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
         working-directory: src/docutilsrs
       - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
-        working-directory: src/sphinxdocrs
+        working-directory: src/RaTeX/crates/ratex-py
       - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
-        working-directory: src/pygmentsrs
+        working-directory: src/RaTeX/crates/myst-md-rs
+      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
+        working-directory: src/RaTeX/crates/markupsafers
+      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
+        working-directory: src/RaTeX/crates/jinja2rs
+      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
+        working-directory: src/RaTeX/crates/mathrenderrs
+      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
+        working-directory: src/sphinxdocrs
       - run: >-
           ${{ github.workspace }}/src/.venv/bin/pytest -l tests/ -q
           --cov=. --cov-branch --cov-report=xml:cov.xml

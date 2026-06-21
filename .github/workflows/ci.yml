@@ -77,21 +77,29 @@ jobs:
       - run: python -m venv .venv
       - run: ${{ github.workspace }}/src/.venv/bin/python -m pip install maturin pytest pytest-cov
       #- run: ${{ github.workspace }}/src/.venv/bin/python -m pip install -r requirements.txt
-      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
+      - name: maturin develop pygmentsrs
+        run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release-fast
         working-directory: src/pygmentsrs
-      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
+      - name: maturin develop docutilsrs
+        run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release-fast
         working-directory: src/docutilsrs
-      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
+      - name: maturin develop ratex-py
+        run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release-fast
         working-directory: src/RaTeX/crates/ratex-py
-      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
-        working-directory: src/RaTeX/crates/myst-md-rs
-      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
-        working-directory: src/RaTeX/crates/markupsafers
-      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
-        working-directory: src/RaTeX/crates/jinja2rs
-      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
-        working-directory: src/RaTeX/crates/mathrenderrs
-      - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
+      - name: maturin develop myst-md-rs
+        run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release-fast
+        working-directory: src/myst-md-rs
+      - name: maturin develop markupsafers
+        run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release-fast
+        working-directory: src/markupsafers
+      - name: maturin develop jinja2rs
+        run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release-fast
+        working-directory: src/jinja2rs
+      - name: maturin develop mathrenderrs
+        run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release-fast
+        working-directory: src/mathrenderrs
+      - name: maturin develop sphinxdocrs
+        run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release-fast
         working-directory: src/sphinxdocrs
       - run: >-
           ${{ github.workspace }}/src/.venv/bin/pytest -v -l tests/ 

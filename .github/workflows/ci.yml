@@ -52,7 +52,8 @@ jobs:
       #   working-directory: src/sphinxdocrs
 
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - run: cargo test --workspace --all-targets
+      - run: cargo test --workspace --doc
 
   python:
     runs-on: ubuntu-latest
@@ -84,7 +85,7 @@ jobs:
         run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release-fast
         working-directory: src/docutilsrs
       - name: maturin develop ratex-py
-        run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release-fast
+        run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release
         working-directory: src/RaTeX/crates/ratex-py
       - name: maturin develop myst-md-rs
         run: ${{ github.workspace }}/src/.venv/bin/maturin develop --profile release-fast

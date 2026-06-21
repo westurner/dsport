@@ -8,6 +8,9 @@ on:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    env:
+      CARGO_NET_RETRY: 10
+      #CARGO_HTTP_MULTIPLEXING: "false"
     defaults:
       run:
         working-directory: src

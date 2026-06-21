@@ -94,7 +94,7 @@ jobs:
       - run: ${{ github.workspace }}/src/.venv/bin/maturin develop --release
         working-directory: src/sphinxdocrs
       - run: >-
-          ${{ github.workspace }}/src/.venv/bin/pytest -l tests/ -q
+          ${{ github.workspace }}/src/.venv/bin/pytest -v -l tests/ 
           --cov=. --cov-branch --cov-report=xml:cov.xml
           --junitxml=pytest-results.xml tests/
       - uses: actions/upload-artifact@v7

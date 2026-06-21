@@ -31,5 +31,4 @@ source = "https://github.com/westurner/dsport"
 
 [tool.maturin]
 features = ["extension-module"]
-python-source = "python"
 module-name = "markupsafers"

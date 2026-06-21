@@ -1,0 +1,21 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: keys
+---
+- alabaster_version
+- alabaster_version_info
+- body
+- current_page_name
+- display_toc
+- has_maths_elements
+- meta
+- metatags
+- next
+- page_source_suffix
+- parents
+- prev
+- rellinks
+- sidebars
+- sourcename
+- title
+- toc

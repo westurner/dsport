@@ -13,6 +13,7 @@
 //! asset copying, search index, domain indices.
 
 pub mod html;
+pub mod json;
 pub mod latex;
 pub mod manpage;
 

@@ -234,7 +234,7 @@ mod tests {
             result[2],
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit,"
         );
-        assert!(result.last().map_or(false, |l| l.is_empty()));
+        assert!(result.last().is_some_and(|l| l.is_empty()));
     }
 
     #[test]

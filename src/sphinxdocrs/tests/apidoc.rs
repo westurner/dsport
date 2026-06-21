@@ -76,7 +76,10 @@ fn test_module_join(#[case] parts: &[&str], #[case] expected: &str) {
 #[test]
 fn test_is_excluded_matches() {
     let re = regex::Regex::new(".*test.*").unwrap();
-    assert!(is_excluded(Path::new("/src/tests/foo.py"), &[re.clone()]));
+    assert!(is_excluded(
+        Path::new("/src/tests/foo.py"),
+        std::slice::from_ref(&re)
+    ));
     assert!(!is_excluded(Path::new("/src/mymod.py"), &[re]));
 }
 

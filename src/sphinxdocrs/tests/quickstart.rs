@@ -295,8 +295,10 @@ fn ask_user_fills_settings() {
         "y", "y", // makefile, batchfile
     ];
     let term = ScriptedTerminal::new(answers);
-    let mut settings = QuickstartSettings::default();
-    settings.path = std::env::temp_dir();
+    let mut settings = QuickstartSettings {
+        path: std::env::temp_dir(),
+        ..Default::default()
+    };
     ask_user(&mut settings, &term, &RealFs);
     assert_eq!(settings.project, "MyProj");
     assert_eq!(settings.author, "Me");

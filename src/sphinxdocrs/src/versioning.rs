@@ -440,7 +440,7 @@ mod tests {
         sources.iter().map(|s| TestNode::new(s)).collect()
     }
 
-    fn set_uids(nodes: &mut Vec<TestNode>) -> Vec<String> {
+    fn set_uids(nodes: &mut [TestNode]) -> Vec<String> {
         add_uids(nodes)
     }
 

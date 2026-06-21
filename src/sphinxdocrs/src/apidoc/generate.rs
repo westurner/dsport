@@ -495,7 +495,10 @@ mod tests {
     #[test]
     fn is_excluded_matches_pattern() {
         let re = regex::Regex::new(".*test.*").unwrap();
-        assert!(is_excluded(Path::new("/src/tests/foo.py"), &[re.clone()]));
+        assert!(is_excluded(
+            Path::new("/src/tests/foo.py"),
+            std::slice::from_ref(&re)
+        ));
         assert!(!is_excluded(Path::new("/src/mymod.py"), &[re]));
     }
 }

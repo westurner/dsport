@@ -28,7 +28,7 @@ repos:
 
       - id: python-test
         name: python test (pytest)
-        entry: bash -x -c 'src/.venv/bin/pytest -l tests/ -q --cov=. --cov-branch --cov-report=xml:cov.xml --junitxml=pytest-results.xml tests/'
+        entry: bash -x -c 'cd src; .venv/bin/pytest -v -l tests/ --cov=. --cov-branch --cov-report=xml:cov.xml --junitxml=pytest-results.xml tests/'
         language: system
         stages: [commit]
         pass_filenames: false

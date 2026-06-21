@@ -1,6 +1,5 @@
 import subprocess
 import pytest
-import os
 import shutil
 
 RUST_BINS = [

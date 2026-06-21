@@ -13,7 +13,7 @@
 //! - All string operations return `Markup` where appropriate.
 
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyString};
+use pyo3::types::PyAny;
 
 use crate::escape::{escape_silent as rs_escape_silent, escape_to};
 use crate::markup::Markup;
@@ -25,7 +25,7 @@ use crate::markup::Markup;
 /// Wraps a safe HTML string.  Constructing `Markup(s)` *escapes* `s`
 /// (matching the Python MarkupSafe constructor).  Use
 /// `Markup.__new_safe__(s)` to wrap without escaping.
-#[pyclass(name = "Markup", module = "markupsafers")]
+#[pyclass(name = "Markup", module = "markupsafers", from_py_object)]
 #[derive(Clone)]
 pub struct PyMarkup {
     inner: Markup,

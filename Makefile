@@ -382,6 +382,7 @@ MYST_PARSER_REPO ?= $(CLONE_MY_REPOS_PREFIX)/MyST-Parser
 MARKDOWN_IT_REPO ?= $(CLONE_MY_REPOS_PREFIX)/markdown-it-py
 MINIJINJA_REPO ?= $(CLONE_MY_REPOS_PREFIX)/minijinja
 JINJA2_REPO ?= $(CLONE_MY_REPOS_PREFIX)/jinja2
+RUNTIMED_REPO ?= $(CLONE_MY_REPOS_PREFIX)/runtimed
 else
 DOCUTILS_REPO ?= https://github.com/docutils/docutils
 PYGMENTS_REPO ?= https://github.com/pygments/pygments
@@ -391,6 +392,7 @@ MYST_PARSER_REPO ?= https://github.com/executablebooks/MyST-Parser
 MARKDOWN_IT_REPO ?= https://github.com/executablebooks/markdown-it-py
 MINIJINJA_REPO ?= https://github.com/mitsuhiko/minijinja
 JINJA2_REPO ?= https://github.com/pallets/jinja2
+RUNTIMED_REPO ?= https://github.com/runtimed/runtimed
 endif
 
 # DOCUTILS_REPO ?=    https://github.com/westurner/docutils
@@ -401,6 +403,7 @@ endif
 # MARKDOWN_IT_REPO ?= https://github.com/westurner/markdown-it-py
 # MINIJINJA_REPO ?=   https://github.com/westurner/minijinja
 # JINJA2_REPO ?=      https://github.com/westurner/jinja2
+# RUNTIMED_REPO ?=    https://github.com/westurner/runtimed
 
 clone-upstream: \
 	clone-docutils \
@@ -410,7 +413,8 @@ clone-upstream: \
 	clone-myst-parser \
 	clone-markdown-it-py \
 	clone-minijinja \
-	clone-jinja2
+	clone-jinja2 \
+	clone-runtimed
 
 clone-docutils:
 	@if [ ! -d "src/docutils" ]; then \
@@ -477,6 +481,13 @@ clone-jinja2:
 		echo "$(JINJA2_PATH) already exists."; \
 	fi
 
+RUNTIMED_PATH ?= src/runtimed
+clone-runtimed:
+	@if [ ! -d "$(RUNTIMED_PATH)" ]; then \
+		git clone $(RUNTIMED_REPO) $(RUNTIMED_PATH); \
+	else \
+		echo "$(RUNTIMED_PATH) already exists."; \
+	fi
 
 # ========== COVERAGE ==========
 cov: cov-docutilsrs cov-pygmentsrs cov-sphinxdocrs cov-mathrenderrs cov-myst-md-rs

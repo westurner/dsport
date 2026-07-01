@@ -229,10 +229,7 @@ pub fn generate_stubs(
         match generate_stub(entry, output_dir, suffix, overwrite, templates) {
             Ok(Some(path)) => generated.push(path),
             Ok(None) => {} // skipped (no-overwrite on changed content)
-            Err(e) => eprintln!(
-                "[autosummary] warning: failed to generate stub for {}: {e}",
-                entry.name
-            ),
+            Err(e) => eprintln!("Warning: failed to generate stub for {}: {e}", entry.name),
         }
     }
 

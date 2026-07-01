@@ -55,7 +55,7 @@ underlying subsystem is ported.
 | `test_ext_*` | extensions | P3 | deferred (run as-is against vendored sphinx) |
 | `test_extensions/` | extension loader | P2 | **done** — `SphinxComponentRegistry` full surface: P2 source-suffix/parser/transforms/assets/LaTeX/HTML-themes (32 int. tests in `tests/registry.rs`) + P3 builder/domain/translator/math-renderer methods (4 new tests); `load_extension` deferred (needs full app) |
 | `test_highlighting.py` | highlighting | P3 | depends on Pygments port (`pygmentsrs`) |
-| `test_intl/` | intl | P3 | deferred |
+| `test_intl/` | intl | P3 | **partial** — `src/sphinxdocrs/src/locale.rs` (`PoCatalog`, `Translator`, `TranslatorRegistry`, `init`, `init_console`, `get_translation`, `tr`, `tr_console`, `tr!`/`tr_c!` macros, `admonition_labels`; 17 unit tests); `src/sphinxdocrs/src/intl.rs` (`CatalogInfo`, `CatalogRepository`, `docname_to_domain`, `DATE_FORMAT_MAPPINGS`, `ustrftime_to_babel`; 11 unit tests); `locale/` symlink → `../../sphinx/sphinx/locale`; `tests/locale.rs` (13 integration tests with rstest fixtures); `tests/intl.rs` (26 integration tests with rstest `#[case]` + `#[values]`); `write_mo`/`babel_format_date` deferred (need Babel-equivalent) |
 | `test_markup/` | markup | P3 | depends on docutils converter |
 | `test_pycode/` | pycode | P3 | deferred |
 | `test_quickstart.py` | quickstart | **C1** | **mirrored** — `quickstart::validate` (all 7 validators), `quickstart::parser` (full clap flag grammar), `quickstart::generate`, `quickstart::ask_user`, `quickstart::valid_dir` ported; 50 Rust-side tests in `tests/quickstart.rs` (11 validator `#[case]` tables, 8 parser flag tests, 4 `valid_dir` tests, 4 tree-layout insta snapshots, `conf_py_snapshot`, newline-mode assertions, `ask_user` scripted-terminal test, help-text snapshot); `sphinx-quickstart-rs` binary now runs natively, falling back to Python only on `--use-python-impl` / `SPHINXDOCRS_PY_FALLBACK=1` |
@@ -135,6 +135,8 @@ underlying subsystem is ported.
 | `src/sphinxdocrs/src/builders/manpage.rs` | `sphinx.builders.manpage.ManualPageBuilder` | `ManpageBuilder`: RST → docutilsrs → `.1` man file |
 | `src/sphinxdocrs/src/application.rs` | `sphinx.application.Sphinx` | `SphinxApp` (srcdir/outdir/doctreedir path validation, config, registry, env, `build()`); `AppError`; `NATIVE_BUILDERS`, `is_native_builder`; `sphinx-build -b html` now native |
 | `src/sphinxdocrs/src/roles.rs` | `sphinx.roles` | `GENERIC_DOCROLES`, `SPECIFIC_DOCROLES`, `is_builtin_role`, `format_rfc_target`, `parse_emphasized_literal`/`EmphasizedSpan`, `XRefRoleConfig`, `DefaultRoleConfig` |
+| `src/sphinxdocrs/src/locale.rs` | `sphinx.locale` | `PoCatalog` (`.po` parser), `Translator`, `TRANSLATORS` global registry, `init`, `init_console`, `get_translation`, `tr`, `tr_console`, `tr!`/`tr_c!` macros, `admonition_labels`; `locale/` symlink → `../../sphinx/sphinx/locale`; 17 inline unit tests + 13 integration tests in `tests/locale.rs` |
+| `src/sphinxdocrs/src/intl.rs` | `sphinx.util.i18n` | `CatalogInfo` (po/mo paths, `is_outdated`), `CatalogRepository` (`locale_dirs`, `pofiles`, `catalogs`), `docname_to_domain`, `DATE_FORMAT_MAPPINGS`, `ustrftime_to_babel`; 11 inline unit tests + 26 integration tests in `tests/intl.rs` |
 | `src/sphinxdocrs/tests/parity.rs` | — | Cross-language parity harness; `#[cfg(feature="parity")]`; skips without Python |
 
 ## Completion plan for `partial` / `deferred` items

@@ -28,6 +28,8 @@ pub mod environment;
 pub mod errors;
 pub mod events;
 pub mod extension;
+pub mod intl;
+pub mod locale;
 pub mod project;
 pub mod quickstart;
 pub mod registry;
@@ -76,6 +78,14 @@ pub fn features() -> &'static [&'static str] {
         "assets:sri_hash",
         "assets:sri_hash_file",
         "assets:fetch_with_integrity",
+        "locale:po_parse",
+        "locale:tr",
+        "locale:init",
+        "locale:get_translation",
+        "locale:admonition_labels",
+        "intl:catalog_info",
+        "intl:catalog_repository",
+        "intl:docname_to_domain",
     ]
 }
 

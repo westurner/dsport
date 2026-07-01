@@ -71,12 +71,9 @@ impl Builder for LatexBuilder {
         };
         std::fs::create_dir_all(outdir)?;
         for docname in &docnames {
-            let src_path = srcdir.join(
-                docname
-                    .split('/')
-                    .collect::<PathBuf>()
-                    .with_extension("rst"),
-            );
+            // Use string append, not with_extension — the latter strips any
+            // existing dot in the final component (e.g. "0.1" → "0.rst").
+            let src_path = srcdir.join(format!("{docname}.rst"));
             let source = std::fs::read_to_string(&src_path).map_err(|e| {
                 BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
             })?;

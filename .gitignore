@@ -17,3 +17,4 @@ src/pygmentsrs/fuzz/target/
 /target/
 
 /tmp/
+/pytest-results.xml

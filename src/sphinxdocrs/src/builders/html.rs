@@ -130,6 +130,8 @@ impl Builder for HtmlBuilder {
     ///
     /// Mirrors `StandaloneHTMLBuilder.write_doc`.
     fn build_doc(&self, docname: &str, source: &str, outdir: &Path) -> Result<(), BuildError> {
+        sanitize_docname(docname)?;
+
         // Determine title from docname for the page <title>.
         let title = docname_to_title(docname);
 
@@ -176,6 +178,7 @@ impl Builder for HtmlBuilder {
         std::fs::create_dir_all(outdir)?;
 
         for docname in &docnames {
+            sanitize_docname(docname)?;
             let src_path = src_path_for_docname(srcdir, docname);
             let source = std::fs::read_to_string(&src_path).map_err(|e| {
                 BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
@@ -188,6 +191,25 @@ impl Builder for HtmlBuilder {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/// Validate a docname, returning `Err` if any component is `..`, empty, or
+/// begins with `/` (which would escape the intended directory).
+///
+/// This guards against path-traversal attacks when docnames are derived from
+/// untrusted sources (e.g. `env.all_docs` populated from user input).
+fn sanitize_docname(docname: &str) -> Result<(), BuildError> {
+    if docname.is_empty() {
+        return Err(BuildError::Other("docname must not be empty".into()));
+    }
+    for component in docname.split('/') {
+        if component.is_empty() || component == ".." || component.starts_with('/') {
+            return Err(BuildError::Other(format!(
+                "invalid docname component {component:?} in {docname:?}"
+            )));
+        }
+    }
+    Ok(())
+}
 
 /// Derive a page title from a docname.
 ///
@@ -230,6 +252,9 @@ fn collect_rst(root: &Path, dir: &Path, out: &mut Vec<String>) {
 }
 
 /// Return the `.rst` source path for a docname.
+///
+/// # Panics
+/// Callers must have already validated `docname` with [`sanitize_docname`].
 fn src_path_for_docname(srcdir: &Path, docname: &str) -> PathBuf {
     let rel: PathBuf = docname
         .split('/')
@@ -478,5 +503,38 @@ mod tests {
         std::fs::write(tmp.path().join("b.txt"), "").unwrap(); // not rst
         let docs = discover_rst_docnames(tmp.path());
         assert_eq!(docs, vec!["a"]);
+    }
+
+    // ── sanitize_docname ──────────────────────────────────────────────────────
+
+    #[test]
+    fn sanitize_docname_rejects_dotdot() {
+        assert!(sanitize_docname("../etc/passwd").is_err());
+        assert!(sanitize_docname("foo/../../etc").is_err());
+    }
+
+    #[test]
+    fn sanitize_docname_rejects_empty() {
+        assert!(sanitize_docname("").is_err());
+    }
+
+    #[test]
+    fn sanitize_docname_rejects_double_slash() {
+        assert!(sanitize_docname("foo//bar").is_err());
+    }
+
+    #[test]
+    fn sanitize_docname_accepts_valid() {
+        assert!(sanitize_docname("index").is_ok());
+        assert!(sanitize_docname("guide/intro").is_ok());
+        assert!(sanitize_docname("api/v1/ref").is_ok());
+    }
+
+    #[test]
+    fn build_doc_rejects_path_traversal() {
+        let tmp = TempDir::new().unwrap();
+        let b = builder();
+        let err = b.build_doc("../../evil", "x", tmp.path());
+        assert!(err.is_err(), "path traversal docname must be rejected");
     }
 }

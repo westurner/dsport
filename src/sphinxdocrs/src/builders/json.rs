@@ -418,8 +418,11 @@ fn collect_sources(root: &Path, dir: &Path, exts: &[&str], out: &mut Vec<(String
 }
 
 fn src_path_for_docname(srcdir: &Path, docname: &str, source_suffix: &str) -> PathBuf {
+    // Use string append, not with_extension — the latter strips any existing
+    // dot in the final component (e.g. docname "changes/0.1" with ext ".rst"
+    // would yield "changes/0.rst" instead of "changes/0.1.rst").
     let ext = source_suffix.trim_start_matches('.');
-    srcdir.join(docname.split('/').collect::<PathBuf>().with_extension(ext))
+    srcdir.join(format!("{docname}.{ext}"))
 }
 
 fn current_date_utc() -> String {

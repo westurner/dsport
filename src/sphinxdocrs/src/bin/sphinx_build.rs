@@ -1,8 +1,11 @@
 //! `sphinx-build-rs` — native Rust entry point.
 //!
-//! Make mode (`-M target src out [opts]`) is dispatched natively.
-//! Direct build mode (`-b builder src out`) uses the native [`SphinxApp`]
-//! when `builder` is in [`NATIVE_BUILDERS`] (currently `"html"`).
+//! Make mode (`-M target src out [opts]`) is dispatched natively via
+//! [`NativeMakeRunner`], which calls the Rust [`SphinxApp`] directly for
+//! native builders (html / latex / man) and falls back to Python for others.
+//!
+//! Direct build mode (`-b builder src out`) uses [`SphinxApp`] directly when
+//! `builder` is in [`NATIVE_BUILDERS`].
 //!
 //! Falls back entirely to Python when `--use-python-impl` /
 //! `SPHINXDOCRS_PY_FALLBACK=1` is set.
@@ -10,22 +13,28 @@
 use std::collections::HashMap;
 
 use sphinxdocrs::application::{SphinxApp, is_native_builder};
+use sphinxdocrs::build::NativeMakeRunner;
 use sphinxdocrs::build::make_mode::run_make_mode;
 use sphinxdocrs::build::parse_args;
-use sphinxdocrs::cli::io::{ProcessRunner, py_fallback_requested, run_python_impl};
+use sphinxdocrs::cli::io::{py_fallback_requested, run_python_impl};
 
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
 
     // Global fallback.
     if py_fallback_requested(&argv) {
+        eprintln!("sphinxdocrs: running python: sphinx.cmd.build");
         run_python_impl("sphinx.cmd.build", &argv);
     }
 
     // Make-mode: `sphinx-build -M target src out [opts...]`
+    //
+    // Uses NativeMakeRunner so native builders (html/latex/man) run the Rust
+    // SphinxApp directly instead of re-spawning the Python sphinx-build.
     if argv.first().map(|s| s.as_str()) == Some("-M") {
         let make_args = argv[1..].to_vec();
-        let runner = ProcessRunner;
+        let py_fallback = py_fallback_requested(&argv);
+        let runner = NativeMakeRunner::new(py_fallback);
         let code = run_make_mode(&make_args, &runner);
         std::process::exit(code);
     }
@@ -52,6 +61,7 @@ fn main() {
             .map(|(k, v)| (k.clone(), v.to_string()))
             .collect();
 
+        eprintln!("sphinxdocrs: running SphinxApp::new");
         match SphinxApp::new(&srcdir, &outdir, &doctreedir, &parsed.builder, overrides) {
             Err(e) => {
                 eprintln!("Error: {e}");
@@ -71,5 +81,6 @@ fn main() {
     }
 
     // Fall back to Python for all other builders.
+    eprintln!("sphinxdocrs: no rust builder found. running python: sphinx.cmd.build");
     run_python_impl("sphinx.cmd.build", &argv);
 }

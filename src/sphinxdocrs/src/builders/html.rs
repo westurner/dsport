@@ -230,12 +230,12 @@ fn collect_rst(root: &Path, dir: &Path, out: &mut Vec<String>) {
 }
 
 /// Return the `.rst` source path for a docname.
+///
+/// NOTE: We must not use `Path::with_extension` here because it strips the
+/// *last* component's existing extension first.  A docname like `changes/0.1`
+/// would become `changes/0.rst` instead of `changes/0.1.rst`.
 fn src_path_for_docname(srcdir: &Path, docname: &str) -> PathBuf {
-    let rel: PathBuf = docname
-        .split('/')
-        .collect::<PathBuf>()
-        .with_extension("rst");
-    srcdir.join(rel)
+    srcdir.join(format!("{docname}.rst"))
 }
 
 /// Percent-encode a path for use in a URL, preserving `/`.

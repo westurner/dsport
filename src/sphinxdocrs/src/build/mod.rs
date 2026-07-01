@@ -9,7 +9,9 @@
 pub mod args;
 pub mod logging;
 pub mod make_mode;
+pub mod native_runner;
 pub mod parser;
 
 pub use args::{BuildArgs, parse_args};
 pub use make_mode::{BUILDERS, MakeMode};
+pub use native_runner::NativeMakeRunner;

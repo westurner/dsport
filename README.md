@@ -11,10 +11,23 @@ cd src
 python3 -m venv .venv && source .venv/bin/activate
 pip install maturin pytest
 
+# install Rust dev tools (once — downloads cargo-nextest, cargo-llvm-cov, and
+# the llvm-tools rustup component; subsequent runs are no-ops)
+make install-nextest-deps
+cargo install cargo-insta
+
 # Rust gates (from repository root or src/)
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+
+# or with cargo-nextest (faster, better output)
+cargo nextest run --workspace
+# via Makefile — also logs to reports/<ISO-timestamp>/
+make nextest
+make nextest-coverage   # requires nightly + llvm-tools (install via make install-nextest-deps)
+# pin nightly to skip per-run channel-sync check:
+# make nextest-coverage NIGHTLY_TOOLCHAIN=nightly-2026-07-02
 
 # Build extensions into the venv (re-run after Rust changes)
 cd src
@@ -59,6 +72,50 @@ cargo test --features sandbox,seccomp,resource-limits
 ```
 
 See [docs/LIBSECCOMP_SETUP.md](docs/LIBSECCOMP_SETUP.md) for detailed platform-specific installation instructions and troubleshooting.
+
+### Cargo feature flags: optional components
+
+`docutilsrs` and `sphinxdocrs` support optional features to reduce dependencies for minimal builds:
+
+**`syntax-highlighting` (default)**
+- Includes `pygmentsrs` for syntax highlighting support
+- Required by `docutils` code-block directive 
+- Disable with: `--no-default-features`
+
+Example builds:
+
+```sh
+# Full build (default) — includes syntax highlighting
+cargo build -p docutilsrs
+cargo build -p sphinxdocrs
+
+# Minimal build without pygmentsrs (no syntax highlighting)
+cargo build -p docutilsrs --no-default-features
+cargo build -p sphinxdocrs --no-default-features
+
+# With only specific features
+cargo build -p docutilsrs --no-default-features --features syntax-highlighting
+```
+
+### Python extension module builds (maturin)
+
+When building as Python extensions via `maturin`, the `extension-module` feature ensures all dependencies are built correctly for embedding:
+
+```sh
+# Full extension (includes syntax highlighting)
+cd src/docutilsrs && maturin develop --release
+cd src/sphinxdocrs && maturin develop --release
+
+# Minimal extension (no syntax highlighting)
+cd src/docutilsrs && maturin develop --release -- --no-default-features --features extension-module
+cd src/sphinxdocrs && maturin develop --release -- --no-default-features --features extension-module
+```
+
+**Feature details:**
+- `extension-module` — build as Python extension (PyO3 no-embed mode) + propagate to dependencies
+- `syntax-highlighting` — include `pygmentsrs` support (default)
+
+When `extension-module` is enabled, it automatically propagates to `pygmentsrs/extension-module` so the dependency doesn't try to embed libpython independently.
 
 ## Objectives
 - port docutils (src/docutils) to rust as `docutilsrs`
@@ -199,9 +256,10 @@ Status:
 
 Remaining followups: continue widening the lexer registry (next
 priorities are `rust`, `c`/`cpp`, `yaml`, `rst`, `toml`, `make`).
-`bash` is blocked on Rust `regex` lacking backreference support
-(upstream's heredoc rule uses `\2`); will require either swapping
-in `fancy-regex` for that one rule or accepting it as a deviation.
+`bash`/`sh`/`ksh`/`zsh`/`shell` lexers are **unblocked**: the regex
+engine was upgraded from `regex` to `fancy-regex` (ADR 0012) to support
+backreferences required by heredoc patterns (upstream's heredoc rule uses
+`\2`); see `src/pygmentsrs/src/lexer/engine.rs`.
 
 ### Phase 3 — transforms module + hybrid mode
 
@@ -258,4 +316,85 @@ Status: **done.** All deliverables landed; exit criteria met.
   - any real parsing — landed in Phase 1/2
   - any plugin resolution — landed in Phase 5
   - any writer output — landed in Phase 2 (pseudo-XML byte-parity, plus HTML5 / LaTeX / manpage / ODT structural and byte-parity gates)
+
+## Documentation
+
+### Port inventories & compatibility
+
+- [docs/compat.md](docs/compat.md) — feature compatibility matrix
+- [docs/docutils-port-inventory.md](docs/docutils-port-inventory.md) — docutils port inventory
+- [docs/sphinx-port-inventory.md](docs/sphinx-port-inventory.md) — sphinx port inventory
+- [docs/pygments-port-inventory.md](docs/pygments-port-inventory.md) — pygments port inventory
+- [docs/handoff/pygments.md](docs/handoff/pygments.md) — pygmentsrs native syntax-highlighting handoff
+- [docs/myst-md-port-inventory.md](docs/myst-md-port-inventory.md) — MyST-MD port inventory
+- [docs/PYGMENTS_FEATURE_FLAGS.md](docs/PYGMENTS_FEATURE_FLAGS.md) — pygmentsrs feature flags
+
+### Architecture & design
+
+- [docs/BRIDGE_SELECTION_GUIDE.md](docs/BRIDGE_SELECTION_GUIDE.md) — guide to choosing Python/Rust bridge
+- [docs/sphinxdocrs-cli-port-plan.md](docs/sphinxdocrs-cli-port-plan.md) — sphinxdocrs CLI port plan
+- [docs/RATEX_INTEGRATION_PLAN.md](docs/RATEX_INTEGRATION_PLAN.md) — RaTeX integration plan
+- [docs/RASTER_FORMAT_STRATEGY.md](docs/RASTER_FORMAT_STRATEGY.md) — raster image format strategy
+- [docs/PYGMENTSRS_CODEBASE_EXPLORATION.md](docs/PYGMENTSRS_CODEBASE_EXPLORATION.md) — pygmentsrs codebase exploration notes
+- [docs/E-phase-strategy.md](docs/E-phase-strategy.md) — E-phase strategy
+- [docs/E4-analysis.md](docs/E4-analysis.md) — E4 analysis
+
+### Sandbox & security
+
+- jinja2rs sandboxing
+  - [docs/SANDBOX_README.md](docs/SANDBOX_README.md) — sandbox overview
+  - [docs/SANDBOX_IMPLEMENTATION_GUIDE.md](docs/SANDBOX_IMPLEMENTATION_GUIDE.md) — implementation guide
+  - [docs/SANDBOX_SECURITY_ANALYSIS.md](docs/SANDBOX_SECURITY_ANALYSIS.md) — security analysis
+  - [docs/SANDBOX_COMPARISON_MATRIX.md](docs/SANDBOX_COMPARISON_MATRIX.md) — comparison matrix
+  - [docs/SECURITY_AUDIT_FORMATTERS.md](docs/SECURITY_AUDIT_FORMATTERS.md) — security audit: formatters
+  - [docs/LIBSECCOMP_SETUP.md](docs/LIBSECCOMP_SETUP.md) — libseccomp platform setup
+
+### Fuzzing
+- [docs/FUZZING.md](docs/FUZZING.md) — fuzzing setup
+- [docs/OSS_FUZZ_SETUP.md](docs/OSS_FUZZ_SETUP.md) — OSS-Fuzz setup
+- [docs/OSS_FUZZ_ASAN_MSAN_IMPLEMENTATION.md](docs/OSS_FUZZ_ASAN_MSAN_IMPLEMENTATION.md) — OSS-Fuzz ASan/MSan implementation
+
+### Django mode
+
+- jinja2rs Django mode
+  - [docs/DJANGO_MODE_DESIGN.md](docs/DJANGO_MODE_DESIGN.md) — design
+  - [docs/DJANGO_MODE_IMPLEMENTATION.md](docs/DJANGO_MODE_IMPLEMENTATION.md) — implementation
+  - [docs/DJANGO_MODE_SUMMARY.md](docs/DJANGO_MODE_SUMMARY.md) — summary
+  - [docs/DJANGO_ARCHITECTURE_REFERENCE.md](docs/DJANGO_ARCHITECTURE_REFERENCE.md) — architecture reference
+  - [docs/DJANGO_QUICK_REFERENCE.md](docs/DJANGO_QUICK_REFERENCE.md) — quick reference
+  - [docs/DJANGO_USAGE_EXAMPLES.md](docs/DJANGO_USAGE_EXAMPLES.md) — usage examples
+
+### Phase completion summaries
+
+- [docs/PHASE_2_COVERAGE_SUMMARY.md](docs/PHASE_2_COVERAGE_SUMMARY.md)
+- [docs/PHASE_3_COMPLETION_SUMMARY.md](docs/PHASE_3_COMPLETION_SUMMARY.md)
+- [docs/PHASE_3_COVERAGE_ANALYSIS.md](docs/PHASE_3_COVERAGE_ANALYSIS.md)
+- [docs/PHASE_4_COMPLETION_SUMMARY.md](docs/PHASE_4_COMPLETION_SUMMARY.md)
+- [docs/PHASE_5_BRIDGE_TESTS.md](docs/PHASE_5_BRIDGE_TESTS.md)
+- [docs/PHASE_5_COMPLETION_SUMMARY.md](docs/PHASE_5_COMPLETION_SUMMARY.md)
+- [docs/PHASE_F_COMPLETION_SUMMARY.md](docs/PHASE_F_COMPLETION_SUMMARY.md)
+- [docs/BRANCH_COVERAGE_IMPROVEMENTS.md](docs/BRANCH_COVERAGE_IMPROVEMENTS.md)
+
+### Architecture decision records (ADRs)
+
+- [docs/adr/0001-upstream-pin.md](docs/adr/0001-upstream-pin.md)
+- [docs/adr/0002-names.md](docs/adr/0002-names.md)
+- [docs/adr/0003-bindings-and-layout.md](docs/adr/0003-bindings-and-layout.md)
+- [docs/adr/0004-doctree-representation.md](docs/adr/0004-doctree-representation.md)
+- [docs/adr/0005-plugin-discovery.md](docs/adr/0005-plugin-discovery.md)
+
+#### Decisions made but not yet recorded as ADRs
+
+The following design choices were locked during Phases 2–5 and need ADRs
+written under `docs/adr/`:
+
+| # | Decision | Where decided | Phase |
+|---|----------|---------------|-------|
+| 0006 | **Transform / Pipeline API** — composable `Transform` trait + `Pipeline` struct in a standalone `docutilsrs::transforms` module, mirroring `docutils.transforms.*`; inline-in-parser transforms rejected | `src/docutilsrs/src/transforms.rs` | 2 / 3 |
+| 0007 | **Hybrid-mode dispatch** — Python-side `docutilsrs_hybrid.py` routes parse / transform / write decisions via `publish_string(prefer=...)` + `dispatch_plan()`; per-component granularity, not all-or-nothing | `src/docutilsrs/python/docutilsrs_hybrid.py` | 3 |
+| 0008 | **pygmentsrs scope and `backend="auto"` strategy** — spun as a separate workspace crate; scope is the top-N lexers used in Sphinx/RST docs; `backend="auto"` tries native Rust first and falls back to Python for any alias without a native implementation; byte-parity target is vendored `HtmlFormatter` | `src/pygmentsrs/` | 2.5 |
+| 0009 | **Code-block dispatcher** — `docutilsrs::code_block` calls `pygmentsrs::tokenize` first; falls back to the `docutils.utils.code_analyzer.Lexer` PyO3 bridge only when the native path declines | `src/docutilsrs/src/code_block.rs` | 2.5 / 3 |
+| 0010 | **ODT writer dual-path** — default native Rust path produces a valid `.odt` ZIP container (accepted-deviation); `compat=True` delegates via PyO3 to `docutils.writers.odf_odt` and is byte-parity-gated against all 13 upstream fixtures | `src/docutilsrs/src/writers/odt.rs` | 2 |
+| 0011 | **Version guard for Rust equivalents** — `Equivalent.upstream_requires` field holds a PEP 440 specifier; a version mismatch emits `UserWarning` and falls through to `_load_python` rather than raising | `src/docutilsrs/python/docutilsrs_plugins.py` | 5 |
+| 0012 | **Regex engine upgrade to `fancy-regex`** — upgraded from `regex` to `fancy-regex` to support backreferences required by heredoc patterns in `bash`, `sh`, `ksh`, `zsh`, and `shell` lexers; **landed** | `src/pygmentsrs/src/lexer/engine.rs`, `src/pygmentsrs/docs/compat.md` | 2.5 |
 

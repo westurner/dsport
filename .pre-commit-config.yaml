@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: cargo-test
         name: cargo test
-        entry: bash -x -c 'cargo test --all-targets && cargo test --doc'
+        entry: bash -x -c '(cargo nextest --help && cargo nextest) || (cargo test --all-targets) && cargo test --doc'
         language: system
         stages: [commit]
         pass_filenames: false

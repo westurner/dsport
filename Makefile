@@ -4,7 +4,8 @@
 	test-cargo-mathrenderrs test-cargo-myst-md-rs test-cargo-pygmentsrs-coverage \
 	test-coverage-pygmentsrs coverage-pygmentsrs \
 	develop-docutilsrs develop-pygmentsrs develop-sphinxdocrs develop-myst-md-rs \
-	test2 test3
+	test2 test3 \
+	nextest nextest-coverage install-nextest-deps
 
 REPO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 TEST_CARGO_CMD ?= $(MAKE) -C "$(REPO_ROOT)" test-cargo
@@ -138,6 +139,66 @@ test-python:
 	test -f "${out_dir}/src/pytest-results.xml"
 	test -f "${out_dir}/src/coverage.md"
 	test -f "${out_dir}/src/cov.xml"
+
+# ========== NEXTEST ==========
+# Run the workspace test suite with cargo-nextest.
+#
+# One-time setup (downloads all required tools and components once):
+#   make install-nextest-deps
+#
+# After that, subsequent runs use only cached local binaries — no network.
+#
+# Logs are written to reports/<ISO-timestamp>/ AND printed to the terminal.
+# Override the nextest profile with NEXTEST_PROFILE=ci (default: default).
+#
+# NIGHTLY_TOOLCHAIN: pin to a specific date to skip the per-run channel-sync
+# check that rustup performs for an unqualified `+nightly` invocation.
+# Example:  make nextest-coverage NIGHTLY_TOOLCHAIN=nightly-2026-07-02
+
+NEXTEST_PROFILE    ?= default
+NIGHTLY_TOOLCHAIN  ?= nightly
+
+# Install cargo-nextest, cargo-llvm-cov, and the llvm-tools rustup component
+# needed by llvm-cov. Run this once; subsequent invocations are no-ops if
+# the binaries/components are already present.
+install-nextest-deps:
+	cargo install cargo-nextest --locked
+	cargo install cargo-llvm-cov --locked
+	rustup toolchain install $(NIGHTLY_TOOLCHAIN)
+	rustup component add llvm-tools --toolchain $(NIGHTLY_TOOLCHAIN)
+
+
+nextest:
+	@set -o pipefail; \
+	REPORT_DIR="reports/$$(date -Is)" && \
+	mkdir -p "$$REPORT_DIR" && \
+	echo "=== cargo nextest run → $$REPORT_DIR/nextest.log ===" && \
+	cargo nextest run --workspace --profile $(NEXTEST_PROFILE) \
+		2>&1 | tee "$$REPORT_DIR/nextest.log"
+
+# Run with LLVM coverage instrumentation via cargo-llvm-cov + nextest.
+# Run `make install-nextest-deps` once before using this target.
+#
+# Pin to a specific nightly date to avoid the per-run channel-sync check:
+#   make nextest-coverage NIGHTLY_TOOLCHAIN=nightly-2026-07-02
+#
+# Outputs per run directory:
+#   nextest-coverage.log  — full terminal transcript
+#   html/index.html       — browsable branch+line coverage report
+#   lcov.info             — LCOV data for editor integrations
+nextest-coverage:
+	@set -o pipefail; \
+	REPORT_DIR="reports/$$(date -Is)" && \
+	mkdir -p "$$REPORT_DIR" && \
+	echo "=== cargo llvm-cov nextest (+$(NIGHTLY_TOOLCHAIN)) → $$REPORT_DIR ===" && \
+	cargo +$(NIGHTLY_TOOLCHAIN) llvm-cov nextest --workspace --branch \
+		--lcov --output-path "$$REPORT_DIR/lcov.info" \
+		2>&1 | tee "$$REPORT_DIR/nextest-coverage.log" && \
+	echo "Coverage report: $$REPORT_DIR/html/index.html"
+
+
+#@# --html --output-dir "$$REPORT_DIR/html"
+
 
 # ========== DEVELOP (maturin) ==========
 develop: develop-pygmentsrs develop-docutilsrs develop-myst-md-rs develop-sphinxdocrs
@@ -580,3 +641,9 @@ prek-python-develop-all:
 	prek-python-develop-mathrenderrs \
 	prek-python-develop-sphinxdocrs
 
+
+otherdocs-sphinx:
+	@#pip install -e src/jinja2/ --group docs
+	uv pip install -v --directory src/jinja2 -e . --group docs
+	ls -al src/jinja2/docs/Makefile
+	SPHINXBUILD=sphinx-build-rs make -C src/jinja2/docs html

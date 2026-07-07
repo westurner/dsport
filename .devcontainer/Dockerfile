@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM registry.fedoraproject.org/fedora-toolbox:44
 
 ARG USERNAME=vscode
@@ -5,16 +6,18 @@ ARG USER_UID=1000
 ARG USER_GID=${USER_UID}
 
 # System packages needed for Rust/Python development and the devcontainer agent.
-RUN dnf -y install \
+RUN --mount=type=cache,target=/var/cache/dnf,sharing=shared \
+	dnf install -y \
 		sudo passwd shadow-utils \
 		git make gcc gcc-c++ clang lld sccache \
 		pkgconf-pkg-config openssl-devel \
 		python3 python3-pip python3-devel python3-virtualenv \
+		uv \
 		libffi-devel zlib-devel xz-devel \
 		libseccomp-devel \
 		ca-certificates curl which findutils \
 		procps-ng tar gzip xz \
-		ripgrep jq \
+		ripgrep jq rsync \
 		\
 	&& dnf clean all
 
@@ -32,11 +35,37 @@ ENV CARGO_HOME=/home/${USERNAME}/.cargo \
 	RUSTUP_HOME=/home/${USERNAME}/.rustup \
 	PATH=/home/${USERNAME}/.cargo/bin:/home/${USERNAME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# Rust toolchain + cargo-insta for snapshot tests.
-RUN curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+# Rust toolchain + dev tools.
+# - stable: default toolchain with rustfmt + clippy
+# - nightly + llvm-tools: required by cargo-llvm-cov for coverage instrumentation
+# - cargo-insta: snapshot test review
+# - cargo-nextest: faster test runner (make nextest / make nextest-coverage)
+# - cargo-llvm-cov: LLVM-based branch/line coverage via nextest
+#
+# BuildKit cache mounts at /var/cache/dsport/{rustup,cargo} persist downloaded
+# toolchains and compiled binaries across image rebuilds.  Pattern:
+#   1. rsync from cache → $RUSTUP_HOME / $CARGO_HOME  (no-op on first build)
+#   2. install / upgrade (idempotent; skips already-present items)
+#   3. rsync back to cache for the next rebuild
+# The final state of $RUSTUP_HOME and $CARGO_HOME is baked into the image layer.
+RUN --mount=type=cache,uid=1000,gid=1000,target=/var/cache/dsport/rustup \
+	--mount=type=cache,uid=1000,gid=1000,target=/var/cache/dsport/cargo \
+	# Restore from cache (warm rebuild: skips re-downloading toolchains/crates) \
+	{ [ -d /var/cache/dsport/rustup/toolchains ] && \
+	  rsync -a /var/cache/dsport/rustup/ "${RUSTUP_HOME}/"; } || true && \
+	{ [ -d /var/cache/dsport/cargo/bin ] && \
+	  rsync -a /var/cache/dsport/cargo/ "${CARGO_HOME}/"; } || true && \
+	# Install Rust toolchains and dev tools (idempotent) \
+	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 		| sh -s -- -y --default-toolchain stable --profile minimal \
-			--component rustfmt --component clippy \
-	&& cargo install cargo-insta --locked
+			--component rustfmt --component clippy && \
+	rustup toolchain install nightly --profile minimal --component llvm-tools && \
+	cargo install cargo-insta --locked && \
+	cargo install cargo-nextest --locked && \
+	cargo install cargo-llvm-cov --locked && \
+	# Save back to cache for subsequent rebuilds \
+	rsync -a "${RUSTUP_HOME}/" /var/cache/dsport/rustup/ && \
+	rsync -a "${CARGO_HOME}/" /var/cache/dsport/cargo/
 
 # Python tooling for PyO3/maturin interop and tests.
 RUN python3 -m pip install --user --upgrade pip \

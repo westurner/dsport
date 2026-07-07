@@ -1,0 +1,13 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: py_files
+---
+- ".buildinfo"
+- _sources
+- _static
+- genindex.html
+- guide.html
+- index.html
+- objects.inv
+- search.html
+- searchindex.js

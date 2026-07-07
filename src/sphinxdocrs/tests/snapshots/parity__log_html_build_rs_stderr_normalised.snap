@@ -1,0 +1,6 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: "normalise_output(&rs_stderr, paths)"
+---
+- "Build succeeded: <N> file(s) written."
+- "sphinxdocrs: make mode: running SphinxApp (builder=html)"

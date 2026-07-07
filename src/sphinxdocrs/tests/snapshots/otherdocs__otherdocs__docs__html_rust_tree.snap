@@ -1,0 +1,9 @@
+---
+source: src/sphinxdocrs/tests/otherdocs.rs
+expression: rs_tree.clone()
+---
+- _static
+- _static/sphinxdocrs.css
+- genindex.html
+- index.html
+- objects.inv

@@ -1,0 +1,25 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: missing
+---
+- ".buildinfo"
+- _sources
+- _sources/guide.rst.txt
+- _sources/index.rst.txt
+- _static/alabaster.css
+- _static/base-stemmer.js
+- _static/basic.css
+- _static/custom.css
+- _static/doctools.js
+- _static/documentation_options.js
+- _static/english-stemmer.js
+- _static/file.png
+- _static/github-banner.svg
+- _static/language_data.js
+- _static/minus.png
+- _static/plus.png
+- _static/pygments.css
+- _static/searchtools.js
+- _static/sphinx_highlight.js
+- search.html
+- searchindex.js

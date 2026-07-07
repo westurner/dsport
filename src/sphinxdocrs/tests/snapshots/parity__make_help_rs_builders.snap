@@ -1,0 +1,28 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: rs_builders
+---
+- changes
+- clean
+- coverage
+- devhelp
+- dirhtml
+- doctest
+- epub
+- gettext
+- html
+- htmlhelp
+- info
+- json
+- latex
+- latexpdf
+- latexpdfja
+- linkcheck
+- man
+- pickle
+- pseudoxml
+- qthelp
+- singlehtml
+- texinfo
+- text
+- xml

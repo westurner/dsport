@@ -1,0 +1,5 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: py_structural
+---
+[]

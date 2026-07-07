@@ -1,0 +1,29 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: "normalise_output(&py_stderr, paths)"
+---
+- "            __('Cannot find source directory (%s)') % self.srcdir"
+- "        )"
+- "        raise ApplicationError("
+- "      File \"/workspaces/dsport/src/sphinx/sphinx/application.py\", line 217, in __init__"
+- "    sphinx.errors.ApplicationError: Cannot find source directory (<PATH>/html)"
+- "* Docutils version: 0.22.4"
+- "* Jinja2 version:   3.2.0.dev0"
+- "* Platform:         linux; (Linux-7.0.13-200.fc44.x86_64-x86_64-with-glibc2.43)"
+- "* Pygments version: 2.20.0"
+- "* Python version:   3.14.5 (CPython)"
+- "* Sphinx version:   9.1.1+/f60972202"
+- "<SPHINX_ERR_LOG>"
+- "========"
+- "========="
+- "============="
+- "================="
+- Application error!
+- Last Messages
+- Loaded Extensions
+- None.
+- "Please also report this if it was a user error, so that a better error message can be provided next time."
+- "The full traceback has been saved in:"
+- "To report this error to the developers, please open an issue at <https://github.com/sphinx-doc/sphinx/issues/>. Thanks!"
+- Traceback
+- Versions

@@ -46,12 +46,14 @@ pub fn tokenize(lang: &str, code: &str) -> Option<Vec<Span>> {
     if lang.is_empty() || lang.eq_ignore_ascii_case("text") {
         return None;
     }
+    #[cfg(feature = "syntax-highlighting")]
     if let Some(spans) = tokenize_native(lang, code) {
         return Some(spans);
     }
     tokenize_bridge(lang, code)
 }
 
+#[cfg(feature = "syntax-highlighting")]
 fn tokenize_native(lang: &str, code: &str) -> Option<Vec<Span>> {
     // `Backend::Auto` already does pygmentsrs-native-first then upstream
     // `pygments.lex(...)` via PyO3; the secondary `tokenize_bridge`
@@ -97,6 +99,7 @@ fn tokenize_bridge(lang: &str, code: &str) -> Option<Vec<Span>> {
     })?
 }
 
+#[cfg(feature = "syntax-highlighting")]
 /// Normalize pygmentsrs' `(token_repr, value)` stream into the
 /// docutils long-name form: drop `Token` / `Token.Text` ancestors,
 /// downcase, space-join, merge adjacent, strip a final `\n`.
@@ -110,6 +113,7 @@ fn normalize_long(raw: Vec<(String, String)>) -> Vec<Span> {
     strip_trailing_newline(merged)
 }
 
+#[cfg(feature = "syntax-highlighting")]
 fn long_classes(ttype: &str) -> Option<String> {
     // `str(tokentype).lower().split('.')` — `Token.Name.Function`
     // → `["token", "name", "function"]`. The leading `Token` is
@@ -142,6 +146,7 @@ fn merge_adjacent(spans: Vec<Span>) -> Vec<Span> {
     out
 }
 
+#[cfg(feature = "syntax-highlighting")]
 fn strip_trailing_newline(mut spans: Vec<Span>) -> Vec<Span> {
     if let Some(last) = spans.last_mut() {
         if let Some(stripped) = last.1.strip_suffix('\n') {

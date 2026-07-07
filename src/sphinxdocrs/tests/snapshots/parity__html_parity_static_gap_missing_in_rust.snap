@@ -1,0 +1,19 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: missing
+---
+- alabaster.css
+- base-stemmer.js
+- basic.css
+- custom.css
+- doctools.js
+- documentation_options.js
+- english-stemmer.js
+- file.png
+- github-banner.svg
+- language_data.js
+- minus.png
+- plus.png
+- pygments.css
+- searchtools.js
+- sphinx_highlight.js

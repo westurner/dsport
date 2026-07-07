@@ -17,6 +17,7 @@ use sphinxdocrs::build::NativeMakeRunner;
 use sphinxdocrs::build::make_mode::run_make_mode;
 use sphinxdocrs::build::parse_args;
 use sphinxdocrs::cli::io::{py_fallback_requested, run_python_impl};
+use sphinxdocrs::scan::scan_requirements;
 
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -47,6 +48,21 @@ fn main() {
             std::process::exit(2);
         }
     };
+
+    // --scan-requirements: inspect conf.py and exit before doing any build.
+    if parsed.scan_requirements {
+        let conf_root = parsed.confdir.as_deref().unwrap_or(&parsed.sourcedir);
+        // Use sourcedir's parent as the project root so requirement files in
+        // the project tree are found.
+        let project_root = parsed
+            .sourcedir
+            .parent()
+            .unwrap_or(&parsed.sourcedir)
+            .to_path_buf();
+        let result = scan_requirements(conf_root, &project_root);
+        print!("{}", result.report());
+        std::process::exit(if result.all_present() { 0 } else { 1 });
+    }
 
     // If the builder has a native Rust implementation, use SphinxApp.
     if is_native_builder(&parsed.builder) && !py_fallback_requested(&argv) {

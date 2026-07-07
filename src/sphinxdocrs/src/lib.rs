@@ -37,6 +37,7 @@ pub mod roles;
 pub mod util_console;
 pub mod util_docstrings;
 pub mod util_lines;
+pub mod scan;
 pub mod util_matching;
 pub mod util_osutil;
 pub mod util_rst;

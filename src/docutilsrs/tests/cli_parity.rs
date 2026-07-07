@@ -55,13 +55,21 @@ fn python_bin_path() -> String {
     "python3".to_string()
 }
 
-fn get_rust_help(bin: &str) -> String {
-    let output = Command::new("cargo")
-        .args(["run", "-q", "--bin", bin, "--", "--help"])
-        .current_dir(workspace_root())
+/// Run the pre-compiled Rust binary with `--help` and return its stdout.
+///
+/// Uses the absolute binary path produced by the current cargo build instead of
+/// spawning a nested `cargo run` invocation.  Nested `cargo run` inside
+/// `cargo test` causes E0460 (conflicting rmeta files) and can deadlock on
+/// the cargo build lock.
+fn get_rust_help(bin_path: &str) -> String {
+    let output = Command::new(bin_path)
+        .arg("--help")
         .output()
-        .expect("Failed to execute command");
-    String::from_utf8_lossy(&output.stdout).to_string()
+        .unwrap_or_else(|e| panic!("Failed to run {bin_path} --help: {e}"));
+    // --help output goes to stdout on success, stderr on some tools
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if stdout.is_empty() { stderr } else { stdout }
 }
 
 fn get_python_help(bin_name: &str) -> String {
@@ -71,10 +79,10 @@ fn get_python_help(bin_name: &str) -> String {
         bin_name.replace("-rs", "")
     );
     let output = Command::new(python_bin_path())
-        .env("PYTHONPATH", "../docutils/docutils")
+        .env("PYTHONPATH", workspace_root().join("src/docutils/docutils"))
         .args(["-c", &python_cmd])
         .output()
-        .expect("Failed to execute python");
+        .unwrap_or_else(|e| panic!("Failed to run python for {bin_name}: {e}"));
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
@@ -111,10 +119,10 @@ fn extract_options(help_text: &str) -> HashSet<String> {
 }
 
 macro_rules! generate_parity_test {
-    ($test_name:ident, $bin_name:expr, $py_name:expr) => {
+    ($test_name:ident, $bin_name:expr, $py_name:expr, $bin_path:expr) => {
         #[test]
         fn $test_name() {
-            let rust_help = get_rust_help($bin_name);
+            let rust_help = get_rust_help($bin_path);
             let python_help = get_python_help($py_name);
 
             let rust_options = extract_options(&rust_help);
@@ -138,12 +146,13 @@ macro_rules! generate_parity_test {
     };
 }
 
-generate_parity_test!(test_rst2html5_cli_parity, "rst2html5-rs", "rst2html5");
-generate_parity_test!(test_rst2latex_cli_parity, "rst2latex-rs", "rst2latex");
-generate_parity_test!(test_rst2man_cli_parity, "rst2man-rs", "rst2man");
-generate_parity_test!(test_rst2odt_cli_parity, "rst2odt-rs", "rst2odt");
+generate_parity_test!(test_rst2html5_cli_parity,    "rst2html5-rs",    "rst2html5",    env!("CARGO_BIN_EXE_rst2html5-rs"));
+generate_parity_test!(test_rst2latex_cli_parity,    "rst2latex-rs",    "rst2latex",    env!("CARGO_BIN_EXE_rst2latex-rs"));
+generate_parity_test!(test_rst2man_cli_parity,      "rst2man-rs",      "rst2man",      env!("CARGO_BIN_EXE_rst2man-rs"));
+generate_parity_test!(test_rst2odt_cli_parity,      "rst2odt-rs",      "rst2odt",      env!("CARGO_BIN_EXE_rst2odt-rs"));
 generate_parity_test!(
     test_rst2pseudoxml_cli_parity,
     "rst2pseudoxml-rs",
-    "rst2pseudoxml"
+    "rst2pseudoxml",
+    env!("CARGO_BIN_EXE_rst2pseudoxml-rs")
 );

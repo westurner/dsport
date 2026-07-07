@@ -1,0 +1,9 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: rs_files
+---
+- _static
+- genindex.html
+- guide.html
+- index.html
+- objects.inv

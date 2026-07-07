@@ -32,6 +32,8 @@ pub struct BuildArgs {
     pub traceback: bool,
     pub pdb: bool,
     pub exception_on_warning: bool,
+    /// When `true`, scan `conf.py` for required packages and exit.
+    pub scan_requirements: bool,
 }
 
 /// A config override value: either a string or an int (from `-A name=value`
@@ -132,6 +134,7 @@ pub fn parse_args(argv: &[String]) -> Result<BuildArgs, ParseError> {
         traceback: m.get_flag("traceback"),
         pdb: m.get_flag("pdb"),
         exception_on_warning: m.get_flag("exception_on_warning"),
+        scan_requirements: m.get_flag("scan_requirements"),
     })
 }
 

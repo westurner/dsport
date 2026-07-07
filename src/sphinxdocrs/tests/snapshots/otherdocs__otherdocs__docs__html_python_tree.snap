@@ -1,0 +1,28 @@
+---
+source: src/sphinxdocrs/tests/otherdocs.rs
+expression: py_tree
+---
+- ".buildinfo"
+- _sources
+- _sources/index.rst.txt
+- _static
+- _static/alabaster.css
+- _static/base-stemmer.js
+- _static/basic.css
+- _static/custom.css
+- _static/doctools.js
+- _static/documentation_options.js
+- _static/english-stemmer.js
+- _static/file.png
+- _static/github-banner.svg
+- _static/language_data.js
+- _static/minus.png
+- _static/plus.png
+- _static/pygments.css
+- _static/searchtools.js
+- _static/sphinx_highlight.js
+- genindex.html
+- index.html
+- objects.inv
+- search.html
+- searchindex.js

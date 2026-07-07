@@ -35,6 +35,24 @@ pub fn is_path(x: &str) -> Result<String, ValidationError> {
     }
 }
 
+/// Like `is_path` but also accepts paths that do not exist yet (they will be
+/// created by the generator).  Rejects non-empty paths that point at an
+/// existing *file* (not a directory).
+pub fn is_path_or_new(x: &str) -> Result<String, ValidationError> {
+    if x.is_empty() {
+        return Err(ValidationError("Please enter a valid path name.".into()));
+    }
+    let expanded = expand_user(x);
+    let p = Path::new(&expanded);
+    if p.exists() && !p.is_dir() {
+        Err(ValidationError(
+            "Please enter a path name that is not an existing file.".into(),
+        ))
+    } else {
+        Ok(expanded)
+    }
+}
+
 /// Simple `~`-expansion mirroring `os.path.expanduser`.
 fn expand_user(x: &str) -> String {
     if x == "~" || x.starts_with("~/") || x.starts_with("~\\") {

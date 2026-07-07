@@ -34,4 +34,5 @@ Options:
   -P, --pdb                       run Pdb on exception
       --exception-on-warning      raise an exception on warnings
       --use-python-impl           delegate to the upstream Python sphinx-build
+      --scan-requirements         scan conf.py and more for required Python packages
   -h, --help                      Print help

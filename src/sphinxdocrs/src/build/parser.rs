@@ -203,4 +203,12 @@ pub fn build_parser() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("delegate to the upstream Python sphinx-build"),
         )
+        .arg(
+            Arg::new("scan_requirements")
+                .long("scan-requirements")
+                .action(ArgAction::SetTrue)
+                .help(
+                    "scan conf.py and more for required Python packages",
+                ),
+        )
 }

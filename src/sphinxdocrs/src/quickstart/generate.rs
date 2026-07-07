@@ -152,13 +152,16 @@ pub fn ask_user(settings: &mut QuickstartSettings, term: &dyn Terminal, fs: &dyn
     // path
     term.print("\nEnter the root path for documentation.");
     loop {
+        // Use the already-parsed path (from the positional CLI arg, or ".") as
+        // the prompt default so the user sees their choice reflected.
+        let path_default = settings.path.to_string_lossy().into_owned();
         let new_path: String = do_prompt(
             term,
             "Root path for the documentation",
-            Some("."),
-            validate::is_path,
+            Some(&path_default),
+            validate::is_path_or_new,
         )
-        .unwrap_or_else(|_| settings.path.to_string_lossy().into_owned());
+        .unwrap_or_else(|_| path_default.clone());
         settings.path = PathBuf::from(&new_path);
 
         // Conflict: existing conf.py

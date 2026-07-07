@@ -29,7 +29,9 @@
 				"ms-python.vscode-pylance",
 				"charliermarsh.ruff",
 				"ms-python.isort",
-				"github.vscode-github-actions"
+				"github.vscode-github-actions",
+				"ms-vscode.makefile-tools",
+				"tadayosi.vscode-makefile-outliner"
 			],
 			// "recommendedExtensions": [
 			// 	"tamasfe.even-better-toml",

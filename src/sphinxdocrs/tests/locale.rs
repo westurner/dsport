@@ -223,7 +223,7 @@ fn test_language_fallback_chain(#[case] input: &str, #[case] expected: Vec<&str>
     let tmp = TempDir::new().unwrap();
     write_po(
         tmp.path(),
-        &expected[0],
+        expected[0],
         "myext",
         "msgid \"Hi\"\nmsgstr \"Hi_trans\"\n",
     );

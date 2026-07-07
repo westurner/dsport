@@ -1,0 +1,20 @@
+# Workspace-level Cargo configuration.
+#
+[build]
+
+## target-dir
+# Forces every crate build — whether invoked from the workspace root
+# (`cargo test`) or a crate subdirectory (`cd src/sphinxdocrs && cargo test`)
+# — to write into the same absolute `target/` directory.
+#
+# This prevents E0460 "found possibly newer version of crate X" errors that
+# arise when two invocations each produce rmeta files for the same crate with
+# different hash suffixes.
+# target-dir = "/workspaces/dsport/target"
+
+target-dir = "./target"
+
+## rustc-wrapper
+# Adds sccache build caching
+
+rustc-wrapper = "/usr/bin/sccache"

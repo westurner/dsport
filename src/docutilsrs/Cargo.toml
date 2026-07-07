@@ -22,15 +22,26 @@ name = "docutilsrs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# Enabled by maturin when building the Python extension module.
-# Left off for `cargo test` / `cargo build` so the test binary can link against libpython.
-extension-module = ["pyo3/extension-module"]
+# Build mode: compile as Python extension module (don't embed libpython).
+# Used by maturin; off for `cargo test` / `cargo build`.
+extension-module = ["pyo3/extension-module", "pygmentsrs/extension-module"]
+
+# Optional components (included by default).
+# Syntax highlighting support (requires pygmentsrs).
+syntax-highlighting = ["dep:pygmentsrs"]
+
+# Test suite features.
+# Gate cross-language parity tests (requires Python + upstream docutils).
+test-parity = []
+
+# Default feature set.
+default = ["syntax-highlighting"]
 
 [dependencies]
 pyo3 = { workspace = true, features = ["auto-initialize"] }
 clap = { workspace = true }
 clap_complete = { workspace = true }
-pygmentsrs = { path = "../pygmentsrs" }
+pygmentsrs = { path = "../pygmentsrs", optional = true }
 mathrenderrs = { path = "../mathrenderrs" }
 chrono = "0.4.44"
 

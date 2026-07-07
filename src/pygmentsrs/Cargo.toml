@@ -37,6 +37,10 @@ ratex-pdf   = ["dep:ratex-pdf"]
 ratex-fonts = ["dep:ratex-katex-fonts"]  # Embed KaTeX fonts (~5MB)
 ratex-full  = ["ratex-svg", "ratex-png", "ratex-pdf", "ratex-fonts"]
 
+# Test suite features.
+# Gate cross-language parity tests (requires Python + upstream pygments).
+test-parity = []
+
 default = ["python-bridge"]
 
 [dependencies]

@@ -21,9 +21,30 @@ name = "sphinxdocrs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-extension-module = ["pyo3/extension-module"]
+# Build mode: compile as Python extension module (don't embed libpython).
+# Propagates to docutilsrs and its optional components.
+extension-module = ["pyo3/extension-module", "docutilsrs/extension-module", "docutilsrs/syntax-highlighting"]
+
+# Optional components (included by default).
+# Syntax highlighting support (propagates to docutilsrs).
+syntax-highlighting = ["docutilsrs/syntax-highlighting"]
+
+# Default feature set.
+default = ["syntax-highlighting"]
+
+## Test suite features
+# TODO: rename these to test or test-
+
 # Gate cross-language parity tests (requires Python + upstream sphinx in PATH).
-parity = []
+test-parity = []
+
+# Gate parity tests that spawn full sphinx-build -b json (memory-intensive).
+# Implies test-parity. Use: --features test-parity,test-parity-jsonbuilder
+test-parity-jsonbuilder = ["test-parity"]
+
+# Gate tests that build real docs trees with sphinx-build-rs vs sphinx-build.
+test-build-extdocs = []
+
 
 [dependencies]
 pyo3 = { workspace = true, features = ["auto-initialize"] }
@@ -44,10 +65,21 @@ unicode-normalization = "0.1"
 [dev-dependencies]
 insta = { workspace = true }
 rstest = { workspace = true }
+snapbox = { workspace = true }
 mockall = { workspace = true }
 wiremock = { workspace = true }
 rvcr = { workspace = true }
 tempfile = "3"
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[test]]
+name = "otherdocs"
+path = "tests/otherdocs.rs"
+required-features = ["test-build-extdocs"]
+
+[[bench]]
+name = "sphinxdocrs"
+harness = false
 
 [[bin]]
 name = "sphinx-build-rs"

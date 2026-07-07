@@ -19,3 +19,4 @@ src/pygmentsrs/fuzz/target/
 /tmp/
 /pytest-results.xml
 docs/_build
+/reports/

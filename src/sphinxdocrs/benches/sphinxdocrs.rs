@@ -6,7 +6,8 @@
 //!
 //! HTML reports land in `target/criterion/`.
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use std::io::Write;
 use tempfile::TempDir;
 
@@ -146,7 +147,7 @@ fn bench_locale_init(c: &mut Criterion) {
             std::fs::create_dir_all(&lc).unwrap();
             let mut f = std::fs::File::create(lc.join("bench.po")).unwrap();
             f.write_all(po.as_bytes()).unwrap();
-            drop(i);
+            let _ = i;
         }
         let dirs: Vec<&std::path::Path> = tmps.iter().map(|t| t.path()).collect();
         g.bench_with_input(BenchmarkId::new("dirs", n), &dirs, |b, dirs| {

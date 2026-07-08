@@ -29,10 +29,15 @@ jobs:
       # - uses: dtolnay/rust-toolchain@nightly
       #   with:
       #     components: rustfmt, clippy
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
       - uses: mozilla-actions/sccache-action@v0.0.10
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src
+
+      - run: python -m pip install sphinx pygments
 
       #- run: cargo +nightly fmt --all --check
 

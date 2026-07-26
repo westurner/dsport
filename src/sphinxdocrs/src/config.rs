@@ -219,7 +219,7 @@ impl Config {
 /// Returns a `PyErr` if the file cannot be read or if conf.py raises during
 /// execution.
 pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVal>> {
-    use pyo3::types::{PyList, PyString, PyTuple};
+    use pyo3::types::{PyList, PyTuple};
     let source = std::fs::read_to_string(path)
         .map_err(|e| ConfigError::new_err(format!("cannot read {}: {e}", path.display())))?;
 

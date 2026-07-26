@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 
 use crate::builders::html::HtmlBuilder;
 use crate::builders::latex::LatexBuilder;
+use crate::builders::linkcheck::LinkcheckBuilder;
 use crate::builders::manpage::ManpageBuilder;
 use crate::builders::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
@@ -76,7 +77,7 @@ impl From<std::io::Error> for AppError {
 ///
 /// When `sphinx-build -b <name>` is invoked, if the name is in this list
 /// the native builder is used; otherwise the Python fallback runs.
-pub const NATIVE_BUILDERS: &[&str] = &["html", "latex", "man"];
+pub const NATIVE_BUILDERS: &[&str] = &["html", "latex", "man", "linkcheck"];
 
 /// Return `true` if `builder_name` has a native Rust implementation.
 ///
@@ -212,6 +213,10 @@ impl SphinxApp {
             }
             "man" => {
                 let builder = ManpageBuilder::new();
+                Ok(builder.build_all(&self.srcdir, &self.outdir, &self.env)?)
+            }
+            "linkcheck" => {
+                let builder = LinkcheckBuilder::new();
                 Ok(builder.build_all(&self.srcdir, &self.outdir, &self.env)?)
             }
             other => Err(AppError::UnknownBuilder(other.into())),

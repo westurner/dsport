@@ -15,6 +15,7 @@
 pub mod html;
 pub mod json;
 pub mod latex;
+pub mod linkcheck;
 pub mod manpage;
 
 use std::io;

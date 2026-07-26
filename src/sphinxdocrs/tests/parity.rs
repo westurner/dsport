@@ -2876,3 +2876,213 @@ fn sphinx_docs_rs_stdout_is_empty(sphinx_docs_build_shared: &SphinxDocsBuildShar
     );
 }
 
+/// Python `sphinx-build -q` stdout must also be empty.
+#[rstest]
+fn sphinx_docs_py_stdout_is_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !has_sphinx_doc_src() { return; }
+    if !has_sphinx_build() { return; }
+    let stripped = sphinx_docs_build_shared.py_stdout.trim();
+    assert!(
+        stripped.is_empty(),
+        "Python sphinx-build stdout should be empty (output goes to stderr); got:\n{stripped}"
+    );
+}
+
+/// Both tools must have empty stdout on a successful build.
+#[rstest]
+fn sphinx_docs_both_stdout_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.rs_built { return; }
+    assert!(
+        sphinx_docs_build_shared.py_stdout.trim().is_empty(),
+        "Python stdout should be empty"
+    );
+    assert!(
+        sphinx_docs_build_shared.rs_stdout.trim().is_empty(),
+        "Rust stdout should be empty"
+    );
+}
+
+/// Extract `WARNING:` lines from stderr, normalise path tokens, and return
+/// a sorted set of unique warning categories.
+fn extract_warning_categories(stderr: &str) -> std::collections::BTreeSet<String> {
+    let re_path = regex::Regex::new(r"(/\S+|[A-Za-z]:\\\S+)").unwrap();
+    let re_num  = regex::Regex::new(r"\b\d+\b").unwrap();
+    stderr
+        .lines()
+        .filter(|l| {
+            let low = l.to_lowercase();
+            low.contains("warning") && !low.contains("error")
+        })
+        .map(|l| {
+            // Strip path tokens and line numbers so warnings compare by category.
+            let s = re_path.replace_all(l.trim(), "<PATH>");
+            let s = re_num.replace_all(&s, "<N>");
+            s.into_owned()
+        })
+        .collect()
+}
+
+/// Rust must not emit WARNING categories that Python doesn't (regression guard).
+///
+/// Python is the authoritative reference: if it doesn't warn about something,
+/// Rust shouldn't either (unless it's a sphinxdocrs-specific diagnostic
+/// listed in the allowlist).
+#[rstest]
+fn sphinx_docs_rs_warnings_subset_of_py(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.rs_built { return; }
+
+    /// sphinxdocrs-specific warnings that have no Python equivalent.
+    const RS_ONLY_WARNING_PREFIXES: &[&str] = &[
+        "sphinxdocrs:",
+        "Warning: intersphinx:",
+    ];
+
+    let py_warns = extract_warning_categories(&sphinx_docs_build_shared.py_stderr);
+    let rs_warns = extract_warning_categories(&sphinx_docs_build_shared.rs_stderr);
+
+    let unexpected: Vec<&String> = rs_warns
+        .iter()
+        .filter(|w| {
+            !py_warns.contains(*w)
+                && !RS_ONLY_WARNING_PREFIXES.iter().any(|p| w.contains(p))
+        })
+        .collect();
+
+    assert!(
+        unexpected.is_empty(),
+        "Rust emits warnings not seen in Python output:\n{}",
+        unexpected.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n")
+    );
+}
+
+/// Snapshot the normalised warning categories from both builds side by side.
+#[rstest]
+fn sphinx_docs_stderr_warning_categories_snapshot(
+    sphinx_docs_build_shared: &SphinxDocsBuildShared,
+) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.rs_built { return; }
+
+    let py_warns: Vec<String> =
+        extract_warning_categories(&sphinx_docs_build_shared.py_stderr)
+            .into_iter()
+            .collect();
+    let rs_warns: Vec<String> =
+        extract_warning_categories(&sphinx_docs_build_shared.rs_stderr)
+            .into_iter()
+            .collect();
+
+    insta::assert_yaml_snapshot!("sphinx_docs_py_warning_categories", py_warns);
+    insta::assert_yaml_snapshot!("sphinx_docs_rs_warning_categories", rs_warns);
+}
+
+// ── intersphinx parity ────────────────────────────────────────────────────────
+
+/// Both Python and Rust builds must produce an intersphinx cache directory
+/// under `.doctrees/__intersphinx_cache__/` when `sphinx.ext.intersphinx`
+/// is in `conf.py`.
+#[rstest]
+fn sphinx_docs_intersphinx_cache_dir_exists(
+    sphinx_docs_build_shared: &SphinxDocsBuildShared,
+) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.rs_built { return; }
+
+    // Python cache is under its .doctrees dir, which sits inside its outdir.
+    let py_cache = sphinx_docs_build_shared.py_out
+        .join(".doctrees")
+        .join("__intersphinx_cache__");
+    let rs_cache = sphinx_docs_build_shared.rs_out
+        .join(".doctrees")
+        .join("__intersphinx_cache__");
+
+    assert!(
+        py_cache.exists(),
+        "Python .doctrees/__intersphinx_cache__ must exist (intersphinx in extensions)"
+    );
+    assert!(
+        rs_cache.exists(),
+        "Rust .doctrees/__intersphinx_cache__ must exist (intersphinx fetched by sphinxdocrs)"
+    );
+}
+
+/// The intersphinx cache file names must match between Python and Rust.
+///
+/// Python names them `{name}_objects.inv`; Rust must use the same convention.
+#[rstest]
+fn sphinx_docs_intersphinx_cache_files_match(
+    sphinx_docs_build_shared: &SphinxDocsBuildShared,
+) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.rs_built { return; }
+
+    let cache_files = |outdir: &Path| -> std::collections::BTreeSet<String> {
+        let cache_dir = outdir.join(".doctrees").join("__intersphinx_cache__");
+        if !cache_dir.exists() { return std::collections::BTreeSet::new(); }
+        std::fs::read_dir(&cache_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect()
+    };
+
+    let py_files = cache_files(&sphinx_docs_build_shared.py_out);
+    let rs_files = cache_files(&sphinx_docs_build_shared.rs_out);
+
+    // Snapshot both sets for regression detection.
+    let py_sorted: Vec<String> = py_files.iter().cloned().collect();
+    let rs_sorted: Vec<String> = rs_files.iter().cloned().collect();
+    insta::assert_yaml_snapshot!("sphinx_docs_py_intersphinx_cache_files", py_sorted);
+    insta::assert_yaml_snapshot!("sphinx_docs_rs_intersphinx_cache_files", rs_sorted);
+
+    // The file name sets must be identical.
+    let missing_in_rs: Vec<&String> = py_files.difference(&rs_files).collect();
+    let rs_only: Vec<&String> = rs_files.difference(&py_files).collect();
+
+    assert!(
+        missing_in_rs.is_empty(),
+        "Rust intersphinx cache is missing files present in Python:\n{}",
+        missing_in_rs.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n")
+    );
+    assert!(
+        rs_only.is_empty(),
+        "Rust intersphinx cache has extra files not in Python:\n{}",
+        rs_only.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n")
+    );
+}
+
+/// Each intersphinx cache file must be non-empty (a valid `objects.inv`
+/// starts with `# Sphinx inventory version 2`).
+#[rstest]
+fn sphinx_docs_intersphinx_cache_files_non_empty(
+    sphinx_docs_build_shared: &SphinxDocsBuildShared,
+) {
+    if !sphinx_docs_build_shared.rs_built { return; }
+
+    let cache_dir = sphinx_docs_build_shared.rs_out
+        .join(".doctrees")
+        .join("__intersphinx_cache__");
+    if !cache_dir.exists() { return; }
+
+    let empty_files: Vec<String> = std::fs::read_dir(&cache_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| {
+            e.metadata()
+                .map(|m| m.len() == 0)
+                .unwrap_or(false)
+        })
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+
+    assert!(
+        empty_files.is_empty(),
+        "Rust intersphinx cache contains empty files:\n{}",
+        empty_files.join("\n")
+    );
+}
+

@@ -228,11 +228,16 @@ impl SphinxApp {
 
 /// Load `SphinxConfig`.
 ///
-/// Tries to read `conf.py` via PyO3; falls back to defaults + overrides.
-fn build_config(_srcdir: &Path, overrides: HashMap<String, String>) -> SphinxConfig {
-    // Convert String overrides to ConfigVal overrides.
-    // The full Config port reads all values; here we pass raw_config = {}
-    // and let overrides supply what's specified on the command line.
+/// Reads `srcdir/conf.py` via the existing PyO3 infrastructure when present
+/// (using [`crate::config::raw_config_from_conf_py`]); falls back to
+/// defaults + overrides when conf.py is absent or PyO3 is unavailable.
+fn build_config(srcdir: &Path, overrides: HashMap<String, String>) -> SphinxConfig {
+    let conf_py = srcdir.join("conf.py");
+    if conf_py.exists() {
+        if let Ok(raw) = crate::config::raw_config_from_conf_py(&conf_py) {
+            return SphinxConfig::new(raw, overrides);
+        }
+    }
     SphinxConfig::new(std::collections::HashMap::new(), overrides)
 }
 

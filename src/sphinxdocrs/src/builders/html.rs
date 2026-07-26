@@ -157,10 +157,7 @@ impl Builder for HtmlBuilder {
 
         // Determine output path: outdir / {docname}.html
         // docname may contain '/' separators (sub-directories).
-        let rel: PathBuf = docname
-            .split('/')
-            .collect::<PathBuf>()
-            .with_extension("html");
+        let rel: PathBuf = format!("{docname}.html").split('/').collect();
         let out_path = outdir.join(rel);
 
         // Create parent directories.
@@ -192,8 +189,11 @@ impl Builder for HtmlBuilder {
         };
 
         std::fs::create_dir_all(outdir)?;
-        // Write static assets (minimal CSS, objects.inv stub, genindex stub)
+        // Write static assets (minimal CSS, objects.inv stub, genindex stub, .buildinfo)
         write_static_files(outdir)?;
+
+        // Fetch intersphinx inventory files (no-op when extension is absent).
+        crate::intersphinx::fetch_inventories(&env.config, &env.doctreedir);
 
         for docname in &docnames {
             sanitize_docname(docname)?;
@@ -202,6 +202,8 @@ impl Builder for HtmlBuilder {
                 BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
             })?;
             self.build_doc(docname, &source, outdir)?;
+            // Copy source to _sources/{docname}.rst.txt (mirrors StandaloneHTMLBuilder).
+            copy_source_file(&src_path, docname, outdir)?;
             result.written += 1;
         }
         Ok(result)
@@ -257,12 +259,14 @@ th { background: #f0f0f0; }
 .warning { border-color: #e0a000; background: #fffbe0; }
 "#;
 
-/// Write static assets into `outdir/_static/`.
+/// Write static assets into `outdir/_static/` and top-level build artefacts.
 ///
 /// Currently emits:
+/// - `.buildinfo` — sphinx build fingerprint (mirrors StandaloneHTMLBuilder)
 /// - `_static/sphinxdocrs.css` — minimal embedded stylesheet
 /// - `objects.inv` — empty intersphinx inventory stub
 /// - `genindex.html` — empty general-index stub
+/// - `search.html` — minimal search-page stub
 ///
 /// These are the minimum set needed so that HTML pages render usably and
 /// parity-checking tools do not flag absent mandatory files.
@@ -270,6 +274,14 @@ fn write_static_files(outdir: &Path) -> Result<(), BuildError> {
     let static_dir = outdir.join("_static");
     std::fs::create_dir_all(&static_dir)?;
     std::fs::write(static_dir.join("sphinxdocrs.css"), MINIMAL_CSS.as_bytes())?;
+
+    // .buildinfo — sphinx build fingerprint written by StandaloneHTMLBuilder.
+    let buildinfo = "# Sphinx build info version 1\n\
+                     # This file records the configuration used when building these files.\n\
+                     # When it is not found, a full rebuild will be done.\n\
+                     config: sphinxdocrs\n\
+                     tags: head\n";
+    std::fs::write(outdir.join(".buildinfo"), buildinfo.as_bytes())?;
 
     // objects.inv — Sphinx intersphinx inventory (version 2 header only).
     // Real entries are added by the domain pipeline (deferred).
@@ -289,6 +301,41 @@ fn write_static_files(outdir: &Path) -> Result<(), BuildError> {
         std::fs::write(&gen_path, genindex.as_bytes())?;
     }
 
+    // search.html — minimal search page stub (mirrors StandaloneHTMLBuilder).
+    let search = HtmlBuilder::wrap_page("Search", "<p><em>Search not yet implemented by the native builder.</em></p>", "");
+    let search_path = outdir.join("search.html");
+    if !search_path.exists() {
+        std::fs::write(&search_path, search.as_bytes())?;
+    }
+
+    Ok(())
+}
+
+/// Copy `src_path` to `outdir/_sources/{docname}.rst.txt`.
+///
+/// Mirrors `StandaloneHTMLBuilder._get_source_suffix` / the source-copy step.
+/// The `.txt` extension is used by Python sphinx so browsers serve the files
+/// as plain text rather than triggering a download.
+fn copy_source_file(src_path: &Path, docname: &str, outdir: &Path) -> Result<(), BuildError> {
+    // Determine the original extension (default ".rst").
+    let ext = src_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("rst");
+    // Output path: _sources/{docname}.{ext}.txt
+    // (docname may contain '/' → collect into PathBuf sub-dirs)
+    let rel: PathBuf = format!("{docname}.{ext}.txt").split('/').collect();
+    let dest = outdir.join("_sources").join(rel);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(src_path, &dest).map_err(|e| {
+        BuildError::Other(format!(
+            "failed to copy source {} → {}: {e}",
+            src_path.display(),
+            dest.display()
+        ))
+    })?;
     Ok(())
 }
 

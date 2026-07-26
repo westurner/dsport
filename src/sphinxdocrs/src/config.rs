@@ -205,6 +205,140 @@ impl Config {
     }
 }
 
+/// Read `conf.py` at `path` and return a raw `ConfigVal` map suitable for
+/// passing to [`SphinxConfig::new`].
+///
+/// Executes `conf.py` via PyO3 (the same mechanism `Config::from_conf_py`
+/// uses) and converts a broad set of common top-level variables — including
+/// `intersphinx_mapping` — into [`ConfigVal`].  Unknown variables are
+/// silently ignored; callers should fall back to `SphinxConfig::new_defaults`
+/// on error.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the file cannot be read or if conf.py raises during
+/// execution.
+pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVal>> {
+    use pyo3::types::{PyList, PyString, PyTuple};
+    let source = std::fs::read_to_string(path)
+        .map_err(|e| ConfigError::new_err(format!("cannot read {}: {e}", path.display())))?;
+
+    Python::attach(|py| {
+        let globals = PyDict::new(py);
+        // Provide a stub __file__ so conf.py code that inspects it works.
+        globals.set_item("__file__", path.to_string_lossy().as_ref())?;
+        py.run(
+            &std::ffi::CString::new(source.as_str()).unwrap(),
+            Some(&globals),
+            None,
+        )
+        .map_err(|e| ConfigError::new_err(format!("conf.py failed: {e}")))?;
+
+        let mut raw: HashMap<String, ConfigVal> = HashMap::new();
+
+        // Helper: convert a single Python value to ConfigVal (shallow).
+        let py_to_val = |v: &pyo3::Bound<'_, pyo3::PyAny>| -> Option<ConfigVal> {
+            if v.is_none() {
+                Some(ConfigVal::Null)
+            } else if let Ok(b) = v.extract::<bool>() {
+                Some(ConfigVal::Bool(b))
+            } else if let Ok(i) = v.extract::<i64>() {
+                Some(ConfigVal::Int(i))
+            } else if let Ok(f) = v.extract::<f64>() {
+                Some(ConfigVal::Float(f))
+            } else if let Ok(s) = v.extract::<String>() {
+                Some(ConfigVal::Str(s))
+            } else {
+                None
+            }
+        };
+
+        // ── extensions ──────────────────────────────────────────────────────
+        if let Ok(Some(v)) = globals.get_item("extensions") {
+            if let Ok(list) = v.cast::<PyList>() {
+                let exts: Vec<ConfigVal> = list
+                    .iter()
+                    .filter_map(|x| x.extract::<String>().ok().map(ConfigVal::Str))
+                    .collect();
+                raw.insert("extensions".into(), ConfigVal::List(exts));
+            }
+        }
+
+        // ── scalar string / bool options ─────────────────────────────────────
+        for key in &[
+            "project", "author", "version", "release", "language",
+            "master_doc", "root_doc", "source_encoding",
+        ] {
+            if let Ok(Some(v)) = globals.get_item(*key) {
+                if let Some(val) = py_to_val(&v) {
+                    raw.insert((*key).into(), val);
+                }
+            }
+        }
+
+        // ── intersphinx_mapping ──────────────────────────────────────────────
+        // Python shape: {'name': ('base_url', inv_url_or_None), …}
+        if let Ok(Some(v)) = globals.get_item("intersphinx_mapping") {
+            if let Ok(d) = v.cast::<PyDict>() {
+                let mut mapping: Vec<(String, ConfigVal)> = Vec::new();
+                for (k, val) in d.iter() {
+                    let Ok(name) = k.extract::<String>() else { continue };
+                    // Value is a tuple (base_url, inv_url_or_None)
+                    if let Ok(tup) = val.cast::<PyTuple>() {
+                        let base_url = tup
+                            .get_item(0)
+                            .ok()
+                            .and_then(|u| u.extract::<String>().ok());
+                        let inv_url = tup
+                            .get_item(1)
+                            .ok()
+                            .and_then(|u| u.extract::<String>().ok());
+                        if let Some(url) = base_url {
+                            let entry = ConfigVal::List(vec![
+                                ConfigVal::Str(url),
+                                inv_url
+                                    .map(ConfigVal::Str)
+                                    .unwrap_or(ConfigVal::Null),
+                            ]);
+                            mapping.push((name, entry));
+                        }
+                    }
+                }
+                mapping.sort_by(|a, b| a.0.cmp(&b.0));
+                raw.insert(
+                    "intersphinx_mapping".into(),
+                    ConfigVal::Map(mapping),
+                );
+            }
+        }
+
+        // ── source_suffix ────────────────────────────────────────────────────
+        if let Ok(Some(v)) = globals.get_item("source_suffix") {
+            if let Ok(d) = v.cast::<PyDict>() {
+                let pairs: Vec<(String, ConfigVal)> = d
+                    .iter()
+                    .filter_map(|(k, val)| {
+                        let ks = k.extract::<String>().ok()?;
+                        let vs = val.extract::<String>().ok()?;
+                        Some((ks, ConfigVal::Str(vs)))
+                    })
+                    .collect();
+                raw.insert("source_suffix".into(), ConfigVal::Map(pairs));
+            } else if let Ok(s) = v.extract::<String>() {
+                raw.insert("source_suffix".into(), ConfigVal::Str(s));
+            } else if let Ok(list) = v.cast::<PyList>() {
+                let exts: Vec<ConfigVal> = list
+                    .iter()
+                    .filter_map(|x| x.extract::<String>().ok().map(ConfigVal::Str))
+                    .collect();
+                raw.insert("source_suffix".into(), ConfigVal::List(exts));
+            }
+        }
+
+        Ok(raw)
+    })
+}
+
 #[pyfunction(name = "read_conf_py")]
 pub fn py_read_conf_py(py: Python<'_>, path: &str) -> PyResult<Py<PyDict>> {
     let cfg = Config::from_conf_py(Path::new(path))?;
@@ -673,6 +807,19 @@ impl SphinxConfig {
         );
         // Extensions list
         add("extensions", List(vec![]), Env, "Extensions list");
+        // Intersphinx
+        add(
+            "intersphinx_mapping",
+            Map(vec![]),
+            Env,
+            "External project cross-references",
+        );
+        add(
+            "intersphinx_cache_limit",
+            Int(5),
+            Env,
+            "Number of days to cache intersphinx inventories",
+        );
     }
 
     /// Register an extension-provided config option.
@@ -947,6 +1094,28 @@ impl SphinxConfig {
                 m
             }
         }
+    }
+
+    /// `intersphinx_mapping` — map of project name → `(base_url, inv_url)`.
+    ///
+    /// Returns an empty vec when the extension is not configured or the
+    /// config was not loaded from a `conf.py` that contains the key.
+    ///
+    /// The optional `inv_url` is `None` when the Python value was `None`;
+    /// callers should default to `"{base_url}/objects.inv"` in that case.
+    pub fn intersphinx_mapping(&self) -> Vec<(String, String, Option<String>)> {
+        let Some(ConfigVal::Map(entries)) = self.get("intersphinx_mapping") else {
+            return Vec::new();
+        };
+        entries
+            .into_iter()
+            .filter_map(|(name, val)| {
+                let ConfigVal::List(v) = val else { return None };
+                let url = v.first()?.as_str()?.to_string();
+                let inv = v.get(1).and_then(|x| x.as_str()).map(String::from);
+                Some((name, url, inv))
+            })
+            .collect()
     }
 }
 

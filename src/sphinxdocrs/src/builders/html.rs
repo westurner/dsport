@@ -192,6 +192,9 @@ impl Builder for HtmlBuilder {
         // Write static assets (minimal CSS, objects.inv stub, genindex stub, .buildinfo)
         write_static_files(outdir)?;
 
+        // Copy user static files (html_static_path) into outdir/_static/.
+        copy_html_static_path(srcdir, outdir, &env.config)?;
+
         // Fetch intersphinx inventory files (no-op when extension is absent).
         crate::intersphinx::fetch_inventories(&env.config, &env.doctreedir);
 
@@ -206,6 +209,12 @@ impl Builder for HtmlBuilder {
             copy_source_file(&src_path, docname, outdir)?;
             result.written += 1;
         }
+
+        // Generate the JS search index (searchindex.js) over all built docs.
+        if let Err(e) = crate::search::SearchIndex::build_and_write(srcdir, outdir, &docnames) {
+            eprintln!("Warning: failed to write searchindex.js: {e}");
+        }
+
         Ok(result)
     }
 }
@@ -308,6 +317,69 @@ fn write_static_files(outdir: &Path) -> Result<(), BuildError> {
         std::fs::write(&search_path, search.as_bytes())?;
     }
 
+    Ok(())
+}
+
+/// Copy every directory listed in `html_static_path` into `outdir/_static/`.
+///
+/// Mirrors `StandaloneHTMLBuilder.copy_static_files` for the user-provided
+/// static path.  Each configured directory is resolved relative to `srcdir`;
+/// its **contents** (not the directory itself) are copied into `_static/`,
+/// matching Sphinx.  Missing directories are skipped with a warning.
+///
+/// Theme-provided assets (alabaster.css, doctools.js, …) are **not** produced
+/// because the Jinja2 theme pipeline is not ported — only user files are copied.
+fn copy_html_static_path(
+    srcdir: &Path,
+    outdir: &Path,
+    config: &SphinxConfig,
+) -> Result<(), BuildError> {
+    let static_out = outdir.join("_static");
+    for entry in config.html_static_path() {
+        let src_dir = srcdir.join(&entry);
+        if !src_dir.is_dir() {
+            eprintln!(
+                "Warning: html_static_path entry {:?} does not exist",
+                src_dir.display()
+            );
+            continue;
+        }
+        std::fs::create_dir_all(&static_out)?;
+        copy_dir_contents(&src_dir, &static_out)?;
+    }
+    Ok(())
+}
+
+/// Recursively copy the *contents* of `src` into `dst`.
+///
+/// Files whose names begin with `.` are skipped (matching Sphinx's exclusion
+/// of dotfiles from static-path copies).
+fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), BuildError> {
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        // Skip dotfiles / dot-directories (e.g. `.gitignore`, `.svn`).
+        if name.to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let from = entry.path();
+        let to = dst.join(&name);
+        if from.is_dir() {
+            std::fs::create_dir_all(&to)?;
+            copy_dir_contents(&from, &to)?;
+        } else {
+            if let Some(parent) = to.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(&from, &to).map_err(|e| {
+                BuildError::Other(format!(
+                    "failed to copy static file {} → {}: {e}",
+                    from.display(),
+                    to.display()
+                ))
+            })?;
+        }
+    }
     Ok(())
 }
 
@@ -648,6 +720,43 @@ mod tests {
         assert_eq!(result.written, 2);
         assert!(out.path().join("index.html").exists());
         assert!(out.path().join("guide").join("intro.html").exists());
+    }
+
+    #[test]
+    fn build_all_copies_html_static_path_and_writes_searchindex() {
+        use crate::config::{ConfigVal, SphinxConfig};
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        std::fs::write(src.path().join("index.rst"), "Home\n====\n\nWidget content.\n").unwrap();
+        // User static files.
+        std::fs::create_dir(src.path().join("_static")).unwrap();
+        std::fs::write(src.path().join("_static").join("custom.css"), b"body{}").unwrap();
+        std::fs::write(src.path().join("_static").join("app.js"), b"//js").unwrap();
+        // A dotfile that must be skipped.
+        std::fs::write(src.path().join("_static").join(".hidden"), b"x").unwrap();
+
+        let mut raw = std::collections::HashMap::new();
+        raw.insert(
+            "html_static_path".into(),
+            ConfigVal::List(vec![ConfigVal::Str("_static".into())]),
+        );
+        let config = SphinxConfig::new(raw, std::collections::HashMap::new());
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+
+        builder().build_all(src.path(), out.path(), &env).unwrap();
+
+        // User static files copied.
+        assert!(out.path().join("_static").join("custom.css").exists());
+        assert!(out.path().join("_static").join("app.js").exists());
+        // Dotfiles skipped.
+        assert!(!out.path().join("_static").join(".hidden").exists());
+        // searchindex.js written and valid.
+        let si = std::fs::read_to_string(out.path().join("searchindex.js")).unwrap();
+        assert!(si.starts_with("Search.setIndex("));
+        assert!(si.contains("\"widget\"") || si.contains("\"content\""));
     }
 
     // ── render fragment ───────────────────────────────────────────────────────

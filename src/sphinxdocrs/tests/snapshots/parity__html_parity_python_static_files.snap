@@ -13,6 +13,7 @@ expression: files
 - github-banner.svg
 - language_data.js
 - minus.png
+- myextra.css
 - plus.png
 - pygments.css
 - searchtools.js

@@ -2,4 +2,6 @@
 source: src/sphinxdocrs/tests/parity.rs
 expression: py_structural
 ---
-[]
+- "Finished: An initial directory structure has been created."
+- "source files. Use the sphinx-build command to build the docs, like so:"
+- sphinx-build -b builder <OUTDIR> <OUTDIR>/_build

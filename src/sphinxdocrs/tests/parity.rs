@@ -104,44 +104,6 @@ fn run(program: &str, args: &[&str], cwd: &Path) -> (i32, String, String) {
     (code, strip_ansi(&stdout), strip_ansi(&stderr))
 }
 
-/// Run a command with `stdin_input` piped to stdin.
-///
-/// Used for interactive programs (e.g. `sphinx-quickstart` without `-q`)
-/// where every prompt is answered by pressing Enter (accepting defaults).
-/// Rate-limited via `PY_SEM` for heavy processes (RAII-guarded).
-fn run_piped(program: &str, args: &[&str], cwd: &Path, stdin_input: &[u8]) -> (i32, String, String) {
-    use std::io::Write;
-    use std::process::Stdio;
-    let sem = PY_SEM.get_or_init(|| Semaphore::new(MAX_PY_PROCS));
-    let _permit = if is_heavy_process(program) {
-        sem.acquire();
-        Some(SemPermit(sem))
-    } else {
-        None
-    };
-    let mut child = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap_or_else(|e| panic!("failed to spawn {program}: {e}"));
-    if let Some(stdin) = child.stdin.as_mut() {
-        let _ = stdin.write_all(stdin_input);
-    }
-    let out = child.wait_with_output().unwrap();
-    let code = out.status.code().unwrap_or(1);
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    (code, strip_ansi(&stdout), strip_ansi(&stderr))
-}
-
-/// Return a byte sequence of `n` newlines — accepts all interactive defaults.
-fn all_defaults(n: usize) -> Vec<u8> {
-    b"\n".repeat(n)
-}
-
 /// Pre-canned build output for testing log message *format* without spawning
 /// a real subprocess.  The mock values here mirror what real sphinx-build-rs
 /// emits for a successful 2-doc HTML build.
@@ -190,17 +152,163 @@ fn list_tree(root: &Path) -> Vec<String> {
     out
 }
 
-fn python_bin() -> &'static str {
-    // prefer python3, fall back to python
+fn python_bin() -> String {
+    // prefer $VIRTUAL_ENV/bin/python if set
+    if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+        let venv_python = format!("{}/bin/python", venv);
+        if Command::new(&venv_python).arg("--version").output().is_ok() {
+            return venv_python;
+        }
+    }
+    // then prefer python3, fall back to python
     if Command::new("python3").arg("--version").output().is_ok() {
-        "python3"
+        "python3".to_string()
     } else {
-        "python"
+        "python".to_string()
     }
 }
 
 fn has_python() -> bool {
-    Command::new(python_bin()).arg("--version").output().is_ok()
+    Command::new(&python_bin()).arg("--version").output().is_ok()
+}
+
+// ── tests: python_bin() ───────────────────────────────────────────────────────
+
+#[test]
+fn test_python_bin_returns_valid_executable() {
+    let py = python_bin();
+    assert!(
+        !py.is_empty(),
+        "python_bin() should return a non-empty string"
+    );
+    // Verify it's an actual executable
+    let output = Command::new(py.as_str())
+        .arg("--version")
+        .output()
+        .expect("python_bin() should return a valid executable path");
+    assert!(
+        output.status.success(),
+        "python executable should be runnable"
+    );
+}
+
+#[test]
+fn test_python_bin_fallback_without_virtual_env() {
+    // Save the original VIRTUAL_ENV value
+    let original_venv = std::env::var("VIRTUAL_ENV").ok();
+
+    // Unset VIRTUAL_ENV
+    unsafe {
+        std::env::remove_var("VIRTUAL_ENV");
+    }
+
+    let py = python_bin();
+
+    // Should fall back to python3 or python (not a VENV path)
+    assert!(
+        py == "python3" || py == "python",
+        "Without VIRTUAL_ENV, should use python3 or python; got: {}",
+        py
+    );
+
+    // Restore the original VIRTUAL_ENV
+    unsafe {
+        match original_venv {
+            Some(v) => std::env::set_var("VIRTUAL_ENV", v),
+            None => std::env::remove_var("VIRTUAL_ENV"),
+        }
+    }
+}
+
+#[test]
+fn test_python_bin_with_invalid_virtual_env() {
+    // Save the original VIRTUAL_ENV value
+    let original_venv = std::env::var("VIRTUAL_ENV").ok();
+
+    // Set VIRTUAL_ENV to a non-existent path
+    unsafe {
+        std::env::set_var("VIRTUAL_ENV", "/nonexistent/venv/path");
+    }
+
+    let py = python_bin();
+
+    // Should fall back to python3 or python
+    assert!(
+        py == "python3" || py == "python",
+        "When VIRTUAL_ENV/bin/python doesn't exist, should fall back; got: {}",
+        py
+    );
+
+    // Restore the original VIRTUAL_ENV
+    unsafe {
+        match original_venv {
+            Some(v) => std::env::set_var("VIRTUAL_ENV", v),
+            None => std::env::remove_var("VIRTUAL_ENV"),
+        }
+    }
+}
+
+#[test]
+fn test_python_bin_prefers_virtual_env_when_set() {
+    // Save the original VIRTUAL_ENV value
+    let original_venv = std::env::var("VIRTUAL_ENV").ok();
+
+    // Create a temporary directory to simulate a virtual environment
+    let temp_venv = TempDir::new().expect("Failed to create temp dir");
+    let bin_dir = temp_venv.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("Failed to create bin dir");
+
+    // Find the actual path to python3 or python
+    let python_exec = if let Ok(output) = Command::new("which")
+        .arg("python3")
+        .output()
+    {
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    } else {
+        // Fallback: just skip if we can't find it
+        return;
+    };
+
+    if python_exec.is_empty() {
+        return; // Skip test if python not found
+    }
+
+    let mock_py = bin_dir.join("python");
+
+    // Create a symlink from python3 to our venv python
+    if std::os::unix::fs::symlink(&python_exec, &mock_py).is_ok() {
+        // Verify the symlink works before setting env var
+        assert!(
+            Command::new(&mock_py)
+                .arg("--version")
+                .output()
+                .is_ok(),
+            "Created symlink should be executable"
+        );
+
+        // Set VIRTUAL_ENV to our temp directory (convert to string)
+        let venv_str = temp_venv.path().to_string_lossy().to_string();
+        unsafe {
+            std::env::set_var("VIRTUAL_ENV", &venv_str);
+        }
+
+        // Call python_bin() and it should check VENV first
+        let py = python_bin();
+
+        let expected = format!("{}/bin/python", venv_str);
+        assert_eq!(
+            py, expected,
+            "When VIRTUAL_ENV is set with valid python, should use it"
+        );
+
+        // Restore the original VIRTUAL_ENV
+        unsafe {
+            match original_venv.as_ref() {
+                Some(v) => std::env::set_var("VIRTUAL_ENV", v),
+                None => std::env::remove_var("VIRTUAL_ENV"),
+            }
+        }
+    }
 }
 
 // ── parity: sphinx-quickstart ─────────────────────────────────────────────────
@@ -255,7 +363,7 @@ fn apidoc_parity_basic() {
         py_out.path().to_str().unwrap(),
         pkg.to_str().unwrap(),
     ];
-    let (py_code, _, _) = run(python_bin(), py_args, src_tmp.path());
+    let (py_code, _, _) = run(&python_bin(), py_args, src_tmp.path());
     if py_code != 0 {
         return;
     }
@@ -304,11 +412,16 @@ fn apidoc_parity_basic() {
 // Note: `cfg(feature = "test-parity-jsonbuilder")` implies `cfg(feature = "test-parity")`
 // because `test-parity-jsonbuilder` depends on `test-parity` in Cargo.toml.
 
+#[cfg(feature = "test-parity-jsonbuilder")]
 use sphinxdocrs::builders::Builder;
+#[cfg(feature = "test-parity-jsonbuilder")]
 use sphinxdocrs::builders::json::JsonBuilder;
+#[cfg(feature = "test-parity-jsonbuilder")]
 use sphinxdocrs::config::SphinxConfig;
+#[cfg(feature = "test-parity-jsonbuilder")]
 use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 
+#[cfg(feature = "test-parity-jsonbuilder")]
 const REQUIRED_FJSON_KEYS: &[&str] = &[
     "body",
     "title",
@@ -321,6 +434,7 @@ const REQUIRED_FJSON_KEYS: &[&str] = &[
     "sourcename",
 ];
 
+#[cfg(feature = "test-parity-jsonbuilder")]
 const PARITY_RST: &str = "\
 Welcome\n\
 =======\n\
@@ -340,9 +454,10 @@ fn write_conf_py(dir: &Path, project: &str, author: &str, release: &str, version
     std::fs::write(dir.join("conf.py"), conf).unwrap();
 }
 
+#[cfg(feature = "test-parity-jsonbuilder")]
 fn run_sphinx_json(srcdir: &Path, outdir: &Path) -> bool {
     let (code, _stdout, stderr) = run(
-        python_bin(),
+        &python_bin(),
         &[
             "-m",
             "sphinx",
@@ -361,6 +476,7 @@ fn run_sphinx_json(srcdir: &Path, outdir: &Path) -> bool {
     outdir.join("index.fjson").exists()
 }
 
+#[cfg(feature = "test-parity-jsonbuilder")]
 fn load_fjson(dir: &Path, docname: &str) -> serde_json::Value {
     let path = dir
         .join(docname.split('/').collect::<std::path::PathBuf>())
@@ -370,6 +486,7 @@ fn load_fjson(dir: &Path, docname: &str) -> serde_json::Value {
     serde_json::from_str(&raw).unwrap_or_else(|e| panic!("cannot parse {}: {e}", path.display()))
 }
 
+#[cfg(feature = "test-parity-jsonbuilder")]
 fn load_globalcontext(outdir: &Path) -> serde_json::Value {
     let raw =
         std::fs::read_to_string(outdir.join("globalcontext.json")).expect("globalcontext.json");
@@ -393,6 +510,7 @@ fn strip_html(s: &str) -> String {
         .replace("&quot;", "\"")
 }
 
+#[cfg(feature = "test-parity-jsonbuilder")]
 fn build_rust_json(srcdir: &Path, outdir: &Path) {
     let config = SphinxConfig::new_defaults();
     let project = EnvProject::new(srcdir, &[(".rst", "restructuredtext")]);
@@ -776,33 +894,6 @@ fn has_sphinx_build() -> bool {
     Command::new("sphinx-build").arg("--version").output().is_ok()
 }
 
-/// Run `sphinx-build -M html src <out> -q` (Python). Returns `true` on success.
-fn run_py_make_html(srcdir: &Path, outdir: &Path) -> bool {
-    let (code, _stdout, stderr) = run(
-        "sphinx-build",
-        &["-M", "html", srcdir.to_str().unwrap(), outdir.to_str().unwrap(), "-q"],
-        srcdir,
-    );
-    if code != 0 {
-        eprintln!("sphinx-build -M html failed (code {code}):\n{stderr}");
-    }
-    code == 0
-}
-
-/// Run `sphinx-build-rs -M html src <out>` (Rust). Returns `true` on success.
-fn run_rs_make_html(srcdir: &Path, outdir: &Path) -> bool {
-    let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
-    let (code, _stdout, stderr) = run(
-        rs_bin,
-        &["-M", "html", srcdir.to_str().unwrap(), outdir.to_str().unwrap()],
-        srcdir,
-    );
-    if code != 0 {
-        eprintln!("sphinx-build-rs -M html failed (code {code}):\n{stderr}");
-    }
-    code == 0
-}
-
 // ── shared once-fixtures ─────────────────────────────────────────────────────
 
 /// Output from a single `sphinx-build -M html` + `sphinx-build-rs -M html`
@@ -825,10 +916,10 @@ fn make_html_shared() -> MakeHtmlShared {
     let src = {
         let d = TempDir::new().unwrap();
         setup_make_parity_project(d.path());
-        d.into_path()
+        d.keep()
     };
-    let py_out = TempDir::new().unwrap().into_path();
-    let rs_out = TempDir::new().unwrap().into_path();
+    let py_out = TempDir::new().unwrap().keep();
+    let rs_out = TempDir::new().unwrap().keep();
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
 
     let (py_exit, _, py_stderr) = if has_sphinx_build() {
@@ -880,10 +971,10 @@ fn html_parity_shared() -> HtmlParityShared {
     let src = {
         let d = TempDir::new().unwrap();
         setup_html_parity_project(d.path());
-        d.into_path()
+        d.keep()
     };
-    let py_out = TempDir::new().unwrap().into_path();
-    let rs_out = TempDir::new().unwrap().into_path();
+    let py_out = TempDir::new().unwrap().keep();
+    let rs_out = TempDir::new().unwrap().keep();
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
 
     let (py_exit, _, py_stderr) = if has_sphinx_build() {
@@ -1269,30 +1360,65 @@ Content here.\n\
 ";
 
 /// Set up a synthetic Sphinx project in `dir` with two RST files and a conf.py.
+///
+/// The project also declares `html_static_path = ['_static']` and ships a
+/// user static file (`_static/myextra.css`) so both builders exercise the
+/// static-file copy path.  `myextra.css` has a distinctive name that does
+/// **not** collide with any alabaster theme asset, so its presence in the
+/// output uniquely proves that `html_static_path` copying works.
 fn setup_html_parity_project(dir: &Path) {
+    use std::io::Write;
     write_conf_py(dir, "ParityHTML", "Parity Author", "2.0", "2.0");
+    // Append html_static_path to the generated conf.py.
+    let mut conf = std::fs::OpenOptions::new()
+        .append(true)
+        .open(dir.join("conf.py"))
+        .unwrap();
+    writeln!(conf, "html_static_path = ['_static']").unwrap();
+    // Ship a uniquely-named user static file.
+    std::fs::create_dir_all(dir.join("_static")).unwrap();
+    std::fs::write(
+        dir.join("_static").join("myextra.css"),
+        "/* user static file */\nbody { margin: 0; }\n",
+    )
+    .unwrap();
     std::fs::write(dir.join("index.rst"), HTML_PARITY_RST_INDEX).unwrap();
     std::fs::write(dir.join("guide.rst"), HTML_PARITY_RST_GUIDE).unwrap();
 }
 
-/// Run `sphinx-build -M html src <out>/html` (Python) and return success.
-fn run_sphinx_html(srcdir: &Path, outdir: &Path) -> bool {
-    let html_out = outdir.join("html");
-    let (code, _stdout, stderr) = run(
-        "sphinx-build",
-        &[
-            "-M", "html",
-            srcdir.to_str().unwrap(),
-            outdir.to_str().unwrap(),
-            "-q",
-        ],
-        srcdir,
+/// A user file placed under `html_static_path` must be copied verbatim into
+/// the Rust builder's `_static/` output directory.
+#[rstest]
+fn html_static_path_user_file_copied_by_rust(html_parity_shared: &HtmlParityShared) {
+    if !html_parity_shared.rs_built { return; }
+    let f = html_parity_shared.rs_html.join("_static").join("myextra.css");
+    assert!(
+        f.exists(),
+        "Rust must copy the user html_static_path file _static/myextra.css"
     );
-    if code != 0 {
-        eprintln!("sphinx-build -M html failed:\n{stderr}");
-        return false;
+    let content = std::fs::read_to_string(&f).unwrap();
+    assert!(
+        content.contains("user static file"),
+        "copied file content must match the source; got:\n{content}"
+    );
+}
+
+/// Both Python and Rust must copy the same user `html_static_path` file.
+#[rstest]
+fn html_static_path_user_file_copied_by_both(html_parity_shared: &HtmlParityShared) {
+    if !has_sphinx_build() { return; }
+    if !html_parity_shared.py_built { return; }
+    if !html_parity_shared.rs_built { return; }
+    for (label, html) in &[
+        ("Python", &html_parity_shared.py_html),
+        ("Rust", &html_parity_shared.rs_html),
+    ] {
+        let f = html.join("_static").join("myextra.css");
+        assert!(
+            f.exists(),
+            "{label} output missing user static file _static/myextra.css"
+        );
     }
-    html_out.join("index.html").exists()
 }
 
 /// Both builders must exit 0 and produce an `index.html`.
@@ -1609,9 +1735,9 @@ pub struct LogMakeHelpShared {
 #[once]
 fn log_make_help_shared() -> LogMakeHelpShared {
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
-    let tmp = TempDir::new().unwrap().into_path();
+    let tmp = TempDir::new().unwrap().keep();
     let py_stdout = if has_python() {
-        let (_, out, _) = run(python_bin(), &["-m", "sphinx", "-M", "help", ".", "."], &tmp);
+        let (_, out, _) = run(&python_bin(), &["-m", "sphinx", "-M", "help", ".", "."], &tmp);
         out
     } else {
         String::new()
@@ -1637,9 +1763,9 @@ pub struct LogApidocShared {
 #[once]
 fn log_apidoc_shared() -> LogApidocShared {
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-apidoc-rs");
-    let src = TempDir::new().unwrap().into_path();
-    let rs_out = TempDir::new().unwrap().into_path();
-    let py_out = TempDir::new().unwrap().into_path();
+    let src = TempDir::new().unwrap().keep();
+    let rs_out = TempDir::new().unwrap().keep();
+    let py_out = TempDir::new().unwrap().keep();
 
     std::fs::create_dir(src.join("mypkg")).unwrap();
     std::fs::write(src.join("mypkg/__init__.py"), b"").unwrap();
@@ -1654,7 +1780,7 @@ fn log_apidoc_shared() -> LogApidocShared {
 
     let (py_exit, py_stdout, py_stderr, py_available) = if has_python() {
         let (code, out, err) = run(
-            python_bin(),
+            &python_bin(),
             &["-m", "sphinx.ext.apidoc", "-o", py_out.to_str().unwrap(), &pkg],
             &src,
         );
@@ -1681,9 +1807,9 @@ pub struct LogApidocDryRunShared {
 #[once]
 fn log_apidoc_dry_run_shared() -> LogApidocDryRunShared {
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-apidoc-rs");
-    let src = TempDir::new().unwrap().into_path();
-    let rs_out = TempDir::new().unwrap().into_path();
-    let py_out = TempDir::new().unwrap().into_path();
+    let src = TempDir::new().unwrap().keep();
+    let rs_out = TempDir::new().unwrap().keep();
+    let py_out = TempDir::new().unwrap().keep();
 
     std::fs::create_dir(src.join("mypkg")).unwrap();
     std::fs::write(src.join("mypkg/__init__.py"), b"").unwrap();
@@ -1697,7 +1823,7 @@ fn log_apidoc_dry_run_shared() -> LogApidocDryRunShared {
 
     let (py_stdout, py_stderr, py_available) = if has_python() {
         let (_, out, err) = run(
-            python_bin(),
+            &python_bin(),
             &["-m", "sphinx.ext.apidoc", "--dry-run", "-o", py_out.to_str().unwrap(), &pkg],
             &src,
         );
@@ -1728,8 +1854,8 @@ pub struct QuickstartParityShared {
 #[once]
 fn quickstart_parity_shared() -> QuickstartParityShared {
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-quickstart-rs");
-    let py_dir = TempDir::new().unwrap().into_path();
-    let rs_dir = TempDir::new().unwrap().into_path();
+    let py_dir = TempDir::new().unwrap().keep();
+    let rs_dir = TempDir::new().unwrap().keep();
 
     let common: &[&str] = &[
         "-q", "-p", "ParityProj", "-a", "ParityAuthor", "-v", "1.0",
@@ -1739,7 +1865,7 @@ fn quickstart_parity_shared() -> QuickstartParityShared {
     // Check whether Python sphinx.cmd.quickstart is available.
     let py_available = has_python() && {
         let (code, _, _) = run(
-            python_bin(),
+            &python_bin(),
             &["-m", "sphinx", "--version"],
             &py_dir,
         );
@@ -1750,7 +1876,7 @@ fn quickstart_parity_shared() -> QuickstartParityShared {
         let mut args: Vec<&str> = vec!["-m", "sphinx.cmd.quickstart"];
         args.extend_from_slice(common);
         args.push(py_dir.to_str().unwrap());
-        let (code, out, _) = run(python_bin(), &args, &py_dir);
+        let (code, out, _) = run(&python_bin(), &args, &py_dir);
         let tree = list_tree(&py_dir);
         (code, out, tree)
     } else {
@@ -2368,8 +2494,8 @@ pub struct SphinxDocsBuildShared {
 #[once]
 fn sphinx_docs_build_shared() -> SphinxDocsBuildShared {
     let src = sphinx_doc_src();
-    let py_out = TempDir::new().unwrap().into_path();
-    let rs_out = TempDir::new().unwrap().into_path();
+    let py_out = TempDir::new().unwrap().keep();
+    let rs_out = TempDir::new().unwrap().keep();
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
 
     // Python: sphinx-build <srcdir> <outdir> -q

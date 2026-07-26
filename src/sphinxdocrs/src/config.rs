@@ -276,6 +276,19 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
             }
         }
 
+        // ── list-of-strings options (html_static_path, html_extra_path) ──────
+        for key in &["html_static_path", "html_extra_path", "templates_path"] {
+            if let Ok(Some(v)) = globals.get_item(*key) {
+                if let Ok(list) = v.cast::<PyList>() {
+                    let items: Vec<ConfigVal> = list
+                        .iter()
+                        .filter_map(|x| x.extract::<String>().ok().map(ConfigVal::Str))
+                        .collect();
+                    raw.insert((*key).into(), ConfigVal::List(items));
+                }
+            }
+        }
+
         // ── intersphinx_mapping ──────────────────────────────────────────────
         // Python shape: {'name': ('base_url', inv_url_or_None), …}
         if let Ok(Some(v)) = globals.get_item("intersphinx_mapping") {
@@ -807,6 +820,19 @@ impl SphinxConfig {
         );
         // Extensions list
         add("extensions", List(vec![]), Env, "Extensions list");
+        // HTML static assets
+        add(
+            "html_static_path",
+            List(vec![]),
+            Html,
+            "Directories of static files copied to _static/",
+        );
+        add(
+            "html_extra_path",
+            List(vec![]),
+            Html,
+            "Directories of files copied verbatim to the output root",
+        );
         // Intersphinx
         add(
             "intersphinx_mapping",
@@ -1116,6 +1142,27 @@ impl SphinxConfig {
                 Some((name, url, inv))
             })
             .collect()
+    }
+
+    /// `html_static_path` — directories of static files copied into `_static/`.
+    ///
+    /// Defaults to an empty list (matching sphinx).  The `sphinx/doc` project
+    /// sets `html_static_path = ['_static']`.
+    pub fn html_static_path(&self) -> Vec<String> {
+        self.get("html_static_path")
+            .and_then(|v| {
+                if let ConfigVal::List(items) = v {
+                    Some(
+                        items
+                            .iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default()
     }
 }
 

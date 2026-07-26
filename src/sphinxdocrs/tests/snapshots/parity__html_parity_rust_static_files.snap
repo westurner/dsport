@@ -2,4 +2,5 @@
 source: src/sphinxdocrs/tests/parity.rs
 expression: files
 ---
+- myextra.css
 - sphinxdocrs.css

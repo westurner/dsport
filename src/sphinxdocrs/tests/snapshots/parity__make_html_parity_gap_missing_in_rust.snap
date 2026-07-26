@@ -2,10 +2,6 @@
 source: src/sphinxdocrs/tests/parity.rs
 expression: missing
 ---
-- ".buildinfo"
-- _sources
-- _sources/guide.rst.txt
-- _sources/index.rst.txt
 - _static/alabaster.css
 - _static/base-stemmer.js
 - _static/basic.css
@@ -21,5 +17,3 @@ expression: missing
 - _static/pygments.css
 - _static/searchtools.js
 - _static/sphinx_highlight.js
-- search.html
-- searchindex.js

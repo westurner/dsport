@@ -1,0 +1,7 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: py_sorted
+---
+- python_objects.inv
+- readthedocs_objects.inv
+- requests_objects.inv

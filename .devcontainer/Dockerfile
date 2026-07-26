@@ -18,6 +18,7 @@ RUN --mount=type=cache,target=/var/cache/dnf,sharing=shared \
 		ca-certificates curl which findutils \
 		procps-ng tar gzip xz \
 		ripgrep jq rsync \
+		graphviz \
 		\
 	&& dnf clean all
 

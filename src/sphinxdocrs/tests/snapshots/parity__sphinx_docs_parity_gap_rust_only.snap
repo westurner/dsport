@@ -1,0 +1,5 @@
+---
+source: src/sphinxdocrs/tests/parity.rs
+expression: rs_only
+---
+- _static/sphinxdocrs.css

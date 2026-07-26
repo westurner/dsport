@@ -1295,26 +1295,6 @@ fn run_sphinx_html(srcdir: &Path, outdir: &Path) -> bool {
     html_out.join("index.html").exists()
 }
 
-/// Run `sphinx-build-rs -M html src <out>/html` (Rust native) and return success.
-fn run_rs_html(srcdir: &Path, outdir: &Path) -> bool {
-    let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
-    let html_out = outdir.join("html");
-    let (code, _stdout, stderr) = run(
-        rs_bin,
-        &[
-            "-M", "html",
-            srcdir.to_str().unwrap(),
-            outdir.to_str().unwrap(),
-        ],
-        srcdir,
-    );
-    if code != 0 {
-        eprintln!("sphinx-build-rs -M html failed:\n{stderr}");
-        return false;
-    }
-    html_out.join("index.html").exists()
-}
-
 /// Both builders must exit 0 and produce an `index.html`.
 #[rstest]
 fn html_parity_exits_zero_and_has_index(html_parity_shared: &HtmlParityShared) {
@@ -2333,5 +2313,566 @@ fn log_warning_prefix_format() {
     // non-removable file; we skip the runtime trigger and just assert the
     // compile-time constant.
     assert!("Warning: failed to remove foo: permission denied".starts_with("Warning: "));
+}
+
+// ── parity: build real src/sphinx/doc with sphinx and sphinxdocrs ────────────
+//
+// Strategy: build the vendored `src/sphinx/doc` tree (the Sphinx project's own
+// documentation) with both Python `sphinx-build` and `sphinx-build-rs`, then
+// assert on exit codes, on-disk output, and normalised stderr.
+//
+// Many extensions used by sphinx/doc (autodoc, graphviz, intersphinx, …) are
+// not yet ported to sphinxdocrs.  Rust therefore skips or stubs those
+// directives.  We snapshot the parity gap explicitly so regressions are caught
+// automatically as coverage improves.
+//
+// Tests skip cleanly when:
+//   - `src/sphinx/doc/conf.py` is absent (workspace cloned without vendored sources)
+//   - `sphinx-build` is not in PATH (for Python-side assertions)
+//
+// Enable with:
+//   cargo test -p sphinxdocrs --features test-parity --test parity \
+//       sphinx_docs
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Resolve the vendored Sphinx documentation source.
+fn sphinx_doc_src() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sphinx/doc")
+}
+
+/// Return `true` when `src/sphinx/doc/conf.py` exists.
+fn has_sphinx_doc_src() -> bool {
+    sphinx_doc_src().join("conf.py").exists()
+}
+
+/// Combined output from building `src/sphinx/doc` with Python and Rust,
+/// collected once per test-binary invocation via `#[once]`.
+pub struct SphinxDocsBuildShared {
+    /// Python output directory (flat HTML, not nested under `html/`).
+    pub py_out:    PathBuf,
+    /// Rust output directory.
+    pub rs_out:    PathBuf,
+    pub py_exit:   i32,
+    pub rs_exit:   i32,
+    pub py_stdout: String,
+    pub rs_stdout: String,
+    pub py_stderr: String,
+    pub rs_stderr: String,
+    /// `true` when exit 0 **and** `index.html` exists.
+    pub py_built:  bool,
+    pub rs_built:  bool,
+}
+
+#[fixture]
+#[once]
+fn sphinx_docs_build_shared() -> SphinxDocsBuildShared {
+    let src = sphinx_doc_src();
+    let py_out = TempDir::new().unwrap().into_path();
+    let rs_out = TempDir::new().unwrap().into_path();
+    let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
+
+    // Python: sphinx-build <srcdir> <outdir> -q
+    let (py_exit, py_stdout, py_stderr) = if has_sphinx_doc_src() && has_sphinx_build() {
+        run(
+            "sphinx-build",
+            &[src.to_str().unwrap(), py_out.to_str().unwrap(), "-q"],
+            &src,
+        )
+    } else {
+        (1, String::new(), String::new())
+    };
+
+    // Rust: sphinx-build-rs <srcdir> <outdir>
+    let (rs_exit, rs_stdout, rs_stderr) = if has_sphinx_doc_src() {
+        run(
+            rs_bin,
+            &[src.to_str().unwrap(), rs_out.to_str().unwrap()],
+            &src,
+        )
+    } else {
+        (1, String::new(), String::new())
+    };
+
+    SphinxDocsBuildShared {
+        py_built: py_exit == 0 && py_out.join("index.html").exists(),
+        rs_built: rs_exit == 0 && rs_out.join("index.html").exists(),
+        py_out,
+        rs_out,
+        py_exit,
+        rs_exit,
+        py_stdout,
+        rs_stdout,
+        py_stderr,
+        rs_stderr,
+    }
+}
+
+// ── exit-code assertions ──────────────────────────────────────────────────────
+
+/// `sphinx-build-rs` must exit 0 when building the real sphinx/doc project.
+#[rstest]
+fn sphinx_docs_rs_exits_zero(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !has_sphinx_doc_src() { return; }
+    assert_eq!(
+        sphinx_docs_build_shared.rs_exit, 0,
+        "sphinx-build-rs must exit 0 on sphinx/doc; stderr:\n{}",
+        sphinx_docs_build_shared.rs_stderr
+    );
+}
+
+/// `sphinx-build` (Python) must exit 0 when building the real sphinx/doc project.
+#[rstest]
+fn sphinx_docs_py_exits_zero(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !has_sphinx_doc_src() { return; }
+    if !has_sphinx_build() { return; }
+    assert_eq!(
+        sphinx_docs_build_shared.py_exit, 0,
+        "sphinx-build must exit 0 on sphinx/doc; stderr:\n{}",
+        sphinx_docs_build_shared.py_stderr
+    );
+}
+
+/// Both tools must exit 0 for the real sphinx/doc project (when both available).
+#[rstest]
+fn sphinx_docs_both_exit_zero(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !has_sphinx_doc_src() { return; }
+    if !has_sphinx_build() { return; }
+    assert_eq!(
+        sphinx_docs_build_shared.py_exit, 0,
+        "Python must exit 0; stderr:\n{}", sphinx_docs_build_shared.py_stderr
+    );
+    assert_eq!(
+        sphinx_docs_build_shared.rs_exit, 0,
+        "Rust must exit 0; stderr:\n{}", sphinx_docs_build_shared.rs_stderr
+    );
+}
+
+// ── on-disk output assertions ─────────────────────────────────────────────────
+
+/// Rust must produce `index.html` in the output directory.
+#[rstest]
+fn sphinx_docs_rs_produces_index_html(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !has_sphinx_doc_src() { return; }
+    // Assert even if rs_exit != 0: partial builds should still write index.html.
+    assert!(
+        sphinx_docs_build_shared.rs_out.join("index.html").exists(),
+        "Rust output missing index.html (exit {}); stderr:\n{}",
+        sphinx_docs_build_shared.rs_exit,
+        sphinx_docs_build_shared.rs_stderr
+    );
+}
+
+/// When Python also built successfully, both outputs must contain `index.html`.
+#[rstest]
+fn sphinx_docs_both_produce_index_html(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.rs_built { return; }
+    assert!(
+        sphinx_docs_build_shared.py_out.join("index.html").exists(),
+        "Python output missing index.html"
+    );
+    assert!(
+        sphinx_docs_build_shared.rs_out.join("index.html").exists(),
+        "Rust output missing index.html"
+    );
+}
+
+/// Rust `index.html` must carry a valid HTML5 DOCTYPE declaration.
+#[rstest]
+fn sphinx_docs_rs_index_has_doctype(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.rs_built { return; }
+    let html = std::fs::read_to_string(
+        sphinx_docs_build_shared.rs_out.join("index.html")
+    ).unwrap();
+    assert!(
+        html.to_lowercase().contains("<!doctype html"),
+        "Rust index.html missing HTML5 DOCTYPE"
+    );
+}
+
+/// Both `index.html` outputs must contain a valid HTML5 DOCTYPE.
+#[rstest]
+fn sphinx_docs_both_have_doctype(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.rs_built { return; }
+    for (label, outdir) in &[
+        ("Python", &sphinx_docs_build_shared.py_out),
+        ("Rust",   &sphinx_docs_build_shared.rs_out),
+    ] {
+        let html = std::fs::read_to_string(outdir.join("index.html")).unwrap();
+        assert!(
+            html.to_lowercase().contains("<!doctype html"),
+            "{label} index.html missing HTML5 DOCTYPE"
+        );
+    }
+}
+
+/// Rust `index.html` must contain the Sphinx project title.
+#[rstest]
+fn sphinx_docs_rs_index_contains_title(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.rs_built { return; }
+    let html = std::fs::read_to_string(
+        sphinx_docs_build_shared.rs_out.join("index.html")
+    ).unwrap();
+    assert!(
+        html.contains("Sphinx"),
+        "Rust index.html should contain project title 'Sphinx'; first 500 chars:\n{}",
+        &html[..html.len().min(500)]
+    );
+}
+
+/// Both `index.html` outputs must contain the Sphinx project title.
+#[rstest]
+fn sphinx_docs_both_contain_project_title(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.rs_built { return; }
+    for (label, outdir) in &[
+        ("Python", &sphinx_docs_build_shared.py_out),
+        ("Rust",   &sphinx_docs_build_shared.rs_out),
+    ] {
+        let html = std::fs::read_to_string(outdir.join("index.html")).unwrap();
+        assert!(
+            html.contains("Sphinx"),
+            "{label} index.html should contain project title 'Sphinx'"
+        );
+    }
+}
+
+/// Walk `root` recursively and return a sorted list of relative file paths.
+/// Directories are not included in the output.
+fn file_tree_paths(root: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    fn walk(dir: &Path, root: &Path, acc: &mut Vec<String>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let mut entries: Vec<_> = entries.flatten().collect();
+            entries.sort_by_key(|e| e.path());
+            for e in entries {
+                let p = e.path();
+                let rel = p.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+                if p.is_dir() {
+                    walk(&p, root, acc);
+                } else {
+                    acc.push(rel);
+                }
+            }
+        }
+    }
+    walk(root, root, &mut out);
+    out
+}
+
+/// Walk `root` recursively and return a map of `relative_path → byte_size`
+/// for every regular file.
+fn file_size_map(root: &Path) -> std::collections::BTreeMap<String, u64> {
+    let mut out = std::collections::BTreeMap::new();
+    fn walk(dir: &Path, root: &Path, acc: &mut std::collections::BTreeMap<String, u64>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let mut entries: Vec<_> = entries.flatten().collect();
+            entries.sort_by_key(|e| e.path());
+            for e in entries {
+                let p = e.path();
+                let rel = p.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+                if p.is_dir() {
+                    walk(&p, root, acc);
+                } else {
+                    let size = p.metadata().map(|m| m.len()).unwrap_or(0);
+                    acc.insert(rel, size);
+                }
+            }
+        }
+    }
+    walk(root, root, &mut out);
+    out
+}
+
+/// Snapshot the FULL recursive file tree (paths only) from the Rust sphinx/doc build.
+///
+/// Sizes are verified separately by `sphinx_docs_rs_all_files_non_empty`; keeping
+/// them out of the snapshot avoids flakiness from non-deterministic build artefacts
+/// (intersphinx cache, searchindex timestamps, etc.).
+#[rstest]
+fn sphinx_docs_rs_snapshot_full_tree(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.rs_built { return; }
+    let paths = file_tree_paths(&sphinx_docs_build_shared.rs_out);
+    insta::assert_yaml_snapshot!("sphinx_docs_rs_full_tree", paths);
+}
+
+/// Assert every file in the Rust sphinx/doc build output has a non-zero byte size.
+/// Catches silent empty-file regressions without requiring exact-size snapshots.
+#[rstest]
+fn sphinx_docs_rs_all_files_non_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.rs_built { return; }
+    let sizes = file_size_map(&sphinx_docs_build_shared.rs_out);
+    let empty: Vec<&str> = sizes.iter()
+        .filter(|(_, sz)| **sz == 0)
+        .map(|(p, _)| p.as_str())
+        .collect();
+    assert!(
+        empty.is_empty(),
+        "Rust output contains empty files:\n{}",
+        empty.join("\n")
+    );
+}
+
+/// Snapshot the FULL recursive file tree (paths only) from the Python sphinx/doc
+/// build as the authoritative reference.
+#[rstest]
+fn sphinx_docs_py_snapshot_full_tree(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    let paths = file_tree_paths(&sphinx_docs_build_shared.py_out);
+    insta::assert_yaml_snapshot!("sphinx_docs_py_full_tree", paths);
+}
+
+/// Assert every file in the Python sphinx/doc build output has a non-zero byte size.
+#[rstest]
+fn sphinx_docs_py_all_files_non_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    let sizes = file_size_map(&sphinx_docs_build_shared.py_out);
+    let empty: Vec<&str> = sizes.iter()
+        .filter(|(_, sz)| **sz == 0)
+        .map(|(p, _)| p.as_str())
+        .collect();
+    assert!(
+        empty.is_empty(),
+        "Python output contains empty files:\n{}",
+        empty.join("\n")
+    );
+}
+
+/// Snapshot the parity gap between Python and Rust sphinx/doc builds:
+///
+/// - `missing_in_rust`: paths Python produced that Rust did not.
+/// - `rust_only`: paths Rust produced that Python did not.
+///
+/// Files present in **both** outputs are additionally checked to have non-zero
+/// sizes in the Rust copy — this catches the class of bugs where `sphinx-build-rs`
+/// copies a file but writes 0 bytes.
+///
+/// Shrink `missing_in_rust` over time as coverage improves.
+#[rstest]
+fn sphinx_docs_parity_gap_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.rs_built { return; }
+
+    let py_sizes = file_size_map(&sphinx_docs_build_shared.py_out);
+    let rs_sizes = file_size_map(&sphinx_docs_build_shared.rs_out);
+
+    let py_set: std::collections::BTreeSet<String> = py_sizes.keys().cloned().collect();
+    let rs_set: std::collections::BTreeSet<String> = rs_sizes.keys().cloned().collect();
+
+    let mut missing: Vec<String> = py_set.difference(&rs_set).cloned().collect();
+    missing.sort();
+
+    let mut rs_only: Vec<String> = rs_set.difference(&py_set).cloned().collect();
+    rs_only.sort();
+
+    // Files present in both: every Rust copy must be non-empty.
+    let mut shared_empty_in_rust: Vec<String> = py_set.intersection(&rs_set)
+        .filter(|p| rs_sizes[p.as_str()] == 0)
+        .cloned()
+        .collect();
+    shared_empty_in_rust.sort();
+    assert!(
+        shared_empty_in_rust.is_empty(),
+        "Shared files are empty in the Rust output:\n{}",
+        shared_empty_in_rust.join("\n")
+    );
+
+    insta::assert_yaml_snapshot!("sphinx_docs_parity_gap_missing_in_rust", missing);
+    insta::assert_yaml_snapshot!("sphinx_docs_parity_gap_rust_only", rs_only);
+}
+
+/// The set of HTML pages produced by Rust must exactly match the set produced
+/// by Python, modulo a small allowlist of known-unimplemented extension features.
+///
+/// This test FAILS when:
+///   - Rust produces an HTML page Python doesn't (regression / stray file)
+///   - Rust is missing an HTML page Python produces (coverage gap, once removed
+///     from the allowlist below)
+///
+/// ## Allowlist rationale
+///
+/// | File / prefix          | Reason not yet implemented in sphinxdocrs |
+/// |------------------------|-------------------------------------------|
+/// | `py-modindex.html`     | Python-domain module index (needs domain pipeline) |
+/// | `contents.html`        | Sphinx compat redirect (needs master_doc logic) |
+/// | `changes.html`         | Sphinx changes-builder / todo extension output |
+/// | `searchindex.js`       | Search index serialisation (needs indexer) |
+/// | `_static/sphinxdocrs.css` | sphinxdocrs-own stylesheet (not in Python) |
+#[rstest]
+fn sphinx_docs_html_pages_match(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.rs_built { return; }
+
+    /// Files Python produces via extension/compat features not yet in sphinxdocrs.
+    /// Each entry is matched as a prefix or exact path.
+    const PY_ONLY_ALLOWLIST: &[&str] = &[
+        "py-modindex.html",
+        "contents.html",
+        "changes.html",
+        "_modules/",          // viewcode extension output
+        "_static/",           // Python theme static assets (JS, CSS) not in our minimal builder
+    ];
+
+    /// Files sphinxdocrs produces that Python doesn't (intentional deviations).
+    const RS_ONLY_ALLOWLIST: &[&str] = &[
+        "_static/sphinxdocrs.css",
+    ];
+
+    /// Standard HTML pages sphinx always generates (not from a source RST file).
+    const STANDARD_PAGES: &[&str] = &[
+        "genindex.html",
+        "search.html",
+    ];
+
+    let src = sphinx_doc_src();
+
+    // A page is "source-based" when its corresponding .rst file exists.
+    // Extension-generated pages (autodoc, autosummary) have no RST source.
+    let has_rst_source = |html_path: &str| -> bool {
+        let docname = html_path.strip_suffix(".html").unwrap_or(html_path);
+        src.join(format!("{docname}.rst")).exists()
+    };
+
+    let include_page = |p: &str| -> bool {
+        !p.starts_with(".doctrees/")
+            && p.ends_with(".html")
+            && (has_rst_source(p)
+                || STANDARD_PAGES.contains(&p)
+                || PY_ONLY_ALLOWLIST.iter().any(|a| {
+                    if a.ends_with('/') { p.starts_with(a) } else { p == *a }
+                }))
+    };
+
+    let py_html: std::collections::BTreeSet<String> = file_tree_paths(&sphinx_docs_build_shared.py_out)
+        .into_iter()
+        .filter(|p| include_page(p))
+        .collect();
+
+    let rs_html: std::collections::BTreeSet<String> = file_tree_paths(&sphinx_docs_build_shared.rs_out)
+        .into_iter()
+        .filter(|p| include_page(p))
+        .collect();
+
+    let is_allowed_py_only = |p: &str| {
+        PY_ONLY_ALLOWLIST.iter().any(|a| {
+            if a.ends_with('/') { p.starts_with(a) } else { p == *a }
+        })
+    };
+    let is_allowed_rs_only = |p: &str| {
+        RS_ONLY_ALLOWLIST.iter().any(|a| {
+            if a.ends_with('/') { p.starts_with(a) } else { p == *a }
+        })
+    };
+
+    // Unexpected Rust-only pages (not on the allowlist).
+    let mut unexpected_rs_only: Vec<String> = rs_html.difference(&py_html)
+        .filter(|p| !is_allowed_rs_only(p))
+        .cloned()
+        .collect();
+    unexpected_rs_only.sort();
+
+    // Unexpected Python-only pages (not on the allowlist) — pages Rust should produce.
+    let mut unexpected_py_only: Vec<String> = py_html.difference(&rs_html)
+        .filter(|p| !is_allowed_py_only(p))
+        .cloned()
+        .collect();
+    unexpected_py_only.sort();
+
+    assert!(
+        unexpected_rs_only.is_empty(),
+        "Rust produced unexpected extra pages (not in Python output):\n{}",
+        unexpected_rs_only.join("\n")
+    );
+    assert!(
+        unexpected_py_only.is_empty(),
+        "Rust is missing HTML pages that Python produced (add to allowlist if intentional):\n{}",
+        unexpected_py_only.join("\n")
+    );
+}
+
+// ── stderr / stdout assertions ────────────────────────────────────────────────
+
+/// `sphinx-build-rs` must emit "Build succeeded" to stderr for a successful
+/// sphinx/doc build, together with a file-count.
+#[rstest]
+fn sphinx_docs_rs_stderr_build_succeeded(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !has_sphinx_doc_src() { return; }
+    assert_eq!(
+        sphinx_docs_build_shared.rs_exit, 0,
+        "expected exit 0; stderr:\n{}", sphinx_docs_build_shared.rs_stderr
+    );
+    assert!(
+        sphinx_docs_build_shared.rs_stderr.contains("Build succeeded"),
+        "Rust stderr should contain 'Build succeeded'; got:\n{}",
+        sphinx_docs_build_shared.rs_stderr
+    );
+    let re_count = regex::Regex::new(r"\d+ file").unwrap();
+    assert!(
+        re_count.is_match(&sphinx_docs_build_shared.rs_stderr),
+        "Rust stderr should contain a file count (e.g. '42 file(s)'); got:\n{}",
+        sphinx_docs_build_shared.rs_stderr
+    );
+}
+
+/// Rust stderr must not contain any "Error:" lines on a successful sphinx/doc build.
+#[rstest]
+fn sphinx_docs_rs_stderr_no_errors(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.rs_built { return; }
+    let error_lines: Vec<&str> = sphinx_docs_build_shared.rs_stderr
+        .lines()
+        .filter(|l| l.to_lowercase().contains("error:") && !l.to_lowercase().contains("warning"))
+        .collect();
+    assert!(
+        error_lines.is_empty(),
+        "Rust stderr should be error-free on a successful build; error lines:\n{}",
+        error_lines.join("\n")
+    );
+}
+
+/// Snapshot normalised Rust stderr for the sphinx/doc build.
+/// Paths and file-counts are replaced so the snapshot is deterministic.
+#[rstest]
+fn sphinx_docs_rs_stderr_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.rs_built { return; }
+    let re_count = regex::Regex::new(r"\d+ file").unwrap();
+    let rs_out_str  = sphinx_docs_build_shared.rs_out.to_str().unwrap_or("");
+    let src_str     = sphinx_doc_src().to_str().unwrap_or("").to_owned();
+    let normalised: Vec<String> = sphinx_docs_build_shared.rs_stderr
+        .replace(rs_out_str, "<OUTDIR>")
+        .replace(&src_str, "<SRCDIR>")
+        .lines()
+        .map(|l| re_count.replace_all(l.trim_end(), "<N> file").to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    insta::assert_yaml_snapshot!("sphinx_docs_rs_stderr_normalised", normalised);
+}
+
+/// Snapshot normalised Python stderr for the sphinx/doc build (reference).
+#[rstest]
+fn sphinx_docs_py_stderr_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built { return; }
+    let py_out_str = sphinx_docs_build_shared.py_out.to_str().unwrap_or("");
+    let src_str    = sphinx_doc_src().to_str().unwrap_or("").to_owned();
+    let normalised: Vec<String> = sphinx_docs_build_shared.py_stderr
+        .replace(py_out_str, "<OUTDIR>")
+        .replace(&src_str, "<SRCDIR>")
+        .lines()
+        .map(|l| l.trim_end().to_owned())
+        .filter(|l| !l.is_empty())
+        .collect();
+    insta::assert_yaml_snapshot!("sphinx_docs_py_stderr_normalised", normalised);
+}
+
+/// Rust stdout must be empty (all progress output goes to stderr).
+#[rstest]
+fn sphinx_docs_rs_stdout_is_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !has_sphinx_doc_src() { return; }
+    let stripped = sphinx_docs_build_shared.rs_stdout.trim();
+    assert!(
+        stripped.is_empty(),
+        "Rust stdout should be empty (output goes to stderr); got:\n{stripped}"
+    );
 }
 

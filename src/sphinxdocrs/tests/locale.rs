@@ -56,10 +56,24 @@ fn locale2() -> TempDir {
 
 // ── test_init ─────────────────────────────────────────────────────────────────
 
+/// The translator registry is process-global, so tests that mutate it must not
+/// run concurrently. Rust's test harness runs tests in parallel by default, so
+/// serialise them here.
+static REGISTRY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Acquire the registry lock and reset the translators, returning a guard that
+/// must be held for the duration of the test. Poisoning is ignored: a panicking
+/// test leaves the registry dirty, and the next test clears it anyway.
+fn locked_clear_translators() -> std::sync::MutexGuard<'static, ()> {
+    let guard = REGISTRY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    clear_translators();
+    guard
+}
+
 /// Mirrors `test_locale.py::test_init` — progressive loading across two dirs.
 #[rstest]
 fn test_init(locale1: TempDir, locale2: TempDir) {
-    clear_translators();
+    let _registry = locked_clear_translators();
 
     // Not initialised yet — fallback to identity
     let ns = "test_init";
@@ -95,7 +109,7 @@ fn test_init(locale1: TempDir, locale2: TempDir) {
 /// Mirrors `test_locale.py::test_init_with_unknown_language`.
 #[rstest]
 fn test_init_with_unknown_language(locale1: TempDir) {
-    clear_translators();
+    let _registry = locked_clear_translators();
     let ns = "test_unknown_lang";
 
     let found = init(&[locale1.path()], Some("unknown"), "myext", ns);
@@ -111,7 +125,7 @@ fn test_init_with_unknown_language(locale1: TempDir) {
 
 #[rstest]
 fn is_registered_before_and_after_init(locale1: TempDir) {
-    clear_translators();
+    let _registry = locked_clear_translators();
     let ns = "test_reg_check";
     assert!(!is_translator_registered("myext", ns));
     init(&[locale1.path()], Some("en"), "myext", ns);
@@ -173,7 +187,7 @@ msgstr "ungültige RFC-Nummer %s"
 
 #[test]
 fn get_translation_returns_owned_string() {
-    clear_translators();
+    let _registry = locked_clear_translators();
     let f = get_translation("sphinx_gttest", "ns_gt");
     let result: String = f("Some message");
     assert_eq!(result, "Some message");
@@ -204,7 +218,7 @@ fn admonition_labels_contains_all_keys() {
 #[test]
 fn admonition_labels_fallback_to_english_when_no_catalog() {
     use sphinxdocrs::locale::admonition_labels;
-    clear_translators();
+    let _registry = locked_clear_translators();
     let labels = admonition_labels();
     // Without a loaded catalog the labels mirror the English msgids
     assert_eq!(labels["note"], "Note");
@@ -227,7 +241,7 @@ fn test_language_fallback_chain(#[case] input: &str, #[case] expected: Vec<&str>
         "myext",
         "msgid \"Hi\"\nmsgstr \"Hi_trans\"\n",
     );
-    clear_translators();
+    let _registry = locked_clear_translators();
     let found = init(&[tmp.path()], Some(input), "myext", "test_lang_fb");
     // At minimum the first variant file exists, so found == true
     assert!(

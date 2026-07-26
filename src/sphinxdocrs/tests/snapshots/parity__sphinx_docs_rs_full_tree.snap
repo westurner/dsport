@@ -162,13 +162,17 @@ expression: paths
 - _sources/usage/restructuredtext/roles.rst.txt
 - _sources/usage/theming.rst.txt
 - _static/Makefile
+- _static/base-stemmer.js
+- _static/basic.css
 - _static/bookcover.png
 - _static/diagrams/sphinx_build_flow.dot
 - _static/diagrams/sphinx_build_phases.dot
 - _static/diagrams/sphinx_core_events_flow.dot
+- _static/english-stemmer.js
 - _static/favicon.svg
 - _static/jupyter-logo.png
 - _static/linux-logo.png
+- _static/pygments.css
 - _static/python-logo.png
 - _static/sphinx.png
 - _static/sphinxdocrs.css

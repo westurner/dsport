@@ -267,7 +267,7 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
         // ── scalar string / bool options ─────────────────────────────────────
         for key in &[
             "project", "author", "version", "release", "language",
-            "master_doc", "root_doc", "source_encoding",
+            "master_doc", "root_doc", "source_encoding", "html_theme",
         ] {
             if let Ok(Some(v)) = globals.get_item(*key) {
                 if let Some(val) = py_to_val(&v) {
@@ -822,6 +822,12 @@ impl SphinxConfig {
         add("extensions", List(vec![]), Env, "Extensions list");
         // HTML static assets
         add(
+            "html_theme",
+            Str("alabaster".into()),
+            Html,
+            "Active HTML theme name",
+        );
+        add(
             "html_static_path",
             List(vec![]),
             Html,
@@ -1142,6 +1148,14 @@ impl SphinxConfig {
                 Some((name, url, inv))
             })
             .collect()
+    }
+
+    /// `html_theme` — the active HTML theme name.  Sphinx's default is
+    /// `"alabaster"`.
+    pub fn html_theme(&self) -> String {
+        self.get("html_theme")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_else(|| "alabaster".into())
     }
 
     /// `html_static_path` — directories of static files copied into `_static/`.

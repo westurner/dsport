@@ -52,3 +52,90 @@ fn escape(s: &str) -> String {
     }
     out
 }
+
+/// Generate CSS style definitions for the default style, mirroring
+/// `pygments.formatters.html.HtmlFormatter.get_style_defs`.
+///
+/// `selector` is the CSS scope prefix (e.g. `".highlight"`), so each rule is
+/// emitted as `<selector> .<short> { … }`.  Only token types that carry a
+/// non-empty style (via [`Style::from_token`]) produce a rule — matching how
+/// Pygments omits rules for unstyled tokens.
+///
+/// The colour palette is the built-in default style shared with the terminal
+/// and markup formatters, so highlighted HTML and `pygments.css` stay in sync.
+pub fn css_style_defs(selector: &str) -> String {
+    use crate::formatters::color::rgb_to_hex;
+    use crate::formatters::style::Style;
+    use crate::token::*;
+
+    // Token types that the default style assigns a colour/emphasis to, in a
+    // stable order.  Each entry pairs the token with the same short class name
+    // the HTML formatter emits.
+    const STYLED_TOKENS: &[TokenType] = &[
+        COMMENT,
+        COMMENT_SINGLE,
+        COMMENT_MULTILINE,
+        COMMENT_PREPROC,
+        KEYWORD,
+        KEYWORD_NAMESPACE,
+        NAME,
+        NAME_FUNCTION,
+        STRING,
+        STRING_DOUBLE,
+        STRING_SINGLE,
+        NUMBER,
+        NUMBER_INTEGER,
+        OPERATOR,
+    ];
+
+    let mut out = String::new();
+    for &token in STYLED_TOKENS {
+        let short = token.short_name();
+        if short.is_empty() {
+            continue;
+        }
+        let style = Style::from_token(token);
+        let mut decls: Vec<String> = Vec::new();
+        if let Some((r, g, b)) = style.fg_color {
+            decls.push(format!("color: {}", rgb_to_hex(r, g, b)));
+        }
+        if let Some((r, g, b)) = style.bg_color {
+            decls.push(format!("background-color: {}", rgb_to_hex(r, g, b)));
+        }
+        if style.bold {
+            decls.push("font-weight: bold".to_string());
+        }
+        if style.italic {
+            decls.push("font-style: italic".to_string());
+        }
+        if style.underline {
+            decls.push("text-decoration: underline".to_string());
+        }
+        if decls.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("{selector} .{short} {{ {} }}\n", decls.join("; ")));
+    }
+    out
+}
+
+
+#[cfg(test)]
+mod css_tests {
+    use super::css_style_defs;
+
+    #[test]
+    fn emits_rules_for_styled_tokens() {
+        let css = css_style_defs(".highlight");
+        // Keyword is blue + bold.
+        assert!(css.contains(".highlight .k { color: #0000ff; font-weight: bold }"), "got:\n{css}");
+        // Comment is gray.
+        assert!(css.contains(".highlight .c { color: #969696 }"), "got:\n{css}");
+        // String is red.
+        assert!(css.contains(".highlight .s { color: #c80000 }"), "got:\n{css}");
+        // Every line is scoped to the selector.
+        for line in css.lines().filter(|l| !l.is_empty()) {
+            assert!(line.starts_with(".highlight ."), "unscoped rule: {line}");
+        }
+    }
+}

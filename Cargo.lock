@@ -2963,6 +2963,7 @@ dependencies = [
  "minijinja",
  "mockall",
  "num_cpus",
+ "pygmentsrs",
  "pyo3",
  "regex",
  "rstest",

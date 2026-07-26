@@ -109,6 +109,69 @@ impl HtmlBuilder {
              </html>\n"
         )
     }
+
+    /// Render `docname` through the Jinja2 theme pipeline and write the full
+    /// HTML page to `outdir/{docname}.html`.
+    ///
+    /// Falls back to [`wrap_page`](Self::wrap_page) if the theme renderer
+    /// cannot be constructed or a template fails to render, so a build never
+    /// fails solely because of a template error.
+    fn build_doc_themed(
+        &self,
+        docname: &str,
+        source: &str,
+        outdir: &Path,
+        meta: &PageMeta,
+    ) -> Result<(), BuildError> {
+        sanitize_docname(docname)?;
+
+        let (title, body) = self.render_fragment(docname, source);
+
+        // Try the Jinja2 theme; fall back to the minimal wrapper on error.
+        let page = match crate::theme::ThemeRenderer::new() {
+            Ok(renderer) => {
+                let mut ctx = crate::theme::PageContext::new(docname, &title, &body);
+                ctx.project = meta.project.clone();
+                ctx.docstitle = meta.docstitle.clone();
+                ctx.copyright = meta.copyright.clone();
+                ctx.show_copyright = !meta.copyright.is_empty();
+                ctx.language = meta.language.clone();
+                // Theme stylesheet + legacy sphinxdocrs stylesheet.
+                ctx.css_files = vec![
+                    "_static/basic.css".to_string(),
+                    "_static/sphinxdocrs.css".to_string(),
+                ];
+                match renderer.render_page(&ctx) {
+                    Ok(html) => html,
+                    Err(e) => {
+                        eprintln!("Warning: theme render failed for {docname:?}: {e}; using fallback");
+                        Self::wrap_page(&title, &body, &meta.project)
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Warning: theme init failed: {e}; using fallback wrapper");
+                Self::wrap_page(&title, &body, &meta.project)
+            }
+        };
+
+        let rel: PathBuf = format!("{docname}.html").split('/').collect();
+        let out_path = outdir.join(rel);
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&out_path, page.as_bytes())?;
+        Ok(())
+    }
+}
+
+/// Page-level metadata passed to the theme when rendering a document.
+#[derive(Debug, Clone, Default)]
+struct PageMeta {
+    project: String,
+    docstitle: String,
+    copyright: String,
+    language: String,
 }
 
 impl Default for HtmlBuilder {
@@ -149,24 +212,8 @@ impl Builder for HtmlBuilder {
     ///
     /// Mirrors `StandaloneHTMLBuilder.write_doc`.
     fn build_doc(&self, docname: &str, source: &str, outdir: &Path) -> Result<(), BuildError> {
-        sanitize_docname(docname)?;
-
-        // Parse + render, extracting the promoted document title.
-        let (title, body) = self.render_fragment(docname, source);
-        let page = Self::wrap_page(&title, &body, "");
-
-        // Determine output path: outdir / {docname}.html
-        // docname may contain '/' separators (sub-directories).
-        let rel: PathBuf = format!("{docname}.html").split('/').collect();
-        let out_path = outdir.join(rel);
-
-        // Create parent directories.
-        if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        std::fs::write(&out_path, page.as_bytes())?;
-        Ok(())
+        // Standalone single-doc build: no project metadata available.
+        self.build_doc_themed(docname, source, outdir, &PageMeta::default())
     }
 
     /// Build all RST documents in `srcdir` into `outdir`.
@@ -195,8 +242,26 @@ impl Builder for HtmlBuilder {
         // Copy user static files (html_static_path) into outdir/_static/.
         copy_html_static_path(srcdir, outdir, &env.config)?;
 
+        // Copy the active theme's static assets (CSS/JS/images) from the
+        // installed Sphinx / theme packages, plus stemmer JS and pygments.css.
+        if let Err(e) = crate::theme_static::copy_theme_static_files(&env.config, outdir) {
+            eprintln!("Warning: failed to copy theme static files: {e}");
+        }
+
         // Fetch intersphinx inventory files (no-op when extension is absent).
         crate::intersphinx::fetch_inventories(&env.config, &env.doctreedir);
+
+        // Page metadata shared by every document (from conf.py).
+        let meta = PageMeta {
+            project: env.config.project(),
+            docstitle: env.config.project(),
+            copyright: env
+                .config
+                .get("project_copyright")
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_default(),
+            language: env.config.language(),
+        };
 
         for docname in &docnames {
             sanitize_docname(docname)?;
@@ -204,7 +269,7 @@ impl Builder for HtmlBuilder {
             let source = std::fs::read_to_string(&src_path).map_err(|e| {
                 BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
             })?;
-            self.build_doc(docname, &source, outdir)?;
+            self.build_doc_themed(docname, &source, outdir, &meta)?;
             // Copy source to _sources/{docname}.rst.txt (mirrors StandaloneHTMLBuilder).
             copy_source_file(&src_path, docname, outdir)?;
             result.written += 1;
@@ -283,6 +348,11 @@ fn write_static_files(outdir: &Path) -> Result<(), BuildError> {
     let static_dir = outdir.join("_static");
     std::fs::create_dir_all(&static_dir)?;
     std::fs::write(static_dir.join("sphinxdocrs.css"), MINIMAL_CSS.as_bytes())?;
+    // Jinja2 theme stylesheet (referenced by the theme's layout.html).
+    std::fs::write(
+        static_dir.join("basic.css"),
+        crate::theme::THEME_CSS.as_bytes(),
+    )?;
 
     // .buildinfo — sphinx build fingerprint written by StandaloneHTMLBuilder.
     let buildinfo = "# Sphinx build info version 1\n\

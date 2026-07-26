@@ -37,6 +37,8 @@ pub mod quickstart;
 pub mod registry;
 pub mod roles;
 pub mod search;
+pub mod theme;
+pub mod theme_static;
 pub mod util_console;
 pub mod util_docstrings;
 pub mod util_lines;

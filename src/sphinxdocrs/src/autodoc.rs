@@ -248,7 +248,7 @@ pub fn render_class(class: &StmtClassDef) -> String {
     for stmt in &class.body {
         if let Stmt::FunctionDef(method) = stmt {
             let name = method.name.as_str();
-            if name.starts_with('_') && !(name == "__init__") {
+            if name.starts_with('_') && (name != "__init__") {
                 continue;
             }
             out.push('\n');

@@ -132,11 +132,10 @@ fn collect_words(tree: &Doctree) -> WordStore {
                     title_words.extend(split_words(&t));
                 }
             }
-            NodeKind::Text(s) => {
-                if !under_title(tree, id) {
+            NodeKind::Text(s)
+                if !under_title(tree, id) => {
                     body_words.extend(split_words(s));
                 }
-            }
             _ => {}
         }
     }

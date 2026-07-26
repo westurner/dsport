@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::builders::html::HtmlBuilder;
+use crate::builders::json::JsonBuilder;
 use crate::builders::latex::LatexBuilder;
 use crate::builders::linkcheck::LinkcheckBuilder;
 use crate::builders::manpage::ManpageBuilder;
@@ -73,11 +74,21 @@ impl From<std::io::Error> for AppError {
 
 // ── NATIVE_BUILDERS ───────────────────────────────────────────────────────────
 
-/// Builder names that have a native Rust implementation.
+/// Builder names that have a native Rust implementation, paired with the
+/// crate path of the implementing type (used for registry bookkeeping).
 ///
-/// When `sphinx-build -b <name>` is invoked, if the name is in this list
-/// the native builder is used; otherwise the Python fallback runs.
-pub const NATIVE_BUILDERS: &[&str] = &["html", "latex", "man", "linkcheck"];
+/// When `sphinx-build -b <name>` is invoked, if the name appears here the
+/// native builder is used; otherwise the Python fallback runs.
+pub const NATIVE_BUILDER_CLASSES: &[(&str, &str)] = &[
+    ("html", "sphinxdocrs::builders::html::HtmlBuilder"),
+    ("json", "sphinxdocrs::builders::json::JsonBuilder"),
+    ("latex", "sphinxdocrs::builders::latex::LatexBuilder"),
+    ("man", "sphinxdocrs::builders::manpage::ManpageBuilder"),
+    ("linkcheck", "sphinxdocrs::builders::linkcheck::LinkcheckBuilder"),
+];
+
+/// Builder names that have a native Rust implementation.
+pub const NATIVE_BUILDERS: &[&str] = &["html", "json", "latex", "man", "linkcheck"];
 
 /// Return `true` if `builder_name` has a native Rust implementation.
 ///
@@ -173,10 +184,10 @@ impl SphinxApp {
 
         let _registry = SphinxComponentRegistry::new();
 
-        // Register the native HTML builder.
+        // Register every native builder under its implementing type.
         let mut reg = SphinxComponentRegistry::new();
-        for name in NATIVE_BUILDERS {
-            reg.add_builder(*name, "sphinxdocrs::builders::html::HtmlBuilder");
+        for (name, class) in NATIVE_BUILDER_CLASSES {
+            reg.add_builder(*name, *class);
         }
 
         // Build environment.
@@ -209,6 +220,10 @@ impl SphinxApp {
             }
             "latex" => {
                 let builder = LatexBuilder::new();
+                Ok(builder.build_all(&self.srcdir, &self.outdir, &self.env)?)
+            }
+            "json" => {
+                let builder = JsonBuilder::new();
                 Ok(builder.build_all(&self.srcdir, &self.outdir, &self.env)?)
             }
             "man" => {

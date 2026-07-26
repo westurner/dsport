@@ -5,7 +5,9 @@
 
 use std::collections::HashMap;
 
-use sphinxdocrs::application::{AppError, NATIVE_BUILDERS, SphinxApp, is_native_builder};
+use sphinxdocrs::application::{
+    AppError, NATIVE_BUILDER_CLASSES, NATIVE_BUILDERS, SphinxApp, is_native_builder,
+};
 
 // ── helper ────────────────────────────────────────────────────────────────────
 
@@ -51,6 +53,69 @@ fn is_native_builder_epub_false() {
 #[test]
 fn is_native_builder_unknown_false() {
     assert!(!is_native_builder("xml"));
+}
+
+#[test]
+fn is_native_builder_json_true() {
+    assert!(is_native_builder("json"));
+}
+
+/// Every entry of `NATIVE_BUILDER_CLASSES` must be reachable through
+/// `NATIVE_BUILDERS`, and vice versa.
+#[test]
+fn native_builder_classes_match_native_builders() {
+    let from_classes: Vec<&str> = NATIVE_BUILDER_CLASSES.iter().map(|(n, _)| *n).collect();
+    assert_eq!(from_classes, NATIVE_BUILDERS.to_vec());
+}
+
+/// `SphinxApp::new` registers every native builder under its own type,
+/// not all under `HtmlBuilder`.
+#[test]
+fn new_registers_each_builder_under_its_own_class() {
+    let src = make_src_with_docs(&[("index", "Title\n=====\n")]);
+    let out = tempfile::TempDir::new().unwrap();
+    let doctrees = tempfile::TempDir::new().unwrap();
+    let app = SphinxApp::new(
+        src.path(),
+        out.path().join("build"),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+
+    for (name, class) in NATIVE_BUILDER_CLASSES {
+        assert_eq!(app.registry.get_builder(name), Some(*class), "{name}");
+    }
+}
+
+/// `-b json` runs natively and emits `.fjson` pages plus `globalcontext.json`.
+#[test]
+fn build_json_writes_fjson_pages() {
+    let src = make_src_with_docs(&[("index", "Title\n=====\n\nHello.\n")]);
+    let out = tempfile::TempDir::new().unwrap();
+    let doctrees = tempfile::TempDir::new().unwrap();
+    let outdir = out.path().join("build");
+
+    let app = SphinxApp::new(
+        src.path(),
+        &outdir,
+        doctrees.path(),
+        "json",
+        HashMap::new(),
+    )
+    .unwrap();
+    let result = app.build().unwrap();
+
+    assert_eq!(result.written, 1);
+    let page = outdir.join("index.fjson");
+    assert!(page.exists(), "index.fjson not written");
+    let ctx: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&page).unwrap()).unwrap();
+    assert_eq!(ctx["current_page_name"], "index");
+    assert_eq!(ctx["sourcename"], "index.rst");
+    assert!(ctx["body"].as_str().unwrap().contains("Hello."));
+    assert!(outdir.join("globalcontext.json").exists());
 }
 
 // ── SphinxApp::new — path validation ─────────────────────────────────────────

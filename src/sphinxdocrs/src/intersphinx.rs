@@ -11,6 +11,7 @@
 //! |----------|-------------|-------|
 //! | `_load.fetch_inventory` | [`fetch_inventories`] | HTTP GET via `curl` |
 //! | `util.inventory.InventoryFile.loads` | [`Inventory::loads`] | v1 and v2 payloads |
+//! | `util.inventory.InventoryFile.dump` | [`dumps`] | body writer; caller supplies the rows |
 //! | `util.inventory._Inventory` | [`Inventory`] | `type → name → item` lookup |
 //! | `util.inventory._InventoryItem` | [`InventoryItem`] | project, version, uri, display name |
 //! | cache dir `__intersphinx_cache__` | same path | matches Python sphinx |
@@ -307,7 +308,8 @@ impl Inventory {
     /// Read and parse an `objects.inv` file from disk.
     pub fn load_file(path: impl AsRef<Path>, uri: &str) -> std::io::Result<Self> {
         let bytes = std::fs::read(path)?;
-        Self::loads(&bytes, uri).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        Self::loads(&bytes, uri)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
     /// Parse a version 1 (uncompressed) inventory body.
@@ -377,8 +379,7 @@ impl Inventory {
         flate2::read::ZlibDecoder::new(cursor)
             .read_to_end(&mut decompressed)
             .map_err(|e| InventoryError::Decompress(e.to_string()))?;
-        let decompressed =
-            String::from_utf8(decompressed).map_err(|_| InventoryError::NotUtf8)?;
+        let decompressed = String::from_utf8(decompressed).map_err(|_| InventoryError::NotUtf8)?;
 
         let pattern = regex::Regex::new(ENTRY_PATTERN).expect("ENTRY_PATTERN is a valid regex");
         let mut inv = Inventory::default();
@@ -511,11 +512,7 @@ pub struct InventoryEntry {
 /// Mirrors the body of `InventoryFile.dump`, including its two size
 /// optimisations: an anchor that ends with the object name is abbreviated to
 /// `$`, and a display name equal to the object name is written as `-`.
-pub fn dumps(
-    project: &str,
-    version: &str,
-    entries: &[InventoryEntry],
-) -> std::io::Result<Vec<u8>> {
+pub fn dumps(project: &str, version: &str, entries: &[InventoryEntry]) -> std::io::Result<Vec<u8>> {
     use std::io::Write as _;
 
     let escape = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -530,8 +527,7 @@ pub fn dumps(
     )
     .into_bytes();
 
-    let mut encoder =
-        flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(9));
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(9));
     for entry in entries {
         let uri = match entry.uri.strip_suffix(&entry.name) {
             Some(prefix) if prefix.contains('#') => format!("{prefix}$"),

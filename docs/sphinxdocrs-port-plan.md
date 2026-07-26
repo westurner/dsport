@@ -115,7 +115,7 @@ in the notes column of the relevant row.
 | `theming.py` | `theme`, `theme_static` | P3 | **partial** | self-contained `sphinxdocrs_basic` theme (`LAYOUT_HTML`, `PAGE_HTML`, `THEME_CSS`) + `copy_theme_assets` / `render_templates`. **Gap:** theme inheritance, `theme.conf` / `theme.toml` resolution, third-party themes (→ **H6**) |
 | `search/` | `search` | P3 | **partial** | `SearchIndex`, `split_words`, `feed`, `to_json`. **Gaps:** no stemming (accepted deviation, → **H1f**); `objects`/`objtypes`/`objnames`/`indexentries` emitted empty (→ **H3d**) |
 | `ext/autodoc/` | `autodoc` | P3 | **partial** | static extraction via `ruff_python_parser`: `document_module`, `render_function`, `render_class`. **Gaps:** runtime import, `:members:` filtering, inherited members, type hints, overloads, decorators, `__all__` ordering (→ **H9**) |
-| `ext/intersphinx/` | `intersphinx` | P3 | **partial** | `fetch_inventories`, `InvCache`. **Gap:** zlib inventory-entry parsing (→ **H1a**) + xref fallback (→ **H5c**) |
+| `ext/intersphinx/` | `intersphinx` | P3 | **partial** | `fetch_inventories`, `InvCache`, `Inventory` / `InventoryItem` / `InventoryError` (v1 + v2 `loads`, `load_file`), `dumps`. **Gap:** xref fallback — the parsed inventories are not consulted during reference resolution (→ **H5c**) |
 | `highlighting.py` | — | P3 | **deferred** | blocked on `pygmentsrs` lexer coverage (→ **H10**) |
 | `pycode/` | — | P3 | **keep-python** | superseded by `autodoc.rs` + `ruff_python_ast` |
 | `ext/*` (other) | — | P3 | **keep-python** | loaded through the `Extension` registry |
@@ -221,7 +221,7 @@ manually because minijinja lacks it.
 | `src/theme_static.rs` | `sphinx.builders.html` asset copy | `copy_theme_assets`, `render_templates` |
 | `src/search.rs` | `sphinx.search` | `SearchIndex`, `split_words`, `feed`, `to_json` |
 | `src/autodoc.rs` | `sphinx.ext.autodoc` | static extraction over `ruff_python_ast`; `AutodocError` |
-| `src/intersphinx.rs` | `sphinx.ext.intersphinx` | `fetch_inventories`, `InvCache` |
+| `src/intersphinx.rs` | `sphinx.ext.intersphinx`, `sphinx.util.inventory` | `fetch_inventories`, `InvCache`, `Inventory::loads` / `load_file`, `dumps` |
 | `src/scan.rs` | — | `scan_requirements`, `collect_packages` |
 | `src/assets.rs` | — | SRI hashing + fetch/cache |
 | `assets/quickstart/` | `sphinx/templates/quickstart/` | 4 vendored Jinja templates (`include_str!`) |
@@ -274,7 +274,7 @@ Tagged from `src/sphinx/tests/`.
 | `test_markup/` | markup | P3 | **deferred** — depends on the docutils converter |
 | `test_pycode/` | pycode | P3 | **keep-python** |
 | `test_ext_autodoc/` | autodoc | P3 | **partial** (→ **H9**) |
-| `test_ext_intersphinx/` | intersphinx | P3 | **partial** (→ **H1a**) |
+| `test_ext_intersphinx/`, `test_util_inventory.py` | intersphinx | P3 | **partial** — `tests/intersphinx.rs` covers `InventoryFile` parsing with an upstream-generated fixture (exact parity); xref-resolution cases still pending (→ **H5c**) |
 | `test_ext_imgconverter/`, `test_ext_napoleon/`, other `test_ext_*` | extensions | P3 | **keep-python** — run against vendored sphinx |
 | `js/` | search JS | — | external |
 
@@ -377,7 +377,7 @@ No new subsystem needed; each item closes a named gap on its own.
 
 | id | task | files | closes | gate |
 | --- | --- | --- | --- | --- |
-| **H1a** | Parse `objects.inv` payloads: zlib-inflate the body, decode `name domain:role priority uri dispname` lines, expose an `Inventory` lookup type. (Cross-ref *resolution* is **H5c**; this lands the data structure + parser only.) | `intersphinx.rs` | `intersphinx` parsing → **mirrored** | new `tests/intersphinx.rs`: v2 inventory fixture, malformed-header errors, `rvcr` cassette for a recorded fetch; mirror the parser cases in `test_ext_intersphinx.py` |
+| **H1a** | ✅ Parse `objects.inv` payloads: zlib-inflate the body, decode `name domain:role priority uri dispname` lines, expose an `Inventory` lookup type plus a `dumps` writer. (Cross-ref *resolution* is **H5c**; this landed the data structure + codec only.) | `intersphinx.rs` | `intersphinx` parsing → **mirrored** | `tests/intersphinx.rs`: v1/v2 payloads, malformed-header errors, `$`-anchor expansion, case-only `std:label` ambiguities, dump→load round trip, and a byte-identical parity check against `InventoryFile.loads` |
 | **H1b** | Complete `LinkcheckBuilder`: `linkcheck_ignore` / `linkcheck_anchors` / `linkcheck_allowed_redirects` config, anchor (`#fragment`) checking, redirect classification (`working` / `redirected` / `broken` / `ignored`), rate-limit backoff, `output.json` + `output.txt` emission | `builders/linkcheck.rs` | linkcheck → **done** | extend `tests/builders.rs`; `wiremock`-backed case per status class |
 | **H1c** | ✅ `write_mo` + `encode_mo` / `decode_mo` (GNU MO codec, empty hash table) and `babel_format_date` / `format_date` (CLDR subset over `DATE_FORMAT_MAPPINGS`, `SOURCE_DATE_EPOCH` aware); `tr` / `tr_console` now walk `CATALOG_LOOKUP_ORDER` | `intl.rs`, `locale.rs` | `intl` → **done** | round-trip `.po` → `.mo` → read-back; `today_fmt` cases from `test_util_i18n.py` |
 | **H1d** | `util.rst.default_role` — scoped-swap equivalent over the docutils role registry exposed by `docutilsrs` | `util_rst.rs` | `test_util/` → **mirrored** (last gap) | extend `tests/util_rst_osutil.rs` |

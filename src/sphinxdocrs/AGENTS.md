@@ -97,7 +97,7 @@ println!("{}", translate("Hello from myext"));
    demand.  This is intentional: Sphinx extensions register their catalogs
    at runtime, and tests inject temporary `TempDir`s.  If you want
    build-time embedding for the built-in strings, see the note in
-   `docs/sphinx-port-inventory.md` about `include-po` + `tr`.
+   `docs/sphinxdocrs-port-plan.md` about `include-po` + `tr`.
 
 2. **Empty `msgstr` → falls back to `msgid`** — matches Python gettext
    semantics.  A `.po` entry with `msgstr ""` is treated as untranslated.
@@ -142,10 +142,10 @@ cargo test -p sphinxdocrs --test locale --test intl
 
 # Cross-language parity tests (requires Python + sphinx in PATH)
 # Safe: json_parity tests excluded; Python processes capped at 2 concurrent
-cargo test -p sphinxdocrs --features parity --test parity
+cargo test -p sphinxdocrs --features test-parity --test parity
 
 # Also run the JSON builder parity tests (memory-intensive; each spawns sphinx-build)
-cargo test -p sphinxdocrs --features parity,parity-network --test parity
+cargo test -p sphinxdocrs --features test-parity-jsonbuilder --test parity
 
 # Benchmarks
 cargo bench -p sphinxdocrs
@@ -158,15 +158,15 @@ cargo bench -p sphinxdocrs
   `MAX_PY_PROCS = 2`, bounding peak memory to ~600 MB during test execution.
 - Cargo compilation on a 20-core machine uses ~4–8 GB (normal); the binary
   is cached after the first build, so subsequent runs are cheap.
-- The `json_parity_*` tests are gated behind `--features parity-network`
-  (which implies `parity`) to keep the default run lean.
+- The `json_parity_*` tests are gated behind `--features test-parity-jsonbuilder`
+  (which implies `test-parity`) to keep the default run lean.
 
 ---
 
 ## Parity discipline
 
 Every module in `src/` that mirrors a Python subsystem must have a
-corresponding row in `docs/sphinx-port-inventory.md` with one of:
+corresponding row in `docs/sphinxdocrs-port-plan.md` with one of:
 
 - **mirrored** — Rust-side test exists, behavior checked against upstream
 - **partial** — subset ported; remaining deferred items listed explicitly
@@ -197,7 +197,7 @@ Python output:
 | Cross-references resolved | deferred | environment resolve_references P3 |
 
 The `tests/parity.rs` file contains skippable snapshot tests
-(`cargo test --features parity`) that document these gaps as named
+(`cargo test --features test-parity`) that document these gaps as named
 `insta` snapshots so regressions are caught automatically.
 
 ---
@@ -207,4 +207,4 @@ The `tests/parity.rs` file contains skippable snapshot tests
 1. Create `src/builders/<name>.rs` implementing the `Builder` trait.
 2. Add it to `NATIVE_BUILDERS` in `application.rs`.
 3. Add it to the `match` in `SphinxApp::new`.
-4. Add inline tests and an entry to `docs/sphinx-port-inventory.md`.
+4. Add inline tests and an entry to `docs/sphinxdocrs-port-plan.md`.

@@ -10,8 +10,8 @@
 //!   `app.pdb` short-circuit, `ExtensionError` wrapping).
 //! * [`project`] — minimal `Project` with `path2doc` / `doc2path`.
 //!
-//! See [docs/sphinx-port-inventory.md](../../../docs/sphinx-port-inventory.md)
-//! for the full Phase 4 port plan and per-test triage.
+//! See [docs/sphinxdocrs-port-plan.md](../../../docs/sphinxdocrs-port-plan.md)
+//! for the full port plan and per-test triage.
 
 use pyo3::prelude::*;
 

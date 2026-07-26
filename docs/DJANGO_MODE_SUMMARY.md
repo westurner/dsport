@@ -402,7 +402,7 @@ assert_matches = "1.5"   # Test assertions
 ### Related Project Docs
 - [jinja2rs Porting Plan](../src/jinja2rs/porting-plan.md)
 - [AGENTS.md](./AGENTS.md) - Repository working rules
-- [Sphinx Port Inventory](./sphinx-port-inventory.md)
+- [sphinxdocrs Port Plan & Inventory](./sphinxdocrs-port-plan.md)
 - [docutils Port Inventory](./docutils-port-inventory.md)
 
 ## FAQ

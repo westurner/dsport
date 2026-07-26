@@ -272,7 +272,7 @@ This is the integration safety net, not a stretch goal.
 
 ### Phase 4 — sphinxdocrs incremental port
 
-- inventory `src/sphinx/tests/` and tag each test by subsystem (config, environment, builders, extensions, domains) — **done** (`docs/sphinx-port-inventory.md`)
+- inventory `src/sphinx/tests/` and tag each test by subsystem (config, environment, builders, extensions, domains) — **done** (`docs/sphinxdocrs-port-plan.md`)
 - port fast unit tests first (config, util, project); defer builder integration tests until the relevant builder is ported — **in progress** (P1: `errors`, `events`, `project` (incl. `discover`) landed with mirrored parity tests; P2: `extension.Extension` + `verify_needs_extensions` landed (`tests/test_sphinxdocrs_extension.py`); P2: `util.matching` (`compile_matchers`/`Matcher`/`get_matching_files`) landed (`tests/test_sphinxdocrs_util_matching.py`); P2: `util.console` (port of `sphinx.util.console` + `sphinx._cli.util.colour` + `sphinx._cli.util.errors`: `colourise`, `disable_colour`/`enable_colour`, `strip_escape_sequences`, `terminal_safe`, 22 named colour escape codes) landed (`tests/test_sphinxdocrs_util_console.py`, 40 byte-parity tests); `Project.discover` gated by `tests/test_sphinxdocrs_project_discover.py`)
 - prioritize the extension/event system early so existing Sphinx extensions keep working under the Rust core — **done for core EventManager** (`src/sphinxdocrs/src/events.rs`: priority ordering, `allowed_exceptions`, `app.pdb` short-circuit, `ExtensionError` wrapping with `__cause__`)
 - expose Python import surface mirroring phase 1's pattern — **done** (`sphinxdocrs.{EventManager,Project,SphinxError,…}` + `sphinxdocrs/python/sphinxdocrs_hybrid.py` with `event_manager` / `project` / `dispatch_plan` / `features` / `supports`)
@@ -323,7 +323,7 @@ Status: **done.** All deliverables landed; exit criteria met.
 
 - [docs/compat.md](docs/compat.md) — feature compatibility matrix
 - [docs/docutils-port-inventory.md](docs/docutils-port-inventory.md) — docutils port inventory
-- [docs/sphinx-port-inventory.md](docs/sphinx-port-inventory.md) — sphinx port inventory
+- [docs/sphinxdocrs-port-plan.md](docs/sphinxdocrs-port-plan.md) — sphinxdocrs port plan & inventory (subsystems, CLI binaries, test triage, remaining-work plan)
 - [docs/pygments-port-inventory.md](docs/pygments-port-inventory.md) — pygments port inventory
 - [docs/handoff/pygments.md](docs/handoff/pygments.md) — pygmentsrs native syntax-highlighting handoff
 - [docs/myst-md-port-inventory.md](docs/myst-md-port-inventory.md) — MyST-MD port inventory
@@ -332,7 +332,6 @@ Status: **done.** All deliverables landed; exit criteria met.
 ### Architecture & design
 
 - [docs/BRIDGE_SELECTION_GUIDE.md](docs/BRIDGE_SELECTION_GUIDE.md) — guide to choosing Python/Rust bridge
-- [docs/sphinxdocrs-cli-port-plan.md](docs/sphinxdocrs-cli-port-plan.md) — sphinxdocrs CLI port plan
 - [docs/RATEX_INTEGRATION_PLAN.md](docs/RATEX_INTEGRATION_PLAN.md) — RaTeX integration plan
 - [docs/RASTER_FORMAT_STRATEGY.md](docs/RASTER_FORMAT_STRATEGY.md) — raster image format strategy
 - [docs/PYGMENTSRS_CODEBASE_EXPLORATION.md](docs/PYGMENTSRS_CODEBASE_EXPLORATION.md) — pygmentsrs codebase exploration notes

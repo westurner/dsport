@@ -314,7 +314,10 @@ impl Builder for LinkcheckBuilder {
                 broken += 1;
                 txt.push_str(&format!(
                     "{}.rst:{}: [{}] {}\n",
-                    r.docname, 0, r.status.as_str(), r.uri
+                    r.docname,
+                    0,
+                    r.status.as_str(),
+                    r.uri
                 ));
                 result
                     .warnings
@@ -421,7 +424,10 @@ See section_.\n\
         };
         let json = result_to_json(&r);
         for key in ["filename", "lineno", "status", "code", "uri", "info"] {
-            assert!(json.contains(&format!("\"{key}\"")), "missing key {key} in {json}");
+            assert!(
+                json.contains(&format!("\"{key}\"")),
+                "missing key {key} in {json}"
+            );
         }
         assert!(json.contains("\"status\": \"working\""));
         assert!(json.contains("\"code\": 200"));

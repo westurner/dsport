@@ -2954,9 +2954,11 @@ dependencies = [
 name = "sphinxdocrs"
 version = "0.0.1"
 dependencies = [
+ "chrono",
  "clap",
  "criterion",
  "docutilsrs",
+ "flate2",
  "glob",
  "insta",
  "jinja2rs",

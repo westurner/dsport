@@ -39,19 +39,129 @@ const ENV_VERSION_SPHINX: i64 = 65;
 /// Words containing apostrophes are omitted because the `\w+` tokeniser
 /// never produces them.
 const STOPWORDS: &[&str] = &[
-    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
-    "any", "are", "as", "at", "be", "because", "been", "before", "being", "below",
-    "between", "both", "but", "by", "cannot", "could", "did", "do", "does",
-    "doing", "down", "during", "each", "few", "for", "from", "further", "had",
-    "has", "have", "having", "he", "her", "here", "hers", "herself", "him",
-    "himself", "his", "how", "i", "if", "in", "into", "is", "it", "its", "itself",
-    "me", "more", "most", "my", "myself", "no", "nor", "not", "of", "off", "on",
-    "once", "only", "or", "other", "ought", "our", "ours", "ourselves", "out",
-    "over", "own", "same", "she", "should", "so", "some", "such", "than", "that",
-    "the", "their", "theirs", "them", "themselves", "then", "there", "these",
-    "they", "this", "those", "through", "to", "too", "under", "until", "up",
-    "very", "was", "we", "were", "what", "when", "where", "which", "while", "who",
-    "whom", "why", "with", "would", "you", "your", "yours", "yourself",
+    "a",
+    "about",
+    "above",
+    "after",
+    "again",
+    "against",
+    "all",
+    "am",
+    "an",
+    "and",
+    "any",
+    "are",
+    "as",
+    "at",
+    "be",
+    "because",
+    "been",
+    "before",
+    "being",
+    "below",
+    "between",
+    "both",
+    "but",
+    "by",
+    "cannot",
+    "could",
+    "did",
+    "do",
+    "does",
+    "doing",
+    "down",
+    "during",
+    "each",
+    "few",
+    "for",
+    "from",
+    "further",
+    "had",
+    "has",
+    "have",
+    "having",
+    "he",
+    "her",
+    "here",
+    "hers",
+    "herself",
+    "him",
+    "himself",
+    "his",
+    "how",
+    "i",
+    "if",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "itself",
+    "me",
+    "more",
+    "most",
+    "my",
+    "myself",
+    "no",
+    "nor",
+    "not",
+    "of",
+    "off",
+    "on",
+    "once",
+    "only",
+    "or",
+    "other",
+    "ought",
+    "our",
+    "ours",
+    "ourselves",
+    "out",
+    "over",
+    "own",
+    "same",
+    "she",
+    "should",
+    "so",
+    "some",
+    "such",
+    "than",
+    "that",
+    "the",
+    "their",
+    "theirs",
+    "them",
+    "themselves",
+    "then",
+    "there",
+    "these",
+    "they",
+    "this",
+    "those",
+    "through",
+    "to",
+    "too",
+    "under",
+    "until",
+    "up",
+    "very",
+    "was",
+    "we",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "who",
+    "whom",
+    "why",
+    "with",
+    "would",
+    "you",
+    "your",
+    "yours",
+    "yourself",
     "yourselves",
 ];
 
@@ -132,15 +242,19 @@ fn collect_words(tree: &Doctree) -> WordStore {
                     title_words.extend(split_words(&t));
                 }
             }
-            NodeKind::Text(s)
-                if !under_title(tree, id) => {
-                    body_words.extend(split_words(s));
-                }
+            NodeKind::Text(s) if !under_title(tree, id) => {
+                body_words.extend(split_words(s));
+            }
             _ => {}
         }
     }
 
-    WordStore { title, title_words, body_words, all_titles }
+    WordStore {
+        title,
+        title_words,
+        body_words,
+        all_titles,
+    }
 }
 
 /// Accumulating search-index builder.
@@ -227,8 +341,10 @@ impl SearchIndex {
     ) -> serde_json::Value {
         let mut obj = serde_json::Map::new();
         for (term, docs) in mapping {
-            let mut indices: Vec<usize> =
-                docs.iter().filter_map(|d| fn2index.get(d).copied()).collect();
+            let mut indices: Vec<usize> = docs
+                .iter()
+                .filter_map(|d| fn2index.get(d).copied())
+                .collect();
             indices.sort_unstable();
             let val = if indices.len() == 1 {
                 serde_json::json!(indices[0])
@@ -298,7 +414,11 @@ impl SearchIndex {
 
     /// Build a search index by feeding every `.rst` document under `srcdir`
     /// and write `searchindex.js` into `outdir`.
-    pub fn build_and_write(srcdir: &Path, outdir: &Path, docnames: &[String]) -> std::io::Result<()> {
+    pub fn build_and_write(
+        srcdir: &Path,
+        outdir: &Path,
+        docnames: &[String],
+    ) -> std::io::Result<()> {
         use docutilsrs::parse_rst_with_source;
         let mut idx = SearchIndex::new();
         for docname in docnames {
@@ -366,7 +486,10 @@ The widget handles rendering and layout.\n";
         idx.feed("d1", &d1);
         idx.feed("d2", &d2);
         let json = idx.to_json();
-        assert!(json["terms"]["shared"].is_array(), "shared should be a list");
+        assert!(
+            json["terms"]["shared"].is_array(),
+            "shared should be a list"
+        );
         assert!(json["terms"]["only1"].is_number(), "only1 should be an int");
     }
 
@@ -391,8 +514,16 @@ The widget handles rendering and layout.\n";
         idx.feed("index", &tree);
         let json = idx.to_json();
         for key in [
-            "docnames", "filenames", "titles", "terms", "titleterms",
-            "alltitles", "objects", "objtypes", "objnames", "indexentries",
+            "docnames",
+            "filenames",
+            "titles",
+            "terms",
+            "titleterms",
+            "alltitles",
+            "objects",
+            "objtypes",
+            "objnames",
+            "indexentries",
             "envversion",
         ] {
             assert!(json.get(key).is_some(), "missing key {key}");
@@ -410,8 +541,7 @@ The widget handles rendering and layout.\n";
             "Home\n====\n\nWelcome to the docs.\n",
         )
         .unwrap();
-        SearchIndex::build_and_write(src.path(), out.path(), &["index".to_string()])
-            .unwrap();
+        SearchIndex::build_and_write(src.path(), out.path(), &["index".to_string()]).unwrap();
         let path = out.path().join("searchindex.js");
         assert!(path.exists());
         let content = std::fs::read_to_string(&path).unwrap();

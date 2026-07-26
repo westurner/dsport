@@ -41,7 +41,10 @@ struct Semaphore {
 
 impl Semaphore {
     fn new(n: usize) -> Self {
-        Semaphore { state: Mutex::new(n), cvar: Condvar::new() }
+        Semaphore {
+            state: Mutex::new(n),
+            cvar: Condvar::new(),
+        }
     }
 
     /// Block until a slot is available, then decrement the count.
@@ -108,7 +111,7 @@ fn run(program: &str, args: &[&str], cwd: &Path) -> (i32, String, String) {
 /// a real subprocess.  The mock values here mirror what real sphinx-build-rs
 /// emits for a successful 2-doc HTML build.
 struct MockBuildOutput {
-    exit:   i32,
+    exit: i32,
     stderr: String,
 }
 
@@ -169,7 +172,10 @@ fn python_bin() -> String {
 }
 
 fn has_python() -> bool {
-    Command::new(&python_bin()).arg("--version").output().is_ok()
+    Command::new(&python_bin())
+        .arg("--version")
+        .output()
+        .is_ok()
 }
 
 // ── tests: python_bin() ───────────────────────────────────────────────────────
@@ -259,10 +265,7 @@ fn test_python_bin_prefers_virtual_env_when_set() {
     std::fs::create_dir_all(&bin_dir).expect("Failed to create bin dir");
 
     // Find the actual path to python3 or python
-    let python_exec = if let Ok(output) = Command::new("which")
-        .arg("python3")
-        .output()
-    {
+    let python_exec = if let Ok(output) = Command::new("which").arg("python3").output() {
         String::from_utf8_lossy(&output.stdout).trim().to_string()
     } else {
         // Fallback: just skip if we can't find it
@@ -279,10 +282,7 @@ fn test_python_bin_prefers_virtual_env_when_set() {
     if std::os::unix::fs::symlink(&python_exec, &mock_py).is_ok() {
         // Verify the symlink works before setting env var
         assert!(
-            Command::new(&mock_py)
-                .arg("--version")
-                .output()
-                .is_ok(),
+            Command::new(&mock_py).arg("--version").output().is_ok(),
             "Created symlink should be executable"
         );
 
@@ -315,15 +315,23 @@ fn test_python_bin_prefers_virtual_env_when_set() {
 
 #[rstest]
 fn quickstart_parity_flat(quickstart_parity_shared: &QuickstartParityShared) {
-    if !quickstart_parity_shared.py_available { return; }
-    if quickstart_parity_shared.py_exit != 0 { return; }
+    if !quickstart_parity_shared.py_available {
+        return;
+    }
+    if quickstart_parity_shared.py_exit != 0 {
+        return;
+    }
 
-    assert_eq!(quickstart_parity_shared.py_exit, quickstart_parity_shared.rs_exit,
-        "exit codes differ");
+    assert_eq!(
+        quickstart_parity_shared.py_exit, quickstart_parity_shared.rs_exit,
+        "exit codes differ"
+    );
 
     // Commit Python tree as the reference snapshot.
-    insta::assert_yaml_snapshot!("quickstart_parity_python_tree",
-        quickstart_parity_shared.py_tree);
+    insta::assert_yaml_snapshot!(
+        "quickstart_parity_python_tree",
+        quickstart_parity_shared.py_tree
+    );
     // Rust tree must match.
     assert_eq!(
         quickstart_parity_shared.py_tree, quickstart_parity_shared.rs_tree,
@@ -891,7 +899,10 @@ fn setup_make_parity_project(dir: &Path) {
 
 /// Return `true` when `sphinx-build` (Python) is available in PATH.
 fn has_sphinx_build() -> bool {
-    Command::new("sphinx-build").arg("--version").output().is_ok()
+    Command::new("sphinx-build")
+        .arg("--version")
+        .output()
+        .is_ok()
 }
 
 // ── shared once-fixtures ─────────────────────────────────────────────────────
@@ -899,15 +910,15 @@ fn has_sphinx_build() -> bool {
 /// Output from a single `sphinx-build -M html` + `sphinx-build-rs -M html`
 /// run on the make-parity project.  Built ONCE per test binary invocation.
 pub struct MakeHtmlShared {
-    pub src:       PathBuf,
-    pub py_html:   PathBuf,   // <py_out>/html
-    pub rs_html:   PathBuf,   // <rs_out>/html
-    pub py_exit:   i32,
-    pub rs_exit:   i32,
+    pub src: PathBuf,
+    pub py_html: PathBuf, // <py_out>/html
+    pub rs_html: PathBuf, // <rs_out>/html
+    pub py_exit: i32,
+    pub rs_exit: i32,
     pub py_stderr: String,
     pub rs_stderr: String,
-    pub py_built:  bool,
-    pub rs_built:  bool,
+    pub py_built: bool,
+    pub rs_built: bool,
 }
 
 #[fixture]
@@ -923,16 +934,29 @@ fn make_html_shared() -> MakeHtmlShared {
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
 
     let (py_exit, _, py_stderr) = if has_sphinx_build() {
-        run("sphinx-build",
-            &["-M", "html", src.to_str().unwrap(), py_out.to_str().unwrap(), "-q"],
-            &src)
+        run(
+            "sphinx-build",
+            &[
+                "-M",
+                "html",
+                src.to_str().unwrap(),
+                py_out.to_str().unwrap(),
+                "-q",
+            ],
+            &src,
+        )
     } else {
         (1, String::new(), String::new())
     };
 
     let (rs_exit, _, rs_stderr) = run(
         rs_bin,
-        &["-M", "html", src.to_str().unwrap(), rs_out.to_str().unwrap()],
+        &[
+            "-M",
+            "html",
+            src.to_str().unwrap(),
+            rs_out.to_str().unwrap(),
+        ],
         &src,
     );
 
@@ -954,15 +978,15 @@ fn make_html_shared() -> MakeHtmlShared {
 /// Output from a single `sphinx-build -M html` + `sphinx-build-rs -M html`
 /// run on the html-parity project (different from make-parity).
 pub struct HtmlParityShared {
-    pub src:       PathBuf,
-    pub py_html:   PathBuf,
-    pub rs_html:   PathBuf,
-    pub py_exit:   i32,
-    pub rs_exit:   i32,
+    pub src: PathBuf,
+    pub py_html: PathBuf,
+    pub rs_html: PathBuf,
+    pub py_exit: i32,
+    pub rs_exit: i32,
     pub py_stderr: String,
     pub rs_stderr: String,
-    pub py_built:  bool,
-    pub rs_built:  bool,
+    pub py_built: bool,
+    pub rs_built: bool,
 }
 
 #[fixture]
@@ -978,16 +1002,29 @@ fn html_parity_shared() -> HtmlParityShared {
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
 
     let (py_exit, _, py_stderr) = if has_sphinx_build() {
-        run("sphinx-build",
-            &["-M", "html", src.to_str().unwrap(), py_out.to_str().unwrap(), "-q"],
-            &src)
+        run(
+            "sphinx-build",
+            &[
+                "-M",
+                "html",
+                src.to_str().unwrap(),
+                py_out.to_str().unwrap(),
+                "-q",
+            ],
+            &src,
+        )
     } else {
         (1, String::new(), String::new())
     };
 
     let (rs_exit, _, rs_stderr) = run(
         rs_bin,
-        &["-M", "html", src.to_str().unwrap(), rs_out.to_str().unwrap()],
+        &[
+            "-M",
+            "html",
+            src.to_str().unwrap(),
+            rs_out.to_str().unwrap(),
+        ],
         &src,
     );
 
@@ -1012,9 +1049,19 @@ fn html_parity_shared() -> HtmlParityShared {
 /// for a valid minimal project.
 #[rstest]
 fn make_html_both_exit_zero(make_html_shared: &MakeHtmlShared) {
-    if !has_sphinx_build() { return; }
-    assert_eq!(make_html_shared.py_exit, 0, "Python must exit 0; stderr:\n{}", make_html_shared.py_stderr);
-    assert_eq!(make_html_shared.rs_exit, 0, "Rust must exit 0; stderr:\n{}", make_html_shared.rs_stderr);
+    if !has_sphinx_build() {
+        return;
+    }
+    assert_eq!(
+        make_html_shared.py_exit, 0,
+        "Python must exit 0; stderr:\n{}",
+        make_html_shared.py_stderr
+    );
+    assert_eq!(
+        make_html_shared.rs_exit, 0,
+        "Rust must exit 0; stderr:\n{}",
+        make_html_shared.rs_stderr
+    );
 }
 
 /// Both tools must exit non-zero for a missing source directory.
@@ -1024,7 +1071,12 @@ fn make_html_missing_srcdir_both_nonzero() {
 
     // Rust side — use snapbox for the binary assertion.
     snapbox::cmd::Command::new(env!("CARGO_BIN_EXE_sphinx-build-rs"))
-        .args(["-M", "html", "/no/such/srcdir", tmp.path().to_str().unwrap()])
+        .args([
+            "-M",
+            "html",
+            "/no/such/srcdir",
+            tmp.path().to_str().unwrap(),
+        ])
         .current_dir(tmp.path())
         .assert()
         .failure();
@@ -1032,10 +1084,18 @@ fn make_html_missing_srcdir_both_nonzero() {
     if has_sphinx_build() {
         let (py_code, _, _) = run(
             "sphinx-build",
-            &["-M", "html", "/no/such/srcdir", tmp.path().to_str().unwrap()],
+            &[
+                "-M",
+                "html",
+                "/no/such/srcdir",
+                tmp.path().to_str().unwrap(),
+            ],
             tmp.path(),
         );
-        assert_ne!(py_code, 0, "sphinx-build must exit non-zero for missing srcdir");
+        assert_ne!(
+            py_code, 0,
+            "sphinx-build must exit non-zero for missing srcdir"
+        );
     }
 }
 
@@ -1044,10 +1104,18 @@ fn make_html_missing_srcdir_both_nonzero() {
 /// Both outputs must contain `html/index.html` and `html/guide.html`.
 #[rstest]
 fn make_html_both_produce_expected_html_files(make_html_shared: &MakeHtmlShared) {
-    if !make_html_shared.py_built { return; }
+    if !make_html_shared.py_built {
+        return;
+    }
     for fname in &["index.html", "guide.html"] {
-        assert!(make_html_shared.py_html.join(fname).exists(), "Python missing {fname}");
-        assert!(make_html_shared.rs_html.join(fname).exists(), "Rust missing {fname}");
+        assert!(
+            make_html_shared.py_html.join(fname).exists(),
+            "Python missing {fname}"
+        );
+        assert!(
+            make_html_shared.rs_html.join(fname).exists(),
+            "Rust missing {fname}"
+        );
     }
 }
 
@@ -1057,10 +1125,14 @@ fn make_html_both_produce_expected_html_files(make_html_shared: &MakeHtmlShared)
 /// documents current coverage; shrink it over time as more features are added.
 #[rstest]
 fn make_html_snapshot_top_level_files(make_html_shared: &MakeHtmlShared) {
-    if !make_html_shared.py_built { return; }
+    if !make_html_shared.py_built {
+        return;
+    }
 
     let top_files = |html: &std::path::Path| -> Vec<String> {
-        if !html.exists() { return vec![]; }
+        if !html.exists() {
+            return vec![];
+        }
         let mut files: Vec<String> = std::fs::read_dir(html)
             .unwrap()
             .flatten()
@@ -1083,17 +1155,30 @@ fn make_html_snapshot_top_level_files(make_html_shared: &MakeHtmlShared) {
 /// (`-M html` parity gap). Updating this snapshot records progress.
 #[rstest]
 fn make_html_snapshot_parity_gap(make_html_shared: &MakeHtmlShared) {
-    if !make_html_shared.py_built { return; }
+    if !make_html_shared.py_built {
+        return;
+    }
 
     let all_files = |html: &std::path::Path| {
         let mut out = std::collections::BTreeSet::new();
         if html.exists() {
-            fn walk(dir: &std::path::Path, root: &std::path::Path, acc: &mut std::collections::BTreeSet<String>) {
+            fn walk(
+                dir: &std::path::Path,
+                root: &std::path::Path,
+                acc: &mut std::collections::BTreeSet<String>,
+            ) {
                 if let Ok(rd) = std::fs::read_dir(dir) {
                     for e in rd.flatten() {
-                        let rel = e.path().strip_prefix(root).unwrap().to_string_lossy().to_string();
+                        let rel = e
+                            .path()
+                            .strip_prefix(root)
+                            .unwrap()
+                            .to_string_lossy()
+                            .to_string();
                         acc.insert(rel);
-                        if e.path().is_dir() { walk(&e.path(), root, acc); }
+                        if e.path().is_dir() {
+                            walk(&e.path(), root, acc);
+                        }
                     }
                 }
             }
@@ -1119,19 +1204,29 @@ fn make_html_snapshot_parity_gap(make_html_shared: &MakeHtmlShared) {
 /// Both `index.html` outputs must contain a valid HTML5 DOCTYPE.
 #[rstest]
 fn make_html_both_have_doctype(make_html_shared: &MakeHtmlShared) {
-    if !make_html_shared.py_built { return; }
+    if !make_html_shared.py_built {
+        return;
+    }
     let py_html = std::fs::read_to_string(make_html_shared.py_html.join("index.html")).unwrap();
     let rs_html = std::fs::read_to_string(make_html_shared.rs_html.join("index.html")).unwrap();
 
-    assert!(py_html.to_lowercase().contains("<!doctype html"), "Python index.html missing DOCTYPE");
-    assert!(rs_html.to_lowercase().contains("<!doctype html"), "Rust index.html missing DOCTYPE");
+    assert!(
+        py_html.to_lowercase().contains("<!doctype html"),
+        "Python index.html missing DOCTYPE"
+    );
+    assert!(
+        rs_html.to_lowercase().contains("<!doctype html"),
+        "Rust index.html missing DOCTYPE"
+    );
 }
 
 /// The Rust `index.html` `<title>` must contain the RST document title
 /// ("My Parity Project"), not just the docname ("index").
 #[rstest]
 fn make_html_rust_title_extracted_from_rst(make_html_shared: &MakeHtmlShared) {
-    if !make_html_shared.rs_built { return; }
+    if !make_html_shared.rs_built {
+        return;
+    }
     let html = std::fs::read_to_string(make_html_shared.rs_html.join("index.html")).unwrap();
     assert!(
         html.contains("My Parity Project"),
@@ -1144,26 +1239,32 @@ fn make_html_rust_title_extracted_from_rst(make_html_shared: &MakeHtmlShared) {
 #[rstest]
 #[case("index")]
 #[case("guide")]
-fn make_html_both_contain_rst_body_text(
-    make_html_shared: &MakeHtmlShared,
-    #[case] docname: &str,
-) {
-    if !make_html_shared.py_built { return; }
-    let py_html = std::fs::read_to_string(
-        make_html_shared.py_html.join(format!("{docname}.html"))
-    ).unwrap();
-    let rs_html = std::fs::read_to_string(
-        make_html_shared.rs_html.join(format!("{docname}.html"))
-    ).unwrap();
+fn make_html_both_contain_rst_body_text(make_html_shared: &MakeHtmlShared, #[case] docname: &str) {
+    if !make_html_shared.py_built {
+        return;
+    }
+    let py_html =
+        std::fs::read_to_string(make_html_shared.py_html.join(format!("{docname}.html"))).unwrap();
+    let rs_html =
+        std::fs::read_to_string(make_html_shared.rs_html.join(format!("{docname}.html"))).unwrap();
     let (title, body) = match docname {
         "guide" => ("User Guide", "This is the user guide"),
         "index" => ("My Parity Project", "Welcome to the parity test"),
         _ => return,
     };
-    assert!(py_html.contains(title), "Python {docname}.html missing title");
+    assert!(
+        py_html.contains(title),
+        "Python {docname}.html missing title"
+    );
     assert!(rs_html.contains(title), "Rust {docname}.html missing title");
-    assert!(py_html.contains(body), "Python {docname}.html missing body text");
-    assert!(rs_html.contains(body), "Rust {docname}.html missing body text");
+    assert!(
+        py_html.contains(body),
+        "Python {docname}.html missing body text"
+    );
+    assert!(
+        rs_html.contains(body),
+        "Rust {docname}.html missing body text"
+    );
 }
 
 // ── log message parity ────────────────────────────────────────────────────────
@@ -1171,15 +1272,23 @@ fn make_html_both_contain_rst_body_text(
 /// `sphinx-build-rs -M html` must emit "Build succeeded" to stderr on success.
 #[rstest]
 fn make_html_rs_emits_build_succeeded(make_html_shared: &MakeHtmlShared) {
-    assert_eq!(make_html_shared.rs_exit, 0, "expected exit 0; stderr:\n{}", make_html_shared.rs_stderr);
+    assert_eq!(
+        make_html_shared.rs_exit, 0,
+        "expected exit 0; stderr:\n{}",
+        make_html_shared.rs_stderr
+    );
     assert!(
         make_html_shared.rs_stderr.contains("Build succeeded"),
-        "expected 'Build succeeded' in stderr; got:\n{}", make_html_shared.rs_stderr
+        "expected 'Build succeeded' in stderr; got:\n{}",
+        make_html_shared.rs_stderr
     );
     // A file count must appear alongside the success message.
     assert!(
-        regex::Regex::new(r"\d+ file").unwrap().is_match(&make_html_shared.rs_stderr),
-        "expected file count in 'Build succeeded' message; got:\n{}", make_html_shared.rs_stderr
+        regex::Regex::new(r"\d+ file")
+            .unwrap()
+            .is_match(&make_html_shared.rs_stderr),
+        "expected file count in 'Build succeeded' message; got:\n{}",
+        make_html_shared.rs_stderr
     );
 }
 
@@ -1187,13 +1296,24 @@ fn make_html_rs_emits_build_succeeded(make_html_shared: &MakeHtmlShared) {
 /// Both sides must exit 0 and emit a success signal — exact wording differs.
 #[rstest]
 fn make_html_both_emit_success_indicator(make_html_shared: &MakeHtmlShared) {
-    if !has_sphinx_build() { return; }
-    assert_eq!(make_html_shared.py_exit, 0, "Python must exit 0; stderr:\n{}", make_html_shared.py_stderr);
-    assert_eq!(make_html_shared.rs_exit, 0, "Rust must exit 0; stderr:\n{}", make_html_shared.rs_stderr);
+    if !has_sphinx_build() {
+        return;
+    }
+    assert_eq!(
+        make_html_shared.py_exit, 0,
+        "Python must exit 0; stderr:\n{}",
+        make_html_shared.py_stderr
+    );
+    assert_eq!(
+        make_html_shared.rs_exit, 0,
+        "Rust must exit 0; stderr:\n{}",
+        make_html_shared.rs_stderr
+    );
     // Python is run with -q in the shared fixture so success is indicated by exit 0 alone.
     assert!(
         make_html_shared.rs_stderr.contains("Build succeeded"),
-        "Rust must emit 'Build succeeded'; got:\n{}", make_html_shared.rs_stderr
+        "Rust must emit 'Build succeeded'; got:\n{}",
+        make_html_shared.rs_stderr
     );
 }
 
@@ -1203,13 +1323,21 @@ fn make_html_both_emit_success_indicator(make_html_shared: &MakeHtmlShared) {
 /// to update only missing ones.
 #[rstest]
 fn make_html_rs_stderr_snapshot(make_html_shared: &MakeHtmlShared) {
-    if !make_html_shared.rs_built { return; }
+    if !make_html_shared.rs_built {
+        return;
+    }
 
     // Normalise: replace file counts with <N>, strip the outdir/srcdir paths.
     let re_count = regex::Regex::new(r"\d+ file").unwrap();
-    let rs_out_str = make_html_shared.rs_html.parent().unwrap().to_str().unwrap_or("");
+    let rs_out_str = make_html_shared
+        .rs_html
+        .parent()
+        .unwrap()
+        .to_str()
+        .unwrap_or("");
     let src_str = make_html_shared.src.to_str().unwrap_or("");
-    let normalised: Vec<String> = make_html_shared.rs_stderr
+    let normalised: Vec<String> = make_html_shared
+        .rs_stderr
         .replace(rs_out_str, "<OUTDIR>")
         .replace(src_str, "<SRCDIR>")
         .lines()
@@ -1226,12 +1354,14 @@ fn make_html_rs_stderr_snapshot(make_html_shared: &MakeHtmlShared) {
 /// `sphinx-build -M help`.
 #[test]
 fn make_help_builder_names_match() {
-    if !has_sphinx_build() { return; }
+    if !has_sphinx_build() {
+        return;
+    }
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
     let tmp = TempDir::new().unwrap();
 
-    let (_, py_stdout, _) = run("sphinx-build",  &["-M", "help", ".", "."], tmp.path());
-    let (_, rs_stdout, _) = run(rs_bin,           &["-M", "help", ".", "."], tmp.path());
+    let (_, py_stdout, _) = run("sphinx-build", &["-M", "help", ".", "."], tmp.path());
+    let (_, rs_stdout, _) = run(rs_bin, &["-M", "help", ".", "."], tmp.path());
 
     let builder_names = |s: &str| -> Vec<String> {
         // Each table row starts with two spaces then the builder name.
@@ -1276,7 +1406,10 @@ fn make_help_contains_core_builder(#[case] name: &str) {
         .unwrap();
     assert_eq!(output.status.code(), Some(0), "-M help must exit 0");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(name), "-M help output missing builder '{name}'");
+    assert!(
+        stdout.contains(name),
+        "-M help output missing builder '{name}'"
+    );
 }
 
 // ── make clean parity ─────────────────────────────────────────────────────────
@@ -1284,7 +1417,9 @@ fn make_help_contains_core_builder(#[case] name: &str) {
 /// Both tools must exit 0 and empty the build directory on `clean`.
 #[test]
 fn make_clean_both_exit_zero_and_empty_outdir() {
-    if !has_sphinx_build() { return; }
+    if !has_sphinx_build() {
+        return;
+    }
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
     let src = TempDir::new().unwrap();
     let py_build = TempDir::new().unwrap();
@@ -1298,12 +1433,22 @@ fn make_clean_both_exit_zero_and_empty_outdir() {
 
     let (py_code, _, py_err) = run(
         "sphinx-build",
-        &["-M", "clean", src.path().to_str().unwrap(), py_build.path().to_str().unwrap()],
+        &[
+            "-M",
+            "clean",
+            src.path().to_str().unwrap(),
+            py_build.path().to_str().unwrap(),
+        ],
         src.path(),
     );
     let (rs_code, _, rs_err) = run(
         rs_bin,
-        &["-M", "clean", src.path().to_str().unwrap(), rs_build.path().to_str().unwrap()],
+        &[
+            "-M",
+            "clean",
+            src.path().to_str().unwrap(),
+            rs_build.path().to_str().unwrap(),
+        ],
         src.path(),
     );
 
@@ -1318,7 +1463,6 @@ fn make_clean_both_exit_zero_and_empty_outdir() {
         "Rust -M clean must empty the build dir"
     );
 }
-
 
 // ── parity: make -M html (sphinx-build-rs vs sphinx-build) ───────────────────
 //
@@ -1390,8 +1534,13 @@ fn setup_html_parity_project(dir: &Path) {
 /// the Rust builder's `_static/` output directory.
 #[rstest]
 fn html_static_path_user_file_copied_by_rust(html_parity_shared: &HtmlParityShared) {
-    if !html_parity_shared.rs_built { return; }
-    let f = html_parity_shared.rs_html.join("_static").join("myextra.css");
+    if !html_parity_shared.rs_built {
+        return;
+    }
+    let f = html_parity_shared
+        .rs_html
+        .join("_static")
+        .join("myextra.css");
     assert!(
         f.exists(),
         "Rust must copy the user html_static_path file _static/myextra.css"
@@ -1406,9 +1555,15 @@ fn html_static_path_user_file_copied_by_rust(html_parity_shared: &HtmlParityShar
 /// Both Python and Rust must copy the same user `html_static_path` file.
 #[rstest]
 fn html_static_path_user_file_copied_by_both(html_parity_shared: &HtmlParityShared) {
-    if !has_sphinx_build() { return; }
-    if !html_parity_shared.py_built { return; }
-    if !html_parity_shared.rs_built { return; }
+    if !has_sphinx_build() {
+        return;
+    }
+    if !html_parity_shared.py_built {
+        return;
+    }
+    if !html_parity_shared.rs_built {
+        return;
+    }
     for (label, html) in &[
         ("Python", &html_parity_shared.py_html),
         ("Rust", &html_parity_shared.rs_html),
@@ -1424,28 +1579,49 @@ fn html_static_path_user_file_copied_by_both(html_parity_shared: &HtmlParityShar
 /// Both builders must exit 0 and produce an `index.html`.
 #[rstest]
 fn html_parity_exits_zero_and_has_index(html_parity_shared: &HtmlParityShared) {
-    if !has_python() { return; }
-    if !html_parity_shared.py_built { return; }
-    assert!(html_parity_shared.rs_built, "sphinx-build-rs exited non-zero");
+    if !has_python() {
+        return;
+    }
+    if !html_parity_shared.py_built {
+        return;
+    }
+    assert!(
+        html_parity_shared.rs_built,
+        "sphinx-build-rs exited non-zero"
+    );
 }
 
 /// Both outputs contain a valid HTML5 DOCTYPE in `index.html`.
 #[rstest]
 fn html_parity_doctype(html_parity_shared: &HtmlParityShared) {
-    if !has_python() { return; }
-    if !html_parity_shared.rs_built { return; }
+    if !has_python() {
+        return;
+    }
+    if !html_parity_shared.rs_built {
+        return;
+    }
     let rs_html = std::fs::read_to_string(html_parity_shared.rs_html.join("index.html")).unwrap();
-    assert!(rs_html.starts_with("<!DOCTYPE html>"), "Rust output missing DOCTYPE");
+    assert!(
+        rs_html.starts_with("<!DOCTYPE html>"),
+        "Rust output missing DOCTYPE"
+    );
     assert!(rs_html.contains("<html"), "Rust output missing <html> tag");
-    assert!(rs_html.contains("<meta charset=\"utf-8\""), "Rust output missing charset meta");
+    assert!(
+        rs_html.contains("<meta charset=\"utf-8\""),
+        "Rust output missing charset meta"
+    );
 }
 
 /// The Rust `index.html` title must contain the document title from the RST,
 /// not just the docname ("index").
 #[rstest]
 fn html_parity_document_title_extracted(html_parity_shared: &HtmlParityShared) {
-    if !has_python() { return; }
-    if !html_parity_shared.rs_built { return; }
+    if !has_python() {
+        return;
+    }
+    if !html_parity_shared.rs_built {
+        return;
+    }
     let html = std::fs::read_to_string(html_parity_shared.rs_html.join("index.html")).unwrap();
     assert!(
         html.contains("My Test Project"),
@@ -1457,10 +1633,17 @@ fn html_parity_document_title_extracted(html_parity_shared: &HtmlParityShared) {
 /// The Rust output must contain `_static/sphinxdocrs.css`.
 #[rstest]
 fn html_parity_static_css_present(html_parity_shared: &HtmlParityShared) {
-    if !has_python() { return; }
-    if !html_parity_shared.rs_built { return; }
+    if !has_python() {
+        return;
+    }
+    if !html_parity_shared.rs_built {
+        return;
+    }
     assert!(
-        html_parity_shared.rs_html.join("_static/sphinxdocrs.css").exists(),
+        html_parity_shared
+            .rs_html
+            .join("_static/sphinxdocrs.css")
+            .exists(),
         "Rust output missing _static/sphinxdocrs.css"
     );
 }
@@ -1468,8 +1651,12 @@ fn html_parity_static_css_present(html_parity_shared: &HtmlParityShared) {
 /// Both outputs must produce `genindex.html` and `objects.inv`.
 #[rstest]
 fn html_parity_genindex_and_objects_inv(html_parity_shared: &HtmlParityShared) {
-    if !has_python() { return; }
-    if !html_parity_shared.rs_built { return; }
+    if !has_python() {
+        return;
+    }
+    if !html_parity_shared.rs_built {
+        return;
+    }
     assert!(
         html_parity_shared.rs_html.join("genindex.html").exists(),
         "Rust output missing genindex.html"
@@ -1486,8 +1673,12 @@ fn html_parity_genindex_and_objects_inv(html_parity_shared: &HtmlParityShared) {
 /// to the Rust builder, updating this snapshot is how we track progress.
 #[rstest]
 fn html_parity_snapshot_top_level_files(html_parity_shared: &HtmlParityShared) {
-    if !has_python() { return; }
-    if !html_parity_shared.py_built { return; }
+    if !has_python() {
+        return;
+    }
+    if !html_parity_shared.py_built {
+        return;
+    }
     let mut py_files: Vec<String> = std::fs::read_dir(&html_parity_shared.py_html)
         .unwrap()
         .flatten()
@@ -1512,13 +1703,17 @@ fn html_parity_snapshot_top_level_files(html_parity_shared: &HtmlParityShared) {
 /// Updating this snapshot documents intentional progress.
 #[rstest]
 fn html_parity_snapshot_gap(html_parity_shared: &HtmlParityShared) {
-    if !has_python() { return; }
-    if !html_parity_shared.py_built { return; }
+    if !has_python() {
+        return;
+    }
+    if !html_parity_shared.py_built {
+        return;
+    }
 
-    let py_html: std::collections::BTreeSet<String> = list_tree(&html_parity_shared.py_html)
-        .into_iter().collect();
-    let rs_html: std::collections::BTreeSet<String> = list_tree(&html_parity_shared.rs_html)
-        .into_iter().collect();
+    let py_html: std::collections::BTreeSet<String> =
+        list_tree(&html_parity_shared.py_html).into_iter().collect();
+    let rs_html: std::collections::BTreeSet<String> =
+        list_tree(&html_parity_shared.rs_html).into_iter().collect();
 
     // Files Python produces that Rust does not yet produce.
     let mut missing_in_rust: Vec<String> = py_html.difference(&rs_html).cloned().collect();
@@ -1551,7 +1746,9 @@ fn html_parity_snapshot_gap(html_parity_shared: &HtmlParityShared) {
 /// Rust must create a `_static/` directory during an HTML build.
 #[rstest]
 fn static_dir_created_by_rust(html_parity_shared: &HtmlParityShared) {
-    if !html_parity_shared.rs_built { return; }
+    if !html_parity_shared.rs_built {
+        return;
+    }
     assert!(
         html_parity_shared.rs_html.join("_static").is_dir(),
         "Rust builder must create _static/ directory"
@@ -1564,8 +1761,12 @@ fn static_dir_created_by_rust(html_parity_shared: &HtmlParityShared) {
 /// switching themes.
 #[rstest]
 fn static_dir_snapshot_python(html_parity_shared: &HtmlParityShared) {
-    if !has_sphinx_build() { return; }
-    if !html_parity_shared.py_built { return; }
+    if !has_sphinx_build() {
+        return;
+    }
+    if !html_parity_shared.py_built {
+        return;
+    }
     let mut files = list_tree(&html_parity_shared.py_html.join("_static"));
     files.sort();
     insta::assert_yaml_snapshot!("html_parity_python_static_files", files);
@@ -1577,9 +1778,15 @@ fn static_dir_snapshot_python(html_parity_shared: &HtmlParityShared) {
 /// `write_static_files`.
 #[rstest]
 fn static_dir_snapshot_rust(html_parity_shared: &HtmlParityShared) {
-    if !html_parity_shared.rs_built { return; }
+    if !html_parity_shared.rs_built {
+        return;
+    }
     let rs_static = html_parity_shared.rs_html.join("_static");
-    let mut files = if rs_static.is_dir() { list_tree(&rs_static) } else { vec![] };
+    let mut files = if rs_static.is_dir() {
+        list_tree(&rs_static)
+    } else {
+        vec![]
+    };
     files.sort();
     insta::assert_yaml_snapshot!("html_parity_rust_static_files", files);
 }
@@ -1590,14 +1797,17 @@ fn static_dir_snapshot_rust(html_parity_shared: &HtmlParityShared) {
 /// represents one asset that the Rust builder still needs to copy.
 #[rstest]
 fn static_dir_parity_gap(html_parity_shared: &HtmlParityShared) {
-    if !has_sphinx_build() { return; }
-    if !html_parity_shared.py_built { return; }
+    if !has_sphinx_build() {
+        return;
+    }
+    if !html_parity_shared.py_built {
+        return;
+    }
 
     let py_static = html_parity_shared.py_html.join("_static");
     let rs_static = html_parity_shared.rs_html.join("_static");
 
-    let py_set: std::collections::BTreeSet<String> =
-        list_tree(&py_static).into_iter().collect();
+    let py_set: std::collections::BTreeSet<String> = list_tree(&py_static).into_iter().collect();
     let rs_set: std::collections::BTreeSet<String> = if rs_static.is_dir() {
         list_tree(&rs_static).into_iter().collect()
     } else {
@@ -1626,13 +1836,14 @@ fn static_dir_no_broken_links_in_rust_html(
     html_parity_shared: &HtmlParityShared,
     #[case] docname: &str,
 ) {
-    if !html_parity_shared.rs_built { return; }
-    let html = match std::fs::read_to_string(
-        html_parity_shared.rs_html.join(format!("{docname}.html"))
-    ) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
+    if !html_parity_shared.rs_built {
+        return;
+    }
+    let html =
+        match std::fs::read_to_string(html_parity_shared.rs_html.join(format!("{docname}.html"))) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
     let re = regex::Regex::new(r#"(?:href|src)="(_static/[^"?#]+)""#).unwrap();
     let mut broken: Vec<String> = re
         .captures_iter(&html)
@@ -1657,14 +1868,17 @@ fn static_dir_no_broken_links_in_python_html(
     html_parity_shared: &HtmlParityShared,
     #[case] docname: &str,
 ) {
-    if !has_sphinx_build() { return; }
-    if !html_parity_shared.py_built { return; }
-    let html = match std::fs::read_to_string(
-        html_parity_shared.py_html.join(format!("{docname}.html"))
-    ) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
+    if !has_sphinx_build() {
+        return;
+    }
+    if !html_parity_shared.py_built {
+        return;
+    }
+    let html =
+        match std::fs::read_to_string(html_parity_shared.py_html.join(format!("{docname}.html"))) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
     let re = regex::Regex::new(r#"(?:href|src)="(_static/[^"?#]+)""#).unwrap();
     let mut broken: Vec<String> = re
         .captures_iter(&html)
@@ -1688,21 +1902,33 @@ fn html_parity_body_contains_rst_text(
     html_parity_shared: &HtmlParityShared,
     #[case] docname: &str,
 ) {
-    if !has_python() { return; }
-    if !html_parity_shared.rs_built { return; }
+    if !has_python() {
+        return;
+    }
+    if !html_parity_shared.rs_built {
+        return;
+    }
 
-    let html = std::fs::read_to_string(
-        html_parity_shared.rs_html.join(format!("{docname}.html"))
-    ).unwrap();
+    let html = std::fs::read_to_string(html_parity_shared.rs_html.join(format!("{docname}.html")))
+        .unwrap();
     let text = strip_html(&html);
     match docname {
         "guide" => {
             assert!(text.contains("User Guide"), "guide.html body missing title");
-            assert!(text.contains("Content here"), "guide.html body missing content");
+            assert!(
+                text.contains("Content here"),
+                "guide.html body missing content"
+            );
         }
         "index" => {
-            assert!(text.contains("My Test Project"), "index.html body missing title");
-            assert!(text.contains("Welcome to the documentation"), "index.html body missing content");
+            assert!(
+                text.contains("My Test Project"),
+                "index.html body missing title"
+            );
+            assert!(
+                text.contains("Welcome to the documentation"),
+                "index.html body missing content"
+            );
         }
         _ => {}
     }
@@ -1737,23 +1963,30 @@ fn log_make_help_shared() -> LogMakeHelpShared {
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
     let tmp = TempDir::new().unwrap().keep();
     let py_stdout = if has_python() {
-        let (_, out, _) = run(&python_bin(), &["-m", "sphinx", "-M", "help", ".", "."], &tmp);
+        let (_, out, _) = run(
+            &python_bin(),
+            &["-m", "sphinx", "-M", "help", ".", "."],
+            &tmp,
+        );
         out
     } else {
         String::new()
     };
     let (_, rs_stdout, _) = run(rs_bin, &["-M", "help", ".", "."], &tmp);
-    LogMakeHelpShared { py_stdout, rs_stdout }
+    LogMakeHelpShared {
+        py_stdout,
+        rs_stdout,
+    }
 }
 
 /// Result of running both `sphinx-apidoc-rs` and `python -m sphinx.ext.apidoc`
 /// (normal mode, no --dry-run) on a synthetic Python package.
 /// Built once per binary invocation and shared across apidoc log tests.
 pub struct LogApidocShared {
-    pub rs_exit:   i32,
+    pub rs_exit: i32,
     pub rs_stdout: String,
     pub rs_stderr: String,
-    pub py_exit:   i32,
+    pub py_exit: i32,
     pub py_stdout: String,
     pub py_stderr: String,
     pub py_available: bool,
@@ -1772,16 +2005,19 @@ fn log_apidoc_shared() -> LogApidocShared {
     std::fs::write(src.join("mypkg/utils.py"), b"").unwrap();
     let pkg = src.join("mypkg").to_string_lossy().into_owned();
 
-    let (rs_exit, rs_stdout, rs_stderr) = run(
-        rs_bin,
-        &["-o", rs_out.to_str().unwrap(), &pkg],
-        &src,
-    );
+    let (rs_exit, rs_stdout, rs_stderr) =
+        run(rs_bin, &["-o", rs_out.to_str().unwrap(), &pkg], &src);
 
     let (py_exit, py_stdout, py_stderr, py_available) = if has_python() {
         let (code, out, err) = run(
             &python_bin(),
-            &["-m", "sphinx.ext.apidoc", "-o", py_out.to_str().unwrap(), &pkg],
+            &[
+                "-m",
+                "sphinx.ext.apidoc",
+                "-o",
+                py_out.to_str().unwrap(),
+                &pkg,
+            ],
             &src,
         );
         (code, out, err, true)
@@ -1789,7 +2025,15 @@ fn log_apidoc_shared() -> LogApidocShared {
         (1, String::new(), String::new(), false)
     };
 
-    LogApidocShared { rs_exit, rs_stdout, rs_stderr, py_exit, py_stdout, py_stderr, py_available }
+    LogApidocShared {
+        rs_exit,
+        rs_stdout,
+        rs_stderr,
+        py_exit,
+        py_stdout,
+        py_stderr,
+        py_available,
+    }
 }
 
 /// Result of running both `sphinx-apidoc-rs --dry-run` and
@@ -1824,7 +2068,14 @@ fn log_apidoc_dry_run_shared() -> LogApidocDryRunShared {
     let (py_stdout, py_stderr, py_available) = if has_python() {
         let (_, out, err) = run(
             &python_bin(),
-            &["-m", "sphinx.ext.apidoc", "--dry-run", "-o", py_out.to_str().unwrap(), &pkg],
+            &[
+                "-m",
+                "sphinx.ext.apidoc",
+                "--dry-run",
+                "-o",
+                py_out.to_str().unwrap(),
+                &pkg,
+            ],
             &src,
         );
         (out, err, true)
@@ -1832,21 +2083,27 @@ fn log_apidoc_dry_run_shared() -> LogApidocDryRunShared {
         (String::new(), String::new(), false)
     };
 
-    LogApidocDryRunShared { rs_stdout, rs_stderr, py_stdout, py_stderr, py_available }
+    LogApidocDryRunShared {
+        rs_stdout,
+        rs_stderr,
+        py_stdout,
+        py_stderr,
+        py_available,
+    }
 }
 
 /// Result of running `sphinx-quickstart-rs -q` and `python -m sphinx.cmd.quickstart -q`
 /// on identical args, once per binary invocation.
 /// Shared by `quickstart_parity_flat` and `log_quickstart_messages_snapshot`.
 pub struct QuickstartParityShared {
-    pub py_dir:       PathBuf,
-    pub rs_dir:       PathBuf,
-    pub py_exit:      i32,
-    pub rs_exit:      i32,
-    pub py_tree:      Vec<String>,
-    pub rs_tree:      Vec<String>,
-    pub py_stdout:    String,
-    pub rs_stdout:    String,
+    pub py_dir: PathBuf,
+    pub rs_dir: PathBuf,
+    pub py_exit: i32,
+    pub rs_exit: i32,
+    pub py_tree: Vec<String>,
+    pub rs_tree: Vec<String>,
+    pub py_stdout: String,
+    pub rs_stdout: String,
     pub py_available: bool,
 }
 
@@ -1858,17 +2115,20 @@ fn quickstart_parity_shared() -> QuickstartParityShared {
     let rs_dir = TempDir::new().unwrap().keep();
 
     let common: &[&str] = &[
-        "-q", "-p", "ParityProj", "-a", "ParityAuthor", "-v", "1.0",
-        "--no-makefile", "--no-batchfile",
+        "-q",
+        "-p",
+        "ParityProj",
+        "-a",
+        "ParityAuthor",
+        "-v",
+        "1.0",
+        "--no-makefile",
+        "--no-batchfile",
     ];
 
     // Check whether Python sphinx.cmd.quickstart is available.
     let py_available = has_python() && {
-        let (code, _, _) = run(
-            &python_bin(),
-            &["-m", "sphinx", "--version"],
-            &py_dir,
-        );
+        let (code, _, _) = run(&python_bin(), &["-m", "sphinx", "--version"], &py_dir);
         code == 0
     };
 
@@ -1970,9 +2230,16 @@ fn log_make_help_contains_builder(#[case] builder: &str) {
         .current_dir(tmp.path())
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(0), "sphinx-build-rs -M help must exit 0");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "sphinx-build-rs -M help must exit 0"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains(builder), "help output missing builder '{builder}'");
+    assert!(
+        stdout.contains(builder),
+        "help output missing builder '{builder}'"
+    );
 }
 
 /// The Rust `help` output matches the Python output structure (snapshot).
@@ -2011,13 +2278,22 @@ fn log_html_build_success_keywords() {
     // Check exit + "Build succeeded" via snapbox; regex file-count check needs
     // the raw output so we use .output() and assert afterwards.
     let output = snapbox::cmd::Command::new(env!("CARGO_BIN_EXE_sphinx-build-rs"))
-        .args(["-M", "html", src.path().to_str().unwrap(), out.path().to_str().unwrap()])
+        .args([
+            "-M",
+            "html",
+            src.path().to_str().unwrap(),
+            out.path().to_str().unwrap(),
+        ])
         .current_dir(src.path())
         .output()
         .unwrap();
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(output.status.code(), Some(0), "expected exit 0, stderr:\n{stderr}");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "expected exit 0, stderr:\n{stderr}"
+    );
     assert!(
         stderr.contains("Build succeeded"),
         "expected 'Build succeeded' in stderr; got:\n{stderr}"
@@ -2032,12 +2308,22 @@ fn log_html_build_success_keywords() {
 /// Both sides must exit 0.
 #[rstest]
 fn log_html_build_success_both_exit_zero(html_parity_shared: &HtmlParityShared) {
-    if !has_sphinx_build() { return; }
-    if !html_parity_shared.py_built { return; }
-    assert_eq!(html_parity_shared.py_exit, 0,
-        "Python sphinx-build must exit 0; stderr:\n{}", html_parity_shared.py_stderr);
-    assert_eq!(html_parity_shared.rs_exit, 0,
-        "Rust sphinx-build-rs must exit 0; stderr:\n{}", html_parity_shared.rs_stderr);
+    if !has_sphinx_build() {
+        return;
+    }
+    if !html_parity_shared.py_built {
+        return;
+    }
+    assert_eq!(
+        html_parity_shared.py_exit, 0,
+        "Python sphinx-build must exit 0; stderr:\n{}",
+        html_parity_shared.py_stderr
+    );
+    assert_eq!(
+        html_parity_shared.rs_exit, 0,
+        "Rust sphinx-build-rs must exit 0; stderr:\n{}",
+        html_parity_shared.rs_stderr
+    );
 }
 
 /// Snapshot normalised stderr from both sides for a clean HTML build.
@@ -2046,13 +2332,21 @@ fn log_html_build_success_both_exit_zero(html_parity_shared: &HtmlParityShared) 
 /// one observable log event; normalised for paths/counts/versions.
 #[rstest]
 fn log_html_build_stderr_snapshot(html_parity_shared: &HtmlParityShared) {
-    if !has_sphinx_build() { return; }
+    if !has_sphinx_build() {
+        return;
+    }
 
     let src_str = html_parity_shared.src.to_str().unwrap_or("");
-    let py_out_str = html_parity_shared.py_html.parent()
-        .and_then(|p| p.to_str()).unwrap_or("");
-    let rs_out_str = html_parity_shared.rs_html.parent()
-        .and_then(|p| p.to_str()).unwrap_or("");
+    let py_out_str = html_parity_shared
+        .py_html
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("");
+    let rs_out_str = html_parity_shared
+        .rs_html
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("");
     let paths = &[src_str, py_out_str, rs_out_str];
     insta::assert_yaml_snapshot!(
         "log_html_build_py_stderr_normalised",
@@ -2073,7 +2367,11 @@ fn log_format_build_succeeded_contains_file_count() {
     let mock = MockBuildOutput::rs_success();
     assert_eq!(mock.exit, 0);
     assert!(mock.stderr.contains("Build succeeded"));
-    assert!(regex::Regex::new(r"\d+ file").unwrap().is_match(&mock.stderr));
+    assert!(
+        regex::Regex::new(r"\d+ file")
+            .unwrap()
+            .is_match(&mock.stderr)
+    );
 }
 
 /// Both tools must exit non-zero when given a missing source directory.
@@ -2082,11 +2380,20 @@ fn log_build_missing_srcdir_exits_nonzero() {
     let tmp = TempDir::new().unwrap();
     // Exit non-zero is the key assertion; content check via combined output.
     let output = snapbox::cmd::Command::new(env!("CARGO_BIN_EXE_sphinx-build-rs"))
-        .args(["-M", "html", "/nonexistent/srcdir", tmp.path().to_str().unwrap()])
+        .args([
+            "-M",
+            "html",
+            "/nonexistent/srcdir",
+            tmp.path().to_str().unwrap(),
+        ])
         .current_dir(tmp.path())
         .output()
         .unwrap();
-    assert_ne!(output.status.code(), Some(0), "expected non-zero exit for missing srcdir");
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected non-zero exit for missing srcdir"
+    );
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -2128,7 +2435,11 @@ fn log_apidoc_creating_file_message() {
 
     // "Creating file" appears on stdout; snapbox checks exit + stdout pattern.
     let output = snapbox::cmd::Command::new(env!("CARGO_BIN_EXE_sphinx-apidoc-rs"))
-        .args(["-o", out.path().to_str().unwrap(), src.path().join("mypkg").to_str().unwrap()])
+        .args([
+            "-o",
+            out.path().to_str().unwrap(),
+            src.path().join("mypkg").to_str().unwrap(),
+        ])
         .current_dir(src.path())
         .output()
         .unwrap();
@@ -2137,7 +2448,11 @@ fn log_apidoc_creating_file_message() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
-    assert_eq!(output.status.code(), Some(0), "apidoc must exit 0; output:\n{combined}");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "apidoc must exit 0; output:\n{combined}"
+    );
     assert!(
         combined.contains("Creating file"),
         "expected 'Creating file' message; got:\n{combined}"
@@ -2150,12 +2465,18 @@ fn log_apidoc_creating_file_message() {
 /// Rust side outputs the expected format.
 #[rstest]
 fn log_apidoc_creating_file_format_parity(log_apidoc_shared: &LogApidocShared) {
-    let rs_combined = format!("{}{}", log_apidoc_shared.rs_stdout, log_apidoc_shared.rs_stderr);
-    assert_eq!(log_apidoc_shared.rs_exit, 0,
-        "sphinx-apidoc-rs must exit 0; output:\n{rs_combined}");
+    let rs_combined = format!(
+        "{}{}",
+        log_apidoc_shared.rs_stdout, log_apidoc_shared.rs_stderr
+    );
+    assert_eq!(
+        log_apidoc_shared.rs_exit, 0,
+        "sphinx-apidoc-rs must exit 0; output:\n{rs_combined}"
+    );
 
     // Rust emits "Creating file <path>." for every new .rst file.
-    let creating: Vec<String> = rs_combined.lines()
+    let creating: Vec<String> = rs_combined
+        .lines()
         .filter(|l| l.contains("Creating file"))
         .map(|l| {
             // Normalise: keep only the filename after the last '/'
@@ -2166,14 +2487,19 @@ fn log_apidoc_creating_file_format_parity(log_apidoc_shared: &LogApidocShared) {
             }
         })
         .collect();
-    assert!(!creating.is_empty(), "Rust apidoc must emit 'Creating file' lines");
+    assert!(
+        !creating.is_empty(),
+        "Rust apidoc must emit 'Creating file' lines"
+    );
 
     // Document known Python divergence: Python sphinx.ext.apidoc does not
     // print 'Creating file' messages.
     // (Verified: `python3 -m sphinx.ext.apidoc -o ... mypkg` produces no stdout)
     if log_apidoc_shared.py_available {
-        let py_combined = format!("{}{}",
-            log_apidoc_shared.py_stdout, log_apidoc_shared.py_stderr);
+        let py_combined = format!(
+            "{}{}",
+            log_apidoc_shared.py_stdout, log_apidoc_shared.py_stderr
+        );
         // Snapshot Python output (expected: empty or minimal) as the reference.
         insta::assert_yaml_snapshot!(
             "log_apidoc_py_file_creation_output",
@@ -2194,7 +2520,8 @@ fn log_apidoc_dry_run_message() {
     let output = snapbox::cmd::Command::new(env!("CARGO_BIN_EXE_sphinx-apidoc-rs"))
         .args([
             "--dry-run",
-            "-o", out.path().to_str().unwrap(),
+            "-o",
+            out.path().to_str().unwrap(),
             src.path().join("mypkg").to_str().unwrap(),
         ])
         .current_dir(src.path())
@@ -2205,7 +2532,11 @@ fn log_apidoc_dry_run_message() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
-    assert_eq!(output.status.code(), Some(0), "dry-run must exit 0; output:\n{combined}");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "dry-run must exit 0; output:\n{combined}"
+    );
     assert!(
         combined.contains("Would create file"),
         "expected 'Would create file' in dry-run output; got:\n{combined}"
@@ -2227,8 +2558,10 @@ fn log_apidoc_dry_run_message() {
 /// divergence while verifying the Rust side.
 #[rstest]
 fn log_apidoc_dry_run_parity(log_apidoc_dry_run_shared: &LogApidocDryRunShared) {
-    let rs_combined = format!("{}{}",
-        log_apidoc_dry_run_shared.rs_stdout, log_apidoc_dry_run_shared.rs_stderr);
+    let rs_combined = format!(
+        "{}{}",
+        log_apidoc_dry_run_shared.rs_stdout, log_apidoc_dry_run_shared.rs_stderr
+    );
     assert!(
         rs_combined.contains("Would create file"),
         "Rust dry-run missing 'Would create file'; got:\n{rs_combined}"
@@ -2237,13 +2570,12 @@ fn log_apidoc_dry_run_parity(log_apidoc_dry_run_shared: &LogApidocDryRunShared) 
     // Document known Python divergence: Python sphinx.ext.apidoc --dry-run
     // does not print 'Would create file' (it produces no output).
     if log_apidoc_dry_run_shared.py_available {
-        let py_combined = format!("{}{}",
-            log_apidoc_dry_run_shared.py_stdout, log_apidoc_dry_run_shared.py_stderr);
-        // Python produces no output for dry-run — snapshot confirms this.
-        insta::assert_yaml_snapshot!(
-            "log_apidoc_py_dry_run_output",
-            sorted_lines(&py_combined)
+        let py_combined = format!(
+            "{}{}",
+            log_apidoc_dry_run_shared.py_stdout, log_apidoc_dry_run_shared.py_stderr
         );
+        // Python produces no output for dry-run — snapshot confirms this.
+        insta::assert_yaml_snapshot!("log_apidoc_py_dry_run_output", sorted_lines(&py_combined));
     }
 }
 
@@ -2260,16 +2592,26 @@ fn log_quickstart_creation_messages() {
 
     snapbox::cmd::Command::new(env!("CARGO_BIN_EXE_sphinx-quickstart-rs"))
         .args([
-            "-q", "-p", "TestProj", "-a", "Author", "-v", "1.0",
-            "--no-makefile", "--no-batchfile",
+            "-q",
+            "-p",
+            "TestProj",
+            "-a",
+            "Author",
+            "-v",
+            "1.0",
+            "--no-makefile",
+            "--no-batchfile",
             out.path().to_str().unwrap(),
         ])
         .current_dir(out.path())
         .assert()
         .success();
 
-    assert!(out.path().join("conf.py").exists(),  "conf.py not created");
-    assert!(out.path().join("index.rst").exists(), "index.rst not created");
+    assert!(out.path().join("conf.py").exists(), "conf.py not created");
+    assert!(
+        out.path().join("index.rst").exists(),
+        "index.rst not created"
+    );
 }
 
 /// The Rust `sphinx-quickstart` "Creating file" and "Finished" messages match
@@ -2366,7 +2708,12 @@ fn log_make_clean_message() {
     // Use snapbox for exit assertion; check the combined output for the message
     // (the banner may land on stdout or stderr depending on build mode).
     let output = snapbox::cmd::Command::new(env!("CARGO_BIN_EXE_sphinx-build-rs"))
-        .args(["-M", "clean", src.path().to_str().unwrap(), out.path().to_str().unwrap()])
+        .args([
+            "-M",
+            "clean",
+            src.path().to_str().unwrap(),
+            out.path().to_str().unwrap(),
+        ])
         .current_dir(src.path())
         .output()
         .unwrap();
@@ -2375,7 +2722,11 @@ fn log_make_clean_message() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
-    assert_eq!(output.status.code(), Some(0), "clean must exit 0; output:\n{combined}");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "clean must exit 0; output:\n{combined}"
+    );
     assert!(
         combined.contains("Removing everything under"),
         "expected 'Removing everything under' in clean output; got:\n{combined}"
@@ -2395,12 +2746,9 @@ fn log_make_clean_message() {
 #[rstest]
 #[case("sphinx-build-rs",    vec!["-M", "html", "/no/such/srcdir", "/tmp/out"])]
 #[case("sphinx-apidoc-rs",   vec!["-o", "/tmp/out", "/no/such/module"])]
-fn log_error_prefix_format(
-    #[case] binary: &str,
-    #[case] args: Vec<&str>,
-) {
+fn log_error_prefix_format(#[case] binary: &str, #[case] args: Vec<&str>) {
     let bin = match binary {
-        "sphinx-build-rs"  => env!("CARGO_BIN_EXE_sphinx-build-rs"),
+        "sphinx-build-rs" => env!("CARGO_BIN_EXE_sphinx-build-rs"),
         "sphinx-apidoc-rs" => env!("CARGO_BIN_EXE_sphinx-apidoc-rs"),
         other => panic!("unknown binary {other}"),
     };
@@ -2412,7 +2760,11 @@ fn log_error_prefix_format(
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert_ne!(output.status.code(), Some(0), "expected non-zero exit for invalid args");
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected non-zero exit for invalid args"
+    );
     // Every non-blank stderr line that mentions "error" must start "Error: ".
     for line in stderr.lines().filter(|l| {
         let lower = l.to_lowercase();
@@ -2476,18 +2828,18 @@ fn has_sphinx_doc_src() -> bool {
 /// collected once per test-binary invocation via `#[once]`.
 pub struct SphinxDocsBuildShared {
     /// Python output directory (flat HTML, not nested under `html/`).
-    pub py_out:    PathBuf,
+    pub py_out: PathBuf,
     /// Rust output directory.
-    pub rs_out:    PathBuf,
-    pub py_exit:   i32,
-    pub rs_exit:   i32,
+    pub rs_out: PathBuf,
+    pub py_exit: i32,
+    pub rs_exit: i32,
     pub py_stdout: String,
     pub rs_stdout: String,
     pub py_stderr: String,
     pub rs_stderr: String,
     /// `true` when exit 0 **and** `index.html` exists.
-    pub py_built:  bool,
-    pub rs_built:  bool,
+    pub py_built: bool,
+    pub rs_built: bool,
 }
 
 #[fixture]
@@ -2539,7 +2891,9 @@ fn sphinx_docs_build_shared() -> SphinxDocsBuildShared {
 /// `sphinx-build-rs` must exit 0 when building the real sphinx/doc project.
 #[rstest]
 fn sphinx_docs_rs_exits_zero(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !has_sphinx_doc_src() { return; }
+    if !has_sphinx_doc_src() {
+        return;
+    }
     assert_eq!(
         sphinx_docs_build_shared.rs_exit, 0,
         "sphinx-build-rs must exit 0 on sphinx/doc; stderr:\n{}",
@@ -2550,8 +2904,12 @@ fn sphinx_docs_rs_exits_zero(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
 /// `sphinx-build` (Python) must exit 0 when building the real sphinx/doc project.
 #[rstest]
 fn sphinx_docs_py_exits_zero(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !has_sphinx_doc_src() { return; }
-    if !has_sphinx_build() { return; }
+    if !has_sphinx_doc_src() {
+        return;
+    }
+    if !has_sphinx_build() {
+        return;
+    }
     assert_eq!(
         sphinx_docs_build_shared.py_exit, 0,
         "sphinx-build must exit 0 on sphinx/doc; stderr:\n{}",
@@ -2562,15 +2920,21 @@ fn sphinx_docs_py_exits_zero(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
 /// Both tools must exit 0 for the real sphinx/doc project (when both available).
 #[rstest]
 fn sphinx_docs_both_exit_zero(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !has_sphinx_doc_src() { return; }
-    if !has_sphinx_build() { return; }
+    if !has_sphinx_doc_src() {
+        return;
+    }
+    if !has_sphinx_build() {
+        return;
+    }
     assert_eq!(
         sphinx_docs_build_shared.py_exit, 0,
-        "Python must exit 0; stderr:\n{}", sphinx_docs_build_shared.py_stderr
+        "Python must exit 0; stderr:\n{}",
+        sphinx_docs_build_shared.py_stderr
     );
     assert_eq!(
         sphinx_docs_build_shared.rs_exit, 0,
-        "Rust must exit 0; stderr:\n{}", sphinx_docs_build_shared.rs_stderr
+        "Rust must exit 0; stderr:\n{}",
+        sphinx_docs_build_shared.rs_stderr
     );
 }
 
@@ -2579,7 +2943,9 @@ fn sphinx_docs_both_exit_zero(sphinx_docs_build_shared: &SphinxDocsBuildShared) 
 /// Rust must produce `index.html` in the output directory.
 #[rstest]
 fn sphinx_docs_rs_produces_index_html(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !has_sphinx_doc_src() { return; }
+    if !has_sphinx_doc_src() {
+        return;
+    }
     // Assert even if rs_exit != 0: partial builds should still write index.html.
     assert!(
         sphinx_docs_build_shared.rs_out.join("index.html").exists(),
@@ -2592,8 +2958,12 @@ fn sphinx_docs_rs_produces_index_html(sphinx_docs_build_shared: &SphinxDocsBuild
 /// When Python also built successfully, both outputs must contain `index.html`.
 #[rstest]
 fn sphinx_docs_both_produce_index_html(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.py_built { return; }
-    if !sphinx_docs_build_shared.rs_built { return; }
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
     assert!(
         sphinx_docs_build_shared.py_out.join("index.html").exists(),
         "Python output missing index.html"
@@ -2607,10 +2977,10 @@ fn sphinx_docs_both_produce_index_html(sphinx_docs_build_shared: &SphinxDocsBuil
 /// Rust `index.html` must carry a valid HTML5 DOCTYPE declaration.
 #[rstest]
 fn sphinx_docs_rs_index_has_doctype(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.rs_built { return; }
-    let html = std::fs::read_to_string(
-        sphinx_docs_build_shared.rs_out.join("index.html")
-    ).unwrap();
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
+    let html = std::fs::read_to_string(sphinx_docs_build_shared.rs_out.join("index.html")).unwrap();
     assert!(
         html.to_lowercase().contains("<!doctype html"),
         "Rust index.html missing HTML5 DOCTYPE"
@@ -2620,11 +2990,15 @@ fn sphinx_docs_rs_index_has_doctype(sphinx_docs_build_shared: &SphinxDocsBuildSh
 /// Both `index.html` outputs must contain a valid HTML5 DOCTYPE.
 #[rstest]
 fn sphinx_docs_both_have_doctype(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.py_built { return; }
-    if !sphinx_docs_build_shared.rs_built { return; }
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
     for (label, outdir) in &[
         ("Python", &sphinx_docs_build_shared.py_out),
-        ("Rust",   &sphinx_docs_build_shared.rs_out),
+        ("Rust", &sphinx_docs_build_shared.rs_out),
     ] {
         let html = std::fs::read_to_string(outdir.join("index.html")).unwrap();
         assert!(
@@ -2637,10 +3011,10 @@ fn sphinx_docs_both_have_doctype(sphinx_docs_build_shared: &SphinxDocsBuildShare
 /// Rust `index.html` must contain the Sphinx project title.
 #[rstest]
 fn sphinx_docs_rs_index_contains_title(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.rs_built { return; }
-    let html = std::fs::read_to_string(
-        sphinx_docs_build_shared.rs_out.join("index.html")
-    ).unwrap();
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
+    let html = std::fs::read_to_string(sphinx_docs_build_shared.rs_out.join("index.html")).unwrap();
     assert!(
         html.contains("Sphinx"),
         "Rust index.html should contain project title 'Sphinx'; first 500 chars:\n{}",
@@ -2651,11 +3025,15 @@ fn sphinx_docs_rs_index_contains_title(sphinx_docs_build_shared: &SphinxDocsBuil
 /// Both `index.html` outputs must contain the Sphinx project title.
 #[rstest]
 fn sphinx_docs_both_contain_project_title(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.py_built { return; }
-    if !sphinx_docs_build_shared.rs_built { return; }
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
     for (label, outdir) in &[
         ("Python", &sphinx_docs_build_shared.py_out),
-        ("Rust",   &sphinx_docs_build_shared.rs_out),
+        ("Rust", &sphinx_docs_build_shared.rs_out),
     ] {
         let html = std::fs::read_to_string(outdir.join("index.html")).unwrap();
         assert!(
@@ -2719,7 +3097,9 @@ fn file_size_map(root: &Path) -> std::collections::BTreeMap<String, u64> {
 /// (intersphinx cache, searchindex timestamps, etc.).
 #[rstest]
 fn sphinx_docs_rs_snapshot_full_tree(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.rs_built { return; }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
     let paths = file_tree_paths(&sphinx_docs_build_shared.rs_out);
     insta::assert_yaml_snapshot!("sphinx_docs_rs_full_tree", paths);
 }
@@ -2728,9 +3108,12 @@ fn sphinx_docs_rs_snapshot_full_tree(sphinx_docs_build_shared: &SphinxDocsBuildS
 /// Catches silent empty-file regressions without requiring exact-size snapshots.
 #[rstest]
 fn sphinx_docs_rs_all_files_non_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.rs_built { return; }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
     let sizes = file_size_map(&sphinx_docs_build_shared.rs_out);
-    let empty: Vec<&str> = sizes.iter()
+    let empty: Vec<&str> = sizes
+        .iter()
         .filter(|(_, sz)| **sz == 0)
         .map(|(p, _)| p.as_str())
         .collect();
@@ -2745,7 +3128,9 @@ fn sphinx_docs_rs_all_files_non_empty(sphinx_docs_build_shared: &SphinxDocsBuild
 /// build as the authoritative reference.
 #[rstest]
 fn sphinx_docs_py_snapshot_full_tree(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
     let paths = file_tree_paths(&sphinx_docs_build_shared.py_out);
     insta::assert_yaml_snapshot!("sphinx_docs_py_full_tree", paths);
 }
@@ -2753,9 +3138,12 @@ fn sphinx_docs_py_snapshot_full_tree(sphinx_docs_build_shared: &SphinxDocsBuildS
 /// Assert every file in the Python sphinx/doc build output has a non-zero byte size.
 #[rstest]
 fn sphinx_docs_py_all_files_non_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
     let sizes = file_size_map(&sphinx_docs_build_shared.py_out);
-    let empty: Vec<&str> = sizes.iter()
+    let empty: Vec<&str> = sizes
+        .iter()
         .filter(|(_, sz)| **sz == 0)
         .map(|(p, _)| p.as_str())
         .collect();
@@ -2778,8 +3166,12 @@ fn sphinx_docs_py_all_files_non_empty(sphinx_docs_build_shared: &SphinxDocsBuild
 /// Shrink `missing_in_rust` over time as coverage improves.
 #[rstest]
 fn sphinx_docs_parity_gap_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.py_built { return; }
-    if !sphinx_docs_build_shared.rs_built { return; }
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
 
     let py_sizes = file_size_map(&sphinx_docs_build_shared.py_out);
     let rs_sizes = file_size_map(&sphinx_docs_build_shared.rs_out);
@@ -2794,7 +3186,8 @@ fn sphinx_docs_parity_gap_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildSha
     rs_only.sort();
 
     // Files present in both: every Rust copy must be non-empty.
-    let mut shared_empty_in_rust: Vec<String> = py_set.intersection(&rs_set)
+    let mut shared_empty_in_rust: Vec<String> = py_set
+        .intersection(&rs_set)
         .filter(|p| rs_sizes[p.as_str()] == 0)
         .cloned()
         .collect();
@@ -2828,8 +3221,12 @@ fn sphinx_docs_parity_gap_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildSha
 /// | `_static/sphinxdocrs.css` | sphinxdocrs-own stylesheet (not in Python) |
 #[rstest]
 fn sphinx_docs_html_pages_match(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.py_built { return; }
-    if !sphinx_docs_build_shared.rs_built { return; }
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
 
     /// Files Python produces via extension/compat features not yet in sphinxdocrs.
     /// Each entry is matched as a prefix or exact path.
@@ -2837,20 +3234,15 @@ fn sphinx_docs_html_pages_match(sphinx_docs_build_shared: &SphinxDocsBuildShared
         "py-modindex.html",
         "contents.html",
         "changes.html",
-        "_modules/",          // viewcode extension output
-        "_static/",           // Python theme static assets (JS, CSS) not in our minimal builder
+        "_modules/", // viewcode extension output
+        "_static/",  // Python theme static assets (JS, CSS) not in our minimal builder
     ];
 
     /// Files sphinxdocrs produces that Python doesn't (intentional deviations).
-    const RS_ONLY_ALLOWLIST: &[&str] = &[
-        "_static/sphinxdocrs.css",
-    ];
+    const RS_ONLY_ALLOWLIST: &[&str] = &["_static/sphinxdocrs.css"];
 
     /// Standard HTML pages sphinx always generates (not from a source RST file).
-    const STANDARD_PAGES: &[&str] = &[
-        "genindex.html",
-        "search.html",
-    ];
+    const STANDARD_PAGES: &[&str] = &["genindex.html", "search.html"];
 
     let src = sphinx_doc_src();
 
@@ -2867,40 +3259,56 @@ fn sphinx_docs_html_pages_match(sphinx_docs_build_shared: &SphinxDocsBuildShared
             && (has_rst_source(p)
                 || STANDARD_PAGES.contains(&p)
                 || PY_ONLY_ALLOWLIST.iter().any(|a| {
-                    if a.ends_with('/') { p.starts_with(a) } else { p == *a }
+                    if a.ends_with('/') {
+                        p.starts_with(a)
+                    } else {
+                        p == *a
+                    }
                 }))
     };
 
-    let py_html: std::collections::BTreeSet<String> = file_tree_paths(&sphinx_docs_build_shared.py_out)
-        .into_iter()
-        .filter(|p| include_page(p))
-        .collect();
+    let py_html: std::collections::BTreeSet<String> =
+        file_tree_paths(&sphinx_docs_build_shared.py_out)
+            .into_iter()
+            .filter(|p| include_page(p))
+            .collect();
 
-    let rs_html: std::collections::BTreeSet<String> = file_tree_paths(&sphinx_docs_build_shared.rs_out)
-        .into_iter()
-        .filter(|p| include_page(p))
-        .collect();
+    let rs_html: std::collections::BTreeSet<String> =
+        file_tree_paths(&sphinx_docs_build_shared.rs_out)
+            .into_iter()
+            .filter(|p| include_page(p))
+            .collect();
 
     let is_allowed_py_only = |p: &str| {
         PY_ONLY_ALLOWLIST.iter().any(|a| {
-            if a.ends_with('/') { p.starts_with(a) } else { p == *a }
+            if a.ends_with('/') {
+                p.starts_with(a)
+            } else {
+                p == *a
+            }
         })
     };
     let is_allowed_rs_only = |p: &str| {
         RS_ONLY_ALLOWLIST.iter().any(|a| {
-            if a.ends_with('/') { p.starts_with(a) } else { p == *a }
+            if a.ends_with('/') {
+                p.starts_with(a)
+            } else {
+                p == *a
+            }
         })
     };
 
     // Unexpected Rust-only pages (not on the allowlist).
-    let mut unexpected_rs_only: Vec<String> = rs_html.difference(&py_html)
+    let mut unexpected_rs_only: Vec<String> = rs_html
+        .difference(&py_html)
         .filter(|p| !is_allowed_rs_only(p))
         .cloned()
         .collect();
     unexpected_rs_only.sort();
 
     // Unexpected Python-only pages (not on the allowlist) — pages Rust should produce.
-    let mut unexpected_py_only: Vec<String> = py_html.difference(&rs_html)
+    let mut unexpected_py_only: Vec<String> = py_html
+        .difference(&rs_html)
         .filter(|p| !is_allowed_py_only(p))
         .cloned()
         .collect();
@@ -2924,13 +3332,18 @@ fn sphinx_docs_html_pages_match(sphinx_docs_build_shared: &SphinxDocsBuildShared
 /// sphinx/doc build, together with a file-count.
 #[rstest]
 fn sphinx_docs_rs_stderr_build_succeeded(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !has_sphinx_doc_src() { return; }
+    if !has_sphinx_doc_src() {
+        return;
+    }
     assert_eq!(
         sphinx_docs_build_shared.rs_exit, 0,
-        "expected exit 0; stderr:\n{}", sphinx_docs_build_shared.rs_stderr
+        "expected exit 0; stderr:\n{}",
+        sphinx_docs_build_shared.rs_stderr
     );
     assert!(
-        sphinx_docs_build_shared.rs_stderr.contains("Build succeeded"),
+        sphinx_docs_build_shared
+            .rs_stderr
+            .contains("Build succeeded"),
         "Rust stderr should contain 'Build succeeded'; got:\n{}",
         sphinx_docs_build_shared.rs_stderr
     );
@@ -2945,8 +3358,11 @@ fn sphinx_docs_rs_stderr_build_succeeded(sphinx_docs_build_shared: &SphinxDocsBu
 /// Rust stderr must not contain any "Error:" lines on a successful sphinx/doc build.
 #[rstest]
 fn sphinx_docs_rs_stderr_no_errors(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.rs_built { return; }
-    let error_lines: Vec<&str> = sphinx_docs_build_shared.rs_stderr
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
+    let error_lines: Vec<&str> = sphinx_docs_build_shared
+        .rs_stderr
         .lines()
         .filter(|l| l.to_lowercase().contains("error:") && !l.to_lowercase().contains("warning"))
         .collect();
@@ -2961,11 +3377,14 @@ fn sphinx_docs_rs_stderr_no_errors(sphinx_docs_build_shared: &SphinxDocsBuildSha
 /// Paths and file-counts are replaced so the snapshot is deterministic.
 #[rstest]
 fn sphinx_docs_rs_stderr_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.rs_built { return; }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
     let re_count = regex::Regex::new(r"\d+ file").unwrap();
-    let rs_out_str  = sphinx_docs_build_shared.rs_out.to_str().unwrap_or("");
-    let src_str     = sphinx_doc_src().to_str().unwrap_or("").to_owned();
-    let normalised: Vec<String> = sphinx_docs_build_shared.rs_stderr
+    let rs_out_str = sphinx_docs_build_shared.rs_out.to_str().unwrap_or("");
+    let src_str = sphinx_doc_src().to_str().unwrap_or("").to_owned();
+    let normalised: Vec<String> = sphinx_docs_build_shared
+        .rs_stderr
         .replace(rs_out_str, "<OUTDIR>")
         .replace(&src_str, "<SRCDIR>")
         .lines()
@@ -2978,10 +3397,13 @@ fn sphinx_docs_rs_stderr_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShar
 /// Snapshot normalised Python stderr for the sphinx/doc build (reference).
 #[rstest]
 fn sphinx_docs_py_stderr_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.py_built { return; }
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
     let py_out_str = sphinx_docs_build_shared.py_out.to_str().unwrap_or("");
-    let src_str    = sphinx_doc_src().to_str().unwrap_or("").to_owned();
-    let normalised: Vec<String> = sphinx_docs_build_shared.py_stderr
+    let src_str = sphinx_doc_src().to_str().unwrap_or("").to_owned();
+    let normalised: Vec<String> = sphinx_docs_build_shared
+        .py_stderr
         .replace(py_out_str, "<OUTDIR>")
         .replace(&src_str, "<SRCDIR>")
         .lines()
@@ -2994,7 +3416,9 @@ fn sphinx_docs_py_stderr_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShar
 /// Rust stdout must be empty (all progress output goes to stderr).
 #[rstest]
 fn sphinx_docs_rs_stdout_is_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !has_sphinx_doc_src() { return; }
+    if !has_sphinx_doc_src() {
+        return;
+    }
     let stripped = sphinx_docs_build_shared.rs_stdout.trim();
     assert!(
         stripped.is_empty(),
@@ -3005,8 +3429,12 @@ fn sphinx_docs_rs_stdout_is_empty(sphinx_docs_build_shared: &SphinxDocsBuildShar
 /// Python `sphinx-build -q` stdout must also be empty.
 #[rstest]
 fn sphinx_docs_py_stdout_is_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !has_sphinx_doc_src() { return; }
-    if !has_sphinx_build() { return; }
+    if !has_sphinx_doc_src() {
+        return;
+    }
+    if !has_sphinx_build() {
+        return;
+    }
     let stripped = sphinx_docs_build_shared.py_stdout.trim();
     assert!(
         stripped.is_empty(),
@@ -3017,8 +3445,12 @@ fn sphinx_docs_py_stdout_is_empty(sphinx_docs_build_shared: &SphinxDocsBuildShar
 /// Both tools must have empty stdout on a successful build.
 #[rstest]
 fn sphinx_docs_both_stdout_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.py_built { return; }
-    if !sphinx_docs_build_shared.rs_built { return; }
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
     assert!(
         sphinx_docs_build_shared.py_stdout.trim().is_empty(),
         "Python stdout should be empty"
@@ -3033,7 +3465,7 @@ fn sphinx_docs_both_stdout_empty(sphinx_docs_build_shared: &SphinxDocsBuildShare
 /// a sorted set of unique warning categories.
 fn extract_warning_categories(stderr: &str) -> std::collections::BTreeSet<String> {
     let re_path = regex::Regex::new(r"(/\S+|[A-Za-z]:\\\S+)").unwrap();
-    let re_num  = regex::Regex::new(r"\b\d+\b").unwrap();
+    let re_num = regex::Regex::new(r"\b\d+\b").unwrap();
     stderr
         .lines()
         .filter(|l| {
@@ -3056,14 +3488,15 @@ fn extract_warning_categories(stderr: &str) -> std::collections::BTreeSet<String
 /// listed in the allowlist).
 #[rstest]
 fn sphinx_docs_rs_warnings_subset_of_py(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !sphinx_docs_build_shared.py_built { return; }
-    if !sphinx_docs_build_shared.rs_built { return; }
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
 
     /// sphinxdocrs-specific warnings that have no Python equivalent.
-    const RS_ONLY_WARNING_PREFIXES: &[&str] = &[
-        "sphinxdocrs:",
-        "Warning: intersphinx:",
-    ];
+    const RS_ONLY_WARNING_PREFIXES: &[&str] = &["sphinxdocrs:", "Warning: intersphinx:"];
 
     let py_warns = extract_warning_categories(&sphinx_docs_build_shared.py_stderr);
     let rs_warns = extract_warning_categories(&sphinx_docs_build_shared.rs_stderr);
@@ -3071,15 +3504,18 @@ fn sphinx_docs_rs_warnings_subset_of_py(sphinx_docs_build_shared: &SphinxDocsBui
     let unexpected: Vec<&String> = rs_warns
         .iter()
         .filter(|w| {
-            !py_warns.contains(*w)
-                && !RS_ONLY_WARNING_PREFIXES.iter().any(|p| w.contains(p))
+            !py_warns.contains(*w) && !RS_ONLY_WARNING_PREFIXES.iter().any(|p| w.contains(p))
         })
         .collect();
 
     assert!(
         unexpected.is_empty(),
         "Rust emits warnings not seen in Python output:\n{}",
-        unexpected.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n")
+        unexpected
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }
 
@@ -3088,17 +3524,19 @@ fn sphinx_docs_rs_warnings_subset_of_py(sphinx_docs_build_shared: &SphinxDocsBui
 fn sphinx_docs_stderr_warning_categories_snapshot(
     sphinx_docs_build_shared: &SphinxDocsBuildShared,
 ) {
-    if !sphinx_docs_build_shared.py_built { return; }
-    if !sphinx_docs_build_shared.rs_built { return; }
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
 
-    let py_warns: Vec<String> =
-        extract_warning_categories(&sphinx_docs_build_shared.py_stderr)
-            .into_iter()
-            .collect();
-    let rs_warns: Vec<String> =
-        extract_warning_categories(&sphinx_docs_build_shared.rs_stderr)
-            .into_iter()
-            .collect();
+    let py_warns: Vec<String> = extract_warning_categories(&sphinx_docs_build_shared.py_stderr)
+        .into_iter()
+        .collect();
+    let rs_warns: Vec<String> = extract_warning_categories(&sphinx_docs_build_shared.rs_stderr)
+        .into_iter()
+        .collect();
 
     insta::assert_yaml_snapshot!("sphinx_docs_py_warning_categories", py_warns);
     insta::assert_yaml_snapshot!("sphinx_docs_rs_warning_categories", rs_warns);
@@ -3110,17 +3548,21 @@ fn sphinx_docs_stderr_warning_categories_snapshot(
 /// under `.doctrees/__intersphinx_cache__/` when `sphinx.ext.intersphinx`
 /// is in `conf.py`.
 #[rstest]
-fn sphinx_docs_intersphinx_cache_dir_exists(
-    sphinx_docs_build_shared: &SphinxDocsBuildShared,
-) {
-    if !sphinx_docs_build_shared.py_built { return; }
-    if !sphinx_docs_build_shared.rs_built { return; }
+fn sphinx_docs_intersphinx_cache_dir_exists(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
 
     // Python cache is under its .doctrees dir, which sits inside its outdir.
-    let py_cache = sphinx_docs_build_shared.py_out
+    let py_cache = sphinx_docs_build_shared
+        .py_out
         .join(".doctrees")
         .join("__intersphinx_cache__");
-    let rs_cache = sphinx_docs_build_shared.rs_out
+    let rs_cache = sphinx_docs_build_shared
+        .rs_out
         .join(".doctrees")
         .join("__intersphinx_cache__");
 
@@ -3138,15 +3580,19 @@ fn sphinx_docs_intersphinx_cache_dir_exists(
 ///
 /// Python names them `{name}_objects.inv`; Rust must use the same convention.
 #[rstest]
-fn sphinx_docs_intersphinx_cache_files_match(
-    sphinx_docs_build_shared: &SphinxDocsBuildShared,
-) {
-    if !sphinx_docs_build_shared.py_built { return; }
-    if !sphinx_docs_build_shared.rs_built { return; }
+fn sphinx_docs_intersphinx_cache_files_match(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built {
+        return;
+    }
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
 
     let cache_files = |outdir: &Path| -> std::collections::BTreeSet<String> {
         let cache_dir = outdir.join(".doctrees").join("__intersphinx_cache__");
-        if !cache_dir.exists() { return std::collections::BTreeSet::new(); }
+        if !cache_dir.exists() {
+            return std::collections::BTreeSet::new();
+        }
         std::fs::read_dir(&cache_dir)
             .into_iter()
             .flatten()
@@ -3171,37 +3617,44 @@ fn sphinx_docs_intersphinx_cache_files_match(
     assert!(
         missing_in_rs.is_empty(),
         "Rust intersphinx cache is missing files present in Python:\n{}",
-        missing_in_rs.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n")
+        missing_in_rs
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
     );
     assert!(
         rs_only.is_empty(),
         "Rust intersphinx cache has extra files not in Python:\n{}",
-        rs_only.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n")
+        rs_only
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }
 
 /// Each intersphinx cache file must be non-empty (a valid `objects.inv`
 /// starts with `# Sphinx inventory version 2`).
 #[rstest]
-fn sphinx_docs_intersphinx_cache_files_non_empty(
-    sphinx_docs_build_shared: &SphinxDocsBuildShared,
-) {
-    if !sphinx_docs_build_shared.rs_built { return; }
+fn sphinx_docs_intersphinx_cache_files_non_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.rs_built {
+        return;
+    }
 
-    let cache_dir = sphinx_docs_build_shared.rs_out
+    let cache_dir = sphinx_docs_build_shared
+        .rs_out
         .join(".doctrees")
         .join("__intersphinx_cache__");
-    if !cache_dir.exists() { return; }
+    if !cache_dir.exists() {
+        return;
+    }
 
     let empty_files: Vec<String> = std::fs::read_dir(&cache_dir)
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|e| {
-            e.metadata()
-                .map(|m| m.len() == 0)
-                .unwrap_or(false)
-        })
+        .filter(|e| e.metadata().map(|m| m.len() == 0).unwrap_or(false))
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
 
@@ -3211,4 +3664,3 @@ fn sphinx_docs_intersphinx_cache_files_non_empty(
         empty_files.join("\n")
     );
 }
-

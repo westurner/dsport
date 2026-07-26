@@ -322,7 +322,7 @@ fn build_otherdocs_parity(#[case] docs_rel: &str, #[case] builder: &str) {
     // Snapshot failures mean Python changed (update reference) or Rust changed
     // (regressed or improved — review with `cargo insta review`).
     let snap_base = format!(
-        "otherdocs__{}__{}", 
+        "otherdocs__{}__{}",
         docs_rel.replace(['/', '\\', '.'], "_"),
         builder,
     );

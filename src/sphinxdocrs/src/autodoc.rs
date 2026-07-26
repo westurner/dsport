@@ -120,7 +120,9 @@ fn dedent_docstring(raw: &str) -> String {
 fn render_expr(expr: &Expr) -> String {
     match expr {
         Expr::Name(n) => n.id.to_string(),
-        Expr::NumberLiteral(n) => format!("{:?}", n.value).trim_start_matches("Int(").to_string(),
+        Expr::NumberLiteral(n) => format!("{:?}", n.value)
+            .trim_start_matches("Int(")
+            .to_string(),
         Expr::StringLiteral(s) => {
             // Render with single quotes to match common Python source style
             // (and Sphinx's signature formatting), escaping embedded quotes.
@@ -188,7 +190,13 @@ fn render_param(name: &ruff_python_ast::Identifier, default: Option<&Expr>) -> S
 fn indent(text: &str, spaces: usize) -> String {
     let pad = " ".repeat(spaces);
     text.lines()
-        .map(|l| if l.is_empty() { String::new() } else { format!("{pad}{l}") })
+        .map(|l| {
+            if l.is_empty() {
+                String::new()
+            } else {
+                format!("{pad}{l}")
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -201,7 +209,11 @@ fn indent(text: &str, spaces: usize) -> String {
 pub fn render_function(func: &StmtFunctionDef, directive: &str, base_indent: usize) -> String {
     let sig = format_signature(&func.parameters);
     let mut out = String::new();
-    out.push_str(&format!(".. py:{directive}:: {}({})\n", func.name.as_str(), sig));
+    out.push_str(&format!(
+        ".. py:{directive}:: {}({})\n",
+        func.name.as_str(),
+        sig
+    ));
     if let Some(doc) = extract_docstring(&func.body) {
         out.push('\n');
         // Docstring body is indented 3 spaces under the directive.
@@ -235,7 +247,11 @@ pub fn render_class(class: &StmtClassDef) -> String {
     if bases.is_empty() {
         out.push_str(&format!(".. py:class:: {}\n", class.name.as_str()));
     } else {
-        out.push_str(&format!(".. py:class:: {}({})\n", class.name.as_str(), bases));
+        out.push_str(&format!(
+            ".. py:class:: {}({})\n",
+            class.name.as_str(),
+            bases
+        ));
     }
 
     if let Some(doc) = extract_docstring(&class.body) {
@@ -337,7 +353,9 @@ def greet(name, greeting='hello', *args, loud=False, **kwargs):
 ";
         let rst = document_module_source("m", src).unwrap();
         assert!(
-            rst.contains(".. py:function:: greet(name, greeting='hello', *args, loud=False, **kwargs)"),
+            rst.contains(
+                ".. py:function:: greet(name, greeting='hello', *args, loud=False, **kwargs)"
+            ),
             "got:\n{rst}"
         );
         assert!(rst.contains("Greet someone."));

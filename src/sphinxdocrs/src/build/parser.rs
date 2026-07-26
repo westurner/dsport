@@ -207,8 +207,6 @@ pub fn build_parser() -> Command {
             Arg::new("scan_requirements")
                 .long("scan-requirements")
                 .action(ArgAction::SetTrue)
-                .help(
-                    "scan conf.py and more for required Python packages",
-                ),
+                .help("scan conf.py and more for required Python packages"),
         )
 }

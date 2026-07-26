@@ -60,22 +60,104 @@ pub fn stdlib_modules() -> &'static HashSet<String> {
         }
         // Fallback / supplement (Python < 3.10 or interpreter not found).
         for m in &[
-            "_thread", "__future__", "abc", "array", "ast", "asyncio", "atexit",
-            "base64", "bisect", "builtins", "bz2", "codecs", "collections",
-            "contextlib", "copy", "copyreg", "csv", "ctypes", "dataclasses",
-            "datetime", "decimal", "difflib", "dis", "email", "enum", "errno",
-            "fileinput", "fnmatch", "fractions", "ftplib", "functools", "gc",
-            "glob", "gzip", "hashlib", "heapq", "hmac", "html", "http",
-            "importlib", "inspect", "io", "ipaddress", "itertools", "json",
-            "keyword", "linecache", "locale", "logging", "lzma", "math",
-            "mimetypes", "mmap", "multiprocessing", "numbers", "operator", "os",
-            "pathlib", "pickle", "pkgutil", "platform", "pprint", "profile",
-            "queue", "random", "re", "shutil", "signal", "socket", "sqlite3",
-            "ssl", "stat", "statistics", "string", "struct", "subprocess",
-            "sys", "tarfile", "tempfile", "textwrap", "threading", "time",
-            "timeit", "token", "tokenize", "traceback", "types", "typing",
-            "unittest", "urllib", "uuid", "warnings", "weakref", "xml",
-            "xmlrpc", "zipfile", "zipimport", "zlib",
+            "_thread",
+            "__future__",
+            "abc",
+            "array",
+            "ast",
+            "asyncio",
+            "atexit",
+            "base64",
+            "bisect",
+            "builtins",
+            "bz2",
+            "codecs",
+            "collections",
+            "contextlib",
+            "copy",
+            "copyreg",
+            "csv",
+            "ctypes",
+            "dataclasses",
+            "datetime",
+            "decimal",
+            "difflib",
+            "dis",
+            "email",
+            "enum",
+            "errno",
+            "fileinput",
+            "fnmatch",
+            "fractions",
+            "ftplib",
+            "functools",
+            "gc",
+            "glob",
+            "gzip",
+            "hashlib",
+            "heapq",
+            "hmac",
+            "html",
+            "http",
+            "importlib",
+            "inspect",
+            "io",
+            "ipaddress",
+            "itertools",
+            "json",
+            "keyword",
+            "linecache",
+            "locale",
+            "logging",
+            "lzma",
+            "math",
+            "mimetypes",
+            "mmap",
+            "multiprocessing",
+            "numbers",
+            "operator",
+            "os",
+            "pathlib",
+            "pickle",
+            "pkgutil",
+            "platform",
+            "pprint",
+            "profile",
+            "queue",
+            "random",
+            "re",
+            "shutil",
+            "signal",
+            "socket",
+            "sqlite3",
+            "ssl",
+            "stat",
+            "statistics",
+            "string",
+            "struct",
+            "subprocess",
+            "sys",
+            "tarfile",
+            "tempfile",
+            "textwrap",
+            "threading",
+            "time",
+            "timeit",
+            "token",
+            "tokenize",
+            "traceback",
+            "types",
+            "typing",
+            "unittest",
+            "urllib",
+            "uuid",
+            "warnings",
+            "weakref",
+            "xml",
+            "xmlrpc",
+            "zipfile",
+            "zipimport",
+            "zlib",
         ] {
             set.insert(m.to_string());
         }
@@ -108,7 +190,11 @@ pub fn parse_conf_extensions(conf_py: &Path) -> Vec<String> {
                 let sq = rest.find('\'');
                 let (start, quote) = match (dq, sq) {
                     (Some(d), Some(s)) => {
-                        if d < s { (d, '"') } else { (s, '\'') }
+                        if d < s {
+                            (d, '"')
+                        } else {
+                            (s, '\'')
+                        }
                     }
                     (Some(d), None) => (d, '"'),
                     (None, Some(s)) => (s, '\''),
@@ -153,7 +239,11 @@ pub fn parse_conf_third_party_imports(conf_py: &Path) -> Vec<String> {
             rest.split(',')
                 .filter_map(|part| {
                     let top = part.trim().split('.').next()?.trim();
-                    if top.is_empty() { None } else { Some(top.to_string()) }
+                    if top.is_empty() {
+                        None
+                    } else {
+                        Some(top.to_string())
+                    }
                 })
                 .collect()
         } else if let Some(rest) = s.strip_prefix("from ") {
@@ -333,16 +423,28 @@ pub fn scan_requirements(docs_root: &Path, project_root: &Path) -> ScanResult {
     for name in parse_conf_extensions(&conf_py) {
         if seen.insert(name.clone()) {
             let importable = python_module_importable(&name);
-            packages.push(PackageStatus { name, importable, source: PackageSource::Extension });
+            packages.push(PackageStatus {
+                name,
+                importable,
+                source: PackageSource::Extension,
+            });
         }
     }
     for name in parse_conf_third_party_imports(&conf_py) {
         if seen.insert(name.clone()) {
             let importable = python_module_importable(&name);
-            packages.push(PackageStatus { name, importable, source: PackageSource::Import });
+            packages.push(PackageStatus {
+                name,
+                importable,
+                source: PackageSource::Import,
+            });
         }
     }
 
     let requirements_files = find_requirements_files(docs_root, project_root);
-    ScanResult { conf_py, packages, requirements_files }
+    ScanResult {
+        conf_py,
+        packages,
+        requirements_files,
+    }
 }

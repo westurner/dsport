@@ -97,14 +97,7 @@ fn build_json_writes_fjson_pages() {
     let doctrees = tempfile::TempDir::new().unwrap();
     let outdir = out.path().join("build");
 
-    let app = SphinxApp::new(
-        src.path(),
-        &outdir,
-        doctrees.path(),
-        "json",
-        HashMap::new(),
-    )
-    .unwrap();
+    let app = SphinxApp::new(src.path(), &outdir, doctrees.path(), "json", HashMap::new()).unwrap();
     let result = app.build().unwrap();
 
     assert_eq!(result.written, 1);

@@ -266,8 +266,15 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
 
         // ── scalar string / bool options ─────────────────────────────────────
         for key in &[
-            "project", "author", "version", "release", "language",
-            "master_doc", "root_doc", "source_encoding", "html_theme",
+            "project",
+            "author",
+            "version",
+            "release",
+            "language",
+            "master_doc",
+            "root_doc",
+            "source_encoding",
+            "html_theme",
         ] {
             if let Ok(Some(v)) = globals.get_item(*key) {
                 if let Some(val) = py_to_val(&v) {
@@ -295,7 +302,9 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
             if let Ok(d) = v.cast::<PyDict>() {
                 let mut mapping: Vec<(String, ConfigVal)> = Vec::new();
                 for (k, val) in d.iter() {
-                    let Ok(name) = k.extract::<String>() else { continue };
+                    let Ok(name) = k.extract::<String>() else {
+                        continue;
+                    };
                     // Value is a tuple (base_url, inv_url_or_None)
                     if let Ok(tup) = val.cast::<PyTuple>() {
                         let base_url = tup
@@ -309,19 +318,14 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
                         if let Some(url) = base_url {
                             let entry = ConfigVal::List(vec![
                                 ConfigVal::Str(url),
-                                inv_url
-                                    .map(ConfigVal::Str)
-                                    .unwrap_or(ConfigVal::Null),
+                                inv_url.map(ConfigVal::Str).unwrap_or(ConfigVal::Null),
                             ]);
                             mapping.push((name, entry));
                         }
                     }
                 }
                 mapping.sort_by(|a, b| a.0.cmp(&b.0));
-                raw.insert(
-                    "intersphinx_mapping".into(),
-                    ConfigVal::Map(mapping),
-                );
+                raw.insert("intersphinx_mapping".into(), ConfigVal::Map(mapping));
             }
         }
 

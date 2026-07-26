@@ -392,10 +392,11 @@ mod tests {
     fn renderer_substitutes_theme_options() {
         let r = ThemeAssetRenderer::new();
         let mut ctx: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-        ctx.insert("theme_link".into(), serde_json::Value::String("#004B6B".into()));
-        let out = r
-            .render("a { color: {{ theme_link }}; }", &ctx)
-            .unwrap();
+        ctx.insert(
+            "theme_link".into(),
+            serde_json::Value::String("#004B6B".into()),
+        );
+        let out = r.render("a { color: {{ theme_link }}; }", &ctx).unwrap();
         assert_eq!(out, "a { color: #004B6B; }");
     }
 

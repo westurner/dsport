@@ -14,9 +14,18 @@
 //! | `get_translator()` | [`get_translator`] | look up a single translator |
 //! | `is_translator_registered()` | [`is_translator_registered`] | predicate |
 //! | `get_translation()` | [`get_translation`] | returns a `Fn(&str)->String` |
-//! | `_ = get_translation('sphinx')` | [`tr`] | shortcut for the sphinx catalog |
+//! | `_ = get_translation('sphinx')` | [`tr`] | walks [`CATALOG_LOOKUP_ORDER`] |
 //! | `__ = get_translation('sphinx','console')` | [`tr_console`] | console shortcut |
 //! | `admonitionlabels` | [`admonition_labels`] | map of admonition names |
+//!
+//! ## Catalog fallback chain
+//!
+//! Unlike upstream, which reads a single `sphinx` catalog, [`tr`] and
+//! [`tr_console`] consult [`CATALOG_LOOKUP_ORDER`] — `sphinxdocrs` first, then
+//! `sphinx`. This lets the port ship its own strings (or override an upstream
+//! wording) without patching the vendored catalog, while still inheriting every
+//! upstream translation that it does not override. Use [`init_chain`] to load
+//! the whole chain in one call.
 //!
 //! The built-in sphinx locale directory is resolved via the `BUILTIN_LOCALE_DIR`
 //! constant that points at the symlinked `locale/` directory adjacent to the crate.
@@ -74,9 +83,13 @@ pub struct PoEntry {
 /// A parsed `.po` catalog: `msgid → msgstr` map.
 ///
 /// Only the singular `msgstr` is stored; plural forms collapse to `msgstr[0]`.
+/// The metadata block (`msgid ""`) is kept separately in [`PoCatalog::header`]
+/// so it can be round-tripped into a compiled `.mo` file.
 #[derive(Debug, Clone, Default)]
 pub struct PoCatalog {
     entries: HashMap<String, String>,
+    fuzzy: HashMap<String, String>,
+    header: String,
 }
 
 impl PoCatalog {
@@ -86,18 +99,34 @@ impl PoCatalog {
     /// - `msgid "…"` / `msgstr "…"` pairs  
     /// - Multi-line continuations (`"…"` lines following `msgid`/`msgstr`)  
     /// - `msgstr[0]` plural forms (only index 0 is kept)  
-    /// - `#`-prefixed comment lines (ignored)  
+    /// - `#`-prefixed comment lines (ignored, except `#, fuzzy` flags)  
     /// - C-style escape sequences (`\\`, `\n`, `\t`, `\"`)
+    ///
+    /// Entries flagged `fuzzy` are kept out of the lookup map — matching
+    /// `msgfmt`/`gettext`, which treat a fuzzy entry as untranslated — but are
+    /// retained in [`fuzzy_entries`](Self::fuzzy_entries) so that
+    /// [`CatalogInfo::write_mo`](crate::intl::CatalogInfo::write_mo) can
+    /// re-include them on request.
     pub fn parse(content: &str) -> Self {
         let mut catalog = PoCatalog::default();
         let mut cur_id = String::new();
         let mut cur_str = String::new();
+        let mut cur_fuzzy = false;
+        // Flags seen since the last flush; they belong to the *next* entry.
+        let mut pending_fuzzy = false;
         let mut in_msgid = false;
         let mut in_msgstr = false;
         let mut in_msgstr0 = false; // msgstr[0]
 
-        let flush = |id: &mut String, s: &mut String, cat: &mut PoCatalog| {
-            if !id.is_empty() {
+        let flush = |id: &mut String, s: &mut String, fuzzy: bool, cat: &mut PoCatalog| {
+            if id.is_empty() {
+                // `msgid ""` is the metadata header, not a translatable entry.
+                if !s.is_empty() && cat.header.is_empty() {
+                    cat.header = s.clone();
+                }
+            } else if fuzzy {
+                cat.fuzzy.insert(id.clone(), s.clone());
+            } else {
                 cat.entries.insert(id.clone(), s.clone());
             }
             id.clear();
@@ -110,17 +139,21 @@ impl PoCatalog {
             if line.starts_with('#') || line.is_empty() {
                 // comment or blank — end of a block if we were collecting
                 if line.is_empty() {
-                    flush(&mut cur_id, &mut cur_str, &mut catalog);
+                    flush(&mut cur_id, &mut cur_str, cur_fuzzy, &mut catalog);
+                    cur_fuzzy = false;
                     in_msgid = false;
                     in_msgstr = false;
                     in_msgstr0 = false;
+                } else if let Some(flags) = line.strip_prefix("#,") {
+                    pending_fuzzy |= flags.split(',').any(|f| f.trim() == "fuzzy");
                 }
                 continue;
             }
 
             if line.starts_with("msgid ") {
                 // Save previous entry
-                flush(&mut cur_id, &mut cur_str, &mut catalog);
+                flush(&mut cur_id, &mut cur_str, cur_fuzzy, &mut catalog);
+                cur_fuzzy = std::mem::take(&mut pending_fuzzy);
                 in_msgid = true;
                 in_msgstr = false;
                 in_msgstr0 = false;
@@ -171,7 +204,7 @@ impl PoCatalog {
         }
 
         // flush final entry
-        flush(&mut cur_id, &mut cur_str, &mut catalog);
+        flush(&mut cur_id, &mut cur_str, cur_fuzzy, &mut catalog);
         catalog
     }
 
@@ -184,9 +217,43 @@ impl PoCatalog {
         }
     }
 
+    /// Look up `msgid`, returning `None` when the catalog has no non-empty
+    /// translation for it.
+    ///
+    /// Unlike [`gettext`](Self::gettext) this distinguishes "not translated"
+    /// from "translated to the same string", which the catalog fallback chain
+    /// in [`tr`] relies on.
+    pub fn lookup(&self, msgid: &str) -> Option<&str> {
+        match self.entries.get(msgid) {
+            Some(s) if !s.is_empty() => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The metadata block parsed from the `msgid ""` entry, or `""` if absent.
+    pub fn header(&self) -> &str {
+        &self.header
+    }
+
+    /// All `msgid → msgstr` pairs, excluding the metadata header and any
+    /// `fuzzy`-flagged entries.
+    pub fn entries(&self) -> &HashMap<String, String> {
+        &self.entries
+    }
+
+    /// `msgid → msgstr` pairs that carried a `#, fuzzy` flag and are therefore
+    /// excluded from [`entries`](Self::entries) and from lookups.
+    pub fn fuzzy_entries(&self) -> &HashMap<String, String> {
+        &self.fuzzy
+    }
+
     /// Merge `other` into this catalog (entries in `other` take priority).
     pub fn merge(&mut self, other: PoCatalog) {
         self.entries.extend(other.entries);
+        self.fuzzy.extend(other.fuzzy);
+        if self.header.is_empty() {
+            self.header = other.header;
+        }
     }
 
     /// Number of entries in this catalog.
@@ -269,6 +336,12 @@ impl Translator {
             }
         }
         msgid
+    }
+
+    /// Look up `msgid` in the catalog chain, returning `None` when no catalog
+    /// carries a non-empty translation for it.
+    pub fn lookup(&self, msgid: &str) -> Option<&str> {
+        self.catalogs.iter().find_map(|cat| cat.lookup(msgid))
     }
 
     /// Add `catalog` as a lower-priority fallback.
@@ -437,30 +510,63 @@ pub fn get_translation(catalog: &'static str, namespace: &'static str) -> impl F
 
 // ── tr / tr_console ───────────────────────────────────────────────────────────
 
-/// Translate `msgid` using the built-in `sphinx` catalog (`general` namespace).
+/// Catalog domains consulted by [`tr`] / [`tr_console`], in priority order.
 ///
-/// Shortcut for `get_translation("sphinx", "general")(msgid)`.
-/// Mirrors the `_` shortcut in `sphinx.locale`.
-pub fn tr(msgid: &str) -> String {
-    let key: RegistryKey = ("general".to_owned(), "sphinx".to_owned());
+/// `sphinxdocrs` holds strings that are specific to this port (or that
+/// override an upstream wording); `sphinx` is the vendored upstream catalog
+/// reached through the `locale/` symlink. The first domain with a non-empty
+/// translation for a given `msgid` wins; if none has one, the `msgid` is
+/// returned unchanged.
+///
+/// Catalog files are looked up as
+/// `<locale_dir>/<language>/LC_MESSAGES/<domain>.po`.
+pub const CATALOG_LOOKUP_ORDER: &[&str] = &["sphinxdocrs", "sphinx"];
+
+/// Translate `msgid` by walking [`CATALOG_LOOKUP_ORDER`] within `namespace`.
+fn tr_in_namespace(msgid: &str, namespace: &str) -> String {
     let reg = registry().lock().unwrap();
-    match reg.get(&key) {
-        Some(t) => t.gettext(msgid).to_owned(),
-        None => msgid.to_owned(),
+    for catalog in CATALOG_LOOKUP_ORDER {
+        let key: RegistryKey = (namespace.to_owned(), (*catalog).to_owned());
+        if let Some(translated) = reg.get(&key).and_then(|t| t.lookup(msgid)) {
+            return translated.to_owned();
+        }
     }
+    msgid.to_owned()
 }
 
-/// Translate `msgid` using the `sphinx` catalog in the `console` namespace.
+/// Load every catalog in [`CATALOG_LOOKUP_ORDER`] from `locale_dirs` under
+/// `namespace`.
 ///
-/// Shortcut for `get_translation("sphinx", "console")(msgid)`.
+/// Returns `true` if at least one catalog in the chain was found. Missing
+/// catalogs are not an error — the chain simply falls through to the next
+/// domain at lookup time.
+pub fn init_chain(
+    locale_dirs: &[impl AsRef<Path>],
+    language: Option<&str>,
+    namespace: &str,
+) -> bool {
+    let mut found = false;
+    for catalog in CATALOG_LOOKUP_ORDER {
+        found |= init(locale_dirs, language, catalog, namespace);
+    }
+    found
+}
+
+/// Translate `msgid` using the [`CATALOG_LOOKUP_ORDER`] chain in the
+/// `general` namespace.
+///
+/// Mirrors the `_` shortcut in `sphinx.locale`, extended with the
+/// port-specific `sphinxdocrs` catalog taking priority over `sphinx`.
+pub fn tr(msgid: &str) -> String {
+    tr_in_namespace(msgid, "general")
+}
+
+/// Translate `msgid` using the [`CATALOG_LOOKUP_ORDER`] chain in the
+/// `console` namespace.
+///
 /// Mirrors the `__` shortcut in `sphinx.locale`.
 pub fn tr_console(msgid: &str) -> String {
-    let key: RegistryKey = ("console".to_owned(), "sphinx".to_owned());
-    let reg = registry().lock().unwrap();
-    match reg.get(&key) {
-        Some(t) => t.gettext(msgid).to_owned(),
-        None => msgid.to_owned(),
-    }
+    tr_in_namespace(msgid, "console")
 }
 
 /// Macro shorthand: `tr!("msg")` → `crate::locale::tr("msg")`.
@@ -603,6 +709,42 @@ msgstr "Hallo"
         let cat = PoCatalog::parse(po);
         assert_eq!(cat.len(), 1);
         assert_eq!(cat.gettext("Hello"), "Hallo");
+        assert_eq!(cat.header(), "Content-Type: text/plain; charset=UTF-8\n");
+    }
+
+    #[test]
+    fn parse_excludes_fuzzy_entries_from_lookups() {
+        let po = concat!(
+            "#, fuzzy\n",
+            "msgid \"Hello\"\n",
+            "msgstr \"Hallo\"\n",
+            "\n",
+            "msgid \"Bye\"\n",
+            "msgstr \"Tschuess\"\n",
+        );
+        let cat = PoCatalog::parse(po);
+        assert_eq!(cat.gettext("Hello"), "Hello");
+        assert_eq!(cat.lookup("Hello"), None);
+        assert_eq!(
+            cat.fuzzy_entries().get("Hello").map(String::as_str),
+            Some("Hallo")
+        );
+        // The flag must not leak into the following entry.
+        assert_eq!(cat.gettext("Bye"), "Tschuess");
+    }
+
+    #[test]
+    fn parse_fuzzy_flag_applies_to_the_following_entry_only() {
+        let po = concat!(
+            "msgid \"Bye\"\n",
+            "msgstr \"Tschuess\"\n",
+            "#, fuzzy\n",
+            "msgid \"Hello\"\n",
+            "msgstr \"Hallo\"\n",
+        );
+        let cat = PoCatalog::parse(po);
+        assert_eq!(cat.gettext("Bye"), "Tschuess");
+        assert_eq!(cat.lookup("Hello"), None);
     }
 
     // ── Translator ────────────────────────────────────────────────────────────
@@ -680,6 +822,69 @@ msgstr "Hallo"
 
         let translate = get_translation("myext", "test_ns_unknown");
         assert_eq!(translate("Hello world"), "Hello world");
+    }
+
+    // ── catalog fallback chain ────────────────────────────────────────────────
+
+    #[test]
+    fn catalog_lookup_order_is_sphinxdocrs_then_sphinx() {
+        assert_eq!(CATALOG_LOOKUP_ORDER, &["sphinxdocrs", "sphinx"]);
+    }
+
+    /// `tr` / `tr_console` read the process-global registry under the shared
+    /// `general` / `console` namespaces, so every chain assertion lives in one
+    /// test to keep it isolated from the parallel test runner.
+    #[test]
+    fn tr_walks_the_catalog_chain() {
+        let tmp = TempDir::new().unwrap();
+        write_po(
+            tmp.path(),
+            "de",
+            "sphinx",
+            concat!(
+                "msgid \"Overridden\"\nmsgstr \"upstream\"\n\n",
+                "msgid \"UpstreamOnly\"\nmsgstr \"nur upstream\"\n",
+            ),
+        );
+        write_po(
+            tmp.path(),
+            "de",
+            "sphinxdocrs",
+            concat!(
+                "msgid \"Overridden\"\nmsgstr \"port\"\n\n",
+                "msgid \"PortOnly\"\nmsgstr \"nur port\"\n",
+            ),
+        );
+
+        clear_translators();
+        assert!(init_chain(&[tmp.path()], Some("de"), "general"));
+
+        // sphinxdocrs wins where both define the msgid …
+        assert_eq!(tr("Overridden"), "port");
+        // … and each catalog still contributes its own strings …
+        assert_eq!(tr("PortOnly"), "nur port");
+        assert_eq!(tr("UpstreamOnly"), "nur upstream");
+        // … with the msgid as the final fallback.
+        assert_eq!(tr("Untranslated"), "Untranslated");
+
+        // The console namespace is independent of `general`.
+        assert_eq!(tr_console("Overridden"), "Overridden");
+        assert!(init_chain(&[tmp.path()], Some("de"), "console"));
+        assert_eq!(tr_console("Overridden"), "port");
+
+        clear_translators();
+        assert_eq!(tr("Overridden"), "Overridden");
+    }
+
+    #[test]
+    fn init_chain_reports_false_when_no_catalog_matches() {
+        let tmp = TempDir::new().unwrap();
+        clear_translators();
+        assert!(!init_chain(
+            &[tmp.path()],
+            Some("de"),
+            "test_ns_chain_missing"
+        ));
     }
 
     #[test]

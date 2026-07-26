@@ -84,7 +84,10 @@ pub const NATIVE_BUILDER_CLASSES: &[(&str, &str)] = &[
     ("json", "sphinxdocrs::builders::json::JsonBuilder"),
     ("latex", "sphinxdocrs::builders::latex::LatexBuilder"),
     ("man", "sphinxdocrs::builders::manpage::ManpageBuilder"),
-    ("linkcheck", "sphinxdocrs::builders::linkcheck::LinkcheckBuilder"),
+    (
+        "linkcheck",
+        "sphinxdocrs::builders::linkcheck::LinkcheckBuilder",
+    ),
 ];
 
 /// Builder names that have a native Rust implementation.

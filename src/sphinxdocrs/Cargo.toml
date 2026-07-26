@@ -62,6 +62,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
 unicode-normalization = "0.1"
+# Civil-date decomposition for `intl::format_date`. Already in the workspace
+# lockfile via `docutilsrs`, so this adds no new transitive dependencies.
+chrono = "0.4"
+# zlib codec for `objects.inv` inventory payloads. Already in the workspace
+# lockfile, so this adds no new transitive dependencies.
+flate2 = "1"
 ruff_python_parser = { package = "rustpython-ruff_python_parser", version = "0.15" }
 ruff_python_ast = { package = "rustpython-ruff_python_ast", version = "0.15" }
 

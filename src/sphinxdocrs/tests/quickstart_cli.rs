@@ -86,8 +86,14 @@ fn default_destpath_is_current_dir() {
         .assert()
         .success();
 
-    assert!(tmp.path().join("conf.py").exists(), "conf.py not found in cwd");
-    assert!(tmp.path().join("index.rst").exists(), "index.rst not found in cwd");
+    assert!(
+        tmp.path().join("conf.py").exists(),
+        "conf.py not found in cwd"
+    );
+    assert!(
+        tmp.path().join("index.rst").exists(),
+        "index.rst not found in cwd"
+    );
 }
 
 // ── interactive mode ──────────────────────────────────────────────────────────
@@ -108,27 +114,35 @@ fn interactive_destpath_shown_as_default() {
 
     // One answer per prompt, accepting all defaults except required fields.
     let stdin = [
-        "\n",            // path      — accept default (= "testpath")
-        "n\n",           // sep       — no separate source/build dir
-        "\n",            // dot       — accept "_"
-        "MyProject\n",   // project   — required, no default
-        "Me\n",          // author    — required, no default
-        "\n",            // version   — accept ""
-        "\n",            // release   — accept "" (= version)
-        "\n",            // language  — accept "en"
-        "\n",            // suffix    — accept ".rst"
-        "\n",            // master    — accept "index"
+        "\n",          // path      — accept default (= "testpath")
+        "n\n",         // sep       — no separate source/build dir
+        "\n",          // dot       — accept "_"
+        "MyProject\n", // project   — required, no default
+        "Me\n",        // author    — required, no default
+        "\n",          // version   — accept ""
+        "\n",          // release   — accept "" (= version)
+        "\n",          // language  — accept "en"
+        "\n",          // suffix    — accept ".rst"
+        "\n",          // master    — accept "index"
         // 10 extension prompts (autodoc … githubpages) — all "n"
-        "n\n", "n\n", "n\n", "n\n", "n\n",
-        "n\n", "n\n", "n\n", "n\n", "n\n",
-        "\n",            // makefile  — accept "y"
-        "\n",            // batchfile — accept "y"
+        "n\n",
+        "n\n",
+        "n\n",
+        "n\n",
+        "n\n",
+        "n\n",
+        "n\n",
+        "n\n",
+        "n\n",
+        "n\n",
+        "\n", // makefile  — accept "y"
+        "\n", // batchfile — accept "y"
     ]
     .concat();
 
     let output = bin()
-        .arg("testpath")          // relative name — shown as-is in the prompt default
-        .current_dir(tmp.path())  // so the binary's cwd is the tempdir
+        .arg("testpath") // relative name — shown as-is in the prompt default
+        .current_dir(tmp.path()) // so the binary's cwd is the tempdir
         .stdin(stdin)
         .output()
         .unwrap();

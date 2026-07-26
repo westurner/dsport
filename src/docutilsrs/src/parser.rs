@@ -51,6 +51,9 @@ pub fn parse_rst_with_source(source: &str, source_path: &str) -> Doctree {
     promote_docinfo(&mut tree);
     emit_unresolved_system_messages(&mut tree, &ctx);
     crate::plugins::apply_transforms(&mut tree);
+    // Restore the "default" default role after parsing a document, as
+    // `docutils.parsers.rst.Parser.parse` does.
+    crate::roles::restore_default_role();
     tree
 }
 
@@ -135,6 +138,10 @@ enum Block {
         text: String,
     },
     Comment(String),
+    /// `.. default-role:: [name]` — applied in document order during
+    /// `emit_block`, so text before the directive keeps the previous default.
+    /// `None` restores the built-in default role.
+    DefaultRole(Option<String>),
     Admonition {
         kind: &'static str,
         children: Vec<Block>,
@@ -1495,6 +1502,11 @@ fn parse_directive(
             };
             Block::MathBlock { latex }
         }
+        "default-role" => {
+            *i_ref += 1;
+            let name = args.trim();
+            Block::DefaultRole((!name.is_empty()).then(|| name.to_owned()))
+        }
         _ => {
             // Unknown directive: consult the Python plugin registry. A
             // registered plugin receives `(args, body)` and returns a
@@ -2250,6 +2262,25 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
         Block::Comment(text) => {
             let c = tree.append(parent, NodeKind::Comment);
             tree.append(c, NodeKind::Text(text));
+        }
+        Block::DefaultRole(name) => {
+            // Mirrors `docutils.parsers.rst.directives.misc.DefaultRole`: an
+            // unknown role leaves the previous default in place and reports
+            // an error.
+            if let Err(err) = crate::roles::set_default_role(name.as_deref()) {
+                let sm = tree.append(
+                    parent,
+                    NodeKind::SystemMessage {
+                        level: 3,
+                        ty: "ERROR",
+                        line: Some(ctx.current_line),
+                        backrefs: String::new(),
+                        ids: String::new(),
+                    },
+                );
+                let p = tree.append(sm, NodeKind::Paragraph);
+                tree.append(p, NodeKind::Text(err.to_string()));
+            }
         }
         Block::Admonition { kind, children } => {
             let a = tree.append(parent, NodeKind::Admonition { kind });
@@ -3348,6 +3379,16 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
             push_text(tree, node, &name);
             cursor = end;
             text_start = cursor;
+        } else if let Some((role, content, end)) =
+            try_match_interpreted_text(text, &pre.escaped, cursor)
+        {
+            // Bare `` `text` `` (default role) or postfix `` `text`:role: ``.
+            if cursor > text_start {
+                push_text(tree, parent, &text[text_start..cursor]);
+            }
+            emit_role(tree, parent, &role, &content);
+            cursor = end;
+            text_start = cursor;
         } else {
             cursor += utf8_char_len(bytes[cursor]);
         }
@@ -3359,7 +3400,12 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
 }
 
 fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str) {
-    match role {
+    // Resolve language-dependent aliases (`:t:` → `title-reference`) through
+    // the registry, mirroring `roles.role()`. An unregistered name is kept
+    // as-is and rendered as a generic `<inline>`, as before.
+    let canonical =
+        crate::roles::role(role).unwrap_or_else(|| role.to_lowercase());
+    match canonical.as_str() {
         "emphasis" => {
             let n = tree.append(parent, NodeKind::Emphasis);
             push_text(tree, n, content);
@@ -3375,8 +3421,7 @@ fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str) {
         "title" | "title-reference" | "t" => {
             let n = tree.append(parent, NodeKind::TitleReference);
             push_text(tree, n, content);
-        }
-        "math" => {
+        }        "math" => {
             // Inline math role: `:math:`E=mc^2``. The renderer side
             // (html5_writer) routes this through `mathrenderrs` using
             // whichever backend the writer was configured with
@@ -3392,7 +3437,7 @@ fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str) {
             let n = tree.append(
                 parent,
                 NodeKind::Inline {
-                    classes: role.to_string(),
+                    classes: canonical.clone(),
                 },
             );
             push_text(tree, n, content);
@@ -3522,6 +3567,74 @@ fn try_match_role(text: &str, escaped: &[bool], start: usize) -> Option<(String,
         content.to_string(),
         content_start + end_rel + 1,
     ))
+}
+
+/// Match interpreted text with no prefixed role: `` `text` `` (bare, using the
+/// current default role) or the postfix form `` `text`:role: ``.
+///
+/// Returns `(role_name, content, end)` where an empty `role_name` means "use
+/// the default role". Callers must try `try_match_role` and
+/// `try_match_phrase_reference` first, so that `` :role:`x` `` and
+/// `` `phrase`_ `` win over the bare form, exactly as docutils' inline
+/// patterns are ordered.
+fn try_match_interpreted_text(
+    text: &str,
+    escaped: &[bool],
+    start: usize,
+) -> Option<(String, String, usize)> {
+    if escaped.get(start).copied().unwrap_or(false) {
+        return None;
+    }
+    if text.as_bytes().get(start)? != &b'`' {
+        return None;
+    }
+    // A double backtick is inline literal, handled elsewhere.
+    if text.as_bytes().get(start + 1) == Some(&b'`') {
+        return None;
+    }
+    if !valid_start_context(text, start) {
+        return None;
+    }
+
+    let content_start = start + 1;
+    let rest = &text[content_start..];
+    // Find the first unescaped closing backtick.
+    let end_rel = rest
+        .char_indices()
+        .find(|(offset, c)| {
+            *c == '`' && !escaped.get(content_start + offset).copied().unwrap_or(false)
+        })
+        .map(|(offset, _)| offset)?;
+    let content = &rest[..end_rel];
+    if content.trim().is_empty() {
+        return None;
+    }
+    let after_close = content_start + end_rel + 1;
+
+    // Postfix role: `` `text`:role: ``
+    if text.as_bytes().get(after_close) == Some(&b':') {
+        let tail = &text[after_close + 1..];
+        if let Some(end_role) = tail.find(':') {
+            let role = &tail[..end_role];
+            if !role.is_empty()
+                && role
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
+                return Some((
+                    role.to_owned(),
+                    content.to_owned(),
+                    after_close + 1 + end_role + 1,
+                ));
+            }
+        }
+    }
+
+    // A trailing `_` makes this a reference, not interpreted text.
+    if text.as_bytes().get(after_close) == Some(&b'_') {
+        return None;
+    }
+    Some((String::new(), content.to_owned(), after_close))
 }
 
 /// Returns `(name, embedded_uri, end, anonymous)`. `embedded_uri` is the

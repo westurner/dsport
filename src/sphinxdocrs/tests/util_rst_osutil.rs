@@ -13,8 +13,8 @@ use tempfile::TempDir;
 // ── util_rst imports ──────────────────────────────────────────────────────────
 
 use sphinxdocrs::util_rst::{
-    ContentLine, SECTIONING_CHARS, WIDECHARS_DEFAULT, WIDECHARS_JA, append_epilogue, escape,
-    heading, prepend_prologue, textwidth,
+    ContentLine, SECTIONING_CHARS, WIDECHARS_DEFAULT, WIDECHARS_JA, append_epilogue, default_role,
+    escape, heading, prepend_prologue, textwidth,
 };
 
 // ── util_osutil imports ───────────────────────────────────────────────────────
@@ -168,12 +168,49 @@ fn heading_underline_length_matches_textwidth() {
     assert_eq!(lines[1].len(), textwidth(text, WIDECHARS_DEFAULT));
 }
 
+// ── default_role ──────────────────────────────────────────────────────────────
+
+/// The docutils role registry is process-global, so every mutating assertion
+/// lives in one test rather than racing across the parallel test harness.
+#[test]
+fn default_role_scopes_the_bare_backtick_role() {
+    fn render(src: &str) -> String {
+        docutilsrs::writer::pseudo_xml(&docutilsrs::parse_rst(src))
+    }
+
+    // Baseline: bare `text` is a title reference.
+    assert!(render("A `bare` word.\n").contains("<title_reference>"));
+
+    {
+        let guard = default_role("index", "emphasis");
+        assert_eq!(guard.warning(), None);
+        // `parse_rst` restores the default role after each document, matching
+        // `docutils.parsers.rst.Parser.parse`, so re-register per document.
+        let out = render("A `bare` word.\n");
+        assert!(out.contains("<emphasis>"), "{out}");
+    }
+
+    // Dropping the guard restores docutils' built-in default.
+    assert!(render("A `bare` word.\n").contains("<title_reference>"));
+
+    // An unknown role warns instead of registering, mirroring upstream.
+    let guard = default_role("index", "no-such-role");
+    assert_eq!(
+        guard.warning(),
+        Some("index: default role no-such-role not found")
+    );
+    drop(guard);
+    assert!(render("A `bare` word.\n").contains("<title_reference>"));
+
+    // An empty name is a no-op.
+    assert_eq!(default_role("index", "").warning(), None);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // util_osutil
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── SEP ───────────────────────────────────────────────────────────────────────
-
 #[test]
 fn sep_constant() {
     assert_eq!(SEP, '/');

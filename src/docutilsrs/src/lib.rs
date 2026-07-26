@@ -15,6 +15,7 @@ pub mod odt_writer;
 pub mod parser;
 pub mod plugins;
 mod python;
+pub mod roles;
 pub mod transforms;
 pub mod writer;
 pub mod zip_writer;

@@ -12,8 +12,17 @@
 //! | `heading(env, text, level)` | [`heading`] | renders a heading with underline |
 //! | `_prepend_prologue(content, prologue)` | [`prepend_prologue`] | insert prologue after docinfo |
 //! | `_append_epilogue(content, epilogue)` | [`append_epilogue`] | append epilogue with blank separator |
+//! | `default_role(docname, name)` | [`default_role`] | RAII scope guard over the `docutilsrs` role registry |
 //!
-//! **Deferred** (requires live Sphinx role registry): `default_role`.
+//! ## Accepted deviations
+//!
+//! - Upstream is a `@contextmanager`; Rust has no `yield`, so [`default_role`]
+//!   returns a [`DefaultRole`] guard that restores the previous default role in
+//!   `Drop`. Scope is delimited by the binding's lifetime rather than a `with`
+//!   block.
+//! - Upstream emits the "default role %s not found" message through the Sphinx
+//!   logger. There is no logger in this crate yet, so the guard records the
+//!   failure on [`DefaultRole::warning`] for the caller to report.
 
 use unicode_width::UnicodeWidthChar;
 
@@ -304,6 +313,58 @@ pub fn append_epilogue(content: &mut Vec<ContentLine>, epilogue: &str) {
     for (i, line) in epilogue.lines().collect::<Vec<_>>().into_iter().enumerate() {
         content.push((line.to_string(), "<rst_epilogue>", i));
     }
+}
+
+// ── default_role ──────────────────────────────────────────────────────────────
+
+/// Scope guard returned by [`default_role`].
+///
+/// Mirrors the body of `sphinx.util.rst.default_role`, whose `finally` clause is
+/// `docutils.unregister_role('')`. Dropping the guard unregisters the local
+/// `''` role, restoring docutils' built-in default (`title-reference`).
+#[derive(Debug)]
+pub struct DefaultRole {
+    warning: Option<String>,
+}
+
+impl DefaultRole {
+    /// The warning upstream would have logged, if the requested role could not
+    /// be resolved. `None` when the role was registered successfully.
+    ///
+    /// Upstream logs `__('default role %s not found')` against `location=docname`
+    /// and then yields without registering anything.
+    pub fn warning(&self) -> Option<&str> {
+        self.warning.as_deref()
+    }
+}
+
+impl Drop for DefaultRole {
+    fn drop(&mut self) {
+        docutilsrs::roles::unregister_role("");
+    }
+}
+
+/// Temporarily make `name` the default interpreted-text role.
+///
+/// Mirrors `sphinx.util.rst.default_role`: resolve `name` through the docutils
+/// role registry and register the result under the empty name, so that bare
+/// `` `text` `` uses it. An empty `name`, or one that does not resolve, leaves
+/// the default alone and records a warning on the returned guard.
+///
+/// The default role is restored when the guard is dropped.
+pub fn default_role(docname: &str, name: &str) -> DefaultRole {
+    let warning = if name.is_empty() {
+        None
+    } else {
+        match docutilsrs::roles::role(name) {
+            Some(canonical) => {
+                docutilsrs::roles::register_local_role("", &canonical);
+                None
+            }
+            None => Some(format!("{docname}: default role {name} not found")),
+        }
+    };
+    DefaultRole { warning }
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────

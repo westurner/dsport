@@ -103,7 +103,7 @@ in the notes column of the relevant row.
 | `registry.py` | `registry` | P2 | **done** | source-suffix/parser, transforms/post-transforms, CSS/JS/static assets, LaTeX packages, HTML themes, `add_builder`/`add_domain`/`add_translator`/`add_html_math_renderer` |
 | `versioning.py` | `versioning` | P2 | **done** | `VERSIONING_RATIO`, `levenshtein_distance`, `get_ratio`, `add_uids`, `merge_doctrees`, `VersionableNode`, `apply_uid_transform`, `UID_TRANSFORM_PRIORITY = 880`. **Gap:** not invoked from a read phase yet (→ **H2c**) |
 | `config.py` | `config` | P2 | **mirrored** | `SphinxConfig`, 50+ built-in option registry, `ConfigVal`, `RebuildKind`, `ConfigOpt`, `convert_overrides`, alias sync (`master_doc`↔`root_doc`, `copyright`↔`project_copyright`), typed accessors, `py_read_conf_py` |
-| `util/*` | `util_*` | P2 | **mirrored** | `util_matching`, `util_console` (22 ANSI codes), `util_rst`, `util_osutil`, `util_uri`, `util_lines`, `util_docstrings`. **Gap:** `util.rst.default_role` (→ **H1d**) |
+| `util/*` | `util_*` | P2 | **mirrored** | `util_matching`, `util_console` (22 ANSI codes), `util_rst` (incl. `default_role`, **H1d**), `util_osutil`, `util_uri`, `util_lines`, `util_docstrings` |
 | `locale.py` | `locale` | P2 | **done** | `PoCatalog` (incl. `#, fuzzy` handling and header capture), `Translator`, `TranslatorRegistry`, `init`, `init_chain`, `init_console`, `get_translation`, `tr`, `tr_console`, `tr!`/`tr_c!`, `admonition_labels`. **Extension:** `CATALOG_LOOKUP_ORDER = ["sphinxdocrs", "sphinx"]` — `tr`/`tr_console` walk the chain, first hit wins |
 | `util/i18n.py` | `intl` | P2 | **done** | `CatalogInfo` (incl. `write_mo`), `CatalogRepository`, `docname_to_domain`, `DATE_FORMAT_MAPPINGS`, `split_date_format`, `ustrftime_to_babel`, `babel_format_date`, `format_date`, `encode_mo` / `decode_mo`. **Accepted deviations:** CLDR data limited to `en`/`de`/`ja` (others fall back to `en`, as upstream does for unknown locales); MO output is singular-only with an empty hash table; `.po` files are decoded as UTF-8 |
 | `roles.py` | `roles` | P3 | **partial** | pure-algorithm subset: `GENERIC_DOCROLES`, `SPECIFIC_DOCROLES`, `is_builtin_role`, `format_rfc_target`, `parse_emphasized_literal`, `XRefRoleConfig`, `DefaultRoleConfig`. **Gap:** role `run()` execution (→ **H5b**) |
@@ -113,7 +113,7 @@ in the notes column of the relevant row.
 | `builders/` | `builders` | P3 | **partial** | `Builder` trait + `HtmlBuilder`, `LatexBuilder`, `ManpageBuilder`, `LinkcheckBuilder`, `JsonBuilder`, all dispatched by `SphinxApp`. **Gap:** no dirhtml/singlehtml/text/xml/epub/texinfo/gettext (→ **H7**) |
 | `application.py` | `application` | P3 | **partial** | `SphinxApp`: path validation, config, registry, env, `build()`. **Gaps:** events, extension loading, parallel build, incremental rebuild, i18n (→ **H2**, **H4**, **H8**) |
 | `theming.py` | `theme`, `theme_static` | P3 | **partial** | self-contained `sphinxdocrs_basic` theme (`LAYOUT_HTML`, `PAGE_HTML`, `THEME_CSS`) + `copy_theme_assets` / `render_templates`. **Gap:** theme inheritance, `theme.conf` / `theme.toml` resolution, third-party themes (→ **H6**) |
-| `search/` | `search` | P3 | **partial** | `SearchIndex`, `split_words`, `feed`, `to_json`. **Gaps:** no stemming (accepted deviation, → **H1f**); `objects`/`objtypes`/`objnames`/`indexentries` emitted empty (→ **H3d**) |
+| `search/` | `search` | P3 | **partial** | `SearchIndex`, `split_words`, `feed`, `to_json`, Snowball stemming for all 15 `sphinx.search` languages (**H1f**, via `stemmer.rs`). **Accepted deviation:** `rust_stemmers`' Dutch algorithm is the legacy `dutch_porter` Snowball revision, not the one `snowballstemmer.stemmer('dutch')` resolves to — patched via built-in `ParityOverrides` for Sphinx's own Dutch stopword vocabulary; broader vocabularies may need project-supplied overrides. **Gap:** `objects`/`objtypes`/`objnames`/`indexentries` emitted empty (→ **H3d**) |
 | `ext/autodoc/` | `autodoc` | P3 | **partial** | static extraction via `ruff_python_parser`: `document_module`, `render_function`, `render_class`. **Gaps:** runtime import, `:members:` filtering, inherited members, type hints, overloads, decorators, `__all__` ordering (→ **H9**) |
 | `ext/intersphinx/` | `intersphinx` | P3 | **partial** | `fetch_inventories`, `InvCache`, `Inventory` / `InventoryItem` / `InventoryError` (v1 + v2 `loads`, `load_file`), `dumps`. **Gap:** xref fallback — the parsed inventories are not consulted during reference resolution (→ **H5c**) |
 | `highlighting.py` | — | P3 | **deferred** | blocked on `pygmentsrs` lexer coverage (→ **H10**) |
@@ -254,7 +254,7 @@ Tagged from `src/sphinx/tests/`.
 | `test_config/` | config | P2 | **mirrored** — `tests/config.rs` |
 | `test_extensions/` | registry | P2 | **done** — `tests/registry.rs`; `load_extension` deferred (→ **H4b**) |
 | `test_versioning.py` | versioning | P2 | **done** — `tests/versioning.rs` |
-| `test_util/` | util | P2 | **mirrored** — `tests/util_rst_osutil.rs`, `tests/util_extra.rs`; only `default_role` deferred (→ **H1d**) |
+| `test_util/` | util | P2 | **done** — `tests/util_rst_osutil.rs`, `tests/util_extra.rs`; `default_role` closed (**H1d**) |
 | `test_intl/` | intl / locale | P3 | **mirrored** — `tests/locale.rs`, `tests/intl.rs`, plus `test_util_i18n.py`'s `test_catalog_write_mo` / `test_format_date` cases as `intl` unit tests |
 | `test_quickstart.py` | quickstart | C1 | **mirrored** — `tests/quickstart.rs`, `tests/quickstart_cli.rs` |
 | `test_ext_apidoc/` | apidoc | C3 | **mirrored** — `tests/apidoc.rs` |
@@ -269,7 +269,7 @@ Tagged from `src/sphinx/tests/`.
 | `test_transforms/` | transforms | P3 | **deferred** — per-transform port |
 | `test_writers/` | writers | P3 | **deferred** — one writer at a time (→ **H7**) |
 | `test_theming/` | theming | P3 | **deferred** (→ **H6**) |
-| `test_search.py` | search | P3 | **partial** (→ **H3d**, **H1f**) |
+| `test_search.py` | search | P3 | **partial** — `tests/stemmer_parity.rs` (**H1f** closed); objects/objtypes/indexentries still empty (→ **H3d**) |
 | `test_highlighting.py` | highlighting | P3 | **deferred** — blocked on `pygmentsrs` (→ **H10**) |
 | `test_markup/` | markup | P3 | **deferred** — depends on the docutils converter |
 | `test_pycode/` | pycode | P3 | **keep-python** |
@@ -380,9 +380,9 @@ No new subsystem needed; each item closes a named gap on its own.
 | **H1a** | ✅ Parse `objects.inv` payloads: zlib-inflate the body, decode `name domain:role priority uri dispname` lines, expose an `Inventory` lookup type plus a `dumps` writer. (Cross-ref *resolution* is **H5c**; this landed the data structure + codec only.) | `intersphinx.rs` | `intersphinx` parsing → **mirrored** | `tests/intersphinx.rs`: v1/v2 payloads, malformed-header errors, `$`-anchor expansion, case-only `std:label` ambiguities, dump→load round trip, and a byte-identical parity check against `InventoryFile.loads` |
 | **H1b** | Complete `LinkcheckBuilder`: `linkcheck_ignore` / `linkcheck_anchors` / `linkcheck_allowed_redirects` config, anchor (`#fragment`) checking, redirect classification (`working` / `redirected` / `broken` / `ignored`), rate-limit backoff, `output.json` + `output.txt` emission | `builders/linkcheck.rs` | linkcheck → **done** | extend `tests/builders.rs`; `wiremock`-backed case per status class |
 | **H1c** | ✅ `write_mo` + `encode_mo` / `decode_mo` (GNU MO codec, empty hash table) and `babel_format_date` / `format_date` (CLDR subset over `DATE_FORMAT_MAPPINGS`, `SOURCE_DATE_EPOCH` aware); `tr` / `tr_console` now walk `CATALOG_LOOKUP_ORDER` | `intl.rs`, `locale.rs` | `intl` → **done** | round-trip `.po` → `.mo` → read-back; `today_fmt` cases from `test_util_i18n.py` |
-| **H1d** | `util.rst.default_role` — scoped-swap equivalent over the docutils role registry exposed by `docutilsrs` | `util_rst.rs` | `test_util/` → **mirrored** (last gap) | extend `tests/util_rst_osutil.rs` |
+| **H1d** | ✅ `util.rst.default_role` — RAII guard over the docutils role registry exposed by `docutilsrs` (`roles.rs`), wired into the parser's `default-role` directive | `util_rst.rs`, `docutilsrs/roles.rs`, `docutilsrs/parser.rs` | `test_util/` → **done** (last gap closed) | `tests/util_rst_osutil.rs` |
 | **H1e** | ✅ Dispatch `JsonBuilder` from `SphinxApp`: `NATIVE_BUILDER_CLASSES` pair table + `build()` match arm | `application.rs` | builders json → **done** | extend `tests/application.rs` + `tests/builders_json.rs`; enable `test-parity-jsonbuilder` in CI |
-| **H1f** | Snowball stemming for the search index behind a `search-stemming` feature — or record it permanently as an accepted deviation with a documented term-key diff | `search.rs` | removes the search stemming gap | `tests/search.rs` term-key table vs Python `sphinx.search.en` |
+| **H1f** | ✅ Snowball stemming for all 15 `sphinx.search` languages via the `rust_stemmers` crate behind a `search-stemming` feature (default-on), plus a `ParityOverrides` config mechanism (`search_stemming_overrides`) to pin any word where `rust_stemmers` and `snowballstemmer` diverge | `stemmer.rs`, `search.rs` | removes the search stemming gap | `tests/stemmer_parity.rs` (fixture + `test-parity`-gated live diff vs `snowballstemmer`) |
 
 **Exit:** the `intl`, linkcheck, json and `util_*` rows in §3 flip to
 **done**; `intersphinx` parsing becomes testable standalone.

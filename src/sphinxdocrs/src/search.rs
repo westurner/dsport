@@ -16,15 +16,15 @@
 //! | `IndexBuilder.freeze` | [`SearchIndex::to_json`] | assemble the final object |
 //! | `_word_re = \w+` | [`split_words`] | word tokeniser |
 //! | `word_filter` | [`SearchIndex::is_indexable`] | drop digits + stopwords |
+//! | `SearchEnglish.stem` | [`crate::stemmer::stem`] | Porter2, behind the `search-stemming` feature |
 //!
 //! ## Accepted deviations
 //!
-//! - **No stemming.** Upstream applies the Snowball English stemmer so
-//!   `running` and `runs` collapse to `run`.  This port indexes the
-//!   lowercased surface form.  The search index remains fully functional;
-//!   term keys differ from Python for inflected words.
 //! - `objects` / `objtypes` / `objnames` / `indexentries` are emitted empty
 //!   because the domain object pipeline is not yet ported.
+//! - Only the English stemmer exists; other `search_language` values index the
+//!   lowercased surface form. Building without the `search-stemming` feature
+//!   does the same, and then term keys differ from Python for inflected words.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -270,11 +270,46 @@ pub struct SearchIndex {
     title_mapping: BTreeMap<String, BTreeSet<String>>,
     /// title text → set of docnames (for `alltitles`).
     all_titles: BTreeMap<String, BTreeSet<String>>,
+    /// Stemmer for the configured `search_language`.
+    #[cfg(feature = "search-stemming")]
+    stemmer: crate::stemmer::Stemmer,
 }
 
 impl SearchIndex {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Build an index for a specific `search_language`.
+    ///
+    /// Mirrors `html_search_language` / `search_language` selecting a
+    /// `SearchLanguage` subclass in `sphinx.search`.
+    #[cfg(feature = "search-stemming")]
+    pub fn with_language(language: &str) -> Self {
+        Self {
+            stemmer: crate::stemmer::Stemmer::new(language),
+            ..Self::default()
+        }
+    }
+
+    /// Build an index for a specific `search_language` without stemming
+    /// support compiled in. The argument is accepted so callers need no
+    /// `cfg` of their own; only the tokeniser differs.
+    #[cfg(not(feature = "search-stemming"))]
+    pub fn with_language(_language: &str) -> Self {
+        Self::default()
+    }
+
+    /// Pin specific words to the stem Python produces.
+    ///
+    /// Surfaces the `search_stemming_overrides` configuration value, letting a
+    /// project reach exact parity when `rust_stemmers` and `snowballstemmer`
+    /// disagree on a word.
+    #[cfg(feature = "search-stemming")]
+    pub fn with_stemming_overrides(mut self, overrides: crate::stemmer::ParityOverrides) -> Self {
+        self.stemmer =
+            crate::stemmer::Stemmer::new(self.stemmer.language()).with_overrides(overrides);
+        self
     }
 
     /// Return `true` when a word should be indexed: not purely numeric and
@@ -289,6 +324,21 @@ impl SearchIndex {
         !STOPWORDS.contains(&word)
     }
 
+    /// Stem a word for use as a term key.
+    ///
+    /// Mirrors the memoised `stem()` closure in `IndexBuilder.feed`, which is
+    /// `self.lang.stem(word).lower()`.
+    #[cfg(feature = "search-stemming")]
+    fn stem(&self, word: &str) -> String {
+        self.stemmer.stem(word)
+    }
+
+    /// Identity stem used when the `search-stemming` feature is disabled.
+    #[cfg(not(feature = "search-stemming"))]
+    fn stem(&self, word: &str) -> String {
+        word.to_lowercase()
+    }
+
     /// Feed one parsed document into the index.
     ///
     /// `docname` is the relative name (no extension); `tree` is its parsed
@@ -300,28 +350,42 @@ impl SearchIndex {
             .insert(docname.to_owned(), format!("{docname}.rst"));
 
         for word in &ws.title_words {
-            if Self::is_indexable(word) {
-                self.title_mapping
-                    .entry(word.clone())
-                    .or_default()
-                    .insert(docname.to_owned());
-            }
+            // Index the stemmed form, falling back to the surface form: the
+            // stemmer must not drop words from the index.
+            let stemmed = self.stem(word);
+            let key = if Self::is_indexable(&stemmed) {
+                stemmed
+            } else if Self::is_indexable(word) {
+                word.clone()
+            } else {
+                continue;
+            };
+            self.title_mapping
+                .entry(key)
+                .or_default()
+                .insert(docname.to_owned());
         }
         for word in &ws.body_words {
-            if !Self::is_indexable(word) {
+            let stemmed = self.stem(word);
+            let key = if !Self::is_indexable(&stemmed) && Self::is_indexable(word) {
+                word.clone()
+            } else {
+                stemmed
+            };
+            if !Self::is_indexable(&key) {
                 continue;
             }
             // Skip body words already indexed as title words for this doc
             // (matches upstream `already_indexed` behaviour).
             if self
                 .title_mapping
-                .get(word)
+                .get(&key)
                 .is_some_and(|s| s.contains(docname))
             {
                 continue;
             }
             self.mapping
-                .entry(word.clone())
+                .entry(key)
                 .or_default()
                 .insert(docname.to_owned());
         }
@@ -470,8 +534,8 @@ The widget handles rendering and layout.\n";
         assert_eq!(json["titles"][0], "Widget Guide");
         // "widget" appears in the title → titleterms.
         assert!(json["titleterms"].get("widget").is_some());
-        // Body words present, stopwords absent.
-        assert!(json["terms"].get("rendering").is_some());
+        // Body words present (stemmed), stopwords absent.
+        assert!(json["terms"].get("render").is_some());
         assert!(json["terms"].get("layout").is_some());
         assert!(json["terms"].get("the").is_none());
         assert!(json["terms"].get("and").is_none());
@@ -479,17 +543,15 @@ The widget handles rendering and layout.\n";
 
     #[test]
     fn term_encoding_int_vs_list() {
-        // "shared" appears in two docs → list; "only1" in one → int.
+        // "shared" stems to "share", which appears in two docs → list;
+        // "only1" in one → int.
         let d1 = parse_rst_with_source("T1\n==\n\nshared only1 word.\n", "d1");
         let d2 = parse_rst_with_source("T2\n==\n\nshared other word.\n", "d2");
         let mut idx = SearchIndex::new();
         idx.feed("d1", &d1);
         idx.feed("d2", &d2);
         let json = idx.to_json();
-        assert!(
-            json["terms"]["shared"].is_array(),
-            "shared should be a list"
-        );
+        assert!(json["terms"]["share"].is_array(), "share should be a list");
         assert!(json["terms"]["only1"].is_number(), "only1 should be an int");
     }
 

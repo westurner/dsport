@@ -38,6 +38,8 @@ pub mod registry;
 pub mod roles;
 pub mod scan;
 pub mod search;
+#[cfg(feature = "search-stemming")]
+pub mod stemmer;
 pub mod theme;
 pub mod theme_static;
 pub mod util_console;

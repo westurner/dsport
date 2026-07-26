@@ -29,11 +29,15 @@ extension-module = ["pyo3/extension-module", "docutilsrs/extension-module", "doc
 # Syntax highlighting support (propagates to docutilsrs).
 syntax-highlighting = ["docutilsrs/syntax-highlighting"]
 
+# Snowball stemming for search index term keys, covering every language in
+# `sphinx.search.languages`. Required for parity with Python's
+# `snowballstemmer`; disable to index the lowercased surface form instead.
+search-stemming = ["dep:rust-stemmers"]
+
 # Default feature set.
-default = ["syntax-highlighting"]
+default = ["syntax-highlighting", "search-stemming"]
 
 ## Test suite features
-# TODO: rename these to test or test-
 
 # Gate cross-language parity tests (requires Python + upstream sphinx in PATH).
 test-parity = []
@@ -70,6 +74,9 @@ chrono = "0.4"
 flate2 = "1"
 ruff_python_parser = { package = "rustpython-ruff_python_parser", version = "0.15" }
 ruff_python_ast = { package = "rustpython-ruff_python_ast", version = "0.15" }
+# Snowball stemmers, generated from the same upstream sources as Python's
+# `snowballstemmer`. Has no transitive dependencies with default features off.
+rust-stemmers = { version = "1.2", default-features = false, optional = true }
 
 [dev-dependencies]
 insta = { workspace = true }

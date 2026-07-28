@@ -7,6 +7,7 @@ use sphinxdocrs::environment::{
     BuildEnvironment, CONFIG_CHANGED, CONFIG_EXTENSIONS_CHANGED, CONFIG_NEW, CONFIG_OK,
     CONFIG_UNSET, EnvProject, default_settings,
 };
+use tempfile::TempDir;
 
 fn make_env() -> BuildEnvironment {
     let config = SphinxConfig::new_defaults();
@@ -196,4 +197,147 @@ fn env_carries_config_language() {
     let project = EnvProject::new("/tmp/src", &[(".rst", "restructuredtext")]);
     let env = BuildEnvironment::new(config, project, "/tmp/src", "/tmp/doctrees");
     assert_eq!(env.config.language(), "de");
+}
+
+// ── H2: read/write pipeline ───────────────────────────────────────────────────
+//
+// `find_files` (H2a), doctree store round trip (H2b), `read_all` (H2c),
+// `get_and_resolve_doctree` (H2e) and `check_consistency` (H2f).
+
+/// Build a `BuildEnvironment` backed by real temp directories containing
+/// `files` (docname → RST source), returning the srcdir/doctreedir
+/// `TempDir` guards alongside the env so callers can inspect the
+/// filesystem after `find_files`/`read_all` run.
+fn make_disk_env(files: &[(&str, &str)]) -> (TempDir, TempDir, BuildEnvironment) {
+    let src = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    for (docname, source) in files {
+        let path = src.path().join(format!("{docname}.rst"));
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, source).unwrap();
+    }
+    let config = SphinxConfig::new_defaults();
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let env = BuildEnvironment::new(config, project, src.path(), doctrees.path());
+    (src, doctrees, env)
+}
+
+#[test]
+fn find_files_discovers_rst_docs() {
+    let (_src, _dt, mut env) =
+        make_disk_env(&[("index", "Home\n====\n"), ("guide/intro", "Intro\n=====\n")]);
+    env.find_files().unwrap();
+    let mut docs: Vec<String> = env.found_docs().iter().cloned().collect();
+    docs.sort();
+    assert_eq!(docs, vec!["guide/intro".to_string(), "index".to_string()]);
+}
+
+#[test]
+fn find_files_respects_exclude_patterns() {
+    let (_src, _dt, mut env) =
+        make_disk_env(&[("index", "Home\n====\n"), ("_drafts/wip", "Draft\n=====\n")]);
+    use sphinxdocrs::config::ConfigVal;
+    env.config.set(
+        "exclude_patterns",
+        ConfigVal::List(vec![ConfigVal::Str("_drafts/**".into())]),
+    );
+    env.find_files().unwrap();
+    let docs: Vec<String> = env.found_docs().iter().cloned().collect();
+    assert_eq!(docs, vec!["index".to_string()]);
+}
+
+#[test]
+fn doc2path_resolves_discovered_docname() {
+    let (src, _dt, mut env) = make_disk_env(&[("index", "Home\n====\n")]);
+    env.find_files().unwrap();
+    assert_eq!(env.doc2path("index"), src.path().join("index.rst"));
+}
+
+#[test]
+fn store_and_get_doctree_round_trips() {
+    let (_src, _dt, env) = make_disk_env(&[("index", "Title\n=====\n\nBody text.\n")]);
+    let tree = env.parse_doc("index").unwrap();
+    env.store_doctree("index", &tree).unwrap();
+    assert!(env.has_stored_doctree("index"));
+    let restored = env.get_doctree("index").unwrap();
+    assert_eq!(
+        restored.node(restored.root()).children.len(),
+        tree.node(tree.root()).children.len()
+    );
+}
+
+#[test]
+fn get_doctree_missing_errors() {
+    let (_src, _dt, env) = make_disk_env(&[]);
+    assert!(!env.has_stored_doctree("nope"));
+    assert!(env.get_doctree("nope").is_err());
+}
+
+#[test]
+fn get_and_resolve_doctree_delegates_to_store() {
+    let (_src, _dt, env) = make_disk_env(&[("index", "Title\n=====\n")]);
+    let tree = env.parse_doc("index").unwrap();
+    env.store_doctree("index", &tree).unwrap();
+    assert!(env.get_and_resolve_doctree("index").is_ok());
+}
+
+#[test]
+fn read_all_parses_and_stores_every_doc() {
+    let (_src, _dt, mut env) = make_disk_env(&[
+        ("index", "Welcome\n=======\n\nHello.\n"),
+        ("about", "About\n=====\n\nInfo.\n"),
+    ]);
+    env.find_files().unwrap();
+    let read = env.read_all().unwrap();
+    assert_eq!(read, vec!["about".to_string(), "index".to_string()]);
+    assert!(env.is_doc_read("index"));
+    assert!(env.is_doc_read("about"));
+    assert!(env.has_stored_doctree("index"));
+    assert!(env.has_stored_doctree("about"));
+    assert_eq!(env.get_title("index"), Some("Welcome"));
+    assert_eq!(env.get_title("about"), Some("About"));
+}
+
+#[test]
+fn read_all_notes_toctree_and_include_dependencies() {
+    let (_src, _dt, mut env) = make_disk_env(&[
+        (
+            "index",
+            ".. toctree::\n\n   about\n   guide/intro\n\n.. include:: shared.rst\n",
+        ),
+        ("about", "About\n=====\n"),
+        ("guide/intro", "Intro\n=====\n"),
+    ]);
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+    assert_eq!(env.toc_num_entries.get("index"), Some(&2));
+    assert!(env.dependencies["index"].contains("shared.rst"));
+}
+
+#[test]
+fn check_consistency_flags_orphan_docs() {
+    let (_src, _dt, mut env) = make_disk_env(&[
+        ("index", ".. toctree::\n\n   about\n"),
+        ("about", "About\n=====\n"),
+        ("orphan", "Orphan\n======\n"),
+    ]);
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+    let warnings = env.check_consistency();
+    assert!(warnings.iter().any(|w| w.contains("orphan")));
+    assert!(!warnings.iter().any(|w| w.contains("index:")));
+    assert!(!warnings.iter().any(|w| w.contains("about:")));
+}
+
+#[test]
+fn check_consistency_empty_when_all_docs_in_toctree() {
+    let (_src, _dt, mut env) = make_disk_env(&[
+        ("index", ".. toctree::\n\n   about\n"),
+        ("about", "About\n=====\n"),
+    ]);
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+    assert!(env.check_consistency().is_empty());
 }

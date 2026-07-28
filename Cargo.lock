@@ -660,6 +660,8 @@ dependencies = [
  "pyo3",
  "rstest",
  "rvcr",
+ "serde",
+ "serde_json",
  "wiremock",
 ]
 

@@ -277,4 +277,632 @@ impl Doctree {
         });
         id
     }
+
+    /// Serialize this doctree to a self-contained JSON byte buffer.
+    ///
+    /// Used by `sphinxdocrs`'s doctree store to persist the parsed result
+    /// of the read phase (`doctreedir/<docname>.doctree`) so the write
+    /// phase can render without re-parsing RST.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let data: DoctreeData = self.into();
+        // Construction from a valid `Doctree` always serializes; the
+        // `unwrap` only fails on non-serializable types (floats/maps with
+        // non-string keys), none of which appear in `NodeKindData`.
+        serde_json::to_vec(&data).expect("Doctree -> JSON serialization cannot fail")
+    }
+
+    /// Deserialize a doctree previously produced by [`Doctree::to_bytes`].
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, serde_json::Error> {
+        let data: DoctreeData = serde_json::from_slice(bytes)?;
+        Ok(data.into())
+    }
+}
+
+// ── serde codec ───────────────────────────────────────────────────────────────
+//
+// `NodeKind` carries a handful of `&'static str` / `Option<&'static str>`
+// fields (interned constants such as `EnumeratedList::enumtype` or
+// `Admonition::kind`). `serde::Deserialize` cannot produce a `&'static str`
+// from an owned buffer, so we mirror `NodeKind` with an all-owned variant
+// (`NodeKindData`) that derives `Serialize`/`Deserialize` normally, and
+// convert the handful of `&'static str` fields back via [`intern`], which
+// leaks a small owned `String` into a `&'static str`. This only runs once
+// per doctree load (deserialize), and the leaked strings are a handful of
+// short tags (e.g. `"note"`, `"arabic"`) — negligible in practice for a
+// process that loads a bounded number of doctrees per build.
+
+fn intern(s: String) -> &'static str {
+    Box::leak(s.into_boxed_str())
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DoctreeData {
+    nodes: Vec<NodeData>,
+    root: NodeId,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct NodeData {
+    kind: NodeKindData,
+    parent: Option<NodeId>,
+    children: Vec<NodeId>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+enum NodeKindData {
+    Document {
+        source: String,
+        ids: String,
+        names: String,
+        title: String,
+    },
+    Section {
+        ids: String,
+        names: String,
+        classes: String,
+    },
+    Title,
+    Subtitle {
+        ids: String,
+        names: String,
+    },
+    Transition,
+    Paragraph,
+    Text(String),
+    Emphasis,
+    Strong,
+    Literal,
+    TitleReference,
+    Inline {
+        classes: String,
+    },
+    Math {
+        latex: String,
+    },
+    MathBlock {
+        latex: String,
+    },
+    LiteralBlock {
+        classes: String,
+    },
+    BulletList {
+        bullet: char,
+    },
+    EnumeratedList {
+        enumtype: String,
+        prefix: String,
+        suffix: String,
+        start: Option<u32>,
+    },
+    ListItem,
+    DefinitionList,
+    DefinitionListItem,
+    Term,
+    Classifier,
+    Definition,
+    FieldList,
+    Field,
+    FieldName,
+    FieldBody,
+    Docinfo,
+    Bibliographic {
+        tag: String,
+    },
+    BlockQuote,
+    Admonition {
+        kind: String,
+    },
+    Image {
+        uri: String,
+        alt: Option<String>,
+        width: Option<String>,
+        height: Option<String>,
+    },
+    Raw {
+        format: String,
+    },
+    Comment,
+    Reference {
+        name: String,
+        refuri: String,
+        anonymous: bool,
+    },
+    Target {
+        ids: String,
+        names: String,
+        refuri: String,
+        anonymous: bool,
+    },
+    SubstitutionDefinition {
+        names: String,
+    },
+    SubstitutionReference {
+        refname: String,
+    },
+    Table,
+    Tgroup {
+        cols: u32,
+    },
+    Colspec {
+        colwidth: u32,
+    },
+    Thead,
+    Tbody,
+    Row,
+    Entry {
+        morecols: u32,
+        morerows: u32,
+    },
+    Attribution,
+    Figure,
+    Caption,
+    Legend,
+    Footnote {
+        ids: String,
+        names: String,
+        backrefs: String,
+        auto: Option<String>,
+    },
+    FootnoteReference {
+        ids: String,
+        refid: String,
+        auto: Option<String>,
+    },
+    Citation {
+        ids: String,
+        names: String,
+        backrefs: String,
+    },
+    CitationReference {
+        ids: String,
+        refid: String,
+    },
+    Label,
+    Problematic {
+        ids: String,
+        refid: String,
+    },
+    SystemMessage {
+        level: u32,
+        line: Option<u32>,
+        ty: String,
+        ids: String,
+        backrefs: String,
+    },
+}
+
+impl From<&Doctree> for DoctreeData {
+    fn from(tree: &Doctree) -> Self {
+        DoctreeData {
+            nodes: tree.nodes.iter().map(NodeData::from).collect(),
+            root: tree.root,
+        }
+    }
+}
+
+impl From<DoctreeData> for Doctree {
+    fn from(data: DoctreeData) -> Self {
+        Doctree {
+            nodes: data.nodes.into_iter().map(Node::from).collect(),
+            root: data.root,
+        }
+    }
+}
+
+impl From<&Node> for NodeData {
+    fn from(node: &Node) -> Self {
+        NodeData {
+            kind: NodeKindData::from(&node.kind),
+            parent: node.parent,
+            children: node.children.clone(),
+        }
+    }
+}
+
+impl From<NodeData> for Node {
+    fn from(data: NodeData) -> Self {
+        Node {
+            kind: data.kind.into(),
+            parent: data.parent,
+            children: data.children,
+        }
+    }
+}
+
+impl From<&NodeKind> for NodeKindData {
+    fn from(kind: &NodeKind) -> Self {
+        match kind.clone() {
+            NodeKind::Document {
+                source,
+                ids,
+                names,
+                title,
+            } => NodeKindData::Document {
+                source,
+                ids,
+                names,
+                title,
+            },
+            NodeKind::Section {
+                ids,
+                names,
+                classes,
+            } => NodeKindData::Section {
+                ids,
+                names,
+                classes,
+            },
+            NodeKind::Title => NodeKindData::Title,
+            NodeKind::Subtitle { ids, names } => NodeKindData::Subtitle { ids, names },
+            NodeKind::Transition => NodeKindData::Transition,
+            NodeKind::Paragraph => NodeKindData::Paragraph,
+            NodeKind::Text(s) => NodeKindData::Text(s),
+            NodeKind::Emphasis => NodeKindData::Emphasis,
+            NodeKind::Strong => NodeKindData::Strong,
+            NodeKind::Literal => NodeKindData::Literal,
+            NodeKind::TitleReference => NodeKindData::TitleReference,
+            NodeKind::Inline { classes } => NodeKindData::Inline { classes },
+            NodeKind::Math { latex } => NodeKindData::Math { latex },
+            NodeKind::MathBlock { latex } => NodeKindData::MathBlock { latex },
+            NodeKind::LiteralBlock { classes } => NodeKindData::LiteralBlock { classes },
+            NodeKind::BulletList { bullet } => NodeKindData::BulletList { bullet },
+            NodeKind::EnumeratedList {
+                enumtype,
+                prefix,
+                suffix,
+                start,
+            } => NodeKindData::EnumeratedList {
+                enumtype: enumtype.to_string(),
+                prefix,
+                suffix,
+                start,
+            },
+            NodeKind::ListItem => NodeKindData::ListItem,
+            NodeKind::DefinitionList => NodeKindData::DefinitionList,
+            NodeKind::DefinitionListItem => NodeKindData::DefinitionListItem,
+            NodeKind::Term => NodeKindData::Term,
+            NodeKind::Classifier => NodeKindData::Classifier,
+            NodeKind::Definition => NodeKindData::Definition,
+            NodeKind::FieldList => NodeKindData::FieldList,
+            NodeKind::Field => NodeKindData::Field,
+            NodeKind::FieldName => NodeKindData::FieldName,
+            NodeKind::FieldBody => NodeKindData::FieldBody,
+            NodeKind::Docinfo => NodeKindData::Docinfo,
+            NodeKind::Bibliographic { tag } => NodeKindData::Bibliographic {
+                tag: tag.to_string(),
+            },
+            NodeKind::BlockQuote => NodeKindData::BlockQuote,
+            NodeKind::Admonition { kind } => NodeKindData::Admonition {
+                kind: kind.to_string(),
+            },
+            NodeKind::Image {
+                uri,
+                alt,
+                width,
+                height,
+            } => NodeKindData::Image {
+                uri,
+                alt,
+                width,
+                height,
+            },
+            NodeKind::Raw { format } => NodeKindData::Raw { format },
+            NodeKind::Comment => NodeKindData::Comment,
+            NodeKind::Reference {
+                name,
+                refuri,
+                anonymous,
+            } => NodeKindData::Reference {
+                name,
+                refuri,
+                anonymous,
+            },
+            NodeKind::Target {
+                ids,
+                names,
+                refuri,
+                anonymous,
+            } => NodeKindData::Target {
+                ids,
+                names,
+                refuri,
+                anonymous,
+            },
+            NodeKind::SubstitutionDefinition { names } => {
+                NodeKindData::SubstitutionDefinition { names }
+            }
+            NodeKind::SubstitutionReference { refname } => {
+                NodeKindData::SubstitutionReference { refname }
+            }
+            NodeKind::Table => NodeKindData::Table,
+            NodeKind::Tgroup { cols } => NodeKindData::Tgroup { cols },
+            NodeKind::Colspec { colwidth } => NodeKindData::Colspec { colwidth },
+            NodeKind::Thead => NodeKindData::Thead,
+            NodeKind::Tbody => NodeKindData::Tbody,
+            NodeKind::Row => NodeKindData::Row,
+            NodeKind::Entry { morecols, morerows } => NodeKindData::Entry { morecols, morerows },
+            NodeKind::Attribution => NodeKindData::Attribution,
+            NodeKind::Figure => NodeKindData::Figure,
+            NodeKind::Caption => NodeKindData::Caption,
+            NodeKind::Legend => NodeKindData::Legend,
+            NodeKind::Footnote {
+                ids,
+                names,
+                backrefs,
+                auto,
+            } => NodeKindData::Footnote {
+                ids,
+                names,
+                backrefs,
+                auto: auto.map(str::to_string),
+            },
+            NodeKind::FootnoteReference { ids, refid, auto } => NodeKindData::FootnoteReference {
+                ids,
+                refid,
+                auto: auto.map(str::to_string),
+            },
+            NodeKind::Citation {
+                ids,
+                names,
+                backrefs,
+            } => NodeKindData::Citation {
+                ids,
+                names,
+                backrefs,
+            },
+            NodeKind::CitationReference { ids, refid } => {
+                NodeKindData::CitationReference { ids, refid }
+            }
+            NodeKind::Label => NodeKindData::Label,
+            NodeKind::Problematic { ids, refid } => NodeKindData::Problematic { ids, refid },
+            NodeKind::SystemMessage {
+                level,
+                line,
+                ty,
+                ids,
+                backrefs,
+            } => NodeKindData::SystemMessage {
+                level,
+                line,
+                ty: ty.to_string(),
+                ids,
+                backrefs,
+            },
+        }
+    }
+}
+
+impl From<NodeKindData> for NodeKind {
+    fn from(data: NodeKindData) -> Self {
+        match data {
+            NodeKindData::Document {
+                source,
+                ids,
+                names,
+                title,
+            } => NodeKind::Document {
+                source,
+                ids,
+                names,
+                title,
+            },
+            NodeKindData::Section {
+                ids,
+                names,
+                classes,
+            } => NodeKind::Section {
+                ids,
+                names,
+                classes,
+            },
+            NodeKindData::Title => NodeKind::Title,
+            NodeKindData::Subtitle { ids, names } => NodeKind::Subtitle { ids, names },
+            NodeKindData::Transition => NodeKind::Transition,
+            NodeKindData::Paragraph => NodeKind::Paragraph,
+            NodeKindData::Text(s) => NodeKind::Text(s),
+            NodeKindData::Emphasis => NodeKind::Emphasis,
+            NodeKindData::Strong => NodeKind::Strong,
+            NodeKindData::Literal => NodeKind::Literal,
+            NodeKindData::TitleReference => NodeKind::TitleReference,
+            NodeKindData::Inline { classes } => NodeKind::Inline { classes },
+            NodeKindData::Math { latex } => NodeKind::Math { latex },
+            NodeKindData::MathBlock { latex } => NodeKind::MathBlock { latex },
+            NodeKindData::LiteralBlock { classes } => NodeKind::LiteralBlock { classes },
+            NodeKindData::BulletList { bullet } => NodeKind::BulletList { bullet },
+            NodeKindData::EnumeratedList {
+                enumtype,
+                prefix,
+                suffix,
+                start,
+            } => NodeKind::EnumeratedList {
+                enumtype: intern(enumtype),
+                prefix,
+                suffix,
+                start,
+            },
+            NodeKindData::ListItem => NodeKind::ListItem,
+            NodeKindData::DefinitionList => NodeKind::DefinitionList,
+            NodeKindData::DefinitionListItem => NodeKind::DefinitionListItem,
+            NodeKindData::Term => NodeKind::Term,
+            NodeKindData::Classifier => NodeKind::Classifier,
+            NodeKindData::Definition => NodeKind::Definition,
+            NodeKindData::FieldList => NodeKind::FieldList,
+            NodeKindData::Field => NodeKind::Field,
+            NodeKindData::FieldName => NodeKind::FieldName,
+            NodeKindData::FieldBody => NodeKind::FieldBody,
+            NodeKindData::Docinfo => NodeKind::Docinfo,
+            NodeKindData::Bibliographic { tag } => NodeKind::Bibliographic { tag: intern(tag) },
+            NodeKindData::BlockQuote => NodeKind::BlockQuote,
+            NodeKindData::Admonition { kind } => NodeKind::Admonition { kind: intern(kind) },
+            NodeKindData::Image {
+                uri,
+                alt,
+                width,
+                height,
+            } => NodeKind::Image {
+                uri,
+                alt,
+                width,
+                height,
+            },
+            NodeKindData::Raw { format } => NodeKind::Raw { format },
+            NodeKindData::Comment => NodeKind::Comment,
+            NodeKindData::Reference {
+                name,
+                refuri,
+                anonymous,
+            } => NodeKind::Reference {
+                name,
+                refuri,
+                anonymous,
+            },
+            NodeKindData::Target {
+                ids,
+                names,
+                refuri,
+                anonymous,
+            } => NodeKind::Target {
+                ids,
+                names,
+                refuri,
+                anonymous,
+            },
+            NodeKindData::SubstitutionDefinition { names } => {
+                NodeKind::SubstitutionDefinition { names }
+            }
+            NodeKindData::SubstitutionReference { refname } => {
+                NodeKind::SubstitutionReference { refname }
+            }
+            NodeKindData::Table => NodeKind::Table,
+            NodeKindData::Tgroup { cols } => NodeKind::Tgroup { cols },
+            NodeKindData::Colspec { colwidth } => NodeKind::Colspec { colwidth },
+            NodeKindData::Thead => NodeKind::Thead,
+            NodeKindData::Tbody => NodeKind::Tbody,
+            NodeKindData::Row => NodeKind::Row,
+            NodeKindData::Entry { morecols, morerows } => NodeKind::Entry { morecols, morerows },
+            NodeKindData::Attribution => NodeKind::Attribution,
+            NodeKindData::Figure => NodeKind::Figure,
+            NodeKindData::Caption => NodeKind::Caption,
+            NodeKindData::Legend => NodeKind::Legend,
+            NodeKindData::Footnote {
+                ids,
+                names,
+                backrefs,
+                auto,
+            } => NodeKind::Footnote {
+                ids,
+                names,
+                backrefs,
+                auto: auto.map(intern),
+            },
+            NodeKindData::FootnoteReference { ids, refid, auto } => NodeKind::FootnoteReference {
+                ids,
+                refid,
+                auto: auto.map(intern),
+            },
+            NodeKindData::Citation {
+                ids,
+                names,
+                backrefs,
+            } => NodeKind::Citation {
+                ids,
+                names,
+                backrefs,
+            },
+            NodeKindData::CitationReference { ids, refid } => {
+                NodeKind::CitationReference { ids, refid }
+            }
+            NodeKindData::Label => NodeKind::Label,
+            NodeKindData::Problematic { ids, refid } => NodeKind::Problematic { ids, refid },
+            NodeKindData::SystemMessage {
+                level,
+                line,
+                ty,
+                ids,
+                backrefs,
+            } => NodeKind::SystemMessage {
+                level,
+                line,
+                ty: intern(ty),
+                ids,
+                backrefs,
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod doctree_serde_tests {
+    use super::*;
+
+    #[test]
+    fn round_trip_preserves_structure() {
+        let mut tree = Doctree::new_document("test.rst");
+        let root = tree.root();
+        let sec = tree.append(
+            root,
+            NodeKind::Section {
+                ids: "s1".into(),
+                names: "s1".into(),
+                classes: String::new(),
+            },
+        );
+        tree.append(sec, NodeKind::Title);
+        tree.append(sec, NodeKind::Text("hello".into()));
+        tree.append(
+            sec,
+            NodeKind::EnumeratedList {
+                enumtype: "arabic",
+                prefix: String::new(),
+                suffix: ".".into(),
+                start: None,
+            },
+        );
+        tree.append(sec, NodeKind::Admonition { kind: "note" });
+
+        let bytes = tree.to_bytes();
+        let restored = Doctree::from_bytes(&bytes).expect("round trip");
+
+        assert_eq!(restored.nodes_len(), tree.nodes_len());
+        assert_eq!(restored.root(), tree.root());
+        match &restored.node(sec).kind {
+            NodeKind::Section { ids, .. } => assert_eq!(ids, "s1"),
+            other => panic!("unexpected kind: {other:?}"),
+        }
+        assert_eq!(restored.node(sec).children.len(), 4);
+    }
+
+    #[test]
+    fn round_trip_enumtype_and_admonition_kind_are_static_strs() {
+        let mut tree = Doctree::new_document("test.rst");
+        let root = tree.root();
+        let list = tree.append(
+            root,
+            NodeKind::EnumeratedList {
+                enumtype: "upperroman",
+                prefix: "(".into(),
+                suffix: ")".into(),
+                start: Some(3),
+            },
+        );
+        let bytes = tree.to_bytes();
+        let restored = Doctree::from_bytes(&bytes).unwrap();
+        match &restored.node(list).kind {
+            NodeKind::EnumeratedList {
+                enumtype, start, ..
+            } => {
+                assert_eq!(*enumtype, "upperroman");
+                assert_eq!(*start, Some(3));
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_document_round_trips() {
+        let tree = Doctree::new_document("empty.rst");
+        let bytes = tree.to_bytes();
+        let restored = Doctree::from_bytes(&bytes).unwrap();
+        assert_eq!(restored.nodes_len(), tree.nodes_len());
+    }
 }

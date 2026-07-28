@@ -3403,8 +3403,7 @@ fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str) {
     // Resolve language-dependent aliases (`:t:` → `title-reference`) through
     // the registry, mirroring `roles.role()`. An unregistered name is kept
     // as-is and rendered as a generic `<inline>`, as before.
-    let canonical =
-        crate::roles::role(role).unwrap_or_else(|| role.to_lowercase());
+    let canonical = crate::roles::role(role).unwrap_or_else(|| role.to_lowercase());
     match canonical.as_str() {
         "emphasis" => {
             let n = tree.append(parent, NodeKind::Emphasis);
@@ -3421,7 +3420,8 @@ fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str) {
         "title" | "title-reference" | "t" => {
             let n = tree.append(parent, NodeKind::TitleReference);
             push_text(tree, n, content);
-        }        "math" => {
+        }
+        "math" => {
             // Inline math role: `:math:`E=mc^2``. The renderer side
             // (html5_writer) routes this through `mathrenderrs` using
             // whichever backend the writer was configured with
@@ -3602,7 +3602,11 @@ fn try_match_interpreted_text(
     let end_rel = rest
         .char_indices()
         .find(|(offset, c)| {
-            *c == '`' && !escaped.get(content_start + offset).copied().unwrap_or(false)
+            *c == '`'
+                && !escaped
+                    .get(content_start + offset)
+                    .copied()
+                    .unwrap_or(false)
         })
         .map(|(offset, _)| offset)?;
     let content = &rest[..end_rel];

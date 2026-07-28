@@ -44,6 +44,12 @@ clap_complete = { workspace = true }
 pygmentsrs = { path = "../pygmentsrs", optional = true }
 mathrenderrs = { path = "../mathrenderrs" }
 chrono = "0.4.44"
+# Doctree serialization codec (`Doctree::to_bytes` / `from_bytes`), used by
+# sphinxdocrs's doctree store (persisted read-phase output). serde_json is
+# already in the workspace lockfile via sphinxdocrs, so this adds no new
+# transitive dependencies.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [dev-dependencies]
 insta = { workspace = true }

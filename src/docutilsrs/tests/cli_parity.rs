@@ -146,10 +146,30 @@ macro_rules! generate_parity_test {
     };
 }
 
-generate_parity_test!(test_rst2html5_cli_parity,    "rst2html5-rs",    "rst2html5",    env!("CARGO_BIN_EXE_rst2html5-rs"));
-generate_parity_test!(test_rst2latex_cli_parity,    "rst2latex-rs",    "rst2latex",    env!("CARGO_BIN_EXE_rst2latex-rs"));
-generate_parity_test!(test_rst2man_cli_parity,      "rst2man-rs",      "rst2man",      env!("CARGO_BIN_EXE_rst2man-rs"));
-generate_parity_test!(test_rst2odt_cli_parity,      "rst2odt-rs",      "rst2odt",      env!("CARGO_BIN_EXE_rst2odt-rs"));
+generate_parity_test!(
+    test_rst2html5_cli_parity,
+    "rst2html5-rs",
+    "rst2html5",
+    env!("CARGO_BIN_EXE_rst2html5-rs")
+);
+generate_parity_test!(
+    test_rst2latex_cli_parity,
+    "rst2latex-rs",
+    "rst2latex",
+    env!("CARGO_BIN_EXE_rst2latex-rs")
+);
+generate_parity_test!(
+    test_rst2man_cli_parity,
+    "rst2man-rs",
+    "rst2man",
+    env!("CARGO_BIN_EXE_rst2man-rs")
+);
+generate_parity_test!(
+    test_rst2odt_cli_parity,
+    "rst2odt-rs",
+    "rst2odt",
+    env!("CARGO_BIN_EXE_rst2odt-rs")
+);
 generate_parity_test!(
     test_rst2pseudoxml_cli_parity,
     "rst2pseudoxml-rs",

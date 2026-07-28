@@ -1104,6 +1104,25 @@ impl SphinxConfig {
             .unwrap_or_default()
     }
 
+    /// `include_patterns` — list of glob patterns to include (defaults to
+    /// `["**"]`, i.e. everything).
+    pub fn include_patterns(&self) -> Vec<String> {
+        self.get("include_patterns")
+            .and_then(|v| {
+                if let ConfigVal::List(items) = v {
+                    Some(
+                        items
+                            .iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| vec!["**".to_string()])
+    }
+
     /// `highlight_language` — default code-block language.
     pub fn highlight_language(&self) -> String {
         self.get("highlight_language")

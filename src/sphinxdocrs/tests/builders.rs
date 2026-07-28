@@ -310,3 +310,97 @@ fn build_all_uses_env_all_docs_when_populated() {
     assert!(out.path().join("about.html").exists());
     assert!(!out.path().join("skip.html").exists());
 }
+
+// ── build_all — two-phase (H2d) parity ───────────────────────────────────────
+//
+// Per the H2 plan gate: running the read phase
+// (`BuildEnvironment::find_files` + `read_all`) before `build_all` must be
+// output-neutral — `build_all` should render from the stored doctree
+// instead of re-parsing, but produce byte-identical HTML either way.
+
+/// Running the H2 read phase before `build_all` must produce the exact same
+/// HTML as the legacy single-phase path (parse-during-write) for the same
+/// project.
+#[test]
+fn build_all_two_phase_matches_single_phase_output() {
+    let docs: &[(&str, &str)] = &[
+        ("index", "Welcome\n=======\n\nHomepage **content**.\n"),
+        ("about", "About\n=====\n\nSome *info*.\n"),
+        ("guide/intro", "Intro\n=====\n\nNested doc.\n"),
+    ];
+
+    // Single-phase: build_all called directly, no read phase.
+    let src1 = TempDir::new().unwrap();
+    let out1 = TempDir::new().unwrap();
+    std::fs::create_dir(src1.path().join("guide")).unwrap();
+    for (docname, source) in docs {
+        std::fs::write(src1.path().join(format!("{docname}.rst")), source).unwrap();
+    }
+    let env1 = make_env(src1.path(), out1.path());
+    let result1 = HtmlBuilder::new()
+        .build_all(src1.path(), out1.path(), &env1)
+        .unwrap();
+
+    // Two-phase: find_files + read_all populate the doctree store first.
+    let src2 = TempDir::new().unwrap();
+    let out2 = TempDir::new().unwrap();
+    let doctrees2 = TempDir::new().unwrap();
+    std::fs::create_dir(src2.path().join("guide")).unwrap();
+    for (docname, source) in docs {
+        std::fs::write(src2.path().join(format!("{docname}.rst")), source).unwrap();
+    }
+    let config = SphinxConfig::new_defaults();
+    let project = EnvProject::new(src2.path(), &[(".rst", "restructuredtext")]);
+    let mut env2 = BuildEnvironment::new(config, project, src2.path(), doctrees2.path());
+    env2.find_files().unwrap();
+    env2.read_all().unwrap();
+    let result2 = HtmlBuilder::new()
+        .build_all(src2.path(), out2.path(), &env2)
+        .unwrap();
+
+    assert_eq!(result1.written, result2.written);
+    for (docname, _) in docs {
+        assert_eq!(
+            read_html(out1.path(), docname),
+            read_html(out2.path(), docname),
+            "HTML for {docname:?} must be identical between single-phase and two-phase builds"
+        );
+    }
+}
+
+/// A doctree already persisted for a docname is used as-is (not re-parsed)
+/// by `build_all`, confirmed by writing a different tree than what the RST
+/// source on disk would parse to.
+#[test]
+fn build_all_prefers_stored_doctree_over_reparsing_source() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    std::fs::write(src.path().join("index.rst"), "Original\n========\n").unwrap();
+
+    let config = SphinxConfig::new_defaults();
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let mut env = BuildEnvironment::new(config, project, src.path(), doctrees.path());
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+
+    // Overwrite the stored doctree with one parsed from different content,
+    // without touching the RST source on disk.
+    let alt_tree =
+        docutilsrs::parse_rst_with_source("Different\n=========\n\nStored body.\n", "index");
+    env.store_doctree("index", &alt_tree).unwrap();
+
+    HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+    let html = read_html(out.path(), "index");
+    assert!(
+        html.contains("Different") || html.contains("Stored body"),
+        "build_all should render the stored doctree, not re-parse {:?}",
+        src.path().join("index.rst")
+    );
+    assert!(
+        !html.contains("Original"),
+        "build_all should not have re-parsed the on-disk RST source"
+    );
+}

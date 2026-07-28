@@ -209,12 +209,33 @@ impl SphinxApp {
         })
     }
 
+    /// Run the read phase: discover source files and parse every document
+    /// into a doctree, persisting each to the doctree store.
+    ///
+    /// Mirrors `Sphinx._init_builder` → `BuildEnvironment.find_files` +
+    /// `Builder.read` (i.e. `env-get-outdated` / `env-purge-doc` /
+    /// `read-source` machinery collapsed into [`BuildEnvironment::find_files`]
+    /// + [`BuildEnvironment::read_all`] for the **H2** two-phase pipeline).
+    ///
+    /// Called automatically by [`build`](Self::build); exposed separately so
+    /// callers/tests can inspect the environment (`found_docs`, `all_docs`,
+    /// stored doctrees, `check_consistency`) between the read and write
+    /// phases.
+    pub fn read(&mut self) -> Result<(), AppError> {
+        self.env.find_files()?;
+        self.env.read_all()?;
+        Ok(())
+    }
+
     /// Run the build.
     ///
-    /// Mirrors `Sphinx.build(force_all=True)` for a full rebuild.
+    /// Mirrors `Sphinx.build(force_all=True)` for a full rebuild: runs the
+    /// read phase ([`read`](Self::read)) followed by the selected builder's
+    /// write phase (`Builder::build_all`).
     ///
     /// Returns a [`BuildResult`] with counts of written / skipped documents.
-    pub fn build(&self) -> Result<BuildResult, AppError> {
+    pub fn build(&mut self) -> Result<BuildResult, AppError> {
+        self.read()?;
         match self.buildername.as_str() {
             "html" => {
                 let builder = HtmlBuilder::new();
@@ -367,7 +388,7 @@ mod tests {
         let src = make_src();
         let out = TempDir::new().unwrap();
         let dt = TempDir::new().unwrap();
-        let app =
+        let mut app =
             SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
         let result = app.build().unwrap();
         assert_eq!(result.written, 1);
@@ -379,7 +400,7 @@ mod tests {
         let src = make_src();
         let out = TempDir::new().unwrap();
         let dt = TempDir::new().unwrap();
-        let app =
+        let mut app =
             SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
         app.build().unwrap();
         let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
@@ -393,7 +414,7 @@ mod tests {
         std::fs::write(src.path().join("about.rst"), "About\n=====\n").unwrap();
         let out = TempDir::new().unwrap();
         let dt = TempDir::new().unwrap();
-        let app =
+        let mut app =
             SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
         let result = app.build().unwrap();
         assert_eq!(result.written, 2);

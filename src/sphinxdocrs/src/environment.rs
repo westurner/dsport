@@ -35,6 +35,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use docutilsrs::doctree::{Doctree, NodeKind};
+
+use crate::builders::BuildError;
 use crate::config::SphinxConfig;
 
 // ── project shim ─────────────────────────────────────────────────────────────
@@ -47,8 +50,12 @@ use crate::config::SphinxConfig;
 pub struct EnvProject {
     pub srcdir: PathBuf,
     pub source_suffix: Vec<(String, String)>,
-    /// Known docnames (populated by `discover`).
+    /// Known docnames (populated by `discover` / `find_files`).
     pub docnames: HashSet<String>,
+    /// docname → source-relative POSIX path (populated by `find_files`).
+    ///
+    /// Mirrors `Project.path2doc` / `Project.doc2path`'s internal table.
+    pub docname_to_path: HashMap<String, String>,
 }
 
 impl EnvProject {
@@ -60,6 +67,7 @@ impl EnvProject {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
             docnames: HashSet::new(),
+            docname_to_path: HashMap::new(),
         }
     }
 }
@@ -300,6 +308,315 @@ impl BuildEnvironment {
     pub fn found_docs(&self) -> &HashSet<String> {
         &self.project.docnames
     }
+
+    // ── H2a: file discovery ───────────────────────────────────────────────────
+
+    /// Walk `self.srcdir`, honouring `exclude_patterns` / `include_patterns`
+    /// from config, and populate `self.project.docnames` (+ path map).
+    ///
+    /// Mirrors `sphinx.project.Project.discover`, folded into the env per
+    /// **H2a** so `BuildEnvironment` is the single source of truth for
+    /// which documents exist.
+    pub fn find_files(&mut self) -> Result<(), BuildError> {
+        let include = self.config.include_patterns();
+        let mut exclude = self.config.exclude_patterns();
+        for p in PROJECT_EXCLUDE_PATHS {
+            exclude.push((*p).to_string());
+        }
+
+        let files = crate::util_matching::get_matching_files(&self.srcdir, &include, &exclude)
+            .map_err(|e| BuildError::Other(format!("invalid exclude/include pattern: {e}")))?;
+
+        // Longest-suffix-first so e.g. `.rst.txt` (if configured) matches
+        // before the shorter `.txt`.
+        let mut suffixes: Vec<String> = self.config.source_suffix().into_keys().collect();
+        suffixes.sort_by_key(|b| std::cmp::Reverse(b.len()));
+
+        self.project.docnames.clear();
+        self.project.docname_to_path.clear();
+
+        for filename in files {
+            let name = filename.rsplit('/').next().unwrap_or(&filename);
+            let matched = suffixes.iter().find(|sfx| name.ends_with(sfx.as_str()));
+            if let Some(sfx) = matched {
+                let docname = filename
+                    .strip_suffix(sfx.as_str())
+                    .unwrap_or(&filename)
+                    .to_string();
+                // Match upstream: first-registered wins on collision.
+                if self.project.docnames.contains(&docname) {
+                    continue;
+                }
+                self.project.docnames.insert(docname.clone());
+                self.project.docname_to_path.insert(docname, filename);
+            }
+        }
+        Ok(())
+    }
+
+    /// Return the absolute source path for `docname`.
+    ///
+    /// Uses the path recorded by [`find_files`](Self::find_files) when
+    /// available; otherwise falls back to `docname + <first source suffix>`,
+    /// matching upstream `Project.doc2path`.
+    pub fn doc2path(&self, docname: &str) -> PathBuf {
+        if let Some(rel) = self.project.docname_to_path.get(docname) {
+            return self.srcdir.join(rel);
+        }
+        let first_suffix = self
+            .config
+            .source_suffix()
+            .into_keys()
+            .next()
+            .unwrap_or_else(|| ".rst".to_string());
+        self.srcdir.join(format!("{docname}{first_suffix}"))
+    }
+
+    // ── H2b: doctree store ────────────────────────────────────────────────────
+
+    /// Path to the persisted doctree for `docname` under `self.doctreedir`.
+    pub fn doctree_path(&self, docname: &str) -> Result<PathBuf, BuildError> {
+        sanitize_docname(docname)?;
+        let rel: PathBuf = format!("{docname}.doctree").split('/').collect();
+        Ok(self.doctreedir.join(rel))
+    }
+
+    /// Parse `docname`'s current source file into a fresh [`Doctree`]
+    /// (does not touch the store). Mirrors the parsing half of
+    /// `BuildEnvironment.read_doc`.
+    pub fn parse_doc(&self, docname: &str) -> Result<Doctree, BuildError> {
+        sanitize_docname(docname)?;
+        let path = self.doc2path(docname);
+        let source = std::fs::read_to_string(&path)
+            .map_err(|e| BuildError::Other(format!("failed to read {}: {e}", path.display())))?;
+        Ok(docutilsrs::parse_rst_with_source(&source, docname))
+    }
+
+    /// Persist `tree` to `doctreedir/<docname>.doctree`.
+    ///
+    /// Mirrors the on-disk half of `BuildEnvironment.read_doc` (upstream
+    /// pickles the whole env; here each doctree is stored independently so
+    /// the write phase can fetch just the documents it needs).
+    pub fn store_doctree(&self, docname: &str, tree: &Doctree) -> Result<(), BuildError> {
+        let path = self.doctree_path(docname)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&path, tree.to_bytes())?;
+        Ok(())
+    }
+
+    /// Return `true` if a doctree has been persisted for `docname`.
+    pub fn has_stored_doctree(&self, docname: &str) -> bool {
+        self.doctree_path(docname)
+            .map(|p| p.is_file())
+            .unwrap_or(false)
+    }
+
+    /// Read back a doctree previously persisted by
+    /// [`store_doctree`](Self::store_doctree).
+    ///
+    /// Mirrors `BuildEnvironment.get_doctree`.
+    pub fn get_doctree(&self, docname: &str) -> Result<Doctree, BuildError> {
+        let path = self.doctree_path(docname)?;
+        let bytes = std::fs::read(&path)
+            .map_err(|e| BuildError::Other(format!("no stored doctree for {docname:?}: {e}")))?;
+        Doctree::from_bytes(&bytes)
+            .map_err(|e| BuildError::Other(format!("corrupt doctree for {docname:?}: {e}")))
+    }
+
+    /// Return the resolved doctree for `docname`, ready for the write phase.
+    ///
+    /// Mirrors `BuildEnvironment.get_and_resolve_doctree`. Post-read
+    /// transforms (cross-reference resolution, toctree expansion) belong to
+    /// the domain machinery in **H3**/**H5** and are not implemented yet —
+    /// this currently returns the stored doctree unchanged, which is
+    /// correct as long as no domain has registered a transform.
+    pub fn get_and_resolve_doctree(&self, docname: &str) -> Result<Doctree, BuildError> {
+        self.get_doctree(docname)
+    }
+
+    // ── H2c: read phase ───────────────────────────────────────────────────────
+
+    /// Read every doc in [`found_docs`](Self::found_docs), recording titles
+    /// and toctree entries, and persisting each parsed doctree to the store
+    /// so the write phase can retrieve it without re-parsing. Returns the
+    /// docnames processed, in sorted order.
+    ///
+    /// Mirrors the per-document loop inside `Sphinx.read()` /
+    /// `BuildEnvironment.read_doc`. UID-based versioning
+    /// (`apply_uid_transform`, incremental rebuild) and full toctree/include
+    /// directive parsing (currently a text-level scan — see
+    /// [`scan_toctree_entries`]) are accepted deviations for this phase of
+    /// the port; they are picked up again in **H8** and **H3a**
+    /// respectively.
+    pub fn read_all(&mut self) -> Result<Vec<String>, BuildError> {
+        let mut docnames: Vec<String> = self.found_docs().iter().cloned().collect();
+        docnames.sort();
+
+        for docname in &docnames {
+            let path = self.doc2path(docname);
+            let source = std::fs::read_to_string(&path).map_err(|e| {
+                BuildError::Other(format!("failed to read {}: {e}", path.display()))
+            })?;
+
+            let tree = docutilsrs::parse_rst_with_source(&source, docname);
+
+            let title = match &tree.node(tree.root()).kind {
+                NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
+                _ => docname.rsplit('/').next().unwrap_or(docname).to_string(),
+            };
+            self.set_title(docname.clone(), title);
+
+            let entries = scan_toctree_entries(&source);
+            if !entries.is_empty() {
+                self.note_toctree(docname.clone(), entries);
+            }
+
+            for include in scan_include_entries(&source) {
+                self.note_dependency(docname.clone(), include);
+            }
+
+            self.store_doctree(docname, &tree)?;
+            self.record_doc_read(docname.clone(), now_micros());
+        }
+
+        Ok(docnames)
+    }
+
+    /// Record that `docname` contains a toctree with `entries` (already
+    /// bare docnames, in document order).
+    ///
+    /// Mirrors `BuildEnvironment.note_toctree`: updates `toctree_includes`
+    /// / `toc_num_entries` and marks `docname` as a rebuild-dependent of
+    /// every entry (consulted by incremental rebuild, **H8**, to know which
+    /// parent page's toctree needs regenerating when a child doc changes).
+    pub fn note_toctree(&mut self, docname: impl Into<String>, entries: Vec<String>) {
+        let docname = docname.into();
+        self.toc_num_entries.insert(docname.clone(), entries.len());
+        for entry in &entries {
+            self.files_to_rebuild
+                .entry(entry.clone())
+                .or_default()
+                .insert(docname.clone());
+        }
+        self.toctree_includes.insert(docname, entries);
+    }
+
+    // ── H2f: consistency check ────────────────────────────────────────────────
+
+    /// Return a warning for every found document that is not the root
+    /// document and is not reachable from any toctree.
+    ///
+    /// Mirrors `BuildEnvironment.check_consistency`'s
+    /// `"document isn't included in any toctree"` warning text.
+    pub fn check_consistency(&self) -> Vec<String> {
+        let root_doc = self.config.root_doc();
+        let mut included: HashSet<&str> = HashSet::new();
+        for entries in self.toctree_includes.values() {
+            for e in entries {
+                included.insert(e.as_str());
+            }
+        }
+
+        let mut warnings: Vec<String> = self
+            .found_docs()
+            .iter()
+            .filter(|d| d.as_str() != root_doc && !included.contains(d.as_str()))
+            .map(|d| format!("{d}: document isn't included in any toctree"))
+            .collect();
+        warnings.sort();
+        warnings
+    }
+}
+
+/// Always-excluded path patterns, matching upstream `sphinx.project.EXCLUDE_PATHS`.
+const PROJECT_EXCLUDE_PATHS: &[&str] = &["**/_sources", ".#*", "**/.#*", "*.lproj/**"];
+
+/// Validate a docname: no empty/`..`/absolute path components. Shared by
+/// the doctree store so a malformed or hostile docname can't escape
+/// `doctreedir`.
+fn sanitize_docname(docname: &str) -> Result<(), BuildError> {
+    if docname.is_empty() {
+        return Err(BuildError::Other("docname must not be empty".into()));
+    }
+    for component in docname.split('/') {
+        if component.is_empty() || component == ".." || component.starts_with('/') {
+            return Err(BuildError::Other(format!(
+                "invalid docname component {component:?} in {docname:?}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Current time in microseconds since the Unix epoch, for `all_docs`
+/// read-time bookkeeping.
+fn now_micros() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_micros() as i64)
+        .unwrap_or(0)
+}
+
+/// Very small text-level scan for `.. toctree::` directive bodies,
+/// extracting the listed docnames.
+///
+/// `docutilsrs`'s parser does not yet produce a structural toctree node
+/// (planned alongside the domain work in **H3a**), so the read phase
+/// recovers entries directly from source text: after a `.. toctree::`
+/// line, every non-blank line indented further than the directive is
+/// treated as an entry, except option lines (`:maxdepth:`, `:glob:`,
+/// etc.) which start with `:`. The `Title <docname>` and `:glob:` forms
+/// are not expanded yet — accepted deviation until **H3a** lands a real
+/// toctree node.
+fn scan_toctree_entries(source: &str) -> Vec<String> {
+    let mut entries = Vec::new();
+    let lines: Vec<&str> = source.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let trimmed = lines[i].trim_start();
+        if let Some(rest) = trimmed.strip_prefix("..") {
+            let rest = rest.trim_start();
+            if rest.starts_with("toctree::") {
+                let indent = lines[i].len() - trimmed.len();
+                i += 1;
+                while i < lines.len() {
+                    let line = lines[i];
+                    if line.trim().is_empty() {
+                        i += 1;
+                        continue;
+                    }
+                    let line_indent = line.len() - line.trim_start().len();
+                    if line_indent <= indent {
+                        break;
+                    }
+                    let body = line.trim();
+                    if !body.starts_with(':') {
+                        entries.push(body.to_string());
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+        }
+        i += 1;
+    }
+    entries
+}
+
+/// Text-level scan for `.. include:: <path>` directives, used to record
+/// extra read-phase dependencies (`env.dependencies`).
+fn scan_include_entries(source: &str) -> Vec<String> {
+    source
+        .lines()
+        .filter_map(|l| {
+            l.trim_start()
+                .strip_prefix(".. include::")
+                .map(|rest| rest.trim().to_string())
+        })
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 // ── inline tests ──────────────────────────────────────────────────────────────

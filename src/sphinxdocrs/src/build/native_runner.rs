@@ -101,7 +101,7 @@ impl Runner for NativeMakeRunner {
                 eprintln!("Error: {e}");
                 Ok(1)
             }
-            Ok(app) => match app.build() {
+            Ok(mut app) => match app.build() {
                 Ok(result) => {
                     eprintln!("Build succeeded: {} file(s) written.", result.written);
                     Ok(0)

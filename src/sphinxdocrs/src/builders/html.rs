@@ -22,7 +22,7 @@
 use std::path::{Path, PathBuf};
 
 use docutilsrs::cli::{CommonOptions, Html5Options};
-use docutilsrs::doctree::NodeKind;
+use docutilsrs::doctree::{Doctree, NodeKind};
 use docutilsrs::{html5, parse_rst_with_source};
 
 use super::{BuildError, BuildResult, Builder};
@@ -66,18 +66,23 @@ impl HtmlBuilder {
         }
     }
 
-    /// Render RST `source` to an HTML5 body fragment and also extract the
-    /// document title promoted by `promote_document_title`.
+    /// Same as `render_fragment`, but starting from an already-parsed
+    /// [`Doctree`] instead of RST source text.
     ///
-    /// Returns `(title, body_html)`.
-    fn render_fragment(&self, docname: &str, source: &str) -> (String, String) {
-        let tree = parse_rst_with_source(source, docname);
+    /// Renders RST to an HTML5 body fragment and also extracts the document
+    /// title promoted by `promote_document_title`. Returns `(title, body_html)`.
+    ///
+    /// Used by the **H2d** two-phase write path (`write_doc` /
+    /// `build_all`), where the read phase
+    /// ([`BuildEnvironment::read_all`]) has already parsed and stored the
+    /// doctree, so the write phase never re-parses the source.
+    fn render_fragment_from_tree(&self, docname: &str, tree: &Doctree) -> (String, String) {
         // Extract promoted document title from NodeKind::Document { title, .. }
         let title = match &tree.node(tree.root()).kind {
             NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
             _ => docname.rsplit('/').next().unwrap_or(docname).to_owned(),
         };
-        let body = html5(&tree, &self.html5_options, &self.common_options);
+        let body = html5(tree, &self.html5_options, &self.common_options);
         (title, body)
     }
 
@@ -123,9 +128,27 @@ impl HtmlBuilder {
         outdir: &Path,
         meta: &PageMeta,
     ) -> Result<(), BuildError> {
+        let tree = parse_rst_with_source(source, docname);
+        self.build_doc_themed_from_tree(docname, &tree, outdir, meta)
+    }
+
+    /// Same as [`build_doc_themed`](Self::build_doc_themed), but starting
+    /// from an already-parsed [`Doctree`] instead of RST source text.
+    ///
+    /// This is the core of the **H2d** write phase: [`write_doc`](Builder::write_doc)
+    /// and the doctree-available branch of `build_all` both funnel through
+    /// here so a document is rendered from the tree persisted during the
+    /// read phase, never re-parsed from source.
+    fn build_doc_themed_from_tree(
+        &self,
+        docname: &str,
+        tree: &Doctree,
+        outdir: &Path,
+        meta: &PageMeta,
+    ) -> Result<(), BuildError> {
         sanitize_docname(docname)?;
 
-        let (title, body) = self.render_fragment(docname, source);
+        let (title, body) = self.render_fragment_from_tree(docname, tree);
 
         // Try the Jinja2 theme; fall back to the minimal wrapper on error.
         let page = match crate::theme::ThemeRenderer::new() {
@@ -218,6 +241,17 @@ impl Builder for HtmlBuilder {
         self.build_doc_themed(docname, source, outdir, &PageMeta::default())
     }
 
+    /// Render an already-parsed doctree (from the **H2** read phase) to
+    /// `outdir/{docname}.html`.
+    ///
+    /// Mirrors [`build_doc`](Builder::build_doc) but skips re-parsing the
+    /// RST source, since `doctree` was already produced and persisted by
+    /// [`BuildEnvironment::read_all`].
+    fn write_doc(&self, docname: &str, doctree: &Doctree, outdir: &Path) -> Result<(), BuildError> {
+        // Standalone single-doc write: no project metadata available.
+        self.build_doc_themed_from_tree(docname, doctree, outdir, &PageMeta::default())
+    }
+
     /// Build all RST documents in `srcdir` into `outdir`.
     ///
     /// Documents are taken from `env.all_docs` if populated, otherwise
@@ -268,10 +302,23 @@ impl Builder for HtmlBuilder {
         for docname in &docnames {
             sanitize_docname(docname)?;
             let src_path = src_path_for_docname_with_suffixes(srcdir, docname, &env.config)?;
-            let source = std::fs::read_to_string(&src_path).map_err(|e| {
-                BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
-            })?;
-            self.build_doc_themed(docname, &source, outdir, &meta)?;
+            // Prefer the doctree persisted by the H2 read phase
+            // (`BuildEnvironment::read_all`) so we never parse a document's
+            // RST source twice. Builds that skip the read phase (e.g. older
+            // callers / tests invoking `build_all` directly) fall back to
+            // parsing from source here, keeping output byte-identical
+            // either way.
+            match env.get_and_resolve_doctree(docname) {
+                Ok(tree) => {
+                    self.build_doc_themed_from_tree(docname, &tree, outdir, &meta)?;
+                }
+                Err(_) => {
+                    let source = std::fs::read_to_string(&src_path).map_err(|e| {
+                        BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
+                    })?;
+                    self.build_doc_themed(docname, &source, outdir, &meta)?;
+                }
+            }
             // Copy source to _sources/{docname}.rst.txt (mirrors StandaloneHTMLBuilder).
             copy_source_file(&src_path, docname, outdir)?;
             result.written += 1;
@@ -845,7 +892,8 @@ mod tests {
     #[test]
     fn render_fragment_section_title() {
         let b = builder();
-        let (_title, html) = b.render_fragment("test", "Hello\n=====\n\nWorld.\n");
+        let tree = parse_rst_with_source("Hello\n=====\n\nWorld.\n", "test");
+        let (_title, html) = b.render_fragment_from_tree("test", &tree);
         // html5 writer produces <section ...> and heading elements
         assert!(html.contains("Hello") || html.contains("section"));
     }
@@ -853,7 +901,8 @@ mod tests {
     #[test]
     fn render_fragment_empty_source() {
         let b = builder();
-        let (_title, html) = b.render_fragment("empty", "");
+        let tree = parse_rst_with_source("", "empty");
+        let (_title, html) = b.render_fragment_from_tree("empty", &tree);
         // Empty source → empty or minimal output, no panic.
         let _ = html; // just ensure it doesn't panic
     }

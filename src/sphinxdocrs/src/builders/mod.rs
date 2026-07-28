@@ -94,6 +94,31 @@ pub trait Builder {
     /// Mirrors `Builder.write_doc`.
     fn build_doc(&self, docname: &str, source: &str, outdir: &Path) -> Result<(), BuildError>;
 
+    /// Write a single document from an **already-parsed** doctree into
+    /// `outdir`, without touching the filesystem for RST source.
+    ///
+    /// Mirrors `Builder.write_doc` in the post-**H2** two-phase pipeline:
+    /// the read phase ([`BuildEnvironment::read_all`]) parses every
+    /// document once and persists the result via
+    /// [`BuildEnvironment::store_doctree`]; the write phase then retrieves
+    /// it with [`BuildEnvironment::get_and_resolve_doctree`] and renders
+    /// through this method, so a document is never parsed twice.
+    ///
+    /// Builders that have not adopted the split yet can rely on the
+    /// default implementation (an error) and keep using
+    /// [`build_doc`](Builder::build_doc) directly from their own
+    /// `build_all`.
+    fn write_doc(
+        &self,
+        _docname: &str,
+        _doctree: &docutilsrs::doctree::Doctree,
+        _outdir: &Path,
+    ) -> Result<(), BuildError> {
+        Err(BuildError::Other(
+            "write_doc not implemented for this builder".into(),
+        ))
+    }
+
     /// Build all documents in `srcdir` into `outdir`, guided by `env`.
     ///
     /// Discovers `.rst` files under `srcdir`, calls [`build_doc`](Builder::build_doc)

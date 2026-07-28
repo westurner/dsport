@@ -97,7 +97,8 @@ fn build_json_writes_fjson_pages() {
     let doctrees = tempfile::TempDir::new().unwrap();
     let outdir = out.path().join("build");
 
-    let app = SphinxApp::new(src.path(), &outdir, doctrees.path(), "json", HashMap::new()).unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), &outdir, doctrees.path(), "json", HashMap::new()).unwrap();
     let result = app.build().unwrap();
 
     assert_eq!(result.written, 1);
@@ -200,7 +201,8 @@ fn build_html_writes_index_html() {
     let src = make_src_with_docs(&[("index", "Welcome\n=======\n\nHomepage content.\n")]);
     let out = tempfile::TempDir::new().unwrap();
     let dt = tempfile::TempDir::new().unwrap();
-    let app = SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
     let result = app.build().unwrap();
     assert_eq!(result.written, 1);
     assert!(out.path().join("index.html").exists());
@@ -211,7 +213,8 @@ fn build_html_content_is_valid_html5() {
     let src = make_src_with_docs(&[("index", "Title\n=====\n\nParagraph.\n")]);
     let out = tempfile::TempDir::new().unwrap();
     let dt = tempfile::TempDir::new().unwrap();
-    let app = SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
     app.build().unwrap();
     let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
     assert!(html.starts_with("<!DOCTYPE html>"));
@@ -227,7 +230,8 @@ fn build_html_renders_rst_content() {
     )]);
     let out = tempfile::TempDir::new().unwrap();
     let dt = tempfile::TempDir::new().unwrap();
-    let app = SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
     app.build().unwrap();
     let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
     assert!(html.contains("Welcome to Sphinx") || html.contains("important"));
@@ -242,7 +246,8 @@ fn build_html_multi_doc_project() {
     ]);
     let out = tempfile::TempDir::new().unwrap();
     let dt = tempfile::TempDir::new().unwrap();
-    let app = SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
     let result = app.build().unwrap();
     assert_eq!(result.written, 3);
     assert!(out.path().join("index.html").exists());

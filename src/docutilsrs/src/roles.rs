@@ -187,7 +187,10 @@ pub fn register_local_role(name: &str, canonical: &str) {
 
 /// Remove a local role mapping. Mirrors `del roles._roles[name]`.
 pub fn unregister_role(name: &str) {
-    local_registry().lock().unwrap().remove(&name.to_lowercase());
+    local_registry()
+        .lock()
+        .unwrap()
+        .remove(&name.to_lowercase());
 }
 
 /// Set (or with `None`, clear) the default interpreted-text role.

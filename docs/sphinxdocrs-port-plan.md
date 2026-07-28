@@ -101,7 +101,7 @@ in the notes column of the relevant row.
 | `addnodes.py` | `addnodes` | P1 | **mirrored** | all 50+ node structs; `toctree` (Translatable), `desc*` family, 9 `desc_sig_*` leaves + `SIG_ELEMENTS`, `pending_xref`(`_condition`), `index`, `only`, `hlist`, `glossary`, `productionlist`, `number_reference`, `download_reference`, `manpage`, … |
 | `extension.py` | `extension` | P2 | **mirrored** | `Extension` wrapper + `verify_needs_extensions`. **Gap:** `load_extension` (→ **H4**) |
 | `registry.py` | `registry` | P2 | **done** | source-suffix/parser, transforms/post-transforms, CSS/JS/static assets, LaTeX packages, HTML themes, `add_builder`/`add_domain`/`add_translator`/`add_html_math_renderer` |
-| `versioning.py` | `versioning` | P2 | **done** | `VERSIONING_RATIO`, `levenshtein_distance`, `get_ratio`, `add_uids`, `merge_doctrees`, `VersionableNode`, `apply_uid_transform`, `UID_TRANSFORM_PRIORITY = 880`. **Gap:** not invoked from a read phase yet (→ **H2c**) |
+| `versioning.py` | `versioning` | P2 | **done** | `VERSIONING_RATIO`, `levenshtein_distance`, `get_ratio`, `add_uids`, `merge_doctrees`, `VersionableNode`, `apply_uid_transform`, `UID_TRANSFORM_PRIORITY = 880`. **Gap:** not invoked from a read phase yet — `docutilsrs::doctree::Node` has no `uid`/`VersionableNode` impl (→ **H8**) |
 | `config.py` | `config` | P2 | **mirrored** | `SphinxConfig`, 50+ built-in option registry, `ConfigVal`, `RebuildKind`, `ConfigOpt`, `convert_overrides`, alias sync (`master_doc`↔`root_doc`, `copyright`↔`project_copyright`), typed accessors, `py_read_conf_py` |
 | `util/*` | `util_*` | P2 | **mirrored** | `util_matching`, `util_console` (22 ANSI codes), `util_rst` (incl. `default_role`, **H1d**), `util_osutil`, `util_uri`, `util_lines`, `util_docstrings` |
 | `locale.py` | `locale` | P2 | **done** | `PoCatalog` (incl. `#, fuzzy` handling and header capture), `Translator`, `TranslatorRegistry`, `init`, `init_chain`, `init_console`, `get_translation`, `tr`, `tr_console`, `tr!`/`tr_c!`, `admonition_labels`. **Extension:** `CATALOG_LOOKUP_ORDER = ["sphinxdocrs", "sphinx"]` — `tr`/`tr_console` walk the chain, first hit wins |
@@ -109,9 +109,9 @@ in the notes column of the relevant row.
 | `roles.py` | `roles` | P3 | **partial** | pure-algorithm subset: `GENERIC_DOCROLES`, `SPECIFIC_DOCROLES`, `is_builtin_role`, `format_rfc_target`, `parse_emphasized_literal`, `XRefRoleConfig`, `DefaultRoleConfig`. **Gap:** role `run()` execution (→ **H5b**) |
 | `directives/` | — | P3 | **deferred** | no Rust module yet (→ **H5a**) |
 | `domains/` | — | P3 | **deferred** | only `registry.add_domain` name-registration exists; `env.domaindata` is never populated (→ **H3**) |
-| `environment/` | `environment` | P3 | **partial** | `BuildEnvironment` state skeleton + `EnvProject` + `default_settings`. **Gap:** `get_doctree`, `get_and_resolve_doctree`, `resolve_references`, `note_toctree`, `find_files`, `get_outdated`, `check_consistency`, `domains` (→ **H2**) |
+| `environment/` | `environment` | P3 | **mirrored** ✅ | `BuildEnvironment`: `find_files` (**H2a**), doctree store `parse_doc`/`store_doctree`/`get_doctree`/`has_stored_doctree` (**H2b**), `read_all` read phase (**H2c**), `get_and_resolve_doctree` (**H2e**), `check_consistency` (**H2f**). **Gap:** `resolve_references`, `domains` (→ **H3**) |
 | `builders/` | `builders` | P3 | **partial** | `Builder` trait + `HtmlBuilder`, `LatexBuilder`, `ManpageBuilder`, `LinkcheckBuilder`, `JsonBuilder`, all dispatched by `SphinxApp`. **Gap:** no dirhtml/singlehtml/text/xml/epub/texinfo/gettext (→ **H7**) |
-| `application.py` | `application` | P3 | **partial** | `SphinxApp`: path validation, config, registry, env, `build()`. **Gaps:** events, extension loading, parallel build, incremental rebuild, i18n (→ **H2**, **H4**, **H8**) |
+| `application.py` | `application` | P3 | **partial** | `SphinxApp`: path validation, config, registry, env, `read()` (**H2**: `find_files` + `read_all`), `build()` (`&mut self`, two-phase). **Gaps:** events, extension loading, parallel build, incremental rebuild, i18n (→ **H4**, **H8**) |
 | `theming.py` | `theme`, `theme_static` | P3 | **partial** | self-contained `sphinxdocrs_basic` theme (`LAYOUT_HTML`, `PAGE_HTML`, `THEME_CSS`) + `copy_theme_assets` / `render_templates`. **Gap:** theme inheritance, `theme.conf` / `theme.toml` resolution, third-party themes (→ **H6**) |
 | `search/` | `search` | P3 | **partial** | `SearchIndex`, `split_words`, `feed`, `to_json`, Snowball stemming for all 15 `sphinx.search` languages (**H1f**, via `stemmer.rs`). **Accepted deviation:** `rust_stemmers`' Dutch algorithm is the legacy `dutch_porter` Snowball revision, not the one `snowballstemmer.stemmer('dutch')` resolves to — patched via built-in `ParityOverrides` for Sphinx's own Dutch stopword vocabulary; broader vocabularies may need project-supplied overrides. **Gap:** `objects`/`objtypes`/`objnames`/`indexentries` emitted empty (→ **H3d**) |
 | `ext/autodoc/` | `autodoc` | P3 | **partial** | static extraction via `ruff_python_parser`: `document_module`, `render_function`, `render_class`. **Gaps:** runtime import, `:members:` filtering, inherited members, type hints, overloads, decorators, `__all__` ordering (→ **H9**) |
@@ -261,8 +261,8 @@ Tagged from `src/sphinx/tests/`.
 | `test_ext_autosummary/` | autogen | C4 | **done** — `tests/autogen.rs` |
 | `test_command_line.py`, `test__cli/` | cli | P3 | **partial** — arg layer native; full `Sphinx()` invocation deferred |
 | `test_application.py` | application | P3 | **partial** — `tests/application.rs` |
-| `test_builders/` | builders | P3 | **partial** — `tests/builders.rs`, `tests/builders_json.rs` |
-| `test_environment/` | environment | P3 | **partial** — `tests/environment.rs` (→ **H2**) |
+| `test_builders/` | builders | P3 | **partial** — `tests/builders.rs` (now includes **H2d** two-phase parity tests), `tests/builders_json.rs` |
+| `test_environment/` | environment | P3 | **mirrored** ✅ — `tests/environment.rs` gained the **H2** read-phase group (`find_files`, doctree store round trip, `read_all`, `check_consistency`) |
 | `test_roles.py` | roles | P3 | **partial** — `tests/roles.rs`; role execution deferred (→ **H5b**) |
 | `test_directives/` | directives | P3 | **deferred** (→ **H5a**) |
 | `test_domains/` | domains | P3 | **deferred** (→ **H3**) |
@@ -387,26 +387,32 @@ No new subsystem needed; each item closes a named gap on its own.
 **Exit:** the `intl`, linkcheck, json and `util_*` rows in §3 flip to
 **done**; `intersphinx` parsing becomes testable standalone.
 
-### Tier H2 — read/write pipeline (the unblocking milestone)
+### Tier H2 — read/write pipeline (the unblocking milestone) ✅
 
 | id | task | detail |
 | --- | --- | --- |
-| **H2a** | `BuildEnvironment::find_files(config)` | fold `Project::discover` into the env; populate `found_docs`, honour `exclude_patterns` / `include_patterns` |
-| **H2b** | Doctree store | `read_doc(docname) -> Doctree` via `docutilsrs::parse_rst`; persist to `doctreedir/<docname>.doctree` with a serde codec; `get_doctree(docname)` reads back |
-| **H2c** | Read phase | `SphinxApp::read()`: for each outdated doc — parse, run `apply_uid_transform`, record `titles` / `longtitles` / `metadata` / `dependencies` / `toc_num_entries`, call `note_toctree` |
-| **H2d** | Write phase | refactor `Builder::build_all` to consume `env.get_doctree(docname)` instead of re-parsing; `build_doc` becomes `write_doc(docname, doctree)` |
-| **H2e** | `get_and_resolve_doctree` | clone the stored doctree, apply post-transforms, hand it to the writer |
-| **H2f** | `check_consistency` | warn on documents not in any toctree, mirroring upstream message text |
+| **H2a** ✅ | `BuildEnvironment::find_files(config)` | folds `Project::discover` into `BuildEnvironment::find_files`; populates `project.docnames` + `project.docname_to_path`; honours `exclude_patterns` / `include_patterns` (new `SphinxConfig::include_patterns()` accessor, default `["**"]`) plus `PROJECT_EXCLUDE_PATHS` |
+| **H2b** ✅ | Doctree store | `BuildEnvironment::parse_doc(docname) -> Doctree` via `docutilsrs::parse_rst_with_source`; `store_doctree` / `get_doctree` / `has_stored_doctree` persist to `doctreedir/<docname>.doctree` using a new `Doctree::to_bytes`/`from_bytes` serde-json codec (`docutilsrs::doctree`) |
+| **H2c** ✅ | Read phase | `BuildEnvironment::read_all()`: for every discovered doc — parse, extract + record the promoted title, scan `.. toctree::` / `.. include::` directives and call `note_toctree` / `note_dependency`, `store_doctree`, `record_doc_read`. **Accepted deviation:** toctree/include scanning uses a text-level heuristic (`scan_toctree_entries` / `scan_include_entries`) since `docutilsrs`'s parser has no structural toctree node yet — real AST-based scanning deferred to **H3a** (domains). **Accepted deviation:** `apply_uid_transform` is not yet invoked here (`docutilsrs::doctree::Node` has no `uid` field / `VersionableNode` impl) — deferred to **H8** (incremental rebuild) to avoid a wide blast radius across `doctree.rs`/`parser.rs`/`html5.rs` |
+| **H2d** ✅ | Write phase | `Builder` trait gained `write_doc(docname, doctree, outdir)` (default: not-implemented error); `HtmlBuilder` overrides it via `build_doc_themed_from_tree` and `build_all` now prefers `env.get_and_resolve_doctree(docname)` when available, falling back to parsing from source otherwise (byte-identical output either way, confirmed by `build_all_two_phase_matches_single_phase_output` and `build_all_prefers_stored_doctree_over_reparsing_source`). `SphinxApp::build` is now `&mut self` and calls a new `SphinxApp::read()` (→ `env.find_files()` + `env.read_all()`) at the top |
+| **H2e** ✅ | `get_and_resolve_doctree` | currently delegates to `get_doctree` (no stored doctree is mutated). **Accepted deviation:** post-read transforms (references resolution, UID versioning) deferred to **H3**/**H5**/**H8** |
+| **H2f** ✅ | `check_consistency` | returns `"{docname}: document isn't included in any toctree"` for every discovered doc outside `root_doc` and the union of `toctree_includes`, mirroring upstream message text |
 
-**Gate:** `tests/environment.rs` grows a read-phase group;
-`tests/builders.rs` switches to the two-phase API with **unchanged
-expected HTML** — the refactor must be output-neutral for the existing
-suite.
+**Gate:** ✅ met — `tests/environment.rs` grew a new H2 read-phase test
+group (`find_files`, `doc2path`, doctree store round trip,
+`get_and_resolve_doctree`, `read_all`, `note_toctree`/dependencies,
+`check_consistency`); `tests/builders.rs` gained two-phase parity tests
+that run `find_files()` + `read_all()` before `build_all()` and assert
+**byte-identical HTML** vs. the legacy single-phase path, plus a test
+proving `build_all` renders the stored doctree rather than re-parsing.
+The full existing `sphinxdocrs`/`docutilsrs` suites (`cargo test`) and
+`cargo clippy --all-targets -- -D warnings` are clean.
 
 **Closes:** `environment/` → **mirrored** except `resolve_references` and
 `domains`. **Unblocks:** H3, H4, H6, H7, H8.
 
 ### Tier H3 — domains
+
 
 Port in payoff order. Each domain is a `Domain` impl plus its object
 types, directives, roles, and index.

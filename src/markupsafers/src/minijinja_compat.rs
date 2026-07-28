@@ -13,7 +13,7 @@
 //! 3. Provides [`escape_filter`] — a minijinja filter that escapes its
 //!    argument and returns a safe `Markup`-tagged value.
 
-use minijinja::value::{Object, ObjectKind, StructObject, Value};
+use minijinja::value::{Object, ObjectRepr, Value};
 use minijinja::{Error, ErrorKind};
 use std::fmt;
 use std::sync::Arc;
@@ -37,8 +37,8 @@ impl fmt::Display for MarkupValue {
 }
 
 impl Object for MarkupValue {
-    fn kind(&self) -> ObjectKind<'_> {
-        ObjectKind::Plain
+    fn repr(self: &Arc<Self>) -> ObjectRepr {
+        ObjectRepr::Plain
     }
 
     fn call_method(
@@ -66,13 +66,25 @@ impl Object for MarkupValue {
 
 /// Convert a `Markup` to a minijinja `Value` that will not be re-escaped.
 ///
-/// ```rust,ignore
+/// **Implementation note:** this returns a native minijinja "safe string"
+/// (`Value::from_safe_string`), not an `Object`-wrapped [`MarkupValue`].
+/// minijinja's `write_escaped` (the function that decides whether to
+/// HTML-escape an emitted value) only bypasses escaping for that exact
+/// representation (`ValueRepr::String(_, StringType::Safe)`) — an `Object`
+/// value's `render()` override is used for `Display`/formatting, but does
+/// **not** change the auto-escape decision made before rendering. Wrapping
+/// in [`MarkupValue`] first (as earlier versions of this function did) built
+/// and even round-tripped `__html__()` correctly, but silently left the
+/// output HTML-escaped in any `.html`/`.htm`/`.xml` auto-escaped template.
+///
+/// ```rust
 /// use markupsafers::{Markup, minijinja_compat::markup_to_value};
 /// let val = markup_to_value(Markup::from_safe("<b>ok</b>"));
 /// // When inserted into a minijinja context, renders as "<b>ok</b>".
+/// assert!(val.is_safe());
 /// ```
 pub fn markup_to_value(m: Markup) -> Value {
-    Value::from_object(MarkupValue(m))
+    Value::from_safe_string(m.into_string())
 }
 
 // ── Auto-escape callback ──────────────────────────────────────────────────────
@@ -107,7 +119,11 @@ pub fn markup_auto_escape_callback(name: &str) -> minijinja::AutoEscape {
 /// env.add_filter("e", escape_filter);
 /// ```
 pub fn escape_filter(val: Value) -> Value {
-    // If the value is already a MarkupValue, return it unchanged.
+    // Already a native safe string (or a previously-wrapped `MarkupValue`) —
+    // return unchanged.
+    if val.is_safe() {
+        return val;
+    }
     if let Some(obj) = val.as_object() {
         if obj.downcast_ref::<MarkupValue>().is_some() {
             return val;

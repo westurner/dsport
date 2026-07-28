@@ -79,6 +79,11 @@ fn is_native_builder_h7c_gettext_true() {
     assert!(is_native_builder("gettext"));
 }
 
+#[test]
+fn is_native_builder_h7d_changes_true() {
+    assert!(is_native_builder("changes"));
+}
+
 /// Every entry of `NATIVE_BUILDER_CLASSES` must be reachable through
 /// `NATIVE_BUILDERS`, and vice versa.
 #[test]

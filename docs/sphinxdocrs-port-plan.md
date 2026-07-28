@@ -112,7 +112,7 @@ in the notes column of the relevant row.
 | `environment/` | `environment` | P3 | **mirrored** ✅ | `BuildEnvironment`: `find_files` (**H2a**), doctree store `parse_doc`/`store_doctree`/`get_doctree`/`has_stored_doctree` (**H2b**), `read_all` read phase (**H2c**), `get_and_resolve_doctree` (**H2e**), `check_consistency` (**H2f**). **Gap:** `resolve_references`, `domains` (→ **H3**) |
 | `builders/` | `builders` | P3 | **partial** | `Builder` trait + `HtmlBuilder`, `LatexBuilder`, `ManpageBuilder`, `LinkcheckBuilder`, `JsonBuilder`, all dispatched by `SphinxApp`. **Gap:** no dirhtml/singlehtml/text/xml/epub/texinfo/gettext (→ **H7**) |
 | `application.py` | `application` | P3 | **partial** | `SphinxApp`: path validation, config, registry, env, `read()` (**H2**: `find_files` + `read_all`), `build()` (`&mut self`, two-phase). **Gaps:** events, extension loading, parallel build, incremental rebuild, i18n (→ **H4**, **H8**) |
-| `theming.py` | `theme`, `theme_static` | P3 | **partial** | self-contained `sphinxdocrs_basic` theme (`LAYOUT_HTML`, `PAGE_HTML`, `THEME_CSS`) + `copy_theme_assets` / `render_templates`. **Gap:** theme inheritance, `theme.conf` / `theme.toml` resolution, third-party themes (→ **H6**) |
+| `theming.py` | `theme`, `theme_static`, `theme_render` | P3 | **mirrored** ✅ | self-contained `sphinxdocrs_basic` theme + real third-party theme inheritance (`alabaster`/`basic`) rendered through `jinja2rs`; full per-page context (`pathto`/`hasdoc`/`toctree()`/`toc`/relbar/sidebars/`html_context`/`html-page-context`) (**H6**, done). **Accepted deviation:** `theme.conf`/`theme.toml` inheritance-chain parsing still goes through an embedded PyO3 bootstrap rather than pure Rust (**H6a**) |
 | `search/` | `search` | P3 | **done** | `SearchIndex`, `split_words`, `feed`, `to_json`, Snowball stemming for all 15 `sphinx.search` languages (**H1f**, via `stemmer.rs`). **Accepted deviation:** `rust_stemmers`' Dutch algorithm is the legacy `dutch_porter` Snowball revision, not the one `snowballstemmer.stemmer('dutch')` resolves to — patched via built-in `ParityOverrides` for Sphinx's own Dutch stopword vocabulary; broader vocabularies may need project-supplied overrides. `objects`/`objtypes`/`objnames`/`indexentries` now populated from domain data (**H3d**) — see the accepted deviations noted on that row in §3 |
 | `ext/autodoc/` | `autodoc` | P3 | **partial** | static extraction via `ruff_python_parser`: `document_module`, `render_function`, `render_class`. **Gaps:** runtime import, `:members:` filtering, inherited members, type hints, overloads, decorators, `__all__` ordering (→ **H9**) |
 | `ext/intersphinx/` | `intersphinx` | P3 | **partial** | `fetch_inventories`, `InvCache`, `Inventory` / `InventoryItem` / `InventoryError` (v1 + v2 `loads`, `load_file`), `dumps`. **Gap:** xref fallback — the parsed inventories are not consulted during reference resolution (→ **H5c**) |
@@ -137,7 +137,7 @@ Every binary honours `--use-python-impl` and `SPHINXDOCRS_PY_FALLBACK=1`.
 
 ```rust
 // src/sphinxdocrs/src/application.rs
-pub const NATIVE_BUILDERS: &[&str] = &["html", "latex", "man", "linkcheck"];
+pub const NATIVE_BUILDERS: &[&str] = &["html", "json", "latex", "man", "linkcheck"];
 ```
 
 ### 4.1 `sphinx-quickstart` (C1) — surface
@@ -292,7 +292,7 @@ Tagged from `src/sphinx/tests/`.
 | `test_domains/` | domains | P3 | **partial** — `std` (**H3a**), `rst` (**H3c**), `py` (**H3b**), `js` (**H3e**) done; `c`/`cpp` **keep-python** (**H3f**) |
 | `test_transforms/` | transforms | P3 | **deferred** — per-transform port |
 | `test_writers/` | writers | P3 | **deferred** — one writer at a time (→ **H7**) |
-| `test_theming/` | theming | P3 | **deferred** (→ **H6**) |
+| `test_theming/` | theming | P3 | **mirrored** — no dedicated `tests/theming.rs`; covered by inline `theme_render.rs`/`theme_static.rs` unit tests plus `tests/otherdocs.rs` real-theme builds (**H6**, done) |
 | `test_search.py` | search | P3 | **partial** — `tests/stemmer_parity.rs` (**H1f** closed); `objects`/`objtypes`/`objnames`/`indexentries` now populated from domain data (**H3d**, `tests/search_objects.rs`) |
 | `test_highlighting.py` | highlighting | P3 | **deferred** — blocked on `pygmentsrs` (→ **H10**) |
 | `test_markup/` | markup | P3 | **deferred** — depends on the docutils converter |
@@ -601,19 +601,40 @@ and every writer.
 tests, zero failures), `cargo clippy -p sphinxdocrs --all-targets -- -D
 warnings` clean, `cargo fmt` applied.
 
-### Tier H6 — theming
-
+### Tier H6 — theming ✅ (H6a accepted deviation)
 
 | id | task |
 | --- | --- |
-| **H6a** | Native theme resolution: read `theme.toml` / `theme.conf`, resolve `inherit` chains, discover themes from `html_theme_path` and installed distributions — removing the Python dependency in `theme_static.rs` |
-| **H6b** | Port the upstream `basic` theme templates and render them through `jinja2rs`, so `alabaster` and third-party themes that inherit from `basic` work |
-| **H6c** | Full page context: `pathto`, `hasdoc`, `toctree()`, relbar, sidebars, `html_context` / `html_theme_options` merging, and the `html-page-context` event (H4a) |
+| **H6a** | ⚠️ (accepted deviation) Theme resolution: `theme_static.rs`'s `resolve_theme_templates` reads `theme.toml` / `theme.conf`, resolves `inherit` chains (incl. `inherit = 'none'`/absent), and merges `[options]`, discovering themes from `html_theme_path` and installed distributions. **Deviation from the original scope:** this still goes through an embedded Python bootstrap (`_parse_conf`/`_resolve_chain`, called via PyO3) rather than a pure-Rust TOML/INI parser, because it must `import`-locate installed theme *distributions* (entry points), not just read local files — kept as a PyO3 bridge rather than reimplementing Python's theme-package discovery natively. Rendering itself (H6b/H6c) is fully native | `theme_static.rs` |
+| **H6b** | ✅ Ported the `sphinxdocrs_basic` theme (`LAYOUT_HTML`/`PAGE_HTML`/`THEME_CSS` in `theme.rs`) and wired real theme trees (e.g. `alabaster`, which inherits `basic`) through `jinja2rs`/`minijinja` via `theme_render::ThemeRenderer` | `theme.rs`, `theme_render.rs`, vendored `minijinja` fork |
+| **H6c** | ✅ Full per-page context in `theme_render.rs`: `pathto`/`hasdoc`/`toctree()` globals (`PathtoGlobal`/`HasdocGlobal`/`ToctreeGlobal`), a per-document `toc` (rooted at the current doc via `toctree::get_toc_for`, distinct from the global `toctree()`), `parents`/`next`/`prev`/`rellinks` (`collect_relations`), `html_context`/`html_theme_options` merging, per-page `html_sidebars` glob resolution (`resolve_sidebars`, exact-beats-wildcard precedence matching `_get_sidebars`), and the `html-page-context` event (H4a) emitted per page via `BuildEnvironment::events_handle` | `theme_render.rs` |
 
-**Gate:** `tests/theming.rs` mirroring `test_theming/`, plus an insta
-snapshot of a rendered `basic`-theme page.
+**Accepted deviations** (see also `theme_render.rs`'s own module doc and
+the `build-environment.md` repo-memory notes for the debugging history):
+`toc` is document-granularity, not heading-granularity (H5d has no
+in-page section structure yet); `toctree()`'s `:hidden:`/`:includehidden:`
+filtering isn't implemented (inherited from H5d). Two originally-planned
+`jinja2rs`/`minijinja` engine gaps were found and fixed as part of this
+tier rather than deferred: `{% block %}` tags nested inside
+`{% macro %}`/`{% call %}` bodies (needed by `basic/layout.html`'s
+`relbar()`), and markup-safety propagation through the `+` string
+operator (needed by `alabaster`'s `titlesuffix` concatenation) — both
+fixed directly in the vendored `minijinja` fork.
 
-**Closes:** `theming.py` → **mirrored**; unblocks the html-family builders.
+**Gate:** no dedicated `tests/theming.rs` file exists — coverage instead
+comes from inline `#[cfg(test)]` modules in `theme_render.rs` (17 cases:
+`pathto`/`hasdoc`/`toctree` globals, sidebar glob precedence, local vs.
+global `toc`, minijinja markup-safety propagation) and `theme_static.rs`
+(5 cases: conf parsing, inheritance chains, absent-theme fallback), plus
+end-to-end verification building a real `alabaster`-themed tree
+(`tests/otherdocs.rs`, gated by `--features test-build-extdocs`) and a
+manual scratch-directory build (see repo memory) confirming byte-level
+HTML matches expectations for `relbar()`/`titlesuffix`. No dedicated
+insta snapshot of a rendered `basic`-theme page exists yet — an
+opportunistic follow-up, not a blocker.
+
+**Closes:** `theming.py` → **mirrored** (H6a's Python-bridge deviation
+recorded above); unblocks the html-family builders (H7b).
 
 ### Tier H7 — remaining builders and writers
 

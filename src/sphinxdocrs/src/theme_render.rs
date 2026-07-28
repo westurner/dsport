@@ -17,18 +17,21 @@
 //! | --- | --- |
 //! | `pathto` | [`PathtoGlobal`] — `crate::util_osutil::relative_uri` between two `get_target_uri` results |
 //! | `hasdoc` | [`HasdocGlobal`] — `env.all_docs` / `use_index` / a fixed `has_search = true` |
-//! | `toctree()` | [`ToctreeGlobal`] — pre-rendered from `crate::toctree::global_toctree_for_doc` (H5d) |
+//! | `toctree()` | [`ToctreeGlobal`] — the *global* toctree, pre-rendered from `crate::toctree::global_toctree_for_doc` (H5d) |
+//! | `toc` (per-page) | rendered from `crate::toctree::get_toc_for(env, docname)` — the subtree *rooted at this document*, distinct from the global `toctree()` above |
+//! | `sidebars` | [`resolve_sidebars`] — `html_sidebars` pattern-matched per docname via `crate::util_matching` (the same `fnmatch`-style glob translator `exclude_patterns`/`include_patterns` use), mirroring `StandaloneHTMLBuilder._get_sidebars`'s wildcard-precedence rule |
 //! | `parents`/`next`/`prev`/`rellinks` | [`collect_relations`] — a pre-order flatten of the global toctree, mirroring `BuildEnvironment.collect_relations` |
 //! | `theme_<option>` | merged `theme.conf`/`theme.toml` options + `html_theme_options` (config wins) |
 //! | `html_context` | merged last (highest precedence), matching `self.globalcontext |= self.config.html_context` |
 //! | `html-page-context` event | emitted per page via `BuildEnvironment::events_handle` (H4a), best-effort no-op when absent |
 //!
 //! **Accepted deviations** (see also `crate::toctree`'s own module doc):
-//! - `toc`/`toctree()` both render the *global* toctree (H5d has no
-//!   per-section local-TOC structure to draw a true local TOC from), and
-//!   `toctree()` ignores its `maxdepth`/`collapse`/`includehidden` kwargs.
-//! - `sidebars` pattern matching only supports an exact-docname or `"**"`
-//!   wildcard entry in `html_sidebars` (no `fnmatch`-style globs).
+//! - `toc` is the subtree of the global toctree *rooted at the current
+//!   document* (H5d has no per-section/heading structure to draw a true
+//!   in-page heading TOC from, so this is document-granularity, not
+//!   section-granularity — still a real local/global distinction, just a
+//!   coarser one than upstream's), and `toctree()` ignores its
+//!   `maxdepth`/`collapse`/`includehidden` kwargs.
 //! - `css_files`/`script_files` are discovered by scanning `outdir/_static/`
 //!   for top-level `*.css`/`*.js` files after static assets are copied,
 //!   rather than tracking the upstream `add_css_file`/`add_js_file`
@@ -39,6 +42,12 @@
 //! - `sphinx_version` reports this crate's own version, not upstream
 //!   Sphinx's, since there is no bundled Python Sphinx version to report in
 //!   a pure-Rust build.
+//! - A theme building `titlesuffix`-style values via Jinja string
+//!   concatenation (`" — "|safe + docstitle|e`) needs the `+` operator to
+//!   propagate markup-safety the way Python MarkupSafe's `Markup.__add__`
+//!   does; this is **not** a `theme_render`-level workaround — it's fixed
+//!   in the vendored `minijinja` fork itself (`value::ops::add`), so every
+//!   theme benefits without any theme-side or call-site change here.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -322,6 +331,59 @@ fn collect_relations(entries: &[TocEntry]) -> HashMap<String, Relation> {
     relations
 }
 
+// ── sidebars (html_sidebars pattern matching) ─────────────────────────────────
+
+/// `sphinx.util.matching.patmatch(name, pattern)`: does `pattern` (a
+/// shell-glob using the same syntax as `exclude_patterns`/
+/// `include_patterns` — `*`, `**`, `?`, `[...]`) match `name`? Reuses
+/// `crate::util_matching::translate_pattern`, the same glob-to-regex
+/// translator `Matcher`/`Project::discover` are built on.
+fn patmatch(name: &str, pattern: &str) -> bool {
+    let Ok(re) = regex::Regex::new(&format!(
+        "^{}",
+        crate::util_matching::translate_pattern(pattern)
+    )) else {
+        return false;
+    };
+    re.is_match(name)
+}
+
+/// `sphinx.builders.html._has_wildcard`: does `pattern` contain any glob
+/// metacharacter?
+fn has_wildcard(pattern: &str) -> bool {
+    pattern.contains(['*', '?', '['])
+}
+
+/// Resolve the sidebar template list for `docname`, mirroring
+/// `StandaloneHTMLBuilder._get_sidebars`'s precedence rule: iterate
+/// `html_sidebars` in declaration order; every matching pattern overwrites
+/// the previous match *unless* the previous match was non-wildcarded and
+/// the new one is wildcarded (so an exact-docname pattern always wins over
+/// a glob, regardless of which was declared first or last; among multiple
+/// non-wildcarded or multiple wildcarded matches, the last one declared
+/// wins). Falls back to `default_sidebars` when nothing matches.
+fn resolve_sidebars(
+    docname: &str,
+    html_sidebars: &[(String, Vec<String>)],
+    default_sidebars: &[String],
+) -> Vec<String> {
+    let mut matched: Option<&str> = None;
+    let mut sidebars: Vec<String> = default_sidebars.to_vec();
+    for (pattern, templates) in html_sidebars {
+        if !patmatch(docname, pattern) {
+            continue;
+        }
+        if matched.is_some() && has_wildcard(pattern) {
+            // An exact pattern already matched; a later wildcard pattern
+            // does not override it (matches upstream's `continue`).
+            continue;
+        }
+        matched = Some(pattern);
+        sidebars = templates.clone();
+    }
+    sidebars
+}
+
 // ── ThemeRenderer ──────────────────────────────────────────────────────────────
 
 /// Renders pages through the *real* resolved Sphinx theme's own templates.
@@ -337,6 +399,14 @@ pub struct ThemeRenderer {
     /// `html_context`, project metadata, relations, css/script file lists.
     global_ctx: serde_json::Map<String, serde_json::Value>,
     relations: HashMap<String, Relation>,
+    /// Raw `html_sidebars` pattern table (pattern, template list), matched
+    /// per docname in [`render_page`](Self::render_page) via
+    /// [`resolve_sidebars`].
+    html_sidebars: Vec<(String, Vec<String>)>,
+    /// Sidebar templates to use when no `html_sidebars` pattern matches a
+    /// page — mirrors `self.theme.sidebar_templates` (the classic `basic`
+    /// theme's own default list; see the module accepted-deviation note).
+    default_sidebars: Vec<String>,
 }
 
 impl ThemeRenderer {
@@ -396,6 +466,13 @@ impl ThemeRenderer {
             state,
             global_ctx,
             relations,
+            html_sidebars: env.config.html_sidebars(),
+            default_sidebars: vec![
+                "localtoc.html".to_string(),
+                "relations.html".to_string(),
+                "sourcelink.html".to_string(),
+                "searchbox.html".to_string(),
+            ],
         })
     }
 
@@ -453,10 +530,21 @@ impl ThemeRenderer {
         ctx.insert("parents".into(), parents.into());
 
         let toc_entries_for_doc = toctree::get_toc_for(env, docname);
-        ctx.insert("toc".into(), self.state.toc_html.clone().into());
+        // Local TOC: the subtree rooted at *this* document (distinct from
+        // `toctree()`'s global tree — see the module accepted-deviation
+        // note on granularity).
+        ctx.insert("toc".into(), render_toc_html(&toc_entries_for_doc).into());
         ctx.insert(
             "display_toc".into(),
             (!toc_entries_for_doc.is_empty()).into(),
+        );
+
+        // Sidebars are resolved per-page: `html_sidebars` patterns are
+        // matched against this specific docname (mirrors
+        // `StandaloneHTMLBuilder._get_sidebars`).
+        ctx.insert(
+            "sidebars".into(),
+            resolve_sidebars(docname, &self.html_sidebars, &self.default_sidebars).into(),
         );
 
         let sourcename = if env.config.html_copy_source() {
@@ -601,34 +689,11 @@ fn build_global_context(
     let (css_files, script_files) = discover_static_assets(outdir);
     ctx.insert("css_files".into(), css_files.into());
     ctx.insert("script_files".into(), script_files.into());
-
-    // Sidebars: exact-docname or "**" wildcard match in html_sidebars,
-    // else the classic `basic` theme default set.
-    // (Per-page override happens in the docname-specific context below via
-    // `resolve_sidebars`, stashed here as the raw pattern table.)
-    ctx.insert(
-        "html_sidebars".into(),
-        config
-            .html_sidebars()
-            .into_iter()
-            .map(|(k, v)| (k, serde_json::Value::from(v)))
-            .collect::<serde_json::Map<_, _>>()
-            .into(),
-    );
-    let default_sidebars = vec![
-        "localtoc.html".to_string(),
-        "relations.html".to_string(),
-        "sourcelink.html".to_string(),
-        "searchbox.html".to_string(),
-    ];
-    let sidebars = config
-        .html_sidebars()
-        .into_iter()
-        .find(|(pattern, _)| pattern == "**")
-        .map(|(_, templates)| templates)
-        .unwrap_or(default_sidebars);
-    ctx.insert("sidebars".into(), sidebars.into());
     ctx.insert("theme_nosidebar".into(), false.into());
+
+    // `sidebars` itself is per-page (see `resolve_sidebars`, called from
+    // `render_page`) since `html_sidebars` patterns are matched against
+    // each docname individually — not inserted here.
 
     // Theme options: theme.conf/theme.toml defaults first, html_theme_options
     // wins (matches `theme.get_options(self.theme_options)`).
@@ -766,5 +831,116 @@ mod tests {
             basename_or_url("https://example.com/logo.png"),
             "https://example.com/logo.png"
         );
+    }
+
+    #[test]
+    fn patmatch_supports_globs_like_sphinx() {
+        assert!(patmatch("index", "index"));
+        assert!(!patmatch("guide/index", "index"));
+        assert!(patmatch("guide/index", "guide/*"));
+        assert!(!patmatch("guide/sub/index", "guide/*"));
+        assert!(patmatch("guide/sub/index", "guide/**"));
+        assert!(patmatch("anything", "**"));
+        assert!(patmatch("a", "?"));
+        assert!(!patmatch("ab", "?"));
+    }
+
+    #[test]
+    fn has_wildcard_detects_glob_metacharacters() {
+        assert!(!has_wildcard("index"));
+        assert!(!has_wildcard("guide/intro"));
+        assert!(has_wildcard("**"));
+        assert!(has_wildcard("guide/*"));
+        assert!(has_wildcard("a?c"));
+        assert!(has_wildcard("[abc]"));
+    }
+
+    #[test]
+    fn resolve_sidebars_falls_back_to_default() {
+        let sidebars = resolve_sidebars("index", &[], &["localtoc.html".into()]);
+        assert_eq!(sidebars, vec!["localtoc.html".to_string()]);
+    }
+
+    #[test]
+    fn resolve_sidebars_wildcard_match() {
+        let html_sidebars = vec![("**".to_string(), vec!["custom.html".to_string()])];
+        let sidebars = resolve_sidebars("anything", &html_sidebars, &["default.html".into()]);
+        assert_eq!(sidebars, vec!["custom.html".to_string()]);
+    }
+
+    #[test]
+    fn resolve_sidebars_glob_pattern_like_sphinx() {
+        // Mirrors a real Sphinx `html_sidebars` config using a directory
+        // glob, e.g. `html_sidebars = {'guide/*': ['localtoc.html']}`.
+        let html_sidebars = vec![("guide/*".to_string(), vec!["localtoc.html".to_string()])];
+        assert_eq!(
+            resolve_sidebars("guide/intro", &html_sidebars, &["default.html".into()]),
+            vec!["localtoc.html".to_string()]
+        );
+        assert_eq!(
+            resolve_sidebars("other/intro", &html_sidebars, &["default.html".into()]),
+            vec!["default.html".to_string()]
+        );
+    }
+
+    #[test]
+    fn resolve_sidebars_exact_pattern_wins_over_wildcard() {
+        // Mirrors `StandaloneHTMLBuilder._get_sidebars`: an exact-docname
+        // pattern always wins over a wildcard, regardless of declaration
+        // order.
+        let html_sidebars = vec![
+            ("**".to_string(), vec!["wildcard.html".to_string()]),
+            ("index".to_string(), vec!["exact.html".to_string()]),
+        ];
+        assert_eq!(
+            resolve_sidebars("index", &html_sidebars, &["default.html".into()]),
+            vec!["exact.html".to_string()]
+        );
+
+        // Order reversed: exact declared first, wildcard second — exact
+        // still wins.
+        let html_sidebars_reversed = vec![
+            ("index".to_string(), vec!["exact.html".to_string()]),
+            ("**".to_string(), vec!["wildcard.html".to_string()]),
+        ];
+        assert_eq!(
+            resolve_sidebars("index", &html_sidebars_reversed, &["default.html".into()]),
+            vec!["exact.html".to_string()]
+        );
+    }
+
+    #[test]
+    fn resolve_sidebars_last_non_wildcard_match_wins() {
+        let html_sidebars = vec![
+            ("index".to_string(), vec!["first.html".to_string()]),
+            ("index".to_string(), vec!["second.html".to_string()]),
+        ];
+        assert_eq!(
+            resolve_sidebars("index", &html_sidebars, &["default.html".into()]),
+            vec!["second.html".to_string()]
+        );
+    }
+
+    #[test]
+    fn local_toc_differs_from_global_toctree() {
+        // The `toc` context key (local, per-document) must be built from
+        // `toctree::get_toc_for`, not the global `toctree()` tree — a
+        // subtree rooted elsewhere in a multi-document project should not
+        // leak into a page whose own toctree doesn't reach it.
+        let root_entries = vec![TocEntry {
+            docname: "guide".into(),
+            title: "Guide".into(),
+            children: vec![TocEntry {
+                docname: "guide/intro".into(),
+                title: "Intro".into(),
+                children: vec![],
+            }],
+        }];
+        let global_html = render_toc_html(&root_entries);
+        // The document "guide/intro" has no nested toctree of its own.
+        let local_html = render_toc_html(&[]);
+        assert!(global_html.contains("guide/intro.html"));
+        assert!(local_html.is_empty());
+        assert_ne!(global_html, local_html);
     }
 }

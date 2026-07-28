@@ -110,7 +110,7 @@ in the notes column of the relevant row.
 | `directives/` | — | P3 | **deferred** | no Rust module yet (→ **H5a**) |
 | `domains/` | — | P3 | **deferred** | only `registry.add_domain` name-registration exists; `env.domaindata` is never populated (→ **H3**) |
 | `environment/` | `environment` | P3 | **mirrored** ✅ | `BuildEnvironment`: `find_files` (**H2a**), doctree store `parse_doc`/`store_doctree`/`get_doctree`/`has_stored_doctree` (**H2b**), `read_all` read phase (**H2c**), `get_and_resolve_doctree` (**H2e**), `check_consistency` (**H2f**). **Gap:** `resolve_references`, `domains` (→ **H3**) |
-| `builders/` | `builders` | P3 | **partial** | `Builder` trait + `HtmlBuilder`, `LatexBuilder`, `ManpageBuilder`, `LinkcheckBuilder`, `JsonBuilder`, `TextBuilder`, `XmlBuilder`, `PseudoxmlBuilder` (**H7a**, done), `DirhtmlBuilder`, `SinglehtmlBuilder` (**H7b**, done), all dispatched by `SphinxApp`. **Gap:** no epub/texinfo/gettext (→ **H7c**–**H7d**) |
+| `builders/` | `builders` | P3 | **partial** | `Builder` trait + `HtmlBuilder`, `LatexBuilder`, `ManpageBuilder`, `LinkcheckBuilder`, `JsonBuilder`, `TextBuilder`, `XmlBuilder`, `PseudoxmlBuilder` (**H7a**, done), `DirhtmlBuilder`, `SinglehtmlBuilder` (**H7b**, done), all dispatched by `SphinxApp`. **Gap:** no epub/texinfo/gettext (→ **H7c**–**H7d**). `doctest`/`coverage`/`qthelp`/`devhelp`/`htmlhelp`/`applehelp` are **keep-python** (**H7e**, decided) |
 | `application.py` | `application` | P3 | **partial** | `SphinxApp`: path validation, config, registry, env, `read()` (**H2**: `find_files` + `read_all`), `build()` (`&mut self`, two-phase). **Gaps:** events, extension loading, parallel build, incremental rebuild, i18n (→ **H4**, **H8**) |
 | `theming.py` | `theme`, `theme_static`, `theme_render` | P3 | **mirrored** ✅ | self-contained `sphinxdocrs_basic` theme + real third-party theme inheritance (`alabaster`/`basic`) rendered through `jinja2rs`; full per-page context (`pathto`/`hasdoc`/`toctree()`/`toc`/relbar/sidebars/`html_context`/`html-page-context`) (**H6**, done). **Accepted deviation:** `theme.conf`/`theme.toml` inheritance-chain parsing still goes through an embedded PyO3 bootstrap rather than pure Rust (**H6a**) |
 | `search/` | `search` | P3 | **done** | `SearchIndex`, `split_words`, `feed`, `to_json`, Snowball stemming for all 15 `sphinx.search` languages (**H1f**, via `stemmer.rs`). **Accepted deviation:** `rust_stemmers`' Dutch algorithm is the legacy `dutch_porter` Snowball revision, not the one `snowballstemmer.stemmer('dutch')` resolves to — patched via built-in `ParityOverrides` for Sphinx's own Dutch stopword vocabulary; broader vocabularies may need project-supplied overrides. `objects`/`objtypes`/`objnames`/`indexentries` now populated from domain data (**H3d**) — see the accepted deviations noted on that row in §3 |
@@ -656,10 +656,43 @@ Ordered by dependency on `docutilsrs` writers that already exist.
 | **H7b** | ✅ `dirhtml` — `DirhtmlBuilder` delegates every `Builder` method to an inner `HtmlBuilder` constructed via a new `HtmlBuilder::new_dir_style()` (a `PathStyle::{Flat,Dir}` field threaded through `get_target_uri` and the (now `&self`) `write_page`), reusing the *entire* H6 theming/search-index/static-asset pipeline unchanged — only the physical file layout (`<docname>/index.html`) and `get_target_uri` differ. **Accepted deviation:** in-page navigation chrome rendered through the real theme pipeline (`theme_render.rs`'s `pathto`/`toctree` helpers) still hardcodes a flat-style `HtmlBuilder::new().get_target_uri(..)` at several call sites, so a `dirhtml` build's *files* land correctly but themed cross-document navigation links may still point at the flat naming — recorded in `PathStyle`'s own doc comment. ✅ `singlehtml` — `SinglehtmlBuilder` renders every document's fragment via `HtmlBuilder::render_fragment_from_tree`/`render_embedded_or_wrap` (both promoted to `pub(crate)` for this) and concatenates them (each in an `id`-anchored `<div>`) into one `index.html`, root document first. **Accepted deviation:** no merged sidebar/TOC reflecting the concatenated structure (each fragment still renders independently); document order is a lexicographic sort with `index` pinned first, not a toctree-driven `assemble_doctree` order (H5d's toctree resolution has no "current root" concept this builder could consult) |
 | **H7c** | `gettext` — depends on H1c (`write_mo`) plus a message-catalog extraction pass |
 | **H7d** | `epub` (uses the existing `zip_writer`), `texinfo`, `changes` |
-| **H7e** | `doctest`, `coverage`, `qthelp` / `devhelp` / `htmlhelp` / `applehelp` — decide port vs keep-python and record the decision in §3 |
+| **H7e** | ❌ `doctest`, `coverage`, `qthelp` / `devhelp` / `htmlhelp` / `applehelp` — **keep-python decision** |
 
-Each builder added here must also be appended to `NATIVE_BUILDERS` and to
-the `SphinxApp::build()` dispatch, and gain a `tests/builders_<name>.rs`.
+**H7e rationale:** these six builders fall into two groups, neither of
+which fits the "parse RST → render a format" shape every other builder
+in this tier has:
+
+- `doctest`/`coverage` don't produce document output at all — they
+  **execute** Python code found in `.. doctest::`/`.. testcode::` blocks
+  (via the real Python interpreter, comparing captured stdout) or
+  introspect live Python objects (`coverage`'s undocumented-member
+  report) to decide pass/fail. That is inherently a PyO3-execution
+  concern, not a text-transform one; porting it natively would mean
+  re-implementing a chunk of CPython's `doctest` module's comparison
+  semantics for no parity benefit, since the whole point is running
+  *real* Python.
+- `qthelp`/`devhelp`/`htmlhelp`/`applehelp` are thin packaging wrappers
+  around `StandaloneHTMLBuilder`'s own HTML output: each emits one extra
+  index/project file in a platform-specific XML/XML-ish format
+  (`.qhp`+`.qhcp`, `.devhelp2`, `.hhp`/`.hhk`/`.hhc`, an Apple Help
+  `.plist` bundle) and upstream expects an external platform tool
+  (`qcollectiongenerator`, `hhc.exe`, Apple's Help Indexer) to compile
+  the final artifact — none of which run natively in this environment
+  anyway. The HTML they package is already produced by the native
+  `HtmlBuilder`; only the small metadata-file generation step is
+  Python-only today.
+
+**Decision:** stay on the Python bridge indefinitely for all six,
+matching the **H3f** (`c`/`cpp` domains) precedent — reopen as
+individually-scoped H-tier items if a real downstream project needs
+one of the platform help formats or a native `doctest`/`coverage`
+execution path (the latter would need to go through PyO3 regardless,
+so "native" mostly means "owns the RST-block extraction", a much
+smaller win than it sounds).
+
+Each builder added in **H7c**/**H7d** must also be appended to
+`NATIVE_BUILDERS` and to the `SphinxApp::build()` dispatch, and gain a
+`tests/builders_<name>.rs`.
 
 ### Tier H8 — incremental rebuild & logging polish
 

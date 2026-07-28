@@ -648,8 +648,8 @@ SPHINXBUILDRS='cargo run --bin sphinx-build-rs --'
 otherdocs-sphinx: otherdocs-sphinx-py otherdocs-sphinx-rs otherdocs-sphinx-diff
 
 otherdocs-sphinx-diff:
-	diff -Naur src/sphinx/doc/_build_py/html src/sphinx/doc/_build_rs/html > otherdocs-sphinx-py-rs.diff
-	ls -al otherdocs-sphinx-rs-py.diff
+	-diff -Naur src/sphinx/doc/_build_py/html src/sphinx/doc/_build_rs/html > otherdocs-sphinx-py-rs.diff
+	ls -al otherdocs-sphinx-py-rs.diff
 
 otherdocs-sphinx-py:
 	@#pip install -e src/sphinx/ --group docs

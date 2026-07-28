@@ -17,6 +17,8 @@ use pyo3::prelude::*;
 
 pub mod addnodes;
 pub mod apidoc;
+pub mod app_events;
+pub mod app_facade;
 pub mod application;
 pub mod assets;
 pub mod autodoc;
@@ -114,6 +116,7 @@ fn sphinxdocrs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_features, m)?)?;
     m.add_function(wrap_pyfunction!(py_supports, m)?)?;
     m.add_class::<events::EventManager>()?;
+    m.add_class::<app_facade::PyAppFacade>()?;
     m.add_class::<project::Project>()?;
     m.add_class::<extension::Extension>()?;
     m.add_function(wrap_pyfunction!(extension::py_verify_needs_extensions, m)?)?;

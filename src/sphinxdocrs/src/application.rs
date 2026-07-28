@@ -22,6 +22,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use pyo3::prelude::*;
+
+use crate::app_events::{AppEventManager, EventArg, SharedEvents};
+use crate::app_facade::PyAppFacade;
 use crate::builders::html::HtmlBuilder;
 use crate::builders::json::JsonBuilder;
 use crate::builders::latex::LatexBuilder;
@@ -30,6 +34,7 @@ use crate::builders::manpage::ManpageBuilder;
 use crate::builders::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
 use crate::environment::{BuildEnvironment, EnvProject};
+use crate::extension::Extension;
 use crate::registry::SphinxComponentRegistry;
 
 // ── AppError ──────────────────────────────────────────────────────────────────
@@ -47,6 +52,9 @@ pub enum AppError {
     Build(BuildError),
     /// I/O error during setup.
     Io(std::io::Error),
+    /// An error raised while loading or running a Python extension's
+    /// `setup(app)` (mirrors `sphinx.errors.ExtensionError`).
+    Extension(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -56,6 +64,7 @@ impl std::fmt::Display for AppError {
             AppError::UnknownBuilder(s) => write!(f, "unknown builder: {s}"),
             AppError::Build(e) => write!(f, "build error: {e}"),
             AppError::Io(e) => write!(f, "I/O error: {e}"),
+            AppError::Extension(s) => write!(f, "ExtensionError: {s}"),
         }
     }
 }
@@ -69,6 +78,12 @@ impl From<BuildError> for AppError {
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
         AppError::Io(e)
+    }
+}
+
+impl From<PyErr> for AppError {
+    fn from(e: PyErr) -> Self {
+        AppError::Extension(e.to_string())
     }
 }
 
@@ -106,7 +121,6 @@ pub fn is_native_builder(builder_name: &str) -> bool {
 /// Minimal Sphinx application.
 ///
 /// Mirrors `sphinx.application.Sphinx` for the pure-Rust build path.
-#[derive(Debug)]
 pub struct SphinxApp {
     /// Resolved source directory.
     pub srcdir: PathBuf,
@@ -124,6 +138,27 @@ pub struct SphinxApp {
     pub buildername: String,
     /// Warnings collected during the build.
     pub warnings: Vec<String>,
+    /// Native event bus (**H4a**). Shared (via `Rc<RefCell<_>>`) with any
+    /// [`PyAppFacade`] constructed by [`load_extension`](Self::load_extension)
+    /// so Python-registered listeners fire alongside native ones.
+    pub events: SharedEvents,
+    /// Extensions loaded via [`load_extension`](Self::load_extension),
+    /// keyed by dotted module name. Mirrors `Sphinx.extensions`.
+    pub extensions: HashMap<String, Py<Extension>>,
+}
+
+impl std::fmt::Debug for SphinxApp {
+    // Manual impl: `events`/`extensions` hold PyO3 handles and closures
+    // that aren't `Debug`, so this can't be `#[derive(Debug)]`d.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SphinxApp")
+            .field("srcdir", &self.srcdir)
+            .field("outdir", &self.outdir)
+            .field("doctreedir", &self.doctreedir)
+            .field("buildername", &self.buildername)
+            .field("warnings", &self.warnings)
+            .finish_non_exhaustive()
+    }
 }
 
 impl SphinxApp {
@@ -206,7 +241,49 @@ impl SphinxApp {
             env,
             buildername,
             warnings: Vec::new(),
+            events: AppEventManager::shared(),
+            extensions: HashMap::new(),
         })
+    }
+
+    /// Load a Python extension by dotted module name.
+    ///
+    /// Mirrors `Sphinx.setup_extension` / `sphinx.extension.load_extension`:
+    /// imports `name` (via PyO3), calls its `setup` function with a fresh
+    /// [`PyAppFacade`] bound to `self.events`, and records the returned
+    /// metadata as an [`Extension`] in `self.extensions`.
+    ///
+    /// **Accepted deviation:** `needs_extensions` verification
+    /// (`crate::extension::py_verify_needs_extensions`) and dependency-order
+    /// loading (`setup_extension` recursing into an extension's own
+    /// `needs_extensions`/`setup_extension` calls) are not wired in yet —
+    /// callers must load extensions in dependency order themselves.
+    ///
+    /// # Errors
+    ///
+    /// `AppError::Extension` if the module cannot be imported, has no
+    /// `setup` callable, or `setup(app)` raises.
+    pub fn load_extension(&mut self, name: &str) -> Result<(), AppError> {
+        Python::attach(|py| -> PyResult<()> {
+            let module = py.import(name)?;
+            let setup = module.getattr("setup")?;
+
+            let facade = Py::new(py, PyAppFacade::new(self.events.clone()))?;
+            let metadata = setup.call1((facade,))?;
+
+            let kwargs = if metadata.is_none() {
+                None
+            } else {
+                metadata.cast::<pyo3::types::PyDict>().ok().cloned()
+            };
+
+            let ext_type = py.get_type::<Extension>();
+            let ext_obj = ext_type.call((name, module.clone().unbind()), kwargs.as_ref())?;
+            let ext: Py<Extension> = ext_obj.extract()?;
+            self.extensions.insert(name.to_string(), ext);
+            Ok(())
+        })
+        .map_err(AppError::from)
     }
 
     /// Run the read phase: discover source files and parse every document
@@ -223,43 +300,76 @@ impl SphinxApp {
     /// phases.
     pub fn read(&mut self) -> Result<(), AppError> {
         self.env.find_files()?;
-        self.env.read_all()?;
+
+        let mut docnames: Vec<String> = self.env.found_docs().iter().cloned().collect();
+        docnames.sort();
+        self.events
+            .borrow_mut()
+            .emit("env-get-outdated", &[EventArg::StrList(vec![])]);
+        self.events
+            .borrow_mut()
+            .emit("env-before-read-docs", &[EventArg::StrList(docnames)]);
+
+        self.env.read_all_with_events(&self.events)?;
+
+        self.events.borrow_mut().emit("env-updated", &[]);
+        self.warnings.extend(self.env.check_consistency());
+        self.events.borrow_mut().emit("env-check-consistency", &[]);
         Ok(())
     }
 
     /// Run the build.
     ///
-    /// Mirrors `Sphinx.build(force_all=True)` for a full rebuild: runs the
-    /// read phase ([`read`](Self::read)) followed by the selected builder's
-    /// write phase (`Builder::build_all`).
+    /// Mirrors `Sphinx.build(force_all=True)` for a full rebuild: emits
+    /// `config-inited` / `builder-inited` (mirroring `Sphinx.__init__`'s
+    /// tail — deferred out of [`new`](Self::new) so
+    /// [`load_extension`](Self::load_extension) can register listeners for
+    /// them first), then runs the read phase ([`read`](Self::read))
+    /// followed by the selected builder's write phase
+    /// (`Builder::build_all`), and finally emits `build-finished`.
     ///
     /// Returns a [`BuildResult`] with counts of written / skipped documents.
     pub fn build(&mut self) -> Result<BuildResult, AppError> {
+        self.events.borrow_mut().emit("config-inited", &[]);
+        self.events.borrow_mut().emit("builder-inited", &[]);
+
         self.read()?;
-        match self.buildername.as_str() {
+        let result = match self.buildername.as_str() {
             "html" => {
                 let builder = HtmlBuilder::new();
-                let result = builder.build_all(&self.srcdir, &self.outdir, &self.env)?;
-                Ok(result)
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .map_err(AppError::from)
             }
             "latex" => {
                 let builder = LatexBuilder::new();
-                Ok(builder.build_all(&self.srcdir, &self.outdir, &self.env)?)
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .map_err(AppError::from)
             }
             "json" => {
                 let builder = JsonBuilder::new();
-                Ok(builder.build_all(&self.srcdir, &self.outdir, &self.env)?)
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .map_err(AppError::from)
             }
             "man" => {
                 let builder = ManpageBuilder::new();
-                Ok(builder.build_all(&self.srcdir, &self.outdir, &self.env)?)
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .map_err(AppError::from)
             }
             "linkcheck" => {
                 let builder = LinkcheckBuilder::new();
-                Ok(builder.build_all(&self.srcdir, &self.outdir, &self.env)?)
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .map_err(AppError::from)
             }
             other => Err(AppError::UnknownBuilder(other.into())),
-        }
+        };
+
+        self.events.borrow_mut().emit("build-finished", &[]);
+        result
     }
 
     /// Return `true` if `buildername` is supported natively.

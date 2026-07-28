@@ -451,10 +451,36 @@ impl BuildEnvironment {
     /// the port; they are picked up again in **H8** and **H3a**
     /// respectively.
     pub fn read_all(&mut self) -> Result<Vec<String>, BuildError> {
+        self.read_all_impl(None)
+    }
+
+    /// Same as [`read_all`](Self::read_all), but emits `source-read`
+    /// (before each document is parsed) and `doctree-read` (after it is
+    /// stored) on `events` — the **H4a** per-document event hooks used by
+    /// [`crate::application::SphinxApp::read`].
+    pub fn read_all_with_events(
+        &mut self,
+        events: &crate::app_events::SharedEvents,
+    ) -> Result<Vec<String>, BuildError> {
+        self.read_all_impl(Some(events))
+    }
+
+    fn read_all_impl(
+        &mut self,
+        events: Option<&crate::app_events::SharedEvents>,
+    ) -> Result<Vec<String>, BuildError> {
+        use crate::app_events::EventArg;
+
         let mut docnames: Vec<String> = self.found_docs().iter().cloned().collect();
         docnames.sort();
 
         for docname in &docnames {
+            if let Some(events) = events {
+                events
+                    .borrow_mut()
+                    .emit("source-read", &[EventArg::Str(docname.clone())]);
+            }
+
             let path = self.doc2path(docname);
             let source = std::fs::read_to_string(&path).map_err(|e| {
                 BuildError::Other(format!("failed to read {}: {e}", path.display()))
@@ -479,6 +505,12 @@ impl BuildEnvironment {
 
             self.store_doctree(docname, &tree)?;
             self.record_doc_read(docname.clone(), now_micros());
+
+            if let Some(events) = events {
+                events
+                    .borrow_mut()
+                    .emit("doctree-read", &[EventArg::Str(docname.clone())]);
+            }
         }
 
         Ok(docnames)

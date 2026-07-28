@@ -96,10 +96,10 @@ in the notes column of the relevant row.
 | subsystem (sphinx) | sphinxdocrs target | tier | status | notes |
 | --- | --- | --- | --- | --- |
 | `errors.py` | `errors` | P1 | **done** | exception hierarchy via `pyo3::create_exception!` |
-| `events.py` | `events` | P1 | **done** | `EventManager`: connect/disconnect/emit/emit_firstresult, priority sort, `allowed_exceptions`, `pdb` re-raise, `ExtensionError` wrapping. **Gap:** not wired into `SphinxApp` (→ **H4**) |
+| `events.py` | `events` | P1 | **done** | `EventManager`: connect/disconnect/emit/emit_firstresult, priority sort, `allowed_exceptions`, `pdb` re-raise, `ExtensionError` wrapping. Wired into `SphinxApp` via the native `app_events::AppEventManager` + `app_facade::PyAppFacade` bridge (**H4a/H4c**, done) |
 | `project.py` | `project` | P1 | **mirrored** | `path2doc` / `doc2path` / `discover`; `discover()` uses `util_matching` for glob exclusion (`EXCLUDE_PATHS` parity) |
 | `addnodes.py` | `addnodes` | P1 | **mirrored** | all 50+ node structs; `toctree` (Translatable), `desc*` family, 9 `desc_sig_*` leaves + `SIG_ELEMENTS`, `pending_xref`(`_condition`), `index`, `only`, `hlist`, `glossary`, `productionlist`, `number_reference`, `download_reference`, `manpage`, … |
-| `extension.py` | `extension` | P2 | **mirrored** | `Extension` wrapper + `verify_needs_extensions`. **Gap:** `load_extension` (→ **H4**) |
+| `extension.py` | `extension` | P2 | **mirrored** | `Extension` wrapper + `verify_needs_extensions`. `load_extension` landed on `SphinxApp` (**H4b**, done) |
 | `registry.py` | `registry` | P2 | **done** | source-suffix/parser, transforms/post-transforms, CSS/JS/static assets, LaTeX packages, HTML themes, `add_builder`/`add_domain`/`add_translator`/`add_html_math_renderer` |
 | `versioning.py` | `versioning` | P2 | **done** | `VERSIONING_RATIO`, `levenshtein_distance`, `get_ratio`, `add_uids`, `merge_doctrees`, `VersionableNode`, `apply_uid_transform`, `UID_TRANSFORM_PRIORITY = 880`. **Gap:** not invoked from a read phase yet — `docutilsrs::doctree::Node` has no `uid`/`VersionableNode` impl (→ **H8**) |
 | `config.py` | `config` | P2 | **mirrored** | `SphinxConfig`, 50+ built-in option registry, `ConfigVal`, `RebuildKind`, `ConfigOpt`, `convert_overrides`, alias sync (`master_doc`↔`root_doc`, `copyright`↔`project_copyright`), typed accessors, `py_read_conf_py` |
@@ -196,8 +196,10 @@ manually because minijinja lacks it.
 | `src/apidoc/{settings,templates,generate,parser}.rs` | `sphinx.ext.apidoc` | see §4.3 |
 | `src/autogen/{scan,templates,parser,generate}.rs` | `sphinx.ext.autosummary.generate` | see §4.3 |
 | `src/addnodes.rs` | `sphinx.addnodes` | all node structs; `Translatable`, `NotSmartquotable`, `SIG_ELEMENTS` |
-| `src/application.rs` | `sphinx.application.Sphinx` | `SphinxApp`, `AppError`, `NATIVE_BUILDERS`, `is_native_builder` |
-| `src/environment.rs` | `sphinx.environment.BuildEnvironment` | state skeleton (`all_docs`, `dependencies`, `included`, `reread_always`, `metadata`, `titles`/`longtitles`, `toc_num_entries`/`toc_secnumbers`, `toctree_includes`, `files_to_rebuild`, `glob_toctrees`, `numbered_toctrees`, `domaindata`, `temp_data`, `ref_context`, config-status constants) + `EnvProject` + `default_settings()` |
+| `src/application.rs` | `sphinx.application.Sphinx` | `SphinxApp`, `AppError`, `NATIVE_BUILDERS`, `is_native_builder`, `SphinxApp::load_extension` (**H4b**) |
+| `src/app_events.rs` | `sphinx.events.EventManager` (native subset) | `AppEventManager`, `EventArg`, `SharedEvents` (`Rc<RefCell<_>>`) \u2014 PyO3-free event bus wired into `SphinxApp`/`BuildEnvironment` (**H4a**) |
+| `src/app_facade.rs` | \u2014 (no direct upstream analogue; bridges to `Sphinx`) | `PyAppFacade`, the `app`-shaped object passed to a loaded extension's `setup(app)` (**H4c**) |
+| `src/environment.rs` | `sphinx.environment.BuildEnvironment` | state skeleton (`all_docs`, `dependencies`, `included`, `reread_always`, `metadata`, `titles`/`longtitles`, `toc_num_entries`/`toc_secnumbers`, `toctree_includes`, `files_to_rebuild`, `glob_toctrees`, `numbered_toctrees`, `domaindata`, `temp_data`, `ref_context`, config-status constants) + `EnvProject` + `default_settings()`; `read_all_with_events` (**H4a**) |
 | `src/registry.rs` | `sphinx.registry.SphinxComponentRegistry` | full P2 + P3 registration surface; `RegistryError` |
 | `src/config.rs` | `sphinx.config.Config` | `SphinxConfig`, `ConfigVal`, `MathRenderer`, `py_read_conf_py` |
 | `src/versioning.rs` | `sphinx.versioning` | + `apply_uid_transform`, `UID_TRANSFORM_PRIORITY` |
@@ -252,7 +254,7 @@ Tagged from `src/sphinx/tests/`.
 | `test_addnodes.py` | addnodes | P1 | **mirrored** — `tests/addnodes.rs` |
 | *(no upstream file)* | extension | P2 | **mirrored** — `tests/test_sphinxdocrs_extension.py` |
 | `test_config/` | config | P2 | **mirrored** — `tests/config.rs` |
-| `test_extensions/` | registry | P2 | **done** — `tests/registry.rs`; `load_extension` deferred (→ **H4b**) |
+| `test_extensions/` | registry | P2 | **done** — `tests/registry.rs`; `load_extension` landed on `SphinxApp` (**H4b**), covered by `tests/events_app.rs` |
 | `test_versioning.py` | versioning | P2 | **done** — `tests/versioning.rs` |
 | `test_util/` | util | P2 | **done** — `tests/util_rst_osutil.rs`, `tests/util_extra.rs`; `default_role` closed (**H1d**) |
 | `test_intl/` | intl / locale | P3 | **mirrored** — `tests/locale.rs`, `tests/intl.rs`, plus `test_util_i18n.py`'s `test_catalog_write_mo` / `test_format_date` cases as `intl` unit tests |
@@ -296,6 +298,7 @@ Tagged from `src/sphinx/tests/`.
 | `tests/environment.rs` | construction, `default_settings`, config-status labels, doc-read / title / dependency tracking |
 | `tests/builders.rs`, `tests/builders_json.rs` | `Builder` trait contract, `get_target_uri`, `build_doc` HTML5 structure, `build_all` variants, `.fjson` output |
 | `tests/application.rs` | `NATIVE_BUILDERS`, path validation, constructor fields, `build()` HTML output, config defaults/overrides |
+| `tests/events_app.rs` | **H4**: core event emission order across a full `build()`, per-document `source-read`/`doctree-read` pairing, `load_extension` Python round trip (`config-inited` listener registered by a temp extension module fires), unknown-module error path |
 | `tests/roles.rs` | docrole table completeness, `format_rfc_target`, `parse_emphasized_literal` |
 | `tests/locale.rs`, `tests/intl.rs` | `.po` parsing, translator registry, catalog discovery, `docname_to_domain`, date-format mapping |
 | `tests/util_rst_osutil.rs`, `tests/util_extra.rs` | full `sphinx.util` mirrors |
@@ -435,17 +438,24 @@ rebuild (H8b) needs no second serialization path.
 **Gate:** one `tests/domains_<name>.rs` per domain, mirroring the
 corresponding `test_domain_<name>.py` cases.
 
-### Tier H4 — events + extension loading
+### Tier H4 — events + extension loading ✅
 
-| id | task |
-| --- | --- |
-| **H4a** | Own an `EventManager` on `SphinxApp` and emit the core events in upstream order: `config-inited`, `builder-inited`, `env-get-outdated`, `env-before-read-docs`, `source-read`, `doctree-read`, `env-updated`, `env-check-consistency`, `doctree-resolved`, `html-page-context`, `build-finished` |
-| **H4b** | `load_extension`: import a Python extension module through PyO3, call `setup(app)`, capture the returned metadata into `Extension`, honour `needs_extensions` |
-| **H4c** | Expose an `app`-shaped PyO3 facade so existing Python extensions can call `app.add_directive` / `add_role` / `add_config_value` / `connect` against the Rust registry |
+| id | task | detail |
+| --- | --- | --- |
+| **H4a** ✅ | Own an `EventManager` on `SphinxApp` and emit the core events in upstream order | New `app_events::AppEventManager` (pure Rust, `Rc<RefCell<_>>`-shared as `SharedEvents` — not the PyO3-facing `events::EventManager`, which stays Python-callable-only for the hybrid bridge). `SphinxApp::build` emits `config-inited` → `builder-inited`, then `read()` emits `env-get-outdated` → `env-before-read-docs` → (per doc) `source-read`/`doctree-read` via `BuildEnvironment::read_all_with_events` → `env-updated` → `env-check-consistency`, then `build()` emits `build-finished` after the builder runs. **Accepted deviation:** `doctree-resolved`/`html-page-context` are known event names but not yet emitted (no per-document write-phase hook exists until **H5**/**H6**); `env-get-outdated` always reports empty added/changed/removed (real diffing is **H8a**); listener dispatch has no `allowed_exceptions`/`ExtensionError` wrapping (**H8c**) |
+| **H4b** ✅ | `load_extension`: import a Python extension module through PyO3, call `setup(app)`, capture the returned metadata into `Extension`, honour `needs_extensions` | `SphinxApp::load_extension(name)` imports the module, calls `setup(app)` with a fresh `PyAppFacade`, and stores the returned metadata as a `Py<Extension>` in `SphinxApp::extensions`. **Accepted deviation:** `needs_extensions` verification (`extension::py_verify_needs_extensions`) and dependency-ordered recursive loading are not wired in yet — callers must load extensions in dependency order themselves |
+| **H4c** ✅ | Expose an `app`-shaped PyO3 facade so existing Python extensions can call `app.add_directive` / `add_role` / `add_config_value` / `connect` against the Rust registry | New `app_facade::PyAppFacade` (`unsendable` pyclass sharing `SharedEvents` with `SphinxApp`): `connect`/`disconnect`/`add_event` are fully wired to the native event bus (a connected Python callback is re-invoked with a fresh facade as its `app` argument on every native `emit`); `add_config_value`/`add_directive`/`add_role`/`add_domain`/`add_html_theme`/`require_sphinx` are no-op stubs so a trivial `setup()` doesn't raise `AttributeError`. **Accepted deviation:** the stubs don't reach `SphinxComponentRegistry` yet — real directive/role/domain registration from Python extensions is deferred to **H5a**/**H5b** |
 
-**Gate:** `tests/events_app.rs` asserting emission order, plus a Python
-round-trip test that loads a trivial extension and observes its
-`config-inited` callback firing.
+**Gate:** ✅ met — `tests/events_app.rs`: `core_event_emission_order`
+asserts the upstream-relative event ordering across a full `build()`;
+`source_read_and_doctree_read_fire_per_document` asserts one
+`source-read`/`doctree-read` pair per discovered doc;
+`load_extension_config_inited_round_trip` writes a temporary Python
+extension module, inserts it onto `sys.path`, calls
+`SphinxApp::load_extension`, and confirms its `config-inited` listener
+fired during `build()`; `load_extension_unknown_module_errors` checks the
+`AppError::Extension` error path. Full `cargo test -p sphinxdocrs` and
+`cargo clippy -p sphinxdocrs --all-targets -- -D warnings` are clean.
 
 **Closes:** `events` → **done**, `extension` → **done**, and the
 `load_extension` gap in `test_extensions/`.

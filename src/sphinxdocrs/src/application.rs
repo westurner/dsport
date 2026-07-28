@@ -28,6 +28,7 @@ use crate::app_events::{AppEventManager, EventArg, SharedEvents};
 use crate::app_facade::PyAppFacade;
 use crate::builders::html::HtmlBuilder;
 use crate::builders::dirhtml::DirhtmlBuilder;
+use crate::builders::gettext::GettextBuilder;
 use crate::builders::json::JsonBuilder;
 use crate::builders::latex::LatexBuilder;
 use crate::builders::linkcheck::LinkcheckBuilder;
@@ -119,6 +120,7 @@ pub const NATIVE_BUILDER_CLASSES: &[(&str, &str)] = &[
         "singlehtml",
         "sphinxdocrs::builders::singlehtml::SinglehtmlBuilder",
     ),
+    ("gettext", "sphinxdocrs::builders::gettext::GettextBuilder"),
 ];
 
 /// Builder names that have a native Rust implementation.
@@ -133,6 +135,7 @@ pub const NATIVE_BUILDERS: &[&str] = &[
     "pseudoxml",
     "dirhtml",
     "singlehtml",
+    "gettext",
 ];
 
 /// Return `true` if `builder_name` has a native Rust implementation.
@@ -567,6 +570,12 @@ impl SphinxApp {
                     .build_all(&self.srcdir, &self.outdir, &self.env)
                     .map_err(AppError::from)
             }
+            "gettext" => {
+                let builder = GettextBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .map_err(AppError::from)
+            }
             other => Err(AppError::UnknownBuilder(other.into())),
         };
 
@@ -692,6 +701,11 @@ mod tests {
     fn native_builder_dirhtml_singlehtml() {
         assert!(is_native_builder("dirhtml"));
         assert!(is_native_builder("singlehtml"));
+    }
+
+    #[test]
+    fn native_builder_gettext() {
+        assert!(is_native_builder("gettext"));
     }
 
     #[test]
@@ -861,8 +875,13 @@ mod tests {
     }
 
     #[test]
+    fn native_builders_includes_h7c_gettext() {
+        assert!(NATIVE_BUILDERS.contains(&"gettext"));
+    }
+
+    #[test]
     fn build_dispatches_to_text_xml_pseudoxml_builders() {
-        for builder in ["text", "xml", "pseudoxml", "dirhtml", "singlehtml"] {
+        for builder in ["text", "xml", "pseudoxml", "dirhtml", "singlehtml", "gettext"] {
             let src = make_src();
             let out = TempDir::new().unwrap();
             let doctrees = TempDir::new().unwrap();

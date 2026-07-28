@@ -74,6 +74,11 @@ fn is_native_builder_h7b_builders_true() {
     assert!(is_native_builder("singlehtml"));
 }
 
+#[test]
+fn is_native_builder_h7c_gettext_true() {
+    assert!(is_native_builder("gettext"));
+}
+
 /// Every entry of `NATIVE_BUILDER_CLASSES` must be reachable through
 /// `NATIVE_BUILDERS`, and vice versa.
 #[test]

@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use pyo3::prelude::*;
 
 use crate::app_events::{AppEventManager, EventArg, SharedEvents};
-use crate::app_facade::PyAppFacade;
+use crate::app_facade::{PyAppFacade, SharedAssets, SharedConfig, seed_shared_config};
 use crate::builders::html::HtmlBuilder;
 use crate::builders::changes::ChangesBuilder;
 use crate::builders::dirhtml::DirhtmlBuilder;
@@ -182,6 +182,19 @@ pub struct SphinxApp {
     /// (`"rust"`) resolved via `docutilsrs_plugins`, or by the plain
     /// Python `setup()` (`"python"`). Diagnostic-only; not an upstream field.
     pub extension_sources: HashMap<String, &'static str>,
+    /// The `app.config`-facing store backing every [`PyAppFacade::config`]
+    /// (**H4c**). Seeded once from `self.config` in [`new`](Self::new)
+    /// (before any extension's `setup(app)` runs), then shared — same
+    /// `Rc<RefCell<_>>` sharing pattern as `events` — with every facade
+    /// constructed for the lifetime of this app, so `app.config.x = y` in
+    /// one extension's `setup()` is visible to every extension loaded
+    /// afterward, matching upstream's single persistent `Config` object.
+    pub py_config: SharedConfig,
+    /// CSS/JS files registered via `app.add_css_file`/`app.add_js_file`
+    /// (**H4c**) by any loaded extension. Synced into
+    /// `BuildEnvironment::added_css_files`/`added_js_files` by
+    /// [`build`](Self::build) just before dispatching to a builder.
+    pub assets: SharedAssets,
 }
 
 impl std::fmt::Debug for SphinxApp {
@@ -269,6 +282,13 @@ impl SphinxApp {
         let project = EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
         let env = BuildEnvironment::new(config.clone(), project, &srcdir, &doctreedir);
 
+        // Seed the Python-facing `app.config` store from the already-resolved
+        // `SphinxConfig` (conf.py + `-D` overrides + built-in defaults) before
+        // any extension's `setup(app)` runs, so e.g. `app.config.extensions`
+        // reflects `conf.py`'s real `extensions = [...]` list from the start.
+        let py_config = Python::attach(|py| seed_shared_config(py, &config));
+        let assets = SharedAssets::default();
+
         let mut app = Self {
             srcdir,
             outdir,
@@ -281,6 +301,8 @@ impl SphinxApp {
             events: AppEventManager::shared(),
             extensions: HashMap::new(),
             extension_sources: HashMap::new(),
+            py_config,
+            assets,
         };
 
         // Mirrors the tail of `Sphinx.__init__`: load every extension named
@@ -367,7 +389,10 @@ impl SphinxApp {
                     }
                 };
 
-            let facade = Py::new(py, PyAppFacade::new(self.events.clone()))?;
+            let facade = Py::new(
+                py,
+                PyAppFacade::new(self.events.clone(), self.py_config.clone(), self.assets.clone()),
+            )?;
             let metadata = setup.call1((facade,))?;
 
             let kwargs = if metadata.is_none() {
@@ -512,6 +537,14 @@ impl SphinxApp {
         // H6c: let the write phase (currently only `HtmlBuilder`) emit
         // `html-page-context` per page.
         self.env.set_events(self.events.clone());
+        // H4c: fold any `app.add_css_file`/`app.add_js_file` registrations
+        // made during extension loading into the environment so the
+        // HTML-family builders' theme renderer can link them.
+        {
+            let acc = self.assets.borrow();
+            self.env
+                .set_added_assets(acc.css_files.clone(), acc.js_files.clone());
+        }
         let result = match self.buildername.as_str() {
             "html" => {
                 let builder = HtmlBuilder::new();

@@ -162,7 +162,6 @@ def setup(app):
         app.extension_sources.get("h4b_trivial_ext"),
         Some(&"python")
     );
-
     app.build().unwrap();
 
     pyo3::Python::attach(|py| {
@@ -170,6 +169,119 @@ def setup(app):
         let called: Vec<bool> = module.getattr("called").unwrap().extract().unwrap();
         assert_eq!(called, vec![true], "config-inited listener never fired");
     });
+}
+
+/// **H4c** round trip: `app.config` reads/writes, `add_config_value`
+/// establishing a default only when absent, and `add_css_file`/
+/// `add_js_file` registrations actually reaching the rendered HTML output
+/// (via the real `alabaster` theme -- the default `html_theme` -- since
+/// the embedded placeholder theme fallback does not consult registered
+/// assets at all).
+#[test]
+fn load_extension_config_and_assets_round_trip() {
+    let pydir = TempDir::new().unwrap();
+    std::fs::write(
+        pydir.path().join("h4c_assets_ext.py"),
+        r#"
+snapshot = {}
+
+def setup(app):
+    # `add_config_value` establishes a default only if not already set.
+    app.add_config_value("h4c_flag", True, "html")
+    snapshot["flag_before"] = app.config.h4c_flag
+
+    # `app.config.extensions` must be the *real*, mutable extensions list.
+    assert "h4c_assets_ext" in app.config.extensions
+    app.config.extensions.append("h4c_dummy_marker")
+    snapshot["extensions_after"] = list(app.config.extensions)
+
+    # Arbitrary attribute set/read (Config doesn't override __setattr__
+    # upstream either).
+    app.config.h4c_custom = "hello"
+    snapshot["custom_after"] = app.config.h4c_custom
+
+    # A name nobody ever set/registered must not raise AttributeError.
+    snapshot["unset_is_none"] = app.config.h4c_never_set is None
+
+    app.add_css_file("h4c_extra.css")
+    app.add_js_file("h4c_extra.js", **{"data-x": "1"})
+
+    return {"version": "0.1", "parallel_read_safe": True}
+"#,
+    )
+    .unwrap();
+
+    pyo3::Python::attach(|py| {
+        let sys = py.import("sys").unwrap();
+        let path = sys.getattr("path").unwrap();
+        path.call_method1("insert", (0, pydir.path().to_str().unwrap()))
+            .unwrap();
+    });
+
+    let src = TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "Welcome\n=======\n\nHomepage.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join("conf.py"),
+        "extensions = ['h4c_assets_ext']\n",
+    )
+    .unwrap();
+
+    let out = TempDir::new().unwrap();
+    let dt = TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+
+    app.build().unwrap();
+
+    pyo3::Python::attach(|py| {
+        let module = py.import("h4c_assets_ext").unwrap();
+        let snapshot = module.getattr("snapshot").unwrap();
+        let flag_before: bool = snapshot.get_item("flag_before").unwrap().extract().unwrap();
+        assert!(flag_before, "add_config_value default not visible via app.config");
+
+        let extensions_after: Vec<String> = snapshot
+            .get_item("extensions_after")
+            .unwrap()
+            .extract()
+            .unwrap();
+        assert!(
+            extensions_after.contains(&"h4c_dummy_marker".to_string()),
+            "app.config.extensions.append(...) did not mutate the real list: {extensions_after:?}"
+        );
+
+        let custom_after: String = snapshot
+            .get_item("custom_after")
+            .unwrap()
+            .extract()
+            .unwrap();
+        assert_eq!(custom_after, "hello");
+
+        let unset_is_none: bool = snapshot
+            .get_item("unset_is_none")
+            .unwrap()
+            .extract()
+            .unwrap();
+        assert!(unset_is_none, "reading an unset config name should yield None");
+    });
+
+    // `SphinxApp::py_config` seeded `extensions` from `conf.py` at
+    // construction time -- the same live list objects the Python side
+    // mutated, so the Rust-side accumulation must see it too via the
+    // shared `assets` registry (checked indirectly through the rendered
+    // page below), and the config store itself must retain the write.
+    let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+    assert!(
+        html.contains("h4c_extra.css"),
+        "add_css_file's registered stylesheet is missing from rendered HTML:\n{html}"
+    );
+    assert!(
+        html.contains("h4c_extra.js"),
+        "add_js_file's registered script is missing from rendered HTML:\n{html}"
+    );
 }
 
 #[test]

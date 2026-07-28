@@ -32,11 +32,18 @@
 //!   section-granularity — still a real local/global distinction, just a
 //!   coarser one than upstream's), and `toctree()` ignores its
 //!   `maxdepth`/`collapse`/`includehidden` kwargs.
-//! - `css_files`/`script_files` are discovered by scanning `outdir/_static/`
-//!   for top-level `*.css`/`*.js` files after static assets are copied,
-//!   rather than tracking the upstream `add_css_file`/`add_js_file`
-//!   registry — every copied asset gets linked, in the order `read_dir`
-//!   returns them (sorted for determinism).
+//! - `css_files`/`script_files` are primarily discovered by scanning
+//!   `outdir/_static/` for top-level `*.css`/`*.js` files after static
+//!   assets are copied (every copied asset gets linked, in the order
+//!   `read_dir` returns them, sorted for determinism), with any files a
+//!   Python extension registered via `app.add_css_file`/`app.add_js_file`
+//!   (**H4c** — `crate::app_facade::PyAppFacade`) appended afterward if not
+//!   already present. Registered files are only linked as plain
+//!   `<link>`/`<script>` tags (no extra HTML attributes, no SRI, no
+//!   inline-script bodies) and are **not** copied into `_static/`
+//!   themselves — a registered file renders correctly only when it
+//!   already lands there through `html_static_path` or the active theme's
+//!   own static files.
 //! - `meta`/`metatags` (per-page docinfo/HTML `<meta>` tags) are not
 //!   modeled; both are always empty.
 //! - `sphinx_version` reports this crate's own version, not upstream
@@ -700,8 +707,24 @@ fn build_global_context(
     }
     ctx.insert("rellinks".into(), rellinks.into());
 
-    // Static assets actually present in outdir/_static (see module doc).
-    let (css_files, script_files) = discover_static_assets(outdir);
+    // Static assets actually present in outdir/_static (see module doc),
+    // plus any files a Python extension registered via
+    // `app.add_css_file`/`app.add_js_file` (H4c) that aren't already in
+    // that discovered list (e.g. a name the extension expects
+    // `html_static_path`/the active theme to have already copied in).
+    let (mut css_files, mut script_files) = discover_static_assets(outdir);
+    for css in &env.added_css_files {
+        if !css_files.contains(&css.filename) {
+            css_files.push(css.filename.clone());
+        }
+    }
+    for js in &env.added_js_files {
+        if let Some(name) = &js.filename {
+            if !script_files.contains(name) {
+                script_files.push(name.clone());
+            }
+        }
+    }
     ctx.insert("css_files".into(), css_files.into());
     ctx.insert("script_files".into(), script_files.into());
     ctx.insert("theme_nosidebar".into(), false.into());
@@ -957,5 +980,90 @@ mod tests {
         assert!(global_html.contains("guide/intro.html"));
         assert!(local_html.is_empty());
         assert_ne!(global_html, local_html);
+    }
+
+    fn make_test_env(srcdir: &str, doctreedir: &str) -> crate::environment::BuildEnvironment {
+        let config = crate::config::SphinxConfig::new_defaults();
+        let project =
+            crate::environment::EnvProject::new(srcdir, &[(".rst", "restructuredtext")]);
+        crate::environment::BuildEnvironment::new(config, project, srcdir, doctreedir)
+    }
+
+    /// `app.add_css_file`/`app.add_js_file` registrations (H4c, synced onto
+    /// `BuildEnvironment::added_css_files`/`added_js_files` by
+    /// `SphinxApp::build`) must appear in the theme's `css_files`/
+    /// `script_files` template lists even when `_static/` doesn't contain
+    /// them (e.g. the outdir doesn't exist at all in this test).
+    #[test]
+    fn build_global_context_includes_extension_registered_assets() {
+        let mut env = make_test_env(
+            "/tmp/theme-render-test-assets-src",
+            "/tmp/theme-render-test-assets-doctrees",
+        );
+        env.added_css_files.push(crate::registry::CssFile {
+            filename: "extra.css".into(),
+            attributes: HashMap::new(),
+        });
+        env.added_js_files.push(crate::registry::JsFile {
+            filename: Some("extra.js".into()),
+            attributes: HashMap::new(),
+        });
+
+        let outdir = Path::new("/tmp/theme-render-test-assets-outdir-does-not-exist");
+        let ctx = build_global_context(&env, outdir, &Default::default(), &[]);
+
+        let css_files: Vec<String> = ctx["css_files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert!(css_files.contains(&"extra.css".to_string()), "{css_files:?}");
+
+        let script_files: Vec<String> = ctx["script_files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert!(
+            script_files.contains(&"extra.js".to_string()),
+            "{script_files:?}"
+        );
+    }
+
+    /// A registered asset whose filename is already present in the
+    /// discovered `_static/` listing must not be duplicated.
+    #[test]
+    fn build_global_context_dedupes_registered_asset_already_on_disk() {
+        let outdir = tempfile::TempDir::new().unwrap();
+        let static_dir = outdir.path().join("_static");
+        std::fs::create_dir_all(&static_dir).unwrap();
+        std::fs::write(static_dir.join("shared.css"), "/* css */").unwrap();
+
+        let mut env = make_test_env(
+            "/tmp/theme-render-test-dedupe-src",
+            "/tmp/theme-render-test-dedupe-doctrees",
+        );
+        env.added_css_files.push(crate::registry::CssFile {
+            filename: "_static/shared.css".into(),
+            attributes: HashMap::new(),
+        });
+
+        let ctx = build_global_context(&env, outdir.path(), &Default::default(), &[]);
+        let css_files: Vec<String> = ctx["css_files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(
+            css_files
+                .iter()
+                .filter(|f| f.as_str() == "_static/shared.css")
+                .count(),
+            1,
+            "{css_files:?}"
+        );
     }
 }

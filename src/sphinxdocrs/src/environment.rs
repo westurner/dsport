@@ -224,6 +224,18 @@ pub struct BuildEnvironment {
     /// when there is no owning app (e.g. a builder driven directly in a
     /// test) — event emission is then simply skipped.
     pub events: EventsHandle,
+
+    // ── extension-registered page assets (H4c) ───────────────────────────────
+    /// CSS files registered by a Python extension's `app.add_css_file(...)`
+    /// during `setup(app)` (or an event listener it connects). Synced from
+    /// `SphinxApp::assets` by [`crate::application::SphinxApp::build`] just
+    /// before dispatching to a builder; merged into the `css_files`
+    /// template list by `crate::theme_render::build_global_context`
+    /// alongside whatever is discovered under `outdir/_static/`.
+    pub added_css_files: Vec<crate::registry::CssFile>,
+    /// JS files registered via `app.add_js_file(...)`. See
+    /// `added_css_files`.
+    pub added_js_files: Vec<crate::registry::JsFile>,
 }
 
 /// Wraps `Option<crate::app_events::SharedEvents>` so [`BuildEnvironment`]
@@ -287,6 +299,8 @@ impl BuildEnvironment {
             pending_xrefs: HashMap::new(),
             indexentries: HashMap::new(),
             events: EventsHandle::default(),
+            added_css_files: Vec::new(),
+            added_js_files: Vec::new(),
         }
     }
 
@@ -296,6 +310,19 @@ impl BuildEnvironment {
     /// builder so the write phase can emit `html-page-context` per page.
     pub fn set_events(&mut self, events: crate::app_events::SharedEvents) {
         self.events = EventsHandle(Some(events));
+    }
+
+    /// Install the extension-registered CSS/JS files accumulated during
+    /// extension loading (**H4c**). Called by
+    /// [`crate::application::SphinxApp::build`] just before dispatching to
+    /// a builder, mirroring [`set_events`](Self::set_events)'s timing.
+    pub fn set_added_assets(
+        &mut self,
+        css_files: Vec<crate::registry::CssFile>,
+        js_files: Vec<crate::registry::JsFile>,
+    ) {
+        self.added_css_files = css_files;
+        self.added_js_files = js_files;
     }
 
     /// Return the installed event bus handle, if any.

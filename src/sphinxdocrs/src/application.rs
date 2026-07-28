@@ -31,6 +31,9 @@ use crate::builders::json::JsonBuilder;
 use crate::builders::latex::LatexBuilder;
 use crate::builders::linkcheck::LinkcheckBuilder;
 use crate::builders::manpage::ManpageBuilder;
+use crate::builders::pseudoxml::PseudoxmlBuilder;
+use crate::builders::text::TextBuilder;
+use crate::builders::xml::XmlBuilder;
 use crate::builders::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
 use crate::environment::{BuildEnvironment, EnvProject};
@@ -103,10 +106,25 @@ pub const NATIVE_BUILDER_CLASSES: &[(&str, &str)] = &[
         "linkcheck",
         "sphinxdocrs::builders::linkcheck::LinkcheckBuilder",
     ),
+    ("text", "sphinxdocrs::builders::text::TextBuilder"),
+    ("xml", "sphinxdocrs::builders::xml::XmlBuilder"),
+    (
+        "pseudoxml",
+        "sphinxdocrs::builders::pseudoxml::PseudoxmlBuilder",
+    ),
 ];
 
 /// Builder names that have a native Rust implementation.
-pub const NATIVE_BUILDERS: &[&str] = &["html", "json", "latex", "man", "linkcheck"];
+pub const NATIVE_BUILDERS: &[&str] = &[
+    "html",
+    "json",
+    "latex",
+    "man",
+    "linkcheck",
+    "text",
+    "xml",
+    "pseudoxml",
+];
 
 /// Return `true` if `builder_name` has a native Rust implementation.
 ///
@@ -510,6 +528,24 @@ impl SphinxApp {
                     .build_all(&self.srcdir, &self.outdir, &self.env)
                     .map_err(AppError::from)
             }
+            "text" => {
+                let builder = TextBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .map_err(AppError::from)
+            }
+            "xml" => {
+                let builder = XmlBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .map_err(AppError::from)
+            }
+            "pseudoxml" => {
+                let builder = PseudoxmlBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .map_err(AppError::from)
+            }
             other => Err(AppError::UnknownBuilder(other.into())),
         };
 
@@ -622,6 +658,13 @@ mod tests {
     #[test]
     fn non_native_builder_epub() {
         assert!(!is_native_builder("epub"));
+    }
+
+    #[test]
+    fn native_builder_text_xml_pseudoxml() {
+        assert!(is_native_builder("text"));
+        assert!(is_native_builder("xml"));
+        assert!(is_native_builder("pseudoxml"));
     }
 
     #[test]
@@ -775,5 +818,31 @@ mod tests {
     #[test]
     fn native_builders_includes_html() {
         assert!(NATIVE_BUILDERS.contains(&"html"));
+    }
+
+    #[test]
+    fn native_builders_includes_h7a_builders() {
+        assert!(NATIVE_BUILDERS.contains(&"text"));
+        assert!(NATIVE_BUILDERS.contains(&"xml"));
+        assert!(NATIVE_BUILDERS.contains(&"pseudoxml"));
+    }
+
+    #[test]
+    fn build_dispatches_to_text_xml_pseudoxml_builders() {
+        for builder in ["text", "xml", "pseudoxml"] {
+            let src = make_src();
+            let out = TempDir::new().unwrap();
+            let doctrees = TempDir::new().unwrap();
+            let mut app = SphinxApp::new(
+                src.path(),
+                out.path(),
+                doctrees.path(),
+                builder,
+                HashMap::new(),
+            )
+            .unwrap();
+            let result = app.build().unwrap();
+            assert_eq!(result.written, 1, "builder {builder} should write 1 doc");
+        }
     }
 }

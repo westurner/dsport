@@ -52,12 +52,20 @@ fn is_native_builder_epub_false() {
 
 #[test]
 fn is_native_builder_unknown_false() {
-    assert!(!is_native_builder("xml"));
+    // "xml" became native in H7a; use a builder name that stays non-native.
+    assert!(!is_native_builder("qthelp"));
 }
 
 #[test]
 fn is_native_builder_json_true() {
     assert!(is_native_builder("json"));
+}
+
+#[test]
+fn is_native_builder_h7a_builders_true() {
+    assert!(is_native_builder("text"));
+    assert!(is_native_builder("xml"));
+    assert!(is_native_builder("pseudoxml"));
 }
 
 /// Every entry of `NATIVE_BUILDER_CLASSES` must be reachable through

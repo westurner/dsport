@@ -17,6 +17,9 @@ pub mod json;
 pub mod latex;
 pub mod linkcheck;
 pub mod manpage;
+pub mod pseudoxml;
+pub mod text;
+pub mod xml;
 
 use std::io;
 use std::path::Path;

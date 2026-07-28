@@ -16,8 +16,10 @@ pub mod parser;
 pub mod plugins;
 mod python;
 pub mod roles;
+pub mod text_writer;
 pub mod transforms;
 pub mod writer;
+pub mod xml_writer;
 pub mod zip_writer;
 
 pub use doctree::{Doctree, NodeKind};
@@ -26,7 +28,9 @@ pub use latex_writer::latex;
 pub use manpage_writer::manpage;
 pub use odt_writer::odt;
 pub use parser::{parse_rst, parse_rst_with_source};
+pub use text_writer::text;
 pub use writer::pseudo_xml;
+pub use xml_writer::to_xml;
 
 /// Crate version string. Mirrors `Cargo.toml` `[package].version`.
 pub fn version() -> &'static str {

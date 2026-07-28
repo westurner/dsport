@@ -12,12 +12,14 @@
 //! **Deferred** (requires full Sphinx app): theming, Jinja2 templates, CSS/JS
 //! asset copying, search index, domain indices.
 
+pub mod dirhtml;
 pub mod html;
 pub mod json;
 pub mod latex;
 pub mod linkcheck;
 pub mod manpage;
 pub mod pseudoxml;
+pub mod singlehtml;
 pub mod text;
 pub mod xml;
 

@@ -48,11 +48,38 @@ pub struct HtmlBuilder {
     /// `out_suffix`).
     pub link_suffix: String,
 
+    /// Output layout: one flat `<docname>.html` file per document (the
+    /// default, matching `StandaloneHTMLBuilder`), or one
+    /// `<docname>/index.html` per document (matching
+    /// `sphinx.builders.dirhtml.DirectoryHTMLBuilder`, used by
+    /// [`crate::builders::dirhtml::DirhtmlBuilder`]).
+    path_style: PathStyle,
+
     /// docutilsrs HTML5 writer options.
     html5_options: Html5Options,
 
     /// docutilsrs common options.
     common_options: CommonOptions,
+}
+
+/// Output file/URI layout used by [`HtmlBuilder`].
+///
+/// **Accepted deviation:** only the *physical output layout* and
+/// [`Builder::get_target_uri`] switch with [`PathStyle::Dir`] — in-page
+/// navigation (relbar/toctree/`pathto`) rendered through the real theme
+/// pipeline (`theme_render.rs`) still resolves links via a hardcoded
+/// flat-style `HtmlBuilder::new().get_target_uri(..)` call at several call
+/// sites, so a `dirhtml` build's *files* land in the correct
+/// `docname/index.html` locations but cross-document navigation links
+/// embedded in the themed chrome may still point at the flat `.html`
+/// naming. Recorded in the H7b plan notes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum PathStyle {
+    /// `<docname>.html`.
+    #[default]
+    Flat,
+    /// `<docname>/index.html` (`index` docname itself stays at the root).
+    Dir,
 }
 
 impl HtmlBuilder {
@@ -61,6 +88,24 @@ impl HtmlBuilder {
         Self {
             out_suffix: ".html".into(),
             link_suffix: ".html".into(),
+            path_style: PathStyle::Flat,
+            html5_options: Html5Options::default(),
+            common_options: CommonOptions::default(),
+        }
+    }
+
+    /// Construct configured for `sphinx.builders.dirhtml.DirectoryHTMLBuilder`-style
+    /// output: `<docname>/index.html` files and a matching `get_target_uri`.
+    ///
+    /// Used by [`crate::builders::dirhtml::DirhtmlBuilder`], which otherwise
+    /// delegates every [`Builder`] method to a plain [`HtmlBuilder`]
+    /// constructed this way — reusing the entire theming/search-index/
+    /// static-asset pipeline unchanged.
+    pub(crate) fn new_dir_style() -> Self {
+        Self {
+            out_suffix: "/index.html".into(),
+            link_suffix: "/".into(),
+            path_style: PathStyle::Dir,
             html5_options: Html5Options::default(),
             common_options: CommonOptions::default(),
         }
@@ -76,7 +121,7 @@ impl HtmlBuilder {
     /// `build_all`), where the read phase
     /// ([`BuildEnvironment::read_all`]) has already parsed and stored the
     /// doctree, so the write phase never re-parses the source.
-    fn render_fragment_from_tree(&self, docname: &str, tree: &Doctree) -> (String, String) {
+    pub(crate) fn render_fragment_from_tree(&self, docname: &str, tree: &Doctree) -> (String, String) {
         // Extract promoted document title from NodeKind::Document { title, .. }
         let title = match &tree.node(tree.root()).kind {
             NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
@@ -150,7 +195,7 @@ impl HtmlBuilder {
 
         let (title, body) = self.render_fragment_from_tree(docname, tree);
         let page = Self::render_embedded_or_wrap(docname, &title, &body, meta);
-        Self::write_page(docname, &page, outdir)
+        self.write_page(docname, &page, outdir)
     }
 
     /// Render `docname` through the embedded placeholder theme
@@ -158,7 +203,12 @@ impl HtmlBuilder {
     /// [`wrap_page`](Self::wrap_page) if the theme cannot be constructed or
     /// a template fails to render, so a build never fails solely because of
     /// a template error.
-    fn render_embedded_or_wrap(docname: &str, title: &str, body: &str, meta: &PageMeta) -> String {
+    pub(crate) fn render_embedded_or_wrap(
+        docname: &str,
+        title: &str,
+        body: &str,
+        meta: &PageMeta,
+    ) -> String {
         match crate::theme::ThemeRenderer::new() {
             Ok(renderer) => {
                 let mut ctx = crate::theme::PageContext::new(docname, title, body);
@@ -219,12 +269,27 @@ impl HtmlBuilder {
                 Self::render_embedded_or_wrap(docname, &title, &body, meta)
             }
         };
-        Self::write_page(docname, &page, outdir)
+        self.write_page(docname, &page, outdir)
     }
 
-    /// Write a fully-rendered page string to `outdir/{docname}.html`.
-    fn write_page(docname: &str, page: &str, outdir: &Path) -> Result<(), BuildError> {
-        let rel: PathBuf = format!("{docname}.html").split('/').collect();
+    /// Write a fully-rendered page string to the output path implied by this
+    /// builder's [`PathStyle`]: `outdir/{docname}.html` for
+    /// [`PathStyle::Flat`], `outdir/{docname}/index.html` for
+    /// [`PathStyle::Dir`] (with the `index` docname itself staying at the
+    /// directory root: `outdir/index.html`, and any `*/index` docname
+    /// staying at its own directory root, matching upstream
+    /// `DirectoryHTMLBuilder.get_outfilename`).
+    fn write_page(&self, docname: &str, page: &str, outdir: &Path) -> Result<(), BuildError> {
+        let rel: PathBuf = match self.path_style {
+            PathStyle::Flat => format!("{docname}.html").split('/').collect(),
+            PathStyle::Dir => {
+                if docname == "index" || docname.ends_with("/index") {
+                    format!("{docname}.html").split('/').collect()
+                } else {
+                    format!("{docname}/index.html").split('/').collect()
+                }
+            }
+        };
         let out_path = outdir.join(rel);
         if let Some(parent) = out_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -236,11 +301,11 @@ impl HtmlBuilder {
 
 /// Page-level metadata passed to the theme when rendering a document.
 #[derive(Debug, Clone, Default)]
-struct PageMeta {
-    project: String,
-    docstitle: String,
-    copyright: String,
-    language: String,
+pub(crate) struct PageMeta {
+    pub(crate) project: String,
+    pub(crate) docstitle: String,
+    pub(crate) copyright: String,
+    pub(crate) language: String,
 }
 
 impl Default for HtmlBuilder {
@@ -264,8 +329,11 @@ impl Builder for HtmlBuilder {
 
     /// Return the output URI for `docname`.
     ///
-    /// Mirrors `StandaloneHTMLBuilder.get_target_uri`:
-    /// `quote(docname) + self.link_suffix`.
+    /// Mirrors `StandaloneHTMLBuilder.get_target_uri`
+    /// (`quote(docname) + self.link_suffix`) for [`PathStyle::Flat`], and
+    /// `DirectoryHTMLBuilder.get_target_uri` for [`PathStyle::Dir`]: `""`
+    /// for the `index` docname, the docname with a trailing `/index`
+    /// stripped for any other `*/index` docname, else `"{docname}/"`.
     ///
     /// ```rust
     /// use sphinxdocrs::builders::{Builder, html::HtmlBuilder};
@@ -274,7 +342,18 @@ impl Builder for HtmlBuilder {
     /// assert_eq!(b.get_target_uri("guide/intro"), "guide/intro.html");
     /// ```
     fn get_target_uri(&self, docname: &str) -> String {
-        format!("{}{}", percent_encode_path(docname), self.link_suffix)
+        match self.path_style {
+            PathStyle::Flat => format!("{}{}", percent_encode_path(docname), self.link_suffix),
+            PathStyle::Dir => {
+                if docname == "index" {
+                    String::new()
+                } else if let Some(stripped) = docname.strip_suffix("/index") {
+                    format!("{}/", percent_encode_path(stripped))
+                } else {
+                    format!("{}/", percent_encode_path(docname))
+                }
+            }
+        }
     }
 
     /// Parse `source` and write the resulting HTML to `outdir/{docname}.html`.

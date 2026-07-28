@@ -27,11 +27,13 @@ use pyo3::prelude::*;
 use crate::app_events::{AppEventManager, EventArg, SharedEvents};
 use crate::app_facade::PyAppFacade;
 use crate::builders::html::HtmlBuilder;
+use crate::builders::dirhtml::DirhtmlBuilder;
 use crate::builders::json::JsonBuilder;
 use crate::builders::latex::LatexBuilder;
 use crate::builders::linkcheck::LinkcheckBuilder;
 use crate::builders::manpage::ManpageBuilder;
 use crate::builders::pseudoxml::PseudoxmlBuilder;
+use crate::builders::singlehtml::SinglehtmlBuilder;
 use crate::builders::text::TextBuilder;
 use crate::builders::xml::XmlBuilder;
 use crate::builders::{BuildError, BuildResult, Builder};
@@ -112,6 +114,11 @@ pub const NATIVE_BUILDER_CLASSES: &[(&str, &str)] = &[
         "pseudoxml",
         "sphinxdocrs::builders::pseudoxml::PseudoxmlBuilder",
     ),
+    ("dirhtml", "sphinxdocrs::builders::dirhtml::DirhtmlBuilder"),
+    (
+        "singlehtml",
+        "sphinxdocrs::builders::singlehtml::SinglehtmlBuilder",
+    ),
 ];
 
 /// Builder names that have a native Rust implementation.
@@ -124,6 +131,8 @@ pub const NATIVE_BUILDERS: &[&str] = &[
     "text",
     "xml",
     "pseudoxml",
+    "dirhtml",
+    "singlehtml",
 ];
 
 /// Return `true` if `builder_name` has a native Rust implementation.
@@ -546,6 +555,18 @@ impl SphinxApp {
                     .build_all(&self.srcdir, &self.outdir, &self.env)
                     .map_err(AppError::from)
             }
+            "dirhtml" => {
+                let builder = DirhtmlBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .map_err(AppError::from)
+            }
+            "singlehtml" => {
+                let builder = SinglehtmlBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .map_err(AppError::from)
+            }
             other => Err(AppError::UnknownBuilder(other.into())),
         };
 
@@ -665,6 +686,12 @@ mod tests {
         assert!(is_native_builder("text"));
         assert!(is_native_builder("xml"));
         assert!(is_native_builder("pseudoxml"));
+    }
+
+    #[test]
+    fn native_builder_dirhtml_singlehtml() {
+        assert!(is_native_builder("dirhtml"));
+        assert!(is_native_builder("singlehtml"));
     }
 
     #[test]
@@ -828,8 +855,14 @@ mod tests {
     }
 
     #[test]
+    fn native_builders_includes_h7b_builders() {
+        assert!(NATIVE_BUILDERS.contains(&"dirhtml"));
+        assert!(NATIVE_BUILDERS.contains(&"singlehtml"));
+    }
+
+    #[test]
     fn build_dispatches_to_text_xml_pseudoxml_builders() {
-        for builder in ["text", "xml", "pseudoxml"] {
+        for builder in ["text", "xml", "pseudoxml", "dirhtml", "singlehtml"] {
             let src = make_src();
             let out = TempDir::new().unwrap();
             let doctrees = TempDir::new().unwrap();

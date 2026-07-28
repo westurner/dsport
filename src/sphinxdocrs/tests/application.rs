@@ -68,6 +68,12 @@ fn is_native_builder_h7a_builders_true() {
     assert!(is_native_builder("pseudoxml"));
 }
 
+#[test]
+fn is_native_builder_h7b_builders_true() {
+    assert!(is_native_builder("dirhtml"));
+    assert!(is_native_builder("singlehtml"));
+}
+
 /// Every entry of `NATIVE_BUILDER_CLASSES` must be reachable through
 /// `NATIVE_BUILDERS`, and vice versa.
 #[test]

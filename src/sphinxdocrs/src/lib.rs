@@ -46,6 +46,7 @@ pub mod search;
 #[cfg(feature = "search-stemming")]
 pub mod stemmer;
 pub mod theme;
+pub mod theme_render;
 pub mod theme_static;
 pub mod toctree;
 pub mod util_console;

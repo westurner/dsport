@@ -3038,6 +3038,7 @@ dependencies = [
  "glob",
  "insta",
  "jinja2rs",
+ "markupsafers",
  "minijinja",
  "mockall",
  "num_cpus",

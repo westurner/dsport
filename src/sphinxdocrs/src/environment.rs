@@ -217,6 +217,27 @@ pub struct BuildEnvironment {
     /// docname → `.. index::` entries recovered from that document's
     /// source during the read phase (**H3d**/**H5e** input).
     pub indexentries: HashMap<String, Vec<IndexEntry>>,
+
+    /// Optional handle to the app's native event bus (**H4a**), set by
+    /// [`crate::application::SphinxApp`] before dispatching to a builder so
+    /// the write phase can emit `html-page-context` (H6c) per page. `None`
+    /// when there is no owning app (e.g. a builder driven directly in a
+    /// test) — event emission is then simply skipped.
+    pub events: EventsHandle,
+}
+
+/// Wraps `Option<crate::app_events::SharedEvents>` so [`BuildEnvironment`]
+/// can keep deriving `Debug` — `AppEventManager` holds boxed `FnMut`
+/// listener closures, which aren't `Debug`.
+#[derive(Clone, Default)]
+pub struct EventsHandle(pub Option<crate::app_events::SharedEvents>);
+
+impl std::fmt::Debug for EventsHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("EventsHandle")
+            .field(&self.0.as_ref().map(|_| "SharedEvents"))
+            .finish()
+    }
 }
 
 impl BuildEnvironment {
@@ -265,7 +286,21 @@ impl BuildEnvironment {
             js_domain: JsDomain::new(),
             pending_xrefs: HashMap::new(),
             indexentries: HashMap::new(),
+            events: EventsHandle::default(),
         }
+    }
+
+    /// Install a handle to the app's native event bus (**H4a**).
+    ///
+    /// Called by [`crate::application::SphinxApp`] before dispatching to a
+    /// builder so the write phase can emit `html-page-context` per page.
+    pub fn set_events(&mut self, events: crate::app_events::SharedEvents) {
+        self.events = EventsHandle(Some(events));
+    }
+
+    /// Return the installed event bus handle, if any.
+    pub fn events_handle(&self) -> Option<&crate::app_events::SharedEvents> {
+        self.events.0.as_ref()
     }
 
     // ── document tracking ─────────────────────────────────────────────────────

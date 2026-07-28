@@ -476,6 +476,9 @@ impl SphinxApp {
     /// Returns a [`BuildResult`] with counts of written / skipped documents.
     pub fn build(&mut self) -> Result<BuildResult, AppError> {
         self.read()?;
+        // H6c: let the write phase (currently only `HtmlBuilder`) emit
+        // `html-page-context` per page.
+        self.env.set_events(self.events.clone());
         let result = match self.buildername.as_str() {
             "html" => {
                 let builder = HtmlBuilder::new();
@@ -706,6 +709,39 @@ mod tests {
         app.build().unwrap();
         let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
         assert!(html.starts_with("<!DOCTYPE html>"));
+    }
+
+    /// H6c: when the real theme resolves (Python + the configured theme are
+    /// available), `build()` renders through the theme's own real templates
+    /// rather than the embedded placeholder — this asserts markers that only
+    /// appear in real Sphinx theme output (the default `alabaster` theme's
+    /// sidebar search box, and its own footer credit line), and that the
+    /// document body is not HTML-escaped (a regression this test would have
+    /// caught: `body`/`toc` must be passed through as safe strings, not
+    /// plain JSON, or the auto-escaper double-encodes them).
+    ///
+    /// Falls back to skipping the theme-specific assertions (but still
+    /// checks the page rendered *something* usable) when the real theme
+    /// could not be resolved in this environment, so the test remains
+    /// meaningful without requiring Python/Sphinx to be installed.
+    #[test]
+    fn build_html_uses_real_theme_when_available() {
+        let src = make_src();
+        let out = TempDir::new().unwrap();
+        let dt = TempDir::new().unwrap();
+        let mut app =
+            SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+        app.build().unwrap();
+        let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+        assert!(
+            html.contains("<h1>Welcome</h1>"),
+            "body must not be HTML-escaped:\n{html}"
+        );
+        if html.contains("Quick search") {
+            // The real `alabaster` (extending `basic`) theme resolved.
+            assert!(html.contains("sphinxsidebar"), "got:\n{html}");
+            assert!(html.contains("Powered by"), "got:\n{html}");
+        }
     }
 
     #[test]

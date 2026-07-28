@@ -550,6 +550,15 @@ impl ConfigVal {
             None
         }
     }
+
+    /// Return the key/value pairs if this is a `Map`, otherwise `None`.
+    pub fn as_map(&self) -> Option<&[(String, ConfigVal)]> {
+        if let ConfigVal::Map(m) = self {
+            Some(m)
+        } else {
+            None
+        }
+    }
 }
 
 /// A registered configuration option descriptor.
@@ -858,6 +867,105 @@ impl SphinxConfig {
             List(vec![]),
             Html,
             "Directories of files copied verbatim to the output root",
+        );
+        // H6c: full page context — title/copyright/sourcelink/context options.
+        add(
+            "html_title",
+            Null,
+            Html,
+            "Page title prefix (default: derived from project/release)",
+        );
+        add(
+            "html_short_title",
+            Null,
+            Html,
+            "Short title for the navigation bar",
+        );
+        add(
+            "html_context",
+            Map(vec![]),
+            Html,
+            "Extra template context merged into every page",
+        );
+        add(
+            "html_theme_options",
+            Map(vec![]),
+            Html,
+            "Theme-specific options (exposed to templates as `theme_<key>`)",
+        );
+        add(
+            "html_show_copyright",
+            Bool(true),
+            Html,
+            "Show the copyright line in the footer",
+        );
+        add(
+            "html_show_sphinx",
+            Bool(true),
+            Html,
+            "Show the \"Created using Sphinx\" credit line",
+        );
+        add(
+            "html_show_search_summary",
+            Bool(true),
+            Html,
+            "Show a summary next to each search result",
+        );
+        add(
+            "html_copy_source",
+            Bool(true),
+            Html,
+            "Copy source .rst files to _sources/",
+        );
+        add(
+            "html_show_sourcelink",
+            Bool(true),
+            Html,
+            "Show a \"View page source\" link",
+        );
+        add(
+            "html_sourcelink_suffix",
+            Str(".txt".into()),
+            Html,
+            "Suffix appended to copied source filenames",
+        );
+        add(
+            "html_use_opensearch",
+            Str(String::new()),
+            Html,
+            "Base URL for an OpenSearch description",
+        );
+        add(
+            "html_baseurl",
+            Str(String::new()),
+            Html,
+            "Base URL the docs will be hosted at",
+        );
+        add("html_logo", Null, Html, "Path (or URL) to a logo image");
+        add("html_favicon", Null, Html, "Path (or URL) to a favicon");
+        add(
+            "html_last_updated_fmt",
+            Null,
+            Html,
+            "strftime format for the \"last updated\" string",
+        );
+        add(
+            "html_sidebars",
+            Map(vec![]),
+            Html,
+            "Pattern -> sidebar template list mapping",
+        );
+        add(
+            "html_domain_indices",
+            Bool(true),
+            Html,
+            "Generate domain-specific indices",
+        );
+        add(
+            "html_use_index",
+            Bool(true),
+            Html,
+            "Generate the general index",
         );
         // Intersphinx
         add(
@@ -1358,6 +1466,160 @@ impl SphinxConfig {
                 }
             })
             .unwrap_or_default()
+    }
+
+    // ── H6c: full page context ────────────────────────────────────────────────
+
+    /// `html_title` — mirrors `Config.html_title`'s computed default:
+    /// `"{project} v{release} documentation"` (or without the version
+    /// segment when `release` is empty).
+    pub fn html_title(&self) -> String {
+        if let Some(ConfigVal::Str(s)) = self.get("html_title") {
+            return s;
+        }
+        let project = self.project();
+        let release = self.release();
+        if release.is_empty() {
+            format!("{project} documentation")
+        } else {
+            format!("{project} v{release} documentation")
+        }
+    }
+
+    /// `html_short_title` — defaults to [`Self::html_title`].
+    pub fn html_short_title(&self) -> String {
+        match self.get("html_short_title") {
+            Some(ConfigVal::Str(s)) if !s.is_empty() => s,
+            _ => self.html_title(),
+        }
+    }
+
+    /// `html_context` — extra template context merged into every page.
+    pub fn html_context(&self) -> Vec<(String, ConfigVal)> {
+        self.get("html_context")
+            .and_then(|v| v.as_map().map(<[_]>::to_vec))
+            .unwrap_or_default()
+    }
+
+    /// `html_theme_options` — theme-specific options, exposed to templates
+    /// as `theme_<key>`.
+    pub fn html_theme_options(&self) -> Vec<(String, ConfigVal)> {
+        self.get("html_theme_options")
+            .and_then(|v| v.as_map().map(<[_]>::to_vec))
+            .unwrap_or_default()
+    }
+
+    /// `html_show_copyright`.
+    pub fn html_show_copyright(&self) -> bool {
+        self.get("html_show_copyright")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true)
+    }
+
+    /// `html_show_sphinx`.
+    pub fn html_show_sphinx(&self) -> bool {
+        self.get("html_show_sphinx")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true)
+    }
+
+    /// `html_show_search_summary`.
+    pub fn html_show_search_summary(&self) -> bool {
+        self.get("html_show_search_summary")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true)
+    }
+
+    /// `html_copy_source`.
+    pub fn html_copy_source(&self) -> bool {
+        self.get("html_copy_source")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true)
+    }
+
+    /// `html_show_sourcelink`.
+    pub fn html_show_sourcelink(&self) -> bool {
+        self.get("html_show_sourcelink")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true)
+    }
+
+    /// `html_sourcelink_suffix`.
+    pub fn html_sourcelink_suffix(&self) -> String {
+        self.get("html_sourcelink_suffix")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_else(|| ".txt".into())
+    }
+
+    /// `html_use_opensearch` — non-empty enables the OpenSearch `<link>`.
+    pub fn html_use_opensearch(&self) -> String {
+        self.get("html_use_opensearch")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default()
+    }
+
+    /// `html_baseurl`.
+    pub fn html_baseurl(&self) -> String {
+        self.get("html_baseurl")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default()
+    }
+
+    /// `html_logo` — path or URL to a logo image, if configured.
+    pub fn html_logo(&self) -> Option<String> {
+        self.get("html_logo")
+            .and_then(|v| v.as_str().map(String::from))
+    }
+
+    /// `html_favicon` — path or URL to a favicon, if configured.
+    pub fn html_favicon(&self) -> Option<String> {
+        self.get("html_favicon")
+            .and_then(|v| v.as_str().map(String::from))
+    }
+
+    /// `html_last_updated_fmt` — `Some("")` (the Sphinx default sentinel)
+    /// means "show a default-formatted date"; `None` means don't show one
+    /// at all; `Some(fmt)` is a custom strftime format.
+    pub fn html_last_updated_fmt(&self) -> Option<String> {
+        self.get("html_last_updated_fmt")
+            .and_then(|v| v.as_str().map(String::from))
+    }
+
+    /// `html_sidebars` — pattern -> sidebar template list mapping. Only
+    /// exact-docname and `"**"` wildcard patterns are honored (accepted
+    /// deviation: no `fnmatch`-style glob matching).
+    pub fn html_sidebars(&self) -> Vec<(String, Vec<String>)> {
+        self.get("html_sidebars")
+            .and_then(|v| v.as_map().map(<[_]>::to_vec))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(pattern, val)| {
+                let templates = val
+                    .as_list()
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (pattern, templates)
+            })
+            .collect()
+    }
+
+    /// `html_domain_indices`.
+    pub fn html_domain_indices(&self) -> bool {
+        self.get("html_domain_indices")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true)
+    }
+
+    /// `html_use_index` — whether to generate `genindex`.
+    pub fn html_use_index(&self) -> bool {
+        self.get("html_use_index")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true)
     }
 }
 

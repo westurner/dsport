@@ -149,11 +149,19 @@ impl HtmlBuilder {
         sanitize_docname(docname)?;
 
         let (title, body) = self.render_fragment_from_tree(docname, tree);
+        let page = Self::render_embedded_or_wrap(docname, &title, &body, meta);
+        Self::write_page(docname, &page, outdir)
+    }
 
-        // Try the Jinja2 theme; fall back to the minimal wrapper on error.
-        let page = match crate::theme::ThemeRenderer::new() {
+    /// Render `docname` through the embedded placeholder theme
+    /// ([`crate::theme::ThemeRenderer`]), falling back to
+    /// [`wrap_page`](Self::wrap_page) if the theme cannot be constructed or
+    /// a template fails to render, so a build never fails solely because of
+    /// a template error.
+    fn render_embedded_or_wrap(docname: &str, title: &str, body: &str, meta: &PageMeta) -> String {
+        match crate::theme::ThemeRenderer::new() {
             Ok(renderer) => {
-                let mut ctx = crate::theme::PageContext::new(docname, &title, &body);
+                let mut ctx = crate::theme::PageContext::new(docname, title, body);
                 ctx.project = meta.project.clone();
                 ctx.docstitle = meta.docstitle.clone();
                 ctx.copyright = meta.copyright.clone();
@@ -170,16 +178,52 @@ impl HtmlBuilder {
                         eprintln!(
                             "Warning: theme render failed for {docname:?}: {e}; using fallback"
                         );
-                        Self::wrap_page(&title, &body, &meta.project)
+                        Self::wrap_page(title, body, &meta.project)
                     }
                 }
             }
             Err(e) => {
                 eprintln!("Warning: theme init failed: {e}; using fallback wrapper");
-                Self::wrap_page(&title, &body, &meta.project)
+                Self::wrap_page(title, body, &meta.project)
+            }
+        }
+    }
+
+    /// Render `docname` through the *real* resolved Sphinx theme (**H6c**),
+    /// falling back to [`render_embedded_or_wrap`](Self::render_embedded_or_wrap)
+    /// if the real theme fails to render this particular page (a template
+    /// error on one page should not fail the whole build).
+    fn build_doc_real_themed_from_tree(
+        &self,
+        env: &BuildEnvironment,
+        docname: &str,
+        tree: &Doctree,
+        outdir: &Path,
+        meta: &PageMeta,
+        renderer: &crate::theme_render::ThemeRenderer,
+    ) -> Result<(), BuildError> {
+        sanitize_docname(docname)?;
+
+        let (title, body) = self.render_fragment_from_tree(docname, tree);
+        let source_suffix = env
+            .doc2path(docname)
+            .extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))
+            .unwrap_or_else(|| ".rst".to_string());
+        let page = match renderer.render_page(env, docname, &title, &body, &source_suffix) {
+            Ok(html) => html,
+            Err(e) => {
+                eprintln!(
+                    "Warning: real theme render failed for {docname:?}: {e}; using embedded fallback"
+                );
+                Self::render_embedded_or_wrap(docname, &title, &body, meta)
             }
         };
+        Self::write_page(docname, &page, outdir)
+    }
 
+    /// Write a fully-rendered page string to `outdir/{docname}.html`.
+    fn write_page(docname: &str, page: &str, outdir: &Path) -> Result<(), BuildError> {
         let rel: PathBuf = format!("{docname}.html").split('/').collect();
         let out_path = outdir.join(rel);
         if let Some(parent) = out_path.parent() {
@@ -287,6 +331,14 @@ impl Builder for HtmlBuilder {
         // Fetch intersphinx inventory files (no-op when extension is absent).
         crate::intersphinx::fetch_inventories(&env.config, &env.doctreedir);
 
+        // H6c: resolve the real Sphinx theme's own templates (child-first
+        // inheritance chain) and build a per-build renderer over them, now
+        // that static assets are in place (needed for css/js discovery).
+        // `None` when the theme can't be resolved (no Python/Sphinx
+        // available, theme not found, ...) — every document then falls
+        // back to the embedded placeholder theme, same as before H6c.
+        let real_theme = crate::theme_render::ThemeRenderer::new(env, outdir);
+
         // Page metadata shared by every document (from conf.py).
         let meta = PageMeta {
             project: env.config.project(),
@@ -308,15 +360,23 @@ impl Builder for HtmlBuilder {
             // callers / tests invoking `build_all` directly) fall back to
             // parsing from source here, keeping output byte-identical
             // either way.
-            match env.get_and_resolve_doctree(docname) {
-                Ok(tree) => {
-                    self.build_doc_themed_from_tree(docname, &tree, outdir, &meta)?;
-                }
+            let tree = match env.get_and_resolve_doctree(docname) {
+                Ok(tree) => tree,
                 Err(_) => {
                     let source = std::fs::read_to_string(&src_path).map_err(|e| {
                         BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
                     })?;
-                    self.build_doc_themed(docname, &source, outdir, &meta)?;
+                    parse_rst_with_source(&source, docname)
+                }
+            };
+            match &real_theme {
+                Some(renderer) => {
+                    self.build_doc_real_themed_from_tree(
+                        env, docname, &tree, outdir, &meta, renderer,
+                    )?;
+                }
+                None => {
+                    self.build_doc_themed_from_tree(docname, &tree, outdir, &meta)?;
                 }
             }
             // Copy source to _sources/{docname}.rst.txt (mirrors StandaloneHTMLBuilder).

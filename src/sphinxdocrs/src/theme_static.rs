@@ -51,6 +51,11 @@ struct ResolvedTheme {
     /// Pygments style name used by the theme (informational).
     #[allow(dead_code)]
     pygments_style: String,
+    /// Theme directories (not `static/` subdirs), child-first — the order
+    /// real Jinja2 template loading searches in (H6c/H6b), so a child
+    /// theme's own template overrides its base's while unmodified
+    /// templates fall through to the base.
+    template_dirs: Vec<String>,
 }
 
 /// Python bootstrap that resolves a theme's inheritance chain, merged options,
@@ -127,13 +132,17 @@ def resolve(theme_name):
         inherit, options, pyg = _parse_conf(d)
         if pyg and not pygments_style:
             pygments_style = pyg
-        chain.append({'static': os.path.join(d, 'static'), 'options': options})
+        chain.append({'static': os.path.join(d, 'static'), 'options': options, 'dir': d})
         name = inherit
     chain.reverse()  # base-first
     merged = {}
     for c in chain:
         merged.update(c['options'])
     static_dirs = [c['static'] for c in chain]
+    # Child-first (the order templates should be searched in, so a child
+    # theme's own template overrides its base's, while unmodified templates
+    # fall through to the base): reverse the now-base-first chain back.
+    template_dirs = [c['dir'] for c in reversed(chain)]
 
     # Stemmer JS dir.
     import sphinx
@@ -155,6 +164,7 @@ def resolve(theme_name):
 
     return {
         'static_dirs': static_dirs,
+        'template_dirs': template_dirs,
         'options': {f'theme_{k}': v for k, v in merged.items()},
         'search_js_dir': search_js,
         'pygments_css': pyg_css,
@@ -178,6 +188,11 @@ fn resolve_theme(theme_name: &str) -> Option<ResolvedTheme> {
 
         let static_dirs: Vec<String> = dict
             .get_item("static_dirs")?
+            .map(|v| v.extract())
+            .transpose()?
+            .unwrap_or_default();
+        let template_dirs: Vec<String> = dict
+            .get_item("template_dirs")?
             .map(|v| v.extract())
             .transpose()?
             .unwrap_or_default();
@@ -211,9 +226,32 @@ fn resolve_theme(theme_name: &str) -> Option<ResolvedTheme> {
             search_js_dir,
             pygments_css,
             pygments_style,
+            template_dirs,
         })
     })
     .ok()
+}
+
+/// Resolve the real theme's template directory chain (child-first) for
+/// [`crate::theme_render`] to load actual Sphinx theme templates through
+/// `jinja2rs`, plus its merged `theme_<option>` map. Returns `None` if
+/// Python/Sphinx is unavailable or the theme can't be located — callers
+/// should fall back to the embedded placeholder theme in that case.
+pub fn resolve_theme_templates(
+    theme_name: &str,
+) -> Option<(Vec<std::path::PathBuf>, BTreeMap<String, String>)> {
+    let theme = resolve_theme(theme_name)?;
+    if theme.template_dirs.is_empty() {
+        return None;
+    }
+    Some((
+        theme
+            .template_dirs
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect(),
+        theme.options,
+    ))
 }
 
 /// Return `true` for asset file names that are Jinja2 templates.

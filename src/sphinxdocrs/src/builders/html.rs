@@ -324,8 +324,11 @@ impl Builder for HtmlBuilder {
             result.written += 1;
         }
 
-        // Generate the JS search index (searchindex.js) over all built docs.
-        if let Err(e) = crate::search::SearchIndex::build_and_write(srcdir, outdir, &docnames) {
+        // Generate the JS search index (searchindex.js) over all built docs,
+        // including any domain objects/index-entries the read phase noted.
+        if let Err(e) =
+            crate::search::SearchIndex::build_and_write_with_env(env, srcdir, outdir, &docnames)
+        {
             eprintln!("Warning: failed to write searchindex.js: {e}");
         }
 

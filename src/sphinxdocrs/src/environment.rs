@@ -39,7 +39,10 @@ use docutilsrs::doctree::{Doctree, NodeKind};
 
 use crate::builders::BuildError;
 use crate::config::SphinxConfig;
-use crate::domains::{PendingXref, RstDomain, StdDomain, XrefResolution, scan};
+use crate::domains::{
+    IndexEntry, JsDomain, ObjectEntry, PendingXref, PyDomain, RstDomain, StdDomain, XrefResolution,
+    scan,
+};
 
 // ── project shim ─────────────────────────────────────────────────────────────
 
@@ -202,11 +205,18 @@ pub struct BuildEnvironment {
     pub std_domain: StdDomain,
     /// The `rst` domain: `rst:directive` / `rst:role` descriptions (**H3c**).
     pub rst_domain: RstDomain,
+    /// The `py` domain: modules/functions/classes/methods/attributes/data (**H3b**).
+    pub py_domain: PyDomain,
+    /// The `js` domain: modules/functions/classes/methods/attributes/data (**H3e**).
+    pub js_domain: JsDomain,
     /// docname → cross-references recovered from that document's source
     /// during the read phase (**H5b**). See `crate::domains`' module doc
     /// for why this is a text-scan result rather than real `pending_xref`
     /// doctree nodes.
     pub pending_xrefs: HashMap<String, Vec<PendingXref>>,
+    /// docname → `.. index::` entries recovered from that document's
+    /// source during the read phase (**H3d**/**H5e** input).
+    pub indexentries: HashMap<String, Vec<IndexEntry>>,
 }
 
 impl BuildEnvironment {
@@ -251,7 +261,10 @@ impl BuildEnvironment {
             ref_context: HashMap::new(),
             std_domain: StdDomain::new(),
             rst_domain: RstDomain::new(),
+            py_domain: PyDomain::new(),
+            js_domain: JsDomain::new(),
             pending_xrefs: HashMap::new(),
+            indexentries: HashMap::new(),
         }
     }
 
@@ -533,8 +546,9 @@ impl BuildEnvironment {
         Ok(docnames)
     }
 
-    /// Populate the `std`/`rst` domains and `pending_xrefs` for `docname`
-    /// from its source text (**H3a**/**H3c**/**H5b**).
+    /// Populate the `std`/`rst`/`py`/`js` domains, `indexentries`, and
+    /// `pending_xrefs` for `docname` from its source text
+    /// (**H3a**/**H3b**/**H3c**/**H3d**/**H3e**/**H5b**).
     ///
     /// Forgets any previously-noted data for `docname` first (mirrors
     /// `Domain.clear_doc`, called by upstream before a document is
@@ -545,6 +559,8 @@ impl BuildEnvironment {
 
         self.std_domain.clear_doc(docname);
         self.rst_domain.clear_doc(docname);
+        self.py_domain.clear_doc(docname);
+        self.js_domain.clear_doc(docname);
 
         for (name, sectionname) in scan::scan_labels(source) {
             let labelid = StdDomain::label_id(&name);
@@ -562,12 +578,47 @@ impl BuildEnvironment {
             self.rst_domain.note_object(objtype, name, docname, labelid);
         }
 
+        self.py_domain.note_source(docname, source);
+        self.js_domain.note_source(docname, source);
+
+        let index_entries = scan::scan_index_entries(source);
+        if index_entries.is_empty() {
+            self.indexentries.remove(docname);
+        } else {
+            self.indexentries.insert(docname.to_string(), index_entries);
+        }
+
         let xrefs = scan::scan_xref_roles(source);
         if xrefs.is_empty() {
             self.pending_xrefs.remove(docname);
         } else {
             self.pending_xrefs.insert(docname.to_string(), xrefs);
         }
+    }
+
+    // ── H3d: search-object population ─────────────────────────────────────────
+
+    /// Aggregate every registered domain's `get_objects()`, each tagged
+    /// with its owning domain name, for search-index / index-page
+    /// population. Mirrors iterating `env.domains.sorted()` and calling
+    /// `domain.get_objects()` upstream.
+    pub fn domain_objects(&self) -> Vec<(String, ObjectEntry)> {
+        use crate::domains::Domain as _;
+
+        let mut out = Vec::new();
+        for entry in self.std_domain.get_objects() {
+            out.push(("std".to_string(), entry));
+        }
+        for entry in self.rst_domain.get_objects() {
+            out.push(("rst".to_string(), entry));
+        }
+        for entry in self.py_domain.get_objects() {
+            out.push(("py".to_string(), entry));
+        }
+        for entry in self.js_domain.get_objects() {
+            out.push(("js".to_string(), entry));
+        }
+        out
     }
 
     // ── H5c: reference resolution ──────────────────────────────────────────────
@@ -591,24 +642,40 @@ impl BuildEnvironment {
         xrefs
             .iter()
             .map(|xref| {
-                let resolved = if xref.domain == "rst" {
-                    self.rst_domain
-                        .resolve_xref(self, docname, &xref.reftype, &xref.target)
-                } else if xref.domain == "std" {
-                    self.std_domain.resolve_xref_explicit(
+                let resolved = match xref.domain.as_str() {
+                    "rst" => {
+                        self.rst_domain
+                            .resolve_xref(self, docname, &xref.reftype, &xref.target)
+                    }
+                    "std" => self.std_domain.resolve_xref_explicit(
                         self,
                         docname,
                         &xref.reftype,
                         &xref.target,
                         xref.explicit_title.is_some(),
-                    )
-                } else {
-                    None
+                    ),
+                    "py" => self
+                        .py_domain
+                        .resolve_xref(self, docname, &xref.reftype, &xref.target),
+                    "js" => self
+                        .js_domain
+                        .resolve_xref(self, docname, &xref.reftype, &xref.target),
+                    _ => None,
                 };
                 match resolved {
                     Some(mut target) => {
                         if let Some(title) = &xref.explicit_title {
                             target.title = title.clone();
+                        } else if xref.shorten {
+                            // The `~` truncation prefix (generic to every
+                            // `XRefRole` upstream): display only the last
+                            // dotted component of the target.
+                            target.title = xref
+                                .target
+                                .rsplit('.')
+                                .next()
+                                .unwrap_or(&xref.target)
+                                .to_string();
                         }
                         XrefResolution::Resolved {
                             xref: xref.clone(),

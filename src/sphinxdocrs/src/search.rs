@@ -20,8 +20,19 @@
 //!
 //! ## Accepted deviations
 //!
-//! - `objects` / `objtypes` / `objnames` / `indexentries` are emitted empty
-//!   because the domain object pipeline is not yet ported.
+//! - `objects` (**H3d**) is populated from every registered domain's
+//!   `get_objects()` via [`SearchIndex::set_objects`], encoded the same
+//!   way as upstream's `IndexBuilder.get_objects` (`prefix -> [[docindex,
+//!   typeindex, priority, shortanchor, name], ...]`), except every entry
+//!   is treated as default priority (`0`) since [`ObjectEntry`] doesn't
+//!   carry `sphinx.domains.Domain.get_objects()`'s per-object priority,
+//!   and the human-readable type name shown in `objnames` is just the
+//!   raw `objtype` string rather than a localized display name.
+//! - `indexentries` (**H5e** input) is populated from `.. index::`
+//!   scans via [`SearchIndex::set_index_entries`]; entries aren't
+//!   attached to a real in-page anchor id (`entry_id` is a synthetic
+//!   `"index-N"` per document), matching the page-level granularity
+//!   the label/toctree scanners already use.
 //! - Only the English stemmer exists; other `search_language` values index the
 //!   lowercased surface form. Building without the `search-stemming` feature
 //!   does the same, and then term keys differ from Python for inflected words.
@@ -30,6 +41,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use docutilsrs::doctree::{Doctree, NodeId, NodeKind};
+
+use crate::domains::{IndexEntry, ObjectEntry};
 
 /// The `envversion` block Sphinx writes.  Values track the on-disk format
 /// version of each environment component; consumers only check `sphinx`.
@@ -270,6 +283,11 @@ pub struct SearchIndex {
     title_mapping: BTreeMap<String, BTreeSet<String>>,
     /// title text → set of docnames (for `alltitles`).
     all_titles: BTreeMap<String, BTreeSet<String>>,
+    /// `(domain, ObjectEntry)` pairs from every registered domain
+    /// (**H3d** — see [`SearchIndex::set_objects`]).
+    objects: Vec<(String, ObjectEntry)>,
+    /// docname → `.. index::` entries (**H5e** input).
+    index_entries: BTreeMap<String, Vec<IndexEntry>>,
     /// Stemmer for the configured `search_language`.
     #[cfg(feature = "search-stemming")]
     stemmer: crate::stemmer::Stemmer,
@@ -397,6 +415,125 @@ impl SearchIndex {
         }
     }
 
+    /// Register every domain-registered object for `objects`/`objtypes`/
+    /// `objnames` population (**H3d**).
+    ///
+    /// `objects` is `(domain_name, ObjectEntry)` pairs, typically
+    /// `env.domain_objects()`.
+    pub fn set_objects(&mut self, objects: Vec<(String, ObjectEntry)>) {
+        self.objects = objects;
+    }
+
+    /// Register `.. index::` entries recovered per document (**H5e**
+    /// input), typically `env.indexentries.clone()`.
+    pub fn set_index_entries(&mut self, index_entries: BTreeMap<String, Vec<IndexEntry>>) {
+        self.index_entries = index_entries;
+    }
+
+    /// Encode `self.objects` into `(objects, objtypes, objnames)`,
+    /// matching `IndexBuilder.get_objects`'s schema:
+    /// `objects: {prefix: [[docindex, typeindex, priority, shortanchor, name], ...]}`,
+    /// `objtypes: {typeindex: "domain:objtype"}`,
+    /// `objnames: {typeindex: [domain, objtype, human_readable_name]}`.
+    fn encode_objects(
+        &self,
+        fn2index: &BTreeMap<String, usize>,
+    ) -> (serde_json::Value, serde_json::Value, serde_json::Value) {
+        let mut sorted = self.objects.clone();
+        sorted.sort_by(|a, b| (&a.0, &a.1.name).cmp(&(&b.0, &b.1.name)));
+
+        let mut otypes: BTreeMap<(String, String), usize> = BTreeMap::new();
+        let mut onames: BTreeMap<usize, (String, String, String)> = BTreeMap::new();
+        let mut rv: BTreeMap<String, Vec<serde_json::Value>> = BTreeMap::new();
+
+        for (domain, entry) in &sorted {
+            let Some(&docindex) = fn2index.get(&entry.docname) else {
+                continue;
+            };
+            let (prefix, name) = match entry.name.rfind('.') {
+                Some(pos) => (
+                    entry.name[..pos].to_string(),
+                    entry.name[pos + 1..].to_string(),
+                ),
+                None => (String::new(), entry.name.clone()),
+            };
+            let key = (domain.clone(), entry.obj_type.clone());
+            let typeindex = *otypes.entry(key.clone()).or_insert_with(|| {
+                let idx = onames.len();
+                onames.insert(
+                    idx,
+                    (
+                        domain.clone(),
+                        entry.obj_type.clone(),
+                        entry.obj_type.clone(),
+                    ),
+                );
+                idx
+            });
+            let shortanchor = if entry.anchor == entry.name {
+                String::new()
+            } else if entry.anchor == format!("{}-{}", entry.obj_type, entry.name) {
+                "-".to_string()
+            } else {
+                entry.anchor.clone()
+            };
+            rv.entry(prefix).or_default().push(serde_json::json!([
+                docindex,
+                typeindex,
+                0,
+                shortanchor,
+                name
+            ]));
+        }
+
+        let objects = serde_json::Value::Object(
+            rv.into_iter()
+                .map(|(k, v)| (k, serde_json::Value::Array(v)))
+                .collect(),
+        );
+        let objtypes = serde_json::Value::Object(
+            otypes
+                .iter()
+                .map(|((domain, ty), idx)| {
+                    (idx.to_string(), serde_json::json!(format!("{domain}:{ty}")))
+                })
+                .collect(),
+        );
+        let objnames = serde_json::Value::Object(
+            onames
+                .iter()
+                .map(|(idx, (domain, ty, human))| {
+                    (idx.to_string(), serde_json::json!([domain, ty, human]))
+                })
+                .collect(),
+        );
+        (objects, objtypes, objnames)
+    }
+
+    /// Encode `self.index_entries` into `entry.lower() -> [[docindex,
+    /// entry_id, main], ...]`, matching `IndexBuilder.freeze`'s
+    /// `index_entries` key.
+    fn encode_index_entries(&self, fn2index: &BTreeMap<String, usize>) -> serde_json::Value {
+        let mut rv: BTreeMap<String, Vec<serde_json::Value>> = BTreeMap::new();
+        for (docname, entries) in &self.index_entries {
+            let Some(&docindex) = fn2index.get(docname) else {
+                continue;
+            };
+            for (i, entry) in entries.iter().enumerate() {
+                let entry_id = format!("index-{i}");
+                let key = entry.text.to_lowercase();
+                rv.entry(key)
+                    .or_default()
+                    .push(serde_json::json!([docindex, entry_id, entry.main]));
+            }
+        }
+        serde_json::Value::Object(
+            rv.into_iter()
+                .map(|(k, v)| (k, serde_json::Value::Array(v)))
+                .collect(),
+        )
+    }
+
     /// Encode a term mapping into `term → int | sorted[int]`, matching
     /// `IndexBuilder.get_terms`.
     fn encode_terms(
@@ -454,6 +591,9 @@ impl SearchIndex {
             alltitles.insert(title.clone(), serde_json::Value::Array(entries));
         }
 
+        let (objects, objtypes, objnames) = self.encode_objects(&fn2index);
+        let indexentries = self.encode_index_entries(&fn2index);
+
         serde_json::json!({
             "docnames": docnames,
             "filenames": filenames,
@@ -461,10 +601,10 @@ impl SearchIndex {
             "terms": terms,
             "titleterms": titleterms,
             "alltitles": alltitles,
-            "objects": {},
-            "objtypes": {},
-            "objnames": {},
-            "indexentries": {},
+            "objects": objects,
+            "objtypes": objtypes,
+            "objnames": objnames,
+            "indexentries": indexentries,
             "envversion": { "sphinx": ENV_VERSION_SPHINX },
         })
     }
@@ -493,6 +633,31 @@ impl SearchIndex {
             let tree = parse_rst_with_source(&source, docname);
             idx.feed(docname, &tree);
         }
+        std::fs::write(outdir.join("searchindex.js"), idx.to_js().as_bytes())
+    }
+
+    /// Like [`build_and_write`](Self::build_and_write), but also
+    /// populates `objects`/`objtypes`/`objnames`/`indexentries` from the
+    /// domain data an [`BuildEnvironment`](crate::environment::BuildEnvironment)
+    /// accumulated during the read phase (**H3d**).
+    pub fn build_and_write_with_env(
+        env: &crate::environment::BuildEnvironment,
+        srcdir: &Path,
+        outdir: &Path,
+        docnames: &[String],
+    ) -> std::io::Result<()> {
+        use docutilsrs::parse_rst_with_source;
+        let mut idx = SearchIndex::new();
+        for docname in docnames {
+            let src_path = srcdir.join(format!("{docname}.rst"));
+            let Ok(source) = std::fs::read_to_string(&src_path) else {
+                continue;
+            };
+            let tree = parse_rst_with_source(&source, docname);
+            idx.feed(docname, &tree);
+        }
+        idx.set_objects(env.domain_objects());
+        idx.set_index_entries(env.indexentries.clone().into_iter().collect());
         std::fs::write(outdir.join("searchindex.js"), idx.to_js().as_bytes())
     }
 }
@@ -609,5 +774,50 @@ The widget handles rendering and layout.\n";
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("Search.setIndex("));
         assert!(content.contains("\"docnames\""));
+    }
+
+    #[test]
+    fn set_objects_populates_objects_objtypes_objnames() {
+        let tree = parse_rst_with_source("Guide\n=====\n\nText.\n", "guide");
+        let mut idx = SearchIndex::new();
+        idx.feed("guide", &tree);
+        idx.set_objects(vec![(
+            "py".to_string(),
+            ObjectEntry {
+                obj_type: "function".to_string(),
+                name: "pkg.mod.greet".to_string(),
+                docname: "guide".to_string(),
+                anchor: "py-function-greet".to_string(),
+            },
+        )]);
+        let json = idx.to_json();
+        assert_eq!(json["objtypes"]["0"], "py:function");
+        assert_eq!(json["objnames"]["0"][0], "py");
+        let prefix_entries = json["objects"]["pkg.mod"].as_array().unwrap();
+        assert_eq!(prefix_entries.len(), 1);
+        assert_eq!(prefix_entries[0][4], "greet");
+    }
+
+    #[test]
+    fn set_index_entries_populates_indexentries() {
+        let tree = parse_rst_with_source("Guide\n=====\n\nText.\n", "guide");
+        let mut idx = SearchIndex::new();
+        idx.feed("guide", &tree);
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "guide".to_string(),
+            vec![IndexEntry {
+                kind: crate::domains::IndexEntryKind::Single,
+                text: "Widget".to_string(),
+                see_target: None,
+                main: false,
+            }],
+        );
+        idx.set_index_entries(entries);
+        let json = idx.to_json();
+        let hits = json["indexentries"]["widget"].as_array().unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0][1], "index-0");
+        assert_eq!(hits[0][2], false);
     }
 }

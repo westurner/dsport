@@ -12,7 +12,10 @@
 //! | `sphinx.domains.Domain` (shape) | [`Domain`] trait | documents the contract; `BuildEnvironment` holds concrete fields rather than a `dyn Domain` registry |
 //! | `sphinx.domains.std.StandardDomain` | [`StdDomain`] | **H3a** — labels, `:ref:`/`:doc:`/`:term:`/`:numref:`/`:keyword:`, glossary |
 //! | `sphinx.domains.rst.ReSTDomain` | [`RstDomain`] | **H3c** — `rst:directive` / `rst:role` object descriptions |
+//! | `sphinx.domains.python.PythonDomain` | [`py_domain::PyDomain`] | **H3b** — `py:module`/`function`/`class`/`method`/`attribute`/`data` |
+//! | `sphinx.domains.javascript.JavaScriptDomain` | [`js_domain::JsDomain`] | **H3e** — `js:function`/`class`/`method`/`data`/`module` |
 //! | `sphinx.util.nodes.docname_join` | [`docname_join`] | resolve a `:doc:` target relative to the referring document |
+//! | `sphinx.util.nodes.process_index_entry` | [`scan::scan_index_entries`] | `.. index::` entry splitting (**H3d**/**H5e** input) |
 //!
 //! ## Accepted deviation (H5b)
 //!
@@ -27,15 +30,20 @@
 //! nodes are deferred until `docutilsrs` grows a structural role
 //! registry.
 //!
-//! **Deferred** (not yet ported): `py`/`js`/`c`/`cpp` domains (**H3b**,
-//! **H3e**, **H3f**), search-object population from domain data
-//! (**H3d**), `:option:`/`:token:`/`:productionlist:` resolution,
-//! `numfig`/`toc_secnumbers`-aware `:numref:` title formatting (**H5d**).
+//! **Deferred** (not yet ported): `c`/`cpp` domains (**H3f** —
+//! recorded as a **keep-python** decision, see the port plan §3),
+//! `:option:`/`:token:`/`:productionlist:` resolution, `numfig`-aware
+//! `:numref:` title formatting.
 
+pub mod js_domain;
+pub mod py_domain;
+mod py_sig;
 pub mod rst_domain;
 pub mod scan;
 pub mod std_domain;
 
+pub use js_domain::JsDomain;
+pub use py_domain::PyDomain;
 pub use rst_domain::RstDomain;
 pub use std_domain::StdDomain;
 
@@ -76,6 +84,12 @@ pub struct PendingXref {
     pub explicit_title: Option<String>,
     /// 1-based source line the role occurred on.
     pub line: usize,
+    /// `true` when the role content had a leading `~` (e.g.
+    /// `` :py:func:`~pkg.mod.func` ``), requesting that the resolved
+    /// title show only the last dotted component. Mirrors the generic
+    /// `~` truncation every `XRefRole` supports upstream
+    /// (`sphinx.roles.XRefRole.__call__`), not just the `py` domain.
+    pub shorten: bool,
 }
 
 /// Outcome of resolving one [`PendingXref`].
@@ -97,14 +111,42 @@ pub enum XrefResolution {
 }
 
 /// One object registered by a domain (`get_objects()`), consulted by
-/// search-object population (**H3d**, not yet implemented) and by
-/// per-domain indices (**H5e**, not yet implemented).
+/// search-object population (**H3d**) and by per-domain indices (**H5e**).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectEntry {
     pub obj_type: String,
     pub name: String,
     pub docname: String,
     pub anchor: String,
+}
+
+/// The five `.. index::` entry forms recognized by
+/// `sphinx.util.nodes.process_index_entry`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexEntryKind {
+    Single,
+    Pair,
+    Triple,
+    See,
+    SeeAlso,
+}
+
+/// One `.. index::` entry recovered from a document (**H5e** input).
+///
+/// See [`scan::scan_index_entries`] for the accepted deviation (text-scan,
+/// no in-page anchor tracking).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexEntry {
+    pub kind: IndexEntryKind,
+    /// The entry's display text. For `pair`/`triple` entries this is the
+    /// `"; "`-joined form (`"first; second"`), matching
+    /// `process_index_entry`'s own joining so up/downstream grouping code
+    /// (genindex, search) doesn't need to special-case each kind.
+    pub text: String,
+    /// For `see`/`seealso` entries, the target term being redirected to.
+    pub see_target: Option<String>,
+    /// Whether this was a `!`-prefixed "main" entry.
+    pub main: bool,
 }
 
 /// Shape shared by all domains (see the Tier H3 design note in
@@ -275,6 +317,7 @@ mod tests {
             target: "missing".into(),
             explicit_title: None,
             line: 1,
+            shorten: false,
         };
         assert_eq!(dangling_warning(&xref), "undefined label: 'missing'");
     }

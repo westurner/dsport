@@ -117,7 +117,10 @@ fn dedent_docstring(raw: &str) -> String {
 /// Render a single expression back to a compact Python-ish source snippet,
 /// used for default values and base-class names.  Only the common cases are
 /// handled; anything else falls back to `...`.
-fn render_expr(expr: &Expr) -> String {
+///
+/// `pub(crate)` so `domains::py_sig` can reuse it for base-class rendering
+/// when scanning `.. py:class::`/`.. py:exception::` signatures (**H3b**).
+pub(crate) fn render_expr(expr: &Expr) -> String {
     match expr {
         Expr::Name(n) => n.id.to_string(),
         Expr::NumberLiteral(n) => format!("{:?}", n.value)

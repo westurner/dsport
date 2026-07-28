@@ -27,6 +27,7 @@ pub mod build;
 pub mod builders;
 pub mod cli;
 pub mod config;
+pub mod domains;
 pub mod environment;
 pub mod errors;
 pub mod events;

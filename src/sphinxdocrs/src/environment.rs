@@ -39,6 +39,7 @@ use docutilsrs::doctree::{Doctree, NodeKind};
 
 use crate::builders::BuildError;
 use crate::config::SphinxConfig;
+use crate::domains::{PendingXref, RstDomain, StdDomain, XrefResolution, scan};
 
 // ── project shim ─────────────────────────────────────────────────────────────
 
@@ -195,6 +196,17 @@ pub struct BuildEnvironment {
 
     /// Cross-reference context (e.g. current module, current class).
     pub ref_context: HashMap<String, String>,
+
+    // ── domains (Tier H3) ────────────────────────────────────────────────────
+    /// The `std` domain: labels, documents, glossary terms (**H3a**).
+    pub std_domain: StdDomain,
+    /// The `rst` domain: `rst:directive` / `rst:role` descriptions (**H3c**).
+    pub rst_domain: RstDomain,
+    /// docname → cross-references recovered from that document's source
+    /// during the read phase (**H5b**). See `crate::domains`' module doc
+    /// for why this is a text-scan result rather than real `pending_xref`
+    /// doctree nodes.
+    pub pending_xrefs: HashMap<String, Vec<PendingXref>>,
 }
 
 impl BuildEnvironment {
@@ -237,6 +249,9 @@ impl BuildEnvironment {
             domaindata: HashMap::new(),
             temp_data: HashMap::new(),
             ref_context: HashMap::new(),
+            std_domain: StdDomain::new(),
+            rst_domain: RstDomain::new(),
+            pending_xrefs: HashMap::new(),
         }
     }
 
@@ -503,6 +518,8 @@ impl BuildEnvironment {
                 self.note_dependency(docname.clone(), include);
             }
 
+            self.note_domain_data(docname, &source);
+
             self.store_doctree(docname, &tree)?;
             self.record_doc_read(docname.clone(), now_micros());
 
@@ -514,6 +531,106 @@ impl BuildEnvironment {
         }
 
         Ok(docnames)
+    }
+
+    /// Populate the `std`/`rst` domains and `pending_xrefs` for `docname`
+    /// from its source text (**H3a**/**H3c**/**H5b**).
+    ///
+    /// Forgets any previously-noted data for `docname` first (mirrors
+    /// `Domain.clear_doc`, called by upstream before a document is
+    /// re-read), so re-reading a changed document doesn't accumulate
+    /// stale labels/terms/objects.
+    fn note_domain_data(&mut self, docname: &str, source: &str) {
+        use crate::domains::Domain as _;
+
+        self.std_domain.clear_doc(docname);
+        self.rst_domain.clear_doc(docname);
+
+        for (name, sectionname) in scan::scan_labels(source) {
+            let labelid = StdDomain::label_id(&name);
+            self.std_domain
+                .note_label(name, docname, labelid, sectionname.unwrap_or_default());
+        }
+
+        for term in scan::scan_glossary_terms(source) {
+            let labelid = format!("term-{}", crate::domains::normalize_id(&term));
+            self.std_domain.note_term(term, docname, labelid);
+        }
+
+        for (objtype, name) in scan::scan_rst_domain_objects(source) {
+            let labelid = format!("rst-{objtype}-{}", crate::domains::normalize_id(&name));
+            self.rst_domain.note_object(objtype, name, docname, labelid);
+        }
+
+        let xrefs = scan::scan_xref_roles(source);
+        if xrefs.is_empty() {
+            self.pending_xrefs.remove(docname);
+        } else {
+            self.pending_xrefs.insert(docname.to_string(), xrefs);
+        }
+    }
+
+    // ── H5c: reference resolution ──────────────────────────────────────────────
+
+    /// Resolve every cross-reference recovered from `docname`'s source
+    /// (via [`note_domain_data`](Self::note_domain_data) during
+    /// [`read_all`](Self::read_all)) against the owning domain, falling
+    /// back to a dangling-reference warning.
+    ///
+    /// Mirrors `env.resolve_references(doctree, fromdocname, builder)`,
+    /// minus the actual doctree node rewriting (there is no `pending_xref`
+    /// node to rewrite yet — see the accepted-deviation note on
+    /// `crate::domains`). Callers get the resolution/warning list instead.
+    pub fn resolve_references(&self, docname: &str) -> Vec<XrefResolution> {
+        use crate::domains::Domain as _;
+
+        let Some(xrefs) = self.pending_xrefs.get(docname) else {
+            return Vec::new();
+        };
+
+        xrefs
+            .iter()
+            .map(|xref| {
+                let resolved = if xref.domain == "rst" {
+                    self.rst_domain
+                        .resolve_xref(self, docname, &xref.reftype, &xref.target)
+                } else if xref.domain == "std" {
+                    self.std_domain.resolve_xref_explicit(
+                        self,
+                        docname,
+                        &xref.reftype,
+                        &xref.target,
+                        xref.explicit_title.is_some(),
+                    )
+                } else {
+                    None
+                };
+                match resolved {
+                    Some(mut target) => {
+                        if let Some(title) = &xref.explicit_title {
+                            target.title = title.clone();
+                        }
+                        XrefResolution::Resolved {
+                            xref: xref.clone(),
+                            target,
+                        }
+                    }
+                    None => XrefResolution::Unresolved {
+                        warning: crate::domains::dangling_warning(xref),
+                        xref: xref.clone(),
+                    },
+                }
+            })
+            .collect()
+    }
+
+    /// [`resolve_references`](Self::resolve_references) for every
+    /// document that has recorded cross-references.
+    pub fn resolve_all_references(&self) -> HashMap<String, Vec<XrefResolution>> {
+        self.pending_xrefs
+            .keys()
+            .map(|docname| (docname.clone(), self.resolve_references(docname)))
+            .collect()
     }
 
     /// Record that `docname` contains a toctree with `entries` (already

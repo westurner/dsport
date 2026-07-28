@@ -1,0 +1,281 @@
+//! `sphinxdocrs::domains` — Rust port of `sphinx.domains` (Tier H3).
+//!
+//! Each domain owns a slice of cross-reference-able objects (labels,
+//! terms, directive/role descriptions, ...) and knows how to resolve a
+//! `reftype`/`target` pair recovered from an xref role into a concrete
+//! document location.
+//!
+//! ## What is ported
+//!
+//! | upstream | Rust target | notes |
+//! | --- | --- | --- |
+//! | `sphinx.domains.Domain` (shape) | [`Domain`] trait | documents the contract; `BuildEnvironment` holds concrete fields rather than a `dyn Domain` registry |
+//! | `sphinx.domains.std.StandardDomain` | [`StdDomain`] | **H3a** — labels, `:ref:`/`:doc:`/`:term:`/`:numref:`/`:keyword:`, glossary |
+//! | `sphinx.domains.rst.ReSTDomain` | [`RstDomain`] | **H3c** — `rst:directive` / `rst:role` object descriptions |
+//! | `sphinx.util.nodes.docname_join` | [`docname_join`] | resolve a `:doc:` target relative to the referring document |
+//!
+//! ## Accepted deviation (H5b)
+//!
+//! `docutilsrs`'s parser does not yet produce a structural `pending_xref`
+//! node (`sphinx.addnodes.pending_xref`) — its role dispatch
+//! (`emit_role` in `docutilsrs::parser`) only knows about plain docutils
+//! roles. Rather than widen `docutilsrs::doctree::NodeKind` (a
+//! cross-cutting change touching every writer), cross-references are
+//! recovered with a text-level scan of the RST source
+//! ([`scan::scan_xref_roles`]), mirroring the precedent set by
+//! `environment::scan_toctree_entries` for **H2c**. Real AST-based xref
+//! nodes are deferred until `docutilsrs` grows a structural role
+//! registry.
+//!
+//! **Deferred** (not yet ported): `py`/`js`/`c`/`cpp` domains (**H3b**,
+//! **H3e**, **H3f**), search-object population from domain data
+//! (**H3d**), `:option:`/`:token:`/`:productionlist:` resolution,
+//! `numfig`/`toc_secnumbers`-aware `:numref:` title formatting (**H5d**).
+
+pub mod rst_domain;
+pub mod scan;
+pub mod std_domain;
+
+pub use rst_domain::RstDomain;
+pub use std_domain::StdDomain;
+
+use crate::environment::BuildEnvironment;
+
+// ── shared types ──────────────────────────────────────────────────────────────
+
+/// Where a resolved cross-reference points.
+///
+/// Mirrors the `(docname, labelid, sectname)` tuples returned by
+/// `StandardDomain._resolve_*_xref` before they are turned into a
+/// `nodes.reference`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XrefTarget {
+    /// The document the reference resolves into.
+    pub docname: String,
+    /// The in-document anchor (empty string for a whole-document
+    /// reference, e.g. `:doc:`).
+    pub anchor: String,
+    /// Display title to use when the role gave no explicit title.
+    pub title: String,
+}
+
+/// A cross-reference recovered from an inline role during the read phase.
+///
+/// See the module-level accepted-deviation note for why this is a
+/// text-scan result rather than a real `pending_xref` doctree node.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingXref {
+    /// Domain prefix (`"std"` for unprefixed roles like `:ref:`, `"rst"`
+    /// for `:rst:dir:`, etc.).
+    pub domain: String,
+    /// Role name within the domain (`"ref"`, `"doc"`, `"term"`, `"dir"`, ...).
+    pub reftype: String,
+    /// The raw cross-reference target text.
+    pub target: String,
+    /// Explicit title given via the `` `Title <target>` `` phrase form.
+    pub explicit_title: Option<String>,
+    /// 1-based source line the role occurred on.
+    pub line: usize,
+}
+
+/// Outcome of resolving one [`PendingXref`].
+///
+/// Mirrors `Domain.resolve_xref` returning either a `nodes.reference` or
+/// `None` (in which case Sphinx logs one of `StandardDomain.dangling_warnings`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum XrefResolution {
+    Resolved {
+        xref: PendingXref,
+        target: XrefTarget,
+    },
+    Unresolved {
+        xref: PendingXref,
+        /// Warning text, mirroring `StandardDomain.dangling_warnings` /
+        /// `'unknown document: %r'`-style upstream messages.
+        warning: String,
+    },
+}
+
+/// One object registered by a domain (`get_objects()`), consulted by
+/// search-object population (**H3d**, not yet implemented) and by
+/// per-domain indices (**H5e**, not yet implemented).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectEntry {
+    pub obj_type: String,
+    pub name: String,
+    pub docname: String,
+    pub anchor: String,
+}
+
+/// Shape shared by all domains (see the Tier H3 design note in
+/// `docs/sphinxdocrs-port-plan.md`).
+///
+/// This trait documents the contract for future domains (`py`, `js`, ...);
+/// it is not used for `dyn` dispatch today; [`BuildEnvironment`] holds
+/// concrete [`StdDomain`]/[`RstDomain`] fields directly, the same way
+/// upstream's `env.domains['std']` / `env.domains['rst']` are looked up
+/// by name but implemented as concrete classes.
+pub trait Domain {
+    /// The domain's registration name (`"std"`, `"rst"`, `"py"`, ...).
+    fn name(&self) -> &'static str;
+
+    /// Resolve a `reftype`/`target` pair recovered from an xref role.
+    /// Returns `None` when the target is unknown (a "dangling" xref).
+    fn resolve_xref(
+        &self,
+        env: &BuildEnvironment,
+        fromdocname: &str,
+        reftype: &str,
+        target: &str,
+    ) -> Option<XrefTarget>;
+
+    /// All objects this domain has registered, for search-index /
+    /// index-page population.
+    fn get_objects(&self) -> Vec<ObjectEntry>;
+
+    /// Forget everything registered for `docname` (called before a
+    /// document is re-read, mirroring `Domain.clear_doc`).
+    fn clear_doc(&mut self, docname: &str);
+}
+
+// ── docname_join ──────────────────────────────────────────────────────────────
+
+/// Resolve a `:doc:` cross-reference target relative to `base` (the
+/// referring docname), mirroring `sphinx.util.osutil.docname_join`.
+///
+/// A target starting with `/` is absolute (relative to the source root);
+/// otherwise it's resolved relative to `base`'s directory. `..`/`.`
+/// components are normalized away (POSIX-style; docnames always use `/`).
+///
+/// ```rust
+/// use sphinxdocrs::domains::docname_join;
+/// assert_eq!(docname_join("guide/intro", "setup"), "guide/setup");
+/// assert_eq!(docname_join("guide/intro", "/index"), "index");
+/// assert_eq!(docname_join("guide/sub/page", "../other"), "guide/other");
+/// ```
+pub fn docname_join(base: &str, target: &str) -> String {
+    if let Some(stripped) = target.strip_prefix('/') {
+        return normalize_docpath(stripped);
+    }
+    let base_dir = match base.rfind('/') {
+        Some(idx) => &base[..idx],
+        None => "",
+    };
+    let joined = if base_dir.is_empty() {
+        target.to_string()
+    } else {
+        format!("{base_dir}/{target}")
+    };
+    normalize_docpath(&joined)
+}
+
+fn normalize_docpath(path: &str) -> String {
+    let mut stack: Vec<&str> = Vec::new();
+    for comp in path.split('/') {
+        match comp {
+            "" | "." => {}
+            ".." => {
+                stack.pop();
+            }
+            other => stack.push(other),
+        }
+    }
+    stack.join("/")
+}
+
+// ── normalize_id ──────────────────────────────────────────────────────────────
+
+/// docutils-style identifier normalization: lowercase, collapse runs of
+/// non-alphanumeric characters to a single `-`, trim trailing `-`.
+///
+/// Duplicated from `docutilsrs::parser`'s private `normalize_id` (not
+/// exported) since label/term anchors need the same algorithm here.
+///
+/// ```rust
+/// use sphinxdocrs::domains::normalize_id;
+/// assert_eq!(normalize_id("My Label!"), "my-label");
+/// assert_eq!(normalize_id("Über cool"), "ber-cool");
+/// ```
+pub fn normalize_id(name: &str) -> String {
+    let lower = name.to_ascii_lowercase();
+    let mut out = String::with_capacity(lower.len());
+    let mut last_dash = true;
+    for c in lower.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    out
+}
+
+// ── warning text ──────────────────────────────────────────────────────────────
+
+/// Format the "dangling xref" warning for an unresolved [`PendingXref`].
+///
+/// Mirrors `StandardDomain.dangling_warnings` (and the `RstDomain`
+/// fallback for its own roles).
+pub fn dangling_warning(xref: &PendingXref) -> String {
+    match (xref.domain.as_str(), xref.reftype.as_str()) {
+        ("std", "term") => format!("term not in glossary: '{}'", xref.target),
+        ("std", "ref" | "numref") => format!("undefined label: '{}'", xref.target),
+        ("std", "keyword") => format!("unknown keyword: '{}'", xref.target),
+        ("std", "doc") => format!("unknown document: '{}'", xref.target),
+        ("std", "option") => format!("unknown option: '{}'", xref.target),
+        ("rst", reftype) => format!("undefined rst {}: '{}'", reftype, xref.target),
+        (domain, reftype) => format!(
+            "{domain}:{reftype} reference target not found: '{}'",
+            xref.target
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn docname_join_relative() {
+        assert_eq!(docname_join("guide/intro", "setup"), "guide/setup");
+    }
+
+    #[test]
+    fn docname_join_absolute() {
+        assert_eq!(docname_join("guide/intro", "/index"), "index");
+    }
+
+    #[test]
+    fn docname_join_parent_traversal() {
+        assert_eq!(docname_join("guide/sub/page", "../other"), "guide/other");
+    }
+
+    #[test]
+    fn docname_join_top_level_base() {
+        assert_eq!(docname_join("index", "setup"), "setup");
+    }
+
+    #[test]
+    fn normalize_id_basic() {
+        assert_eq!(normalize_id("My Label!"), "my-label");
+        assert_eq!(normalize_id("already-slug"), "already-slug");
+        assert_eq!(normalize_id("  spaced  out "), "spaced-out");
+    }
+
+    #[test]
+    fn dangling_warning_text() {
+        let xref = PendingXref {
+            domain: "std".into(),
+            reftype: "ref".into(),
+            target: "missing".into(),
+            explicit_title: None,
+            line: 1,
+        };
+        assert_eq!(dangling_warning(&xref), "undefined label: 'missing'");
+    }
+}

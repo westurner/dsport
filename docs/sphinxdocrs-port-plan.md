@@ -287,9 +287,9 @@ Tagged from `src/sphinx/tests/`.
 | `test_application.py` | application | P3 | **partial** — `tests/application.rs` |
 | `test_builders/` | builders | P3 | **partial** — `tests/builders.rs` (now includes **H2d** two-phase parity tests), `tests/builders_json.rs` |
 | `test_environment/` | environment | P3 | **mirrored** ✅ — `tests/environment.rs` gained the **H2** read-phase group (`find_files`, doctree store round trip, `read_all`, `check_consistency`) |
-| `test_roles.py` | roles | P3 | **partial** — `tests/roles.rs`; role execution deferred (→ **H5b**) |
+| `test_roles.py` | roles | P3 | **partial** — `tests/roles.rs`; `std`/`rst` xref recovery+resolution now covered by `tests/domains_std.rs`/`tests/domains_rst.rs` (**H5b**/**H5c**); other role classes' node execution still deferred (→ **H5a**) |
 | `test_directives/` | directives | P3 | **deferred** (→ **H5a**) |
-| `test_domains/` | domains | P3 | **deferred** (→ **H3**) |
+| `test_domains/` | domains | P3 | **partial** — `std` (**H3a**) and `rst` (**H3c**) done; `py`/`js`/`c`/`cpp` still deferred (→ **H3b**, **H3e**, **H3f**) |
 | `test_transforms/` | transforms | P3 | **deferred** — per-transform port |
 | `test_writers/` | writers | P3 | **deferred** — one writer at a time (→ **H7**) |
 | `test_theming/` | theming | P3 | **deferred** (→ **H6**) |
@@ -318,6 +318,8 @@ Tagged from `src/sphinx/tests/`.
 | `tests/config.rs` | defaults, raw + CLI overrides, `add`/`set`/`contains`/`iter`/`filter`, alias sync, coercion |
 | `tests/addnodes.rs` | `SIG_ELEMENTS` exact set, `desc_sig_*` classes, `Translatable`, `astext` behaviours |
 | `tests/environment.rs` | construction, `default_settings`, config-status labels, doc-read / title / dependency tracking |
+| `tests/domains_std.rs` | **H3a**/**H5b**/**H5c**: label registration (w/wo attached section), `:ref:` (named + explicit-title + undefined-label warning), `:doc:` (relative/absolute/unknown), glossary `:term:` (case-insensitive + missing-term warning), stale-entry clearing on re-read, virtual `genindex`/`modindex`/`search` label seeding |
+| `tests/domains_rst.rs` | **H3c**: `rst:directive`/`rst:role` object registration and `:rst:dir:`/`:rst:role:` xref resolution across documents, unresolved-target warning |
 | `tests/builders.rs`, `tests/builders_json.rs` | `Builder` trait contract, `get_target_uri`, `build_doc` HTML5 structure, `build_all` variants, `.fjson` output |
 | `tests/application.rs` | `NATIVE_BUILDERS`, path validation, constructor fields, `build()` HTML output, config defaults/overrides |
 | `tests/events_app.rs` | **H4**: core event emission order across a full `build()`, per-document `source-read`/`doctree-read` pairing, auto-loading extensions from `conf.py` before `config-inited` fires, unknown-module error path, an ADR-0005 round trip proving a registered Rust equivalent is called instead of the Python extension's `setup()`, an ADR-0005 version-guard-rejection fallback + warning, and `needs_extensions` (missing-extension warning + version-mismatch error) |
@@ -444,9 +446,9 @@ types, directives, roles, and index.
 
 | id | domain | notes |
 | --- | --- | --- |
-| **H3a** | `std` | labels, `:ref:` / `:doc:` / `:option:` / `:term:`, glossary, productionlist, citations — required by nearly every doc set |
+| **H3a** | ✅ `std` | labels/anonlabels (`:ref:`/`:numref:`/`:keyword:`), `:doc:`, glossary terms (`:term:`) — the three virtual `genindex`/`modindex`/`search` labels are seeded but their pages aren't generated yet. **Deferred**: `:option:`/`progoptions` (needs `.. program::` context), `:token:`/`productionlist`, citations, `numfig`-aware `:numref:` titles (→ **H5d**) |
 | **H3b** | `py` | `py:module` / `function` / `class` / `method` / `attribute` / `data`, signature parsing, python module index |
-| **H3c** | `rst` | `rst:directive` / `rst:role` — small, and a good second validation of the trait shape |
+| **H3c** | ✅ `rst` | `rst:directive` / `rst:role` object descriptions + xref resolution — small, and validated the trait shape as planned. **Deferred**: `rst:directive:option` sub-objects |
 | **H3d** | search objects | populate `objects` / `objtypes` / `objnames` / `indexentries` in `search.rs` from `env.domaindata` |
 | **H3e** | `js` | mechanically similar to `py`, smaller surface |
 | **H3f** | `c` / `cpp` | large declaration parsers; port last, or keep on the Python bridge indefinitely — record the decision in §3 before starting |
@@ -457,8 +459,35 @@ in a new `src/domains/mod.rs`, hold instances on `BuildEnvironment`, and
 back persistence with the existing `domaindata` map so incremental
 rebuild (H8b) needs no second serialization path.
 
-**Gate:** one `tests/domains_<name>.rs` per domain, mirroring the
-corresponding `test_domain_<name>.py` cases.
+**Landed as:** `src/domains/mod.rs` (the `Domain` trait, `XrefTarget`,
+`PendingXref`, `XrefResolution`, `docname_join`, `normalize_id`,
+`dangling_warning`), `src/domains/std_domain.rs` (`StdDomain`),
+`src/domains/rst_domain.rs` (`RstDomain`). `BuildEnvironment` holds both
+as concrete `std_domain`/`rst_domain` fields rather than a `dyn Domain`
+registry keyed by name (an intentional simplification over the design
+note above — there's no multi-domain dispatch need yet with only two
+domains; revisit if/when **H3b**/**H3e**/**H3f** land). `domaindata`
+(the generic string map) is left unused by these two domains, which
+prefer typed storage; it remains available for domains that want it.
+
+**Accepted deviation:** `docutilsrs`'s parser has no structural
+directive registry (`glossary`, `rst:directive`, ...) and doesn't emit a
+`pending_xref` node for cross-reference roles, so domain data is
+recovered with a text-level scan of the RST source
+(`src/domains/scan.rs`: `scan_labels`, `scan_glossary_terms`,
+`scan_rst_domain_objects`, `scan_xref_roles`), mirroring the precedent
+`environment::scan_toctree_entries` set for **H2c**. `BuildEnvironment`
+runs these scanners for every document during `read_all` (via the new
+`note_domain_data`, which also calls `Domain::clear_doc` first so
+re-reading a changed document doesn't accumulate stale entries). Real
+AST-based directive/role nodes are deferred until `docutilsrs` grows a
+structural registry — tracked as the outstanding half of **H5a**/**H5b**.
+
+**Gate:** `tests/domains_std.rs` and `tests/domains_rst.rs` — labels
+w/wo an attached section title, `:ref:` (named + explicit-title),
+`:doc:` (relative + absolute + unknown), `:term:` (case-insensitive +
+missing), `rst:dir`/`rst:role` xrefs, virtual-label seeding, and
+re-reading a document clearing its stale labels/terms/objects.
 
 ### Tier H4 — events + extension loading ✅
 
@@ -495,9 +524,9 @@ confirms the fallback to the Python `setup()` plus a recorded warning;
 
 | id | task |
 | --- | --- |
-| **H5a** | Directive execution: port `sphinx/directives/{__init__,code,other,patches}.py` — `toctree`, `code-block`, `literalinclude`, `include`, `only`, `seealso`, `versionadded` / `changed` / `deprecated`, `index`, `tabularcolumns`, `highlight` — registered into the `docutilsrs` directive registry |
-| **H5b** | Role execution: `XRefRole::run` producing `pending_xref`, plus `PEP` / `RFC` / `CVE` / `CWE` / `GUILabel` / `MenuSelection` / `EmphasizedLiteral` / `Abbreviation` layered on the existing pure helpers |
-| **H5c** | `env.resolve_references(doctree, fromdoc)`: walk `pending_xref`, dispatch to the owning domain (H3), fall back to intersphinx inventories (H1a), emit `missing-reference` plus the standard unresolved-target warnings |
+| **H5a** | Directive execution: port `sphinx/directives/{__init__,code,other,patches}.py` — `toctree`, `code-block`, `literalinclude`, `include`, `only`, `seealso`, `versionadded` / `changed` / `deprecated`, `index`, `tabularcolumns`, `highlight` — registered into the `docutilsrs` directive registry. **Still deferred**: `docutilsrs`'s directive dispatch is a hardcoded match in `parser.rs` with no per-extension registry hook to add to, so real node-producing directive execution didn't move this round; `glossary`/`rst:directive`/`rst:role` bodies are recognized only well enough to *feed domain data* (see H3a/H3c's text-scan), not to render their real doctree nodes |
+| **H5b** | ✅ (partial) Role execution: text-level recovery of `:ref:`/`:doc:`/`:term:`/`:numref:`/`:keyword:` and `:rst:dir:`/`:rst:role:` roles — including the `` `Title <target>` `` phrase form — via `domains::scan::scan_xref_roles`, called from `BuildEnvironment::read_all`/`note_domain_data` and stored per-docname in `env.pending_xrefs`. **Deferred**: a real `pending_xref` doctree node (needs `docutilsrs::doctree::NodeKind` to grow a variant — a cross-cutting change touching every writer, deliberately not attempted here); other domains' roles (`:py:func:`, `:c:...`, custom roles); `PEP`/`RFC`/`CVE`/`CWE`/`GUILabel`/`MenuSelection`/`EmphasizedLiteral`/`Abbreviation` node execution |
+| **H5c** | ✅ (partial) `env.resolve_references(fromdocname)`: resolves every recovered `PendingXref` against `std_domain`/`rst_domain`, returning `XrefResolution::Resolved { target }` or `Unresolved { warning }` (warning text mirrors `StandardDomain.dangling_warnings`: `"undefined label: '...'"`, `"unknown document: '...'"`, `"term not in glossary: '...'"`). `env.resolve_all_references()` runs it over every document with recorded xrefs. **Deferred**: since there's no `pending_xref` node (see H5b), this returns a resolution list rather than rewriting the doctree in place; intersphinx inventory fallback (H1a's `Inventory` isn't consulted yet); the real `missing-reference` event hook |
 | **H5d** | Toctree resolution: `TocTree` adapter (`resolve`, `get_toc_for`, `get_toctree_for`, `global_toctree_for_doc`), `secnumbers` assignment, `numfig` numbering for `number_reference` |
 | **H5e** | Index generation: `genindex` from `indexentries`, plus the per-domain indices registered in H3 |
 
@@ -505,8 +534,16 @@ confirms the fallback to the Python `setup()` plus a recorded warning;
 and `tests/toctree.rs`; mirroring `test_directives/`, `test_roles.py`,
 and `test_environment/test_environment_toctree.py`.
 
-**Closes:** `roles.py` → **mirrored**, `directives/` → **mirrored**,
-`environment/` → **done**.
+**H5b/H5c landed as:** `tests/domains_std.rs`/`tests/domains_rst.rs`
+(see H3a/H3c above) rather than a separate `tests/roles.rs` execution
+group, since the xref-recovery/resolution pair is domain-facing, not a
+standalone role-node feature yet.
+
+**Closes:** `roles.py` → **mirrored** for the `std`/`rst` xref subset
+(execution of the remaining role classes is still **deferred**),
+`directives/` → still **deferred** (see H5a above),
+`environment/` → **done** for label/doc/term resolution, still missing
+toctree/index resolution (H5d/H5e).
 
 ### Tier H6 — theming
 

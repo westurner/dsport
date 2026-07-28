@@ -5,7 +5,7 @@
 //! [`crate::filters`] and [`crate::globals`].
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use minijinja::Environment as MiniEnv;
 use minijinja::Value;
@@ -39,6 +39,7 @@ impl<'env> Template<'env> {
 pub struct Environment {
     pub(crate) inner: MiniEnv<'static>,
     pub(crate) search_paths: Vec<PathBuf>,
+    trans_provider: Arc<Mutex<Option<i18n::I18nProvider>>>,
 }
 
 impl Environment {
@@ -64,6 +65,29 @@ impl Environment {
         env.add_filter("wordwrap", filters::wordwrap);
         env.add_filter("xmlattr", filters::xmlattr);
         env.add_filter("urlencode", filters::urlencode);
+
+        // `striptags` — used by real Sphinx theme templates (e.g.
+        // `{{ title|striptags|e }}` in `basic/layout.html`). Not a minijinja
+        // builtin (unlike `escape`/`e`/`safe`/`attr`/`trim`, which already
+        // are), so registered here for every environment, not just Django
+        // mode.
+        env.add_filter("striptags", filters::django::striptags);
+
+        // `escape`/`e`/`safe`/`forceescape` — overridden here (minijinja
+        // ships its own builtins for these) to route through
+        // `markupsafers`, the dedicated Rust port of Python `MarkupSafe`.
+        // This keeps HTML-entity escaping byte-identical to real
+        // Jinja2/MarkupSafe (e.g. `'` \u2192 `&#39;`), which matters for
+        // parity with upstream Sphinx output, and produces the same
+        // `Markup`-tagged safe-value representation used elsewhere in this
+        // workspace (`markupsafers::minijinja_compat`).
+        env.add_filter("escape", markupsafers::minijinja_compat::escape_filter);
+        env.add_filter("e", markupsafers::minijinja_compat::escape_filter);
+        env.add_filter("safe", markupsafers::minijinja_compat::safe_filter);
+        env.add_filter(
+            "forceescape",
+            markupsafers::minijinja_compat::force_escape_filter,
+        );
 
         // Sphinx-specific and Phase 4 globals
         env.add_global(
@@ -93,19 +117,64 @@ impl Environment {
             minijinja::Value::from_object(globals::LipsumFactory::new()),
         );
 
+        // `{% trans %}` support (see `crate::trans`): desugared blocks call
+        // this global. Registered unconditionally — harmless for templates
+        // that never use `{% trans %}`. The provider cell is shared with
+        // `Environment` itself so `set_trans_provider` can install a
+        // provider after construction.
+        let trans_provider: Arc<Mutex<Option<i18n::I18nProvider>>> = Arc::new(Mutex::new(None));
+        env.add_global(
+            "__trans",
+            minijinja::Value::from_object(crate::trans::TransGlobal::new(trans_provider.clone())),
+        );
+        // `_` — Jinja2 `ext.i18n`'s bare-literal gettext shorthand (e.g.
+        // `{{ _('Search') }}`), used throughout real Sphinx templates
+        // alongside `{% trans %}` blocks. Shares the same provider cell.
+        env.add_global(
+            "_",
+            minijinja::Value::from_object(crate::trans::GettextAlias::new(trans_provider.clone())),
+        );
+
         Self {
             inner: env,
             search_paths: Vec::new(),
+            trans_provider,
         }
+    }
+
+    /// Install a translation provider for `{% trans %}` blocks.
+    ///
+    /// Optional: when no provider is installed, `{% trans %}` blocks still
+    /// render (untranslated, with naive English pluralization). Callers such
+    /// as `sphinxdocrs` may install a real `.mo`/`.po`-backed provider here,
+    /// or skip this entirely — "the sphinxdocrs lookup, or not".
+    pub fn set_trans_provider(&mut self, provider: i18n::I18nProvider) {
+        *self.trans_provider.lock().unwrap() = Some(provider);
+    }
+
+    /// Remove any installed `{% trans %}` translation provider.
+    pub fn clear_trans_provider(&mut self) {
+        *self.trans_provider.lock().unwrap() = None;
     }
 
     /// Create an environment with a filesystem loader rooted at `path`.
     pub fn with_loader(path: impl Into<PathBuf>) -> Self {
+        Self::with_loader_paths(vec![path.into()])
+    }
+
+    /// Create an environment with a filesystem loader that searches multiple
+    /// directories in order (first match wins) — used for a theme's
+    /// inheritance chain (child directories first, so a child theme's own
+    /// template overrides its base's, while unmodified templates fall
+    /// through to the base).
+    pub fn with_loader_paths(paths: Vec<PathBuf>) -> Self {
         let mut env = Self::new();
-        env.search_paths.push(path.into());
+        env.search_paths = paths;
         let paths: Arc<Vec<PathBuf>> = Arc::new(env.search_paths.clone());
-        env.inner
-            .set_loader(move |name| Ok(FileSystemLoader::load_source(&paths, name)));
+        env.inner.set_loader(move |name| {
+            Ok(FileSystemLoader::load_source(&paths, name)
+                .map(|src| crate::trans::preprocess_trans(&src).into_owned()))
+        });
         env
     }
 
@@ -232,12 +301,26 @@ impl Environment {
     }
 
     /// Add a named template from a string (mirrors `env.add_template()`).
+    ///
+    /// Runs the `{% trans %}` desugaring pass ([`crate::trans::preprocess_trans`])
+    /// first. When the source contains no `trans` block this is a no-op and
+    /// `source` is registered directly; otherwise the rewritten template is
+    /// leaked to obtain the `'static` lifetime `add_template` requires (a
+    /// one-time cost paid once per registered template, not per render).
     pub fn add_template(
         &mut self,
         name: &'static str,
         source: &'static str,
     ) -> Result<(), Jinja2Error> {
-        self.inner.add_template(name, source)?;
+        match crate::trans::preprocess_trans(source) {
+            std::borrow::Cow::Borrowed(_) => {
+                self.inner.add_template(name, source)?;
+            }
+            std::borrow::Cow::Owned(rewritten) => {
+                let leaked: &'static str = Box::leak(rewritten.into_boxed_str());
+                self.inner.add_template(name, leaked)?;
+            }
+        }
         Ok(())
     }
 
@@ -254,8 +337,11 @@ impl Environment {
     }
 
     /// Render a one-off template string without registering it.
+    ///
+    /// Runs the `{% trans %}` desugaring pass first (see [`Self::add_template`]).
     pub fn render_str<S: Serialize>(&self, source: &str, ctx: S) -> Result<String, Jinja2Error> {
-        Ok(self.inner.render_str(source, ctx)?)
+        let processed = crate::trans::preprocess_trans(source);
+        Ok(self.inner.render_str(&processed, ctx)?)
     }
 
     /// Add a custom filter function (mirrors `env.filters[name] = fn`).

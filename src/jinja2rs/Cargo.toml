@@ -53,7 +53,7 @@ python-callable-warnings = ["tracing"]
 django = []
 
 [dependencies]
-markupsafers = { path = "../markupsafers" }
+markupsafers = { path = "../markupsafers", features = ["minijinja"] }
 pyo3 = { workspace = true, features = ["auto-initialize"] }
 minijinja = { path = "../minijinja/minijinja", features = [
     "builtins",

@@ -737,6 +737,85 @@ diffing Rust vs Python output trees through a normalizer for accepted
 deviations (timestamps, generator comments). Add a `make parity` target
 and run it in CI behind `--features test-parity`.
 
+### 9.5 Remaining work not completed this session
+
+A 2026-07-28 session closed **H6** (theming — it was already
+implemented but undocumented as such) and **H7a**/**H7b**/**H7c**/
+**H7e** in full, plus the `changes` builder half of **H7d**, each with
+its own commit, inline unit tests, and a dedicated
+`tests/builders_<name>.rs` integration suite (see §7). `epub`/`texinfo`
+(the rest of **H7d**) and all of **H8**–**H11** are **not implemented**
+— each is large enough to warrant its own session. This section is a
+concrete starting point for picking them back up, based on what this
+session learned about the codebase's actual shape (as opposed to
+`docutilsrs::doctree::NodeKind` in the abstract):
+
+- **`epub` (H7d remainder).** The output is a zip archive
+  (`crate::zip_writer` in `docutilsrs` already exists and is exercised
+  by `odt_writer.rs` — reuse it, don't reimplement zip writing) containing
+  OPF package metadata, an NCX/nav table of contents, and one XHTML file
+  per document (the existing `docutilsrs::html5` writer's output is
+  close enough to valid XHTML for a first cut; real upstream feeds
+  through a stricter `sphinx.builders._epub_base` XHTML serializer).
+  Minimum viable slice: `mimetype` (uncompressed, first entry — a real
+  EPUB requirement, easy to get wrong with a generic zip writer),
+  `META-INF/container.xml`, `content.opf` (manifest + spine from
+  `env.all_docs`), `toc.ncx`, per-doc XHTML. Skip cover images/embedded
+  fonts initially (accepted deviation, document it).
+- **`texinfo`.** No existing `docutilsrs` writer to build on (unlike
+  `epub`/`gettext`/`changes`, which all reused something). This is a
+  real writer from scratch: `@node`/`@chapter`/`@section` header
+  hierarchy from section nesting depth (reuse the same depth-tracking
+  approach as `docutilsrs::text_writer`), `@menu` blocks for
+  toctree-equivalent structure (H5d's `toctree::global_toctree_for_doc`
+  already has the data), Texinfo's own escaping rules for `@`/`{`/`}`.
+  Budget this as comparable in size to H7a's `text_writer.rs`, plus the
+  menu/node cross-referencing work.
+- **H8 (incremental rebuild + logging).** **H8a**
+  (`env.get_outdated`) needs real mtime tracking, which
+  `BuildEnvironment` doesn't currently store per-document (only
+  `all_docs` docname→bool-ish presence, per `environment.rs` — check
+  before assuming a field exists). **H8b** (env persistence) has an
+  existing partial precedent: `Doctree::to_bytes`/`from_bytes` already
+  round-trips *doctrees* through `doctreedir/<docname>.doctree`
+  (**H2b**) — extending that same serde-json approach to the rest of
+  `BuildEnvironment`'s state (`domaindata`, `titles`, `toctree_includes`,
+  ...) is the least-risk path, not a new format. **H8c**/**H8d**
+  (colored status streams, `-j` parallelism) are independent of H8a/H8b
+  and could be split off as their own smaller items.
+- **H9 (autodoc completeness).** The real unblock is **H9a**: a
+  runtime-import bridge through PyO3 (import the target module for
+  real, introspect via `inspect`-equivalent PyO3 calls), since
+  `autodoc.rs`'s current `ruff_python_ast`-only static extraction
+  structurally cannot see runtime-only things (decorated/dynamically
+  created members, C-extension modules, `__all__` computed at import
+  time). This is a hybrid-bridge design problem more than a
+  text-transform one — closer in spirit to **H4b**'s
+  `docutilsrs_plugins` PyO3 resolver than to any H7 builder. Don't
+  attempt **H9b**/**H9c**/**H9d** before **H9a** lands; they all depend
+  on having a real member list to filter/format.
+- **H10 (highlighting).** Explicitly gated on `pygmentsrs` lexer
+  *breadth*, not on anything in `sphinxdocrs` — see the
+  `port-pygments-lexer` skill for that separate workstream. Nothing to
+  do here until that crate's coverage is further along; re-check
+  `docs/pygments-port-inventory.md` for current lexer coverage before
+  starting.
+- **H11 (parity matrix).** The most self-contained of the five — it's
+  test-infrastructure work over builders that already exist (including
+  the ten native builders this session added/completed:
+  `text`/`xml`/`pseudoxml`/`dirhtml`/`singlehtml`/`gettext`/`changes`
+  plus the pre-existing `html`/`json`/`latex`/`man`/`linkcheck`), gated
+  behind `--features test-parity` so it doesn't need a design decision
+  before starting, just Python + upstream Sphinx available in the test
+  environment.
+
+Suggested order if resuming: **H11** first (cheapest, and will likely
+surface real parity gaps in the builders this session just added,
+which is valuable feedback before investing in H7d's remainder/H8/H9);
+then **H7d**'s `epub` (self-contained, reuses `zip_writer`); then
+**H8b** (extends an existing serde-json precedent); the rest are
+independent enough to parallelize across sessions.
+
 ### 9.2 Suggested execution order
 
 | step | items | rationale |

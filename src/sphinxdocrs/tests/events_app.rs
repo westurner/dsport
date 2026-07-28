@@ -21,6 +21,27 @@ fn make_src() -> TempDir {
     tmp
 }
 
+/// The `docutilsrs_plugins` registry (and the `sys.path` entries the ADR
+/// 0005 tests insert to reach it) are process-global, so two tests that
+/// register/`clear_registry()` it must not run concurrently — the test
+/// harness runs tests in parallel by default, and without this guard one
+/// test's `clear_registry()` can race ahead of another's still-in-flight
+/// `register()` → `load_extension()` sequence, wiping its registration out
+/// from under it (this is what made
+/// `load_extension_falls_back_when_version_guard_rejects` flaky). Mirrors
+/// the `REGISTRY_LOCK` pattern in `tests/locale.rs`. Poisoning is ignored:
+/// a panicking test leaves the registry dirty, and the next test clears it
+/// via `clear_registry()` anyway.
+static PLUGIN_REGISTRY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Acquire [`PLUGIN_REGISTRY_LOCK`], returning a guard that must be held
+/// for the duration of any test touching the `docutilsrs_plugins` registry.
+fn locked_plugin_registry() -> std::sync::MutexGuard<'static, ()> {
+    PLUGIN_REGISTRY_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
 #[test]
 fn core_event_emission_order() {
     let src = make_src();
@@ -174,6 +195,8 @@ fn load_extension_unknown_module_errors() {
 /// extension module or calling its `setup()`.
 #[test]
 fn load_extension_prefers_rust_equivalent_when_registered() {
+    let _registry = locked_plugin_registry();
+
     let pydir = TempDir::new().unwrap();
     // The Rust-equivalent implementation: `factory()` returns `rust_setup`
     // without calling it, matching `docutilsrs_plugins.Equivalent.factory`'s
@@ -281,6 +304,8 @@ def setup(app):
 /// call the equivalent's callable) and record a warning explaining why.
 #[test]
 fn load_extension_falls_back_when_version_guard_rejects() {
+    let _registry = locked_plugin_registry();
+
     let pydir = TempDir::new().unwrap();
     // Doubles as (a) the "upstream package" the version guard checks (via
     // its `__version__`) and (b) the real Sphinx extension to fall back to.

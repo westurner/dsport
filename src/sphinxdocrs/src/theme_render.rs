@@ -415,9 +415,24 @@ impl ThemeRenderer {
     /// assets (`copy_theme_static_files`/`copy_html_static_path` should run
     /// first) so `css_files`/`script_files` can be discovered.
     ///
+    /// `all_docs` is the set of docnames actually being built in this run
+    /// (backs the `hasdoc()` Jinja2 global). Callers should pass the same
+    /// docname list they're about to iterate in their write phase, **not**
+    /// necessarily `env.all_docs.keys()` — a caller that skipped the H2
+    /// read phase (`BuildEnvironment::find_files`/`read_all`) and instead
+    /// discovered docnames by walking the filesystem directly would
+    /// otherwise get an empty `hasdoc()` for every name, producing output
+    /// that silently differs from the two-phase path (e.g. a themed
+    /// `{% if hasdoc('about') %}` link present in one build but not the
+    /// other for the exact same project).
+    ///
     /// Returns `None` on any resolution failure (no Python, theme not
     /// found, ...) — always a soft failure, never a build error.
-    pub fn new(env: &BuildEnvironment, outdir: &Path) -> Option<Self> {
+    pub fn new<'a>(
+        env: &BuildEnvironment,
+        outdir: &Path,
+        all_docs: impl IntoIterator<Item = &'a String>,
+    ) -> Option<Self> {
         let theme_name = env.config.html_theme();
         let (template_dirs, theme_conf_options) =
             crate::theme_static::resolve_theme_templates(&theme_name)?;
@@ -440,7 +455,7 @@ impl ThemeRenderer {
 
         let jinja_env = Environment::with_loader_paths(loader_chain);
 
-        let all_docs: HashSet<String> = env.all_docs.keys().cloned().collect();
+        let all_docs: HashSet<String> = all_docs.into_iter().cloned().collect();
         let toc_entries = toctree::global_toctree_for_doc(env, 0);
         let toc_html = render_toc_html(&toc_entries);
         let relations = collect_relations(&toc_entries);

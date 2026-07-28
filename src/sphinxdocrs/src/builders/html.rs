@@ -416,7 +416,15 @@ impl Builder for HtmlBuilder {
         // `None` when the theme can't be resolved (no Python/Sphinx
         // available, theme not found, ...) — every document then falls
         // back to the embedded placeholder theme, same as before H6c.
-        let real_theme = crate::theme_render::ThemeRenderer::new(env, outdir);
+        //
+        // Pass the docnames actually being built here (`docnames`, above)
+        // rather than letting `ThemeRenderer::new` derive `hasdoc()`'s set
+        // from `env.all_docs` internally: when this is a single-phase
+        // build (env.all_docs never populated because the H2 read phase
+        // was skipped), env.all_docs is empty even though `docnames` is
+        // not, which previously made `hasdoc()` silently disagree between
+        // the single-phase and two-phase paths for the exact same project.
+        let real_theme = crate::theme_render::ThemeRenderer::new(env, outdir, &docnames);
 
         // Page metadata shared by every document (from conf.py).
         let meta = PageMeta {

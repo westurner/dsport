@@ -145,6 +145,10 @@ pub struct SphinxApp {
     /// Extensions loaded via [`load_extension`](Self::load_extension),
     /// keyed by dotted module name. Mirrors `Sphinx.extensions`.
     pub extensions: HashMap<String, Py<Extension>>,
+    /// Whether each loaded extension was satisfied by a Rust equivalent
+    /// (`"rust"`) resolved via `docutilsrs_plugins`, or by the plain
+    /// Python `setup()` (`"python"`). Diagnostic-only; not an upstream field.
+    pub extension_sources: HashMap<String, &'static str>,
 }
 
 impl std::fmt::Debug for SphinxApp {
@@ -232,7 +236,7 @@ impl SphinxApp {
         let project = EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
         let env = BuildEnvironment::new(config.clone(), project, &srcdir, &doctreedir);
 
-        Ok(Self {
+        let mut app = Self {
             srcdir,
             outdir,
             doctreedir,
@@ -243,30 +247,92 @@ impl SphinxApp {
             warnings: Vec::new(),
             events: AppEventManager::shared(),
             extensions: HashMap::new(),
-        })
+            extension_sources: HashMap::new(),
+        };
+
+        // Mirrors the tail of `Sphinx.__init__`: load every extension named
+        // in `conf.py`'s `extensions = [...]` list, verify `needs_extensions`,
+        // then emit `config-inited` / `builder-inited` — in that order, so an
+        // extension's `setup(app)` can register a `config-inited` listener
+        // and actually see it fire. (A caller invoking
+        // [`load_extension`](Self::load_extension) manually *after*
+        // `new()` returns will, like upstream, miss `config-inited` — it has
+        // already been emitted by then.)
+        for ext_name in app.config.extensions() {
+            app.load_extension(&ext_name)?;
+        }
+        app.verify_needs_extensions()?;
+
+        app.events.borrow_mut().emit("config-inited", &[]);
+        app.events.borrow_mut().emit("builder-inited", &[]);
+
+        Ok(app)
     }
 
     /// Load a Python extension by dotted module name.
     ///
-    /// Mirrors `Sphinx.setup_extension` / `sphinx.extension.load_extension`:
-    /// imports `name` (via PyO3), calls its `setup` function with a fresh
-    /// [`PyAppFacade`] bound to `self.events`, and records the returned
-    /// metadata as an [`Extension`] in `self.extensions`.
+    /// Mirrors `Sphinx.setup_extension` / `sphinx.extension.load_extension`,
+    /// **plus** the plugin-discovery resolver from
+    /// [ADR 0005](../../../docs/adr/0005-plugin-discovery.md): before
+    /// importing `name` as a Python module, this checks whether a Rust
+    /// equivalent is registered for it (`docutilsrs_plugins.discover()`,
+    /// entry-point group `docutilsrs.equivalents`, keyed by `name`). If one
+    /// is found and passes its upstream-version guard
+    /// (`docutilsrs_plugins.upstream_compatible`), its `factory()` result is
+    /// called instead of the Python extension's `setup()` — the Python
+    /// module is never imported and its `setup()` never runs. If one is
+    /// found but its version guard rejects it, a warning is pushed to
+    /// [`Self::warnings`] and this falls back to the plain Python path.
+    /// Likewise when the resolver is unavailable or no equivalent is
+    /// registered at all — this then falls back to importing `name`
+    /// directly and calling its `setup(app)`, exactly as before.
     ///
-    /// **Accepted deviation:** `needs_extensions` verification
-    /// (`crate::extension::py_verify_needs_extensions`) and dependency-order
-    /// loading (`setup_extension` recursing into an extension's own
-    /// `needs_extensions`/`setup_extension` calls) are not wired in yet —
-    /// callers must load extensions in dependency order themselves.
+    /// Either way, the invoked callable is passed a fresh [`PyAppFacade`]
+    /// bound to `self.events`, and its returned metadata is recorded as an
+    /// [`Extension`] in `self.extensions`. [`Self::extension_sources`] records
+    /// which path was taken (`"rust"` or `"python"`).
+    ///
+    /// Called automatically from [`new`](Self::new) for every entry in
+    /// `conf.py`'s `extensions` list; exposed publicly so callers can load
+    /// additional extensions afterward (matching upstream's
+    /// `Sphinx.setup_extension`).
+    ///
+    /// **Accepted deviation:** dependency-ordered recursive loading
+    /// (`setup_extension` recursing into an extension's own
+    /// `needs_extensions`/`setup_extension` calls) is not wired in yet —
+    /// callers must load extensions in dependency order themselves. The
+    /// Rust equivalent's `factory()` result stands in for the upstream
+    /// `module` object passed to `Extension(name, module, **kwargs)`, since
+    /// there is no real Python module backing a Rust equivalent.
     ///
     /// # Errors
     ///
     /// `AppError::Extension` if the module cannot be imported, has no
     /// `setup` callable, or `setup(app)` raises.
     pub fn load_extension(&mut self, name: &str) -> Result<(), AppError> {
-        Python::attach(|py| -> PyResult<()> {
-            let module = py.import(name)?;
-            let setup = module.getattr("setup")?;
+        let mut version_guard_warning = None;
+        let result = Python::attach(|py| -> PyResult<()> {
+            let (module, setup, source): (Bound<'_, PyAny>, Bound<'_, PyAny>, &'static str) =
+                match resolve_rust_equivalent(py, name)? {
+                    EquivalentLookup::Found(setup_callable) => {
+                        (setup_callable.clone(), setup_callable, "rust")
+                    }
+                    EquivalentLookup::Incompatible => {
+                        version_guard_warning = Some(format!(
+                            "extension {name:?}: a Rust equivalent is registered but its \
+                             upstream version guard rejected it; falling back to the Python \
+                             implementation"
+                        ));
+                        let module = py.import(name)?;
+                        let setup = module.getattr("setup")?;
+                        (module.into_any(), setup, "python")
+                    }
+                    EquivalentLookup::None => {
+                        let module = py.import(name)?;
+                        let setup = module.getattr("setup")?;
+                        (module.into_any(), setup, "python")
+                    }
+                };
 
             let facade = Py::new(py, PyAppFacade::new(self.events.clone()))?;
             let metadata = setup.call1((facade,))?;
@@ -281,9 +347,89 @@ impl SphinxApp {
             let ext_obj = ext_type.call((name, module.clone().unbind()), kwargs.as_ref())?;
             let ext: Py<Extension> = ext_obj.extract()?;
             self.extensions.insert(name.to_string(), ext);
+            self.extension_sources.insert(name.to_string(), source);
             Ok(())
         })
-        .map_err(AppError::from)
+        .map_err(AppError::from);
+        if let Some(warning) = version_guard_warning {
+            self.warnings.push(warning);
+        }
+        result
+    }
+
+    /// Verify `config.needs_extensions` against the currently loaded
+    /// extensions.
+    ///
+    /// Native port of `sphinx.extension.verify_needs_extensions` for the
+    /// `SphinxApp`/`SphinxConfig` pair (the existing PyO3-facing
+    /// `extension::py_verify_needs_extensions` expects duck-typed Python
+    /// `app`/`config` objects and is used by the hybrid bridge instead).
+    /// Called automatically from [`new`](Self::new) after every configured
+    /// extension has been loaded.
+    ///
+    /// A required-but-unloaded extension is a non-fatal warning (pushed to
+    /// [`Self::warnings`]), matching upstream's `logger.warning`. A loaded
+    /// extension whose version is too old (compared via
+    /// `packaging.version.Version`, falling back to a string compare if
+    /// `packaging` is unavailable) is fatal, matching upstream's
+    /// `VersionRequirementError`.
+    ///
+    /// # Errors
+    ///
+    /// `AppError::Extension` if a loaded extension's version does not
+    /// satisfy its `needs_extensions` requirement.
+    pub fn verify_needs_extensions(&mut self) -> Result<(), AppError> {
+        let needs = self.config.needs_extensions();
+        if needs.is_empty() {
+            return Ok(());
+        }
+        let mut warnings = Vec::new();
+        let result = Python::attach(|py| -> PyResult<()> {
+            for (extname, reqversion) in &needs {
+                let Some(ext) = self.extensions.get(extname) else {
+                    warnings.push(format!(
+                        "The {extname} extension is required by needs_extensions settings, \
+                         but it is not loaded."
+                    ));
+                    continue;
+                };
+                let ext_version: String = ext.bind(py).getattr("version")?.extract()?;
+                let mut fulfilled = true;
+                if ext_version == "unknown version" {
+                    fulfilled = false;
+                } else {
+                    let cmp = (|| -> PyResult<bool> {
+                        let v_ctor = py.import("packaging.version")?.getattr("Version")?;
+                        let a = v_ctor.call1((reqversion.as_str(),))?;
+                        let b = v_ctor.call1((ext_version.as_str(),))?;
+                        a.gt(&b)
+                    })();
+                    match cmp {
+                        Ok(gt) => {
+                            if gt {
+                                fulfilled = false;
+                            }
+                        }
+                        Err(_) => {
+                            if reqversion.as_str() > ext_version.as_str() {
+                                fulfilled = false;
+                            }
+                        }
+                    }
+                }
+                if !fulfilled {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "This project needs the extension {extname} at least in version \
+                         {reqversion} and therefore cannot be built with the loaded \
+                         version ({ext_version})."
+                    )));
+                }
+            }
+            Ok(())
+        })
+        .map_err(AppError::from);
+        self.warnings.extend(warnings);
+        result
     }
 
     /// Run the read phase: discover source files and parse every document
@@ -320,19 +466,15 @@ impl SphinxApp {
 
     /// Run the build.
     ///
-    /// Mirrors `Sphinx.build(force_all=True)` for a full rebuild: emits
-    /// `config-inited` / `builder-inited` (mirroring `Sphinx.__init__`'s
-    /// tail — deferred out of [`new`](Self::new) so
-    /// [`load_extension`](Self::load_extension) can register listeners for
-    /// them first), then runs the read phase ([`read`](Self::read))
-    /// followed by the selected builder's write phase
-    /// (`Builder::build_all`), and finally emits `build-finished`.
+    /// Mirrors `Sphinx.build(force_all=True)` for a full rebuild: runs the
+    /// read phase ([`read`](Self::read)) followed by the selected builder's
+    /// write phase (`Builder::build_all`), and finally emits
+    /// `build-finished`. `config-inited` / `builder-inited` are emitted
+    /// earlier, from [`new`](Self::new), matching upstream's
+    /// `Sphinx.__init__` timing (after extensions are loaded).
     ///
     /// Returns a [`BuildResult`] with counts of written / skipped documents.
     pub fn build(&mut self) -> Result<BuildResult, AppError> {
-        self.events.borrow_mut().emit("config-inited", &[]);
-        self.events.borrow_mut().emit("builder-inited", &[]);
-
         self.read()?;
         let result = match self.buildername.as_str() {
             "html" => {
@@ -393,6 +535,55 @@ fn build_config(srcdir: &Path, overrides: HashMap<String, String>) -> SphinxConf
         }
     }
     SphinxConfig::new(std::collections::HashMap::new(), overrides)
+}
+
+// ── plugin-discovery resolver (ADR 0005) ──────────────────────────────────────
+
+/// Outcome of consulting the `docutilsrs_plugins` resolver for a given
+/// extension name. Distinguishes "no equivalent at all" from "an
+/// equivalent exists but its version guard rejected it" so
+/// [`SphinxApp::load_extension`] can surface a warning only in the latter
+/// case.
+enum EquivalentLookup<'py> {
+    /// No resolver, or no equivalent registered for this name.
+    None,
+    /// An equivalent is registered but `upstream_compatible()` returned
+    /// `false`.
+    Incompatible,
+    /// A compatible equivalent was found; this is its `factory()` result.
+    Found(Bound<'py, PyAny>),
+}
+
+/// Check whether a Rust equivalent is registered for `name` in the
+/// `docutilsrs_plugins` resolver (entry-point group `docutilsrs.equivalents`,
+/// as decided in [ADR 0005](../../../docs/adr/0005-plugin-discovery.md)),
+/// and its upstream-version guard passes.
+///
+/// Never a hard error: any resolver-side problem (module not importable,
+/// no registered equivalent, or a version-guard rejection) comes back as
+/// [`EquivalentLookup::None`] or [`EquivalentLookup::Incompatible`], both
+/// of which mean "fall back to the plain Python extension".
+fn resolve_rust_equivalent<'py>(py: Python<'py>, name: &str) -> PyResult<EquivalentLookup<'py>> {
+    let resolver = match py.import("docutilsrs_plugins") {
+        Ok(m) => m,
+        Err(_) => return Ok(EquivalentLookup::None),
+    };
+
+    let discovered = resolver.call_method0("discover")?;
+    let eq = discovered.call_method1("get", (name,))?;
+    if eq.is_none() {
+        return Ok(EquivalentLookup::None);
+    }
+
+    let compatible: bool = resolver
+        .call_method1("upstream_compatible", (&eq,))?
+        .extract()?;
+    if !compatible {
+        return Ok(EquivalentLookup::Incompatible);
+    }
+
+    let factory = eq.getattr("factory")?;
+    Ok(EquivalentLookup::Found(factory.call0()?))
 }
 
 // ── inline tests ──────────────────────────────────────────────────────────────

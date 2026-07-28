@@ -196,12 +196,12 @@ manually because minijinja lacks it.
 | `src/apidoc/{settings,templates,generate,parser}.rs` | `sphinx.ext.apidoc` | see §4.3 |
 | `src/autogen/{scan,templates,parser,generate}.rs` | `sphinx.ext.autosummary.generate` | see §4.3 |
 | `src/addnodes.rs` | `sphinx.addnodes` | all node structs; `Translatable`, `NotSmartquotable`, `SIG_ELEMENTS` |
-| `src/application.rs` | `sphinx.application.Sphinx` | `SphinxApp`, `AppError`, `NATIVE_BUILDERS`, `is_native_builder`, `SphinxApp::load_extension` (**H4b**) |
+| `src/application.rs` | `sphinx.application.Sphinx` | `SphinxApp`, `AppError`, `NATIVE_BUILDERS`, `is_native_builder`, `SphinxApp::load_extension`/`verify_needs_extensions` (**H4b** — `new` auto-loads `conf.py`'s `extensions` list, consulting the `docutilsrs_plugins` ADR 0005 resolver before falling back to plain Python `setup()`; the resolver module itself isn't part of the installed `docutilsrs` wheel yet, see the `python-source` note below) |
 | `src/app_events.rs` | `sphinx.events.EventManager` (native subset) | `AppEventManager`, `EventArg`, `SharedEvents` (`Rc<RefCell<_>>`) \u2014 PyO3-free event bus wired into `SphinxApp`/`BuildEnvironment` (**H4a**) |
 | `src/app_facade.rs` | \u2014 (no direct upstream analogue; bridges to `Sphinx`) | `PyAppFacade`, the `app`-shaped object passed to a loaded extension's `setup(app)` (**H4c**) |
 | `src/environment.rs` | `sphinx.environment.BuildEnvironment` | state skeleton (`all_docs`, `dependencies`, `included`, `reread_always`, `metadata`, `titles`/`longtitles`, `toc_num_entries`/`toc_secnumbers`, `toctree_includes`, `files_to_rebuild`, `glob_toctrees`, `numbered_toctrees`, `domaindata`, `temp_data`, `ref_context`, config-status constants) + `EnvProject` + `default_settings()`; `read_all_with_events` (**H4a**) |
 | `src/registry.rs` | `sphinx.registry.SphinxComponentRegistry` | full P2 + P3 registration surface; `RegistryError` |
-| `src/config.rs` | `sphinx.config.Config` | `SphinxConfig`, `ConfigVal`, `MathRenderer`, `py_read_conf_py` |
+| `src/config.rs` | `sphinx.config.Config` | `SphinxConfig`, `ConfigVal`, `MathRenderer`, `py_read_conf_py`; `SphinxConfig::needs_extensions()` (**H4b**) parses `conf.py`'s `needs_extensions = {...}` dict |
 | `src/versioning.rs` | `sphinx.versioning` | + `apply_uid_transform`, `UID_TRANSFORM_PRIORITY` |
 | `src/roles.rs` | `sphinx.roles` | tables + pure helpers |
 | `src/locale.rs` | `sphinx.locale` | `.po` parser, `TRANSLATORS` registry, `CATALOG_LOOKUP_ORDER` chain, `tr!` / `tr_c!`; `locale/` symlink → `../../sphinx/sphinx/locale` |
@@ -229,6 +229,28 @@ manually because minijinja lacks it.
 | `assets/quickstart/` | `sphinx/templates/quickstart/` | 4 vendored Jinja templates (`include_str!`) |
 | `assets/apidoc/` | `sphinx/templates/apidoc/` | 3 vendored Jinja templates |
 | `assets/autosummary/` | `sphinx/ext/autosummary/templates/autosummary/` | 3 vendored RST stub templates |
+
+**Known packaging gap (`docutilsrs_plugins`):** the ADR 0005 resolver
+module lives at `src/docutilsrs/python/docutilsrs_plugins.py` as a loose
+file alongside `docutilsrs_hybrid.py`/`docutilsrs_pygments.py`, but
+`docutilsrs`'s `[tool.maturin]` config has no `python-source`, so
+`pip install`/`maturin develop` only installs the compiled extension
+module — none of the three are importable from a real (non-monorepo)
+install. Adding `python-source = "python"` was tried and rejected by
+maturin: `maturin develop` fails with *"the python module at
+`python/docutilsrs` does not exist"* — maturin's mixed-layout convention
+requires `python-source` to contain a package directory named after
+`module-name` (i.e. `python/docutilsrs/__init__.py`), not loose top-level
+`.py` files. A real fix means restructuring these three modules into a
+`docutilsrs` sub-package (e.g. `docutilsrs.plugins`, `docutilsrs.hybrid`,
+`docutilsrs.pygments`) and updating every `import docutilsrs_plugins` /
+`import docutilsrs_hybrid` call site (~10 files under `src/tests/` and
+`src/sphinxdocrs/python/sphinxdocrs_hybrid.py`) — deferred as a separate,
+explicitly-scoped task rather than attempted piecemeal here. Until then,
+callers (native Rust code and tests alike) must put
+`src/docutilsrs/python` on `sys.path` manually before importing these
+modules, exactly as `src/tests/test_hybrid.py`'s `HYBRID_DIR` pattern
+already does.
 
 ### Cargo features
 
@@ -298,7 +320,7 @@ Tagged from `src/sphinx/tests/`.
 | `tests/environment.rs` | construction, `default_settings`, config-status labels, doc-read / title / dependency tracking |
 | `tests/builders.rs`, `tests/builders_json.rs` | `Builder` trait contract, `get_target_uri`, `build_doc` HTML5 structure, `build_all` variants, `.fjson` output |
 | `tests/application.rs` | `NATIVE_BUILDERS`, path validation, constructor fields, `build()` HTML output, config defaults/overrides |
-| `tests/events_app.rs` | **H4**: core event emission order across a full `build()`, per-document `source-read`/`doctree-read` pairing, `load_extension` Python round trip (`config-inited` listener registered by a temp extension module fires), unknown-module error path |
+| `tests/events_app.rs` | **H4**: core event emission order across a full `build()`, per-document `source-read`/`doctree-read` pairing, auto-loading extensions from `conf.py` before `config-inited` fires, unknown-module error path, an ADR-0005 round trip proving a registered Rust equivalent is called instead of the Python extension's `setup()`, an ADR-0005 version-guard-rejection fallback + warning, and `needs_extensions` (missing-extension warning + version-mismatch error) |
 | `tests/roles.rs` | docrole table completeness, `format_rfc_target`, `parse_emphasized_literal` |
 | `tests/locale.rs`, `tests/intl.rs` | `.po` parsing, translator registry, catalog discovery, `docname_to_domain`, date-format mapping |
 | `tests/util_rst_osutil.rs`, `tests/util_extra.rs` | full `sphinx.util` mirrors |
@@ -443,18 +465,27 @@ corresponding `test_domain_<name>.py` cases.
 | id | task | detail |
 | --- | --- | --- |
 | **H4a** ✅ | Own an `EventManager` on `SphinxApp` and emit the core events in upstream order | New `app_events::AppEventManager` (pure Rust, `Rc<RefCell<_>>`-shared as `SharedEvents` — not the PyO3-facing `events::EventManager`, which stays Python-callable-only for the hybrid bridge). `SphinxApp::build` emits `config-inited` → `builder-inited`, then `read()` emits `env-get-outdated` → `env-before-read-docs` → (per doc) `source-read`/`doctree-read` via `BuildEnvironment::read_all_with_events` → `env-updated` → `env-check-consistency`, then `build()` emits `build-finished` after the builder runs. **Accepted deviation:** `doctree-resolved`/`html-page-context` are known event names but not yet emitted (no per-document write-phase hook exists until **H5**/**H6**); `env-get-outdated` always reports empty added/changed/removed (real diffing is **H8a**); listener dispatch has no `allowed_exceptions`/`ExtensionError` wrapping (**H8c**) |
-| **H4b** ✅ | `load_extension`: import a Python extension module through PyO3, call `setup(app)`, capture the returned metadata into `Extension`, honour `needs_extensions` | `SphinxApp::load_extension(name)` imports the module, calls `setup(app)` with a fresh `PyAppFacade`, and stores the returned metadata as a `Py<Extension>` in `SphinxApp::extensions`. **Accepted deviation:** `needs_extensions` verification (`extension::py_verify_needs_extensions`) and dependency-ordered recursive loading are not wired in yet — callers must load extensions in dependency order themselves |
+| **H4b** ✅ | `load_extension`: import a Python extension module through PyO3, call `setup(app)`, capture the returned metadata into `Extension`, honour `needs_extensions` | `SphinxApp::new` now auto-loads every entry in `conf.py`'s `extensions = [...]` list (via `SphinxConfig::extensions()`) before emitting `config-inited`/`builder-inited` — mirroring `Sphinx.__init__`'s real timing, so an extension's `setup(app)` can register a `config-inited` listener and see it fire. For each, `SphinxApp::load_extension(name)` first consults the [ADR 0005](adr/0005-plugin-discovery.md) plugin-discovery resolver (`docutilsrs_plugins.discover()`, entry-point group `docutilsrs.equivalents`, keyed by `name`): if a compatible Rust equivalent is registered (`upstream_compatible()` passes), its `factory()` result is called instead — the Python extension module is never imported and its `setup()` never runs. If an equivalent is registered but its version guard rejects it, a warning is pushed to `SphinxApp::warnings` and this falls back to the plain Python path (same fallback, silently, when no equivalent is registered at all or the resolver isn't importable). Either path calls the resolved callable with a fresh `PyAppFacade` and stores the returned metadata as a `Py<Extension>` in `SphinxApp::extensions`; `SphinxApp::extension_sources` records which path was taken (`"rust"`/`"python"`). After all configured extensions load, `SphinxApp::verify_needs_extensions` checks `SphinxConfig::needs_extensions()` (a new `conf.py` `needs_extensions = {...}` parser in `raw_config_from_conf_py`) against the loaded `Extension.version`s via `packaging.version.Version`, pushing a non-fatal warning for a required-but-unloaded extension and returning `AppError::Extension` (mirroring `VersionRequirementError`) for a version mismatch. **Accepted deviation:** dependency-ordered recursive loading (an extension's own `needs_extensions`/nested `setup_extension` calls) is not wired in — callers must list extensions in dependency order in `conf.py`; the Rust equivalent's `factory()` result stands in for the upstream `module` object passed to `Extension(name, module, **kwargs)` since there is no real Python module backing a Rust equivalent; the `docutilsrs_plugins` resolver module still isn't part of the installed `docutilsrs` wheel (see the packaging note in §5) so the Rust-equivalent path only activates when a caller manually puts `src/docutilsrs/python` on `sys.path`, same as the Python-side tests do |
 | **H4c** ✅ | Expose an `app`-shaped PyO3 facade so existing Python extensions can call `app.add_directive` / `add_role` / `add_config_value` / `connect` against the Rust registry | New `app_facade::PyAppFacade` (`unsendable` pyclass sharing `SharedEvents` with `SphinxApp`): `connect`/`disconnect`/`add_event` are fully wired to the native event bus (a connected Python callback is re-invoked with a fresh facade as its `app` argument on every native `emit`); `add_config_value`/`add_directive`/`add_role`/`add_domain`/`add_html_theme`/`require_sphinx` are no-op stubs so a trivial `setup()` doesn't raise `AttributeError`. **Accepted deviation:** the stubs don't reach `SphinxComponentRegistry` yet — real directive/role/domain registration from Python extensions is deferred to **H5a**/**H5b** |
 
 **Gate:** ✅ met — `tests/events_app.rs`: `core_event_emission_order`
 asserts the upstream-relative event ordering across a full `build()`;
 `source_read_and_doctree_read_fire_per_document` asserts one
 `source-read`/`doctree-read` pair per discovered doc;
-`load_extension_config_inited_round_trip` writes a temporary Python
-extension module, inserts it onto `sys.path`, calls
-`SphinxApp::load_extension`, and confirms its `config-inited` listener
-fired during `build()`; `load_extension_unknown_module_errors` checks the
-`AppError::Extension` error path. Full `cargo test -p sphinxdocrs` and
+`load_extension_config_inited_round_trip` declares a trivial extension via
+`conf.py`'s `extensions = [...]` and confirms `SphinxApp::new` auto-loads it
+and its `config-inited` listener fires during `build()`;
+`load_extension_unknown_module_errors` checks the `AppError::Extension`
+error path; `load_extension_prefers_rust_equivalent_when_registered`
+registers a Rust equivalent via `docutilsrs_plugins.register()` and
+confirms `load_extension` calls it instead of ever invoking the real
+Python extension's `setup()`; `load_extension_falls_back_when_version_guard_rejects`
+registers an equivalent with an unsatisfiable `upstream_requires` and
+confirms the fallback to the Python `setup()` plus a recorded warning;
+`needs_extensions_warns_when_required_extension_not_loaded` and
+`needs_extensions_errors_on_version_mismatch` cover
+`SphinxApp::verify_needs_extensions`'s two outcomes. Full
+`cargo test -p sphinxdocrs` and
 `cargo clippy -p sphinxdocrs --all-targets -- -D warnings` are clean.
 
 **Closes:** `events` → **done**, `extension` → **done**, and the

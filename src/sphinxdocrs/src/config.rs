@@ -352,6 +352,22 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
             }
         }
 
+        // ── needs_extensions ─────────────────────────────────────────────────
+        // Python shape: {'ext.name': 'required_version_str', …}
+        if let Ok(Some(v)) = globals.get_item("needs_extensions") {
+            if let Ok(d) = v.cast::<PyDict>() {
+                let pairs: Vec<(String, ConfigVal)> = d
+                    .iter()
+                    .filter_map(|(k, val)| {
+                        let ks = k.extract::<String>().ok()?;
+                        let vs = val.extract::<String>().ok()?;
+                        Some((ks, ConfigVal::Str(vs)))
+                    })
+                    .collect();
+                raw.insert("needs_extensions".into(), ConfigVal::Map(pairs));
+            }
+        }
+
         Ok(raw)
     })
 }
@@ -1077,6 +1093,26 @@ impl SphinxConfig {
                         items
                             .iter()
                             .filter_map(|x| x.as_str().map(String::from))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    /// `needs_extensions` — extension name → minimum required version
+    /// string. Mirrors `Config.needs_extensions`; verified by
+    /// `SphinxApp::verify_needs_extensions`.
+    pub fn needs_extensions(&self) -> HashMap<String, String> {
+        self.get("needs_extensions")
+            .and_then(|v| {
+                if let ConfigVal::Map(items) = v {
+                    Some(
+                        items
+                            .into_iter()
+                            .filter_map(|(k, val)| val.as_str().map(|s| (k, s.to_string())))
                             .collect(),
                     )
                 } else {

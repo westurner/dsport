@@ -9,7 +9,7 @@
 //!
 //! | upstream | Rust target | notes |
 //! |----------|-------------|-------|
-//! | `_load.fetch_inventory` | [`fetch_inventories`] | HTTP GET via `curl` |
+//! | `_load.fetch_inventory` | [`fetch_inventories`] | HTTP GET via [`crate::http_client`] |
 //! | `util.inventory.InventoryFile.loads` | [`Inventory::loads`] | v1 and v2 payloads |
 //! | `util.inventory.InventoryFile.dump` | [`dumps`] | body writer; caller supplies the rows |
 //! | `util.inventory._Inventory` | [`Inventory`] | `type → name → item` lookup |
@@ -23,9 +23,9 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::config::SphinxConfig;
+use crate::http_client;
 
 /// Inventory cache entry: project name and the on-disk path.
 #[derive(Debug, Clone)]
@@ -113,10 +113,10 @@ pub fn fetch_inventories(config: &SphinxConfig, doctreedir: &Path) -> Vec<InvCac
         };
 
         // ── Security: only allow http(s) inventory URLs ──────────────────────
-        // Prevents `curl` from being coerced into reading local files
-        // (`file://`), hitting internal services over other protocols
+        // Prevents the HTTP backend from being coerced into reading local
+        // files (`file://`), hitting internal services over other protocols
         // (`scp://`, `smb://`, `gopher://`, …), or similar SSRF vectors.
-        if !is_http_url(&url) {
+        if !http_client::is_http_url(&url) {
             eprintln!(
                 "Warning: intersphinx: refusing non-http(s) inventory URL {url:?} for {name:?}"
             );
@@ -130,38 +130,13 @@ pub fn fetch_inventories(config: &SphinxConfig, doctreedir: &Path) -> Vec<InvCac
         // from poisoning the cache and being reused on the next run.
         let tmp_file = cache_dir.join(format!("{safe_name}_objects.inv.tmp"));
 
-        // Security-hardened curl invocation:
-        //   --proto '=https,http'    restrict the initial request to http(s)
-        //   --proto-redir '=https,http'  restrict redirect targets too
-        //   --max-redirs 10          bound redirect chains
-        //   --max-time 30            bound total time (anti-hang / DoS)
-        //   --max-filesize 52428800  cap download at 50 MiB (anti disk-fill)
-        //   --fail                   non-zero exit on HTTP >= 400 (no body file)
-        //   --silent                 no progress noise
-        let status = Command::new("curl")
-            .args([
-                "--silent",
-                "--fail",
-                "--location",
-                "--proto",
-                "=https,http",
-                "--proto-redir",
-                "=https,http",
-                "--max-redirs",
-                "10",
-                "--max-time",
-                "30",
-                "--max-filesize",
-                "52428800",
-                "-o",
-                tmp_file.to_str().unwrap_or_default(),
-                "--",
-                &url,
-            ])
-            .status();
-
-        match status {
-            Ok(s) if s.success() => {
+        // `download_to_file` uses the same security-hardened backend as
+        // `builders::linkcheck` (curl by default, or in-process `reqwest`
+        // when built with `--features http-reqwest` and selected via
+        // `SPHINXDOCRS_HTTP_CLIENT=reqwest`): restricted schemes, bounded
+        // redirects, a 30s time limit, and a 50 MiB size cap (anti disk-fill).
+        match http_client::download_to_file(&url, &tmp_file, 30, 52_428_800) {
+            Ok(()) => {
                 // Atomically move the completed download into place.
                 if let Err(e) = std::fs::rename(&tmp_file, &cache_file) {
                     eprintln!("Warning: intersphinx: cannot finalize cache file for {name:?}: {e}");
@@ -173,16 +148,9 @@ pub fn fetch_inventories(config: &SphinxConfig, doctreedir: &Path) -> Vec<InvCac
                     path: cache_file,
                 });
             }
-            Ok(s) => {
-                let _ = std::fs::remove_file(&tmp_file);
-                eprintln!(
-                    "Warning: intersphinx: curl exited {} fetching {url}",
-                    s.code().unwrap_or(-1)
-                );
-            }
             Err(e) => {
                 let _ = std::fs::remove_file(&tmp_file);
-                eprintln!("Warning: intersphinx: failed to run curl for {url}: {e}");
+                eprintln!("Warning: intersphinx: failed to fetch {url}: {e}");
             }
         }
     }
@@ -217,11 +185,10 @@ fn sanitize_project_name(name: &str) -> Option<String> {
 
 /// Return `true` only for `http://` or `https://` URLs (case-insensitive
 /// scheme).  Everything else — `file://`, `scp://`, `ftp://`, schemeless
-/// paths, etc. — is rejected.
-fn is_http_url(url: &str) -> bool {
-    let lower = url.to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://")
-}
+/// paths, etc. — is rejected. See [`crate::http_client::is_http_url`] for the
+/// canonical implementation (tests below call it via this alias).
+#[cfg(test)]
+use http_client::is_http_url;
 
 // ── objects.inv parsing ───────────────────────────────────────────────────────
 

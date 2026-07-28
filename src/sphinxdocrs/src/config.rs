@@ -856,6 +856,49 @@ impl SphinxConfig {
             Env,
             "Number of days to cache intersphinx inventories",
         );
+        // Linkcheck
+        add(
+            "linkcheck_ignore",
+            List(vec![]),
+            Env,
+            "Regex patterns of URIs to skip (reported as ignored)",
+        );
+        add(
+            "linkcheck_allowed_redirects",
+            Map(vec![]),
+            Env,
+            "Regex map of URI pattern -> allowed redirect-target pattern",
+        );
+        add(
+            "linkcheck_anchors",
+            Bool(true),
+            Env,
+            "Check that #fragment anchors exist in the target page",
+        );
+        add(
+            "linkcheck_anchors_ignore",
+            List(vec![Str("^!".into())]),
+            Env,
+            "Regex patterns of anchors to skip checking",
+        );
+        add(
+            "linkcheck_timeout",
+            Int(30),
+            Env,
+            "Seconds to wait for a response before treating a link as broken",
+        );
+        add(
+            "linkcheck_retries",
+            Int(1),
+            Env,
+            "Number of times to retry a rate-limited or failed request",
+        );
+        add(
+            "linkcheck_rate_limit_timeout",
+            Float(300.0),
+            Env,
+            "Seconds to keep retrying a rate-limited host before giving up",
+        );
     }
 
     /// Register an extension-provided config option.
@@ -1152,6 +1195,85 @@ impl SphinxConfig {
                 Some((name, url, inv))
             })
             .collect()
+    }
+
+    /// `linkcheck_ignore` — regex patterns of URIs to skip entirely (reported
+    /// as `ignored`, never fetched).
+    pub fn linkcheck_ignore(&self) -> Vec<String> {
+        self.get("linkcheck_ignore")
+            .and_then(|v| {
+                v.as_list().map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
+            })
+            .unwrap_or_default()
+    }
+
+    /// `linkcheck_allowed_redirects` — map of URI-pattern regex to
+    /// redirect-target-pattern regex. A redirect whose original URI and
+    /// final URI both match a `(from, to)` pair is classified `working`
+    /// rather than `redirected`.
+    pub fn linkcheck_allowed_redirects(&self) -> Vec<(String, String)> {
+        let Some(ConfigVal::Map(entries)) = self.get("linkcheck_allowed_redirects") else {
+            return Vec::new();
+        };
+        entries
+            .into_iter()
+            .filter_map(|(from, to)| to.as_str().map(|to| (from, to.to_string())))
+            .collect()
+    }
+
+    /// `linkcheck_anchors` — whether to verify that `#fragment` anchors exist
+    /// in the fetched page. Defaults to `true`.
+    pub fn linkcheck_anchors(&self) -> bool {
+        matches!(
+            self.get("linkcheck_anchors"),
+            Some(ConfigVal::Bool(true)) | None
+        )
+    }
+
+    /// `linkcheck_anchors_ignore` — regex patterns of anchor names to skip
+    /// checking. Defaults to `["^!"]`, matching upstream (anchors starting
+    /// with `!` are commonly generated dynamically by JS).
+    pub fn linkcheck_anchors_ignore(&self) -> Vec<String> {
+        match self.get("linkcheck_anchors_ignore") {
+            Some(ConfigVal::List(items)) => items
+                .iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect(),
+            _ => vec!["^!".to_string()],
+        }
+    }
+
+    /// `linkcheck_timeout` — seconds to wait for a response. Defaults to 30.
+    pub fn linkcheck_timeout(&self) -> u32 {
+        match self.get("linkcheck_timeout") {
+            Some(ConfigVal::Int(i)) if i > 0 => i as u32,
+            Some(ConfigVal::Float(f)) if f > 0.0 => f as u32,
+            _ => 30,
+        }
+    }
+
+    /// `linkcheck_retries` — number of retry attempts for a rate-limited or
+    /// failed request. Defaults to 1.
+    pub fn linkcheck_retries(&self) -> u32 {
+        match self.get("linkcheck_retries") {
+            Some(ConfigVal::Int(i)) if i >= 0 => i as u32,
+            _ => 1,
+        }
+    }
+
+    /// `linkcheck_rate_limit_timeout` — seconds to keep retrying a
+    /// rate-limited host before giving up. Defaults to 300.
+    pub fn linkcheck_rate_limit_timeout(&self) -> f64 {
+        match self.get("linkcheck_rate_limit_timeout") {
+            Some(ConfigVal::Float(f)) if f >= 0.0 => f,
+            Some(ConfigVal::Int(i)) if i >= 0 => i as f64,
+            _ => 300.0,
+        }
     }
 
     /// `html_theme` — the active HTML theme name.  Sphinx's default is

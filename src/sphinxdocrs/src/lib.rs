@@ -29,6 +29,7 @@ pub mod environment;
 pub mod errors;
 pub mod events;
 pub mod extension;
+pub mod http_client;
 pub mod intersphinx;
 pub mod intl;
 pub mod locale;

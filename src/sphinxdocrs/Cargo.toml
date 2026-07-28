@@ -34,6 +34,14 @@ syntax-highlighting = ["docutilsrs/syntax-highlighting"]
 # `snowballstemmer`; disable to index the lowercased surface form instead.
 search-stemming = ["dep:rust-stemmers"]
 
+# Use an in-process `reqwest` HTTP client instead of shelling out to `curl`
+# for `intersphinx` inventory downloads and `linkcheck` URI checks. Off by
+# default — `curl` needs no extra dependencies and is already hardened the
+# same way. When compiled in, select it at runtime (no rebuild needed to
+# switch back) with the `SPHINXDOCRS_HTTP_CLIENT=reqwest` environment
+# variable; any other value, or this feature being disabled, uses `curl`.
+http-reqwest = ["dep:reqwest"]
+
 # Default feature set.
 default = ["syntax-highlighting", "search-stemming"]
 
@@ -77,6 +85,14 @@ ruff_python_ast = { package = "rustpython-ruff_python_ast", version = "0.15" }
 # Snowball stemmers, generated from the same upstream sources as Python's
 # `snowballstemmer`. Has no transitive dependencies with default features off.
 rust-stemmers = { version = "1.2", default-features = false, optional = true }
+# In-process HTTP client, gated behind the `http-reqwest` feature (see
+# above). Pinned to "0.11" to match the version already resolved via
+# `rvcr`'s dependency chain (a dev-dependency), so enabling this feature
+# does not pull in a second major `reqwest` version.
+reqwest = { version = "0.11", default-features = false, features = [
+    "blocking",
+    "rustls-tls",
+], optional = true }
 
 [dev-dependencies]
 insta = { workspace = true }
@@ -87,6 +103,9 @@ wiremock = { workspace = true }
 rvcr = { workspace = true }
 tempfile = "3"
 criterion = { version = "0.8", features = ["html_reports"] }
+# Async runtime required only to drive `wiremock::MockServer` in
+# `tests/linkcheck_wiremock.rs`; the code under test remains synchronous.
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [[test]]
 name = "otherdocs"

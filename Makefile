@@ -642,7 +642,40 @@ prek-python-develop-all:
 	prek-python-develop-sphinxdocrs
 
 
-otherdocs-sphinx:
+SPHINXBUILDRS=sphinx-build-rs
+SPHINXBUILDRS='cargo run --bin sphinx-build-rs --'
+
+otherdocs-sphinx: otherdocs-sphinx-py otherdocs-sphinx-rs otherdocs-sphinx-diff
+
+otherdocs-sphinx-diff:
+	diff -Naur src/sphinx/doc/_build_py/html src/sphinx/doc/_build_rs/html > otherdocs-sphinx-py-rs.diff
+	ls -al otherdocs-sphinx-rs-py.diff
+
+otherdocs-sphinx-py:
+	@#pip install -e src/sphinx/ --group docs
+	uv pip install --directory src/sphinx -e . --group docs
+	ls -al src/sphinx/doc/Makefile
+	@echo "Building HTML docs to... src/sphinx/doc/_build_py/html"
+	make -C src/sphinx/doc html SPHINXBUILD=sphinx-build BUILDDIR=_build_py
+	@echo "Built HTML docs to: src/sphinx/doc/_build_py/html"
+
+otherdocs-sphinx-rs:
+	@#pip install -e src/sphinx/ --group docs
+	uv pip install --directory src/sphinx -e . --group docs
+	ls -al src/sphinx/doc/Makefile
+	@echo "Building HTML docs to... src/sphinx/doc/_build_rs/html"
+	make -C src/sphinx/doc html SPHINXBUILD=${SPHINXBUILDRS} BUILDDIR=_build_rs
+	@echo "Built HTML docs to: src/sphinx/doc/_build_rs/html"
+
+otherdocs-sphinx-serve:
+	python -m http.server -d src/sphinx/doc/
+
+otherdocs-clean:
+	rm -rf src/sphinx/doc/_build_rs
+	rm -rf src/sphinx/doc/_build_py
+
+
+otherdocs-jinja2:
 	@#pip install -e src/jinja2/ --group docs
 	uv pip install -v --directory src/jinja2 -e . --group docs
 	ls -al src/jinja2/docs/Makefile

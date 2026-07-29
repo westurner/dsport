@@ -108,9 +108,14 @@ mod tests {
 
     #[test]
     fn parses_nested_parens_in_default() {
+        // Nested parens inside a tuple default used to defeat a naive
+        // paren-balance scanner; the real Python parser handles it
+        // correctly regardless. `render_expr` now has full `Expr::Tuple`
+        // support (**H9c**), so the default renders literally instead of
+        // being elided to `...`.
         let (name, sig) = parse_function_signature("configure(opts=(1, 2))");
         assert_eq!(name, "configure");
-        assert_eq!(sig, "opts=...");
+        assert_eq!(sig, "opts=(1, 2)");
     }
 
     #[test]

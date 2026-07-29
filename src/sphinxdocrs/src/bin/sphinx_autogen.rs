@@ -3,9 +3,11 @@
 //! **C4.2**: Full native implementation:
 //! 1. Parse arguments (clap, mirroring upstream).
 //! 2. Scan RST source files for `.. autosummary::` directives.
-//! 3. Generate `.rst` stub files natively from the scanned entries —
-//!    using heuristic type detection (CamelCase → class; otherwise → module).
-//!    Member lists are left empty; `autodoc` populates them at build time.
+//! 3. Generate `.rst` stub files natively from the scanned entries, using
+//!    the **H9a/H9d** PyO3 runtime-import bridge to populate real member
+//!    lists when the target is importable, falling back to heuristic type
+//!    detection (CamelCase → class; otherwise → module) with empty member
+//!    lists when it isn't.
 //!
 //! Delegates to the upstream Python `sphinx-autogen` **only** when:
 //! - `--use-python-impl` flag is present, or
@@ -14,7 +16,7 @@
 use std::path::Path;
 
 use sphinxdocrs::autogen::{
-    AutogenTemplates, find_autosummary_in_files, generate_stubs, parse_args,
+    AutogenTemplates, find_autosummary_in_files, generate_stubs_runtime, parse_args,
 };
 use sphinxdocrs::cli::io::{py_fallback_requested, run_python_impl};
 
@@ -83,13 +85,14 @@ fn main() {
     let templates = AutogenTemplates::with_templatedir(args.templates.as_deref());
 
     let suffix = &args.suffix;
-    let generated = generate_stubs(
+    let generated = generate_stubs_runtime(
         &entries,
         &output_dir,
         suffix,
         /*overwrite=*/ true,
         args.remove_old,
         &templates,
+        &[],
     );
 
     if !generated.is_empty() {

@@ -135,6 +135,75 @@ impl StubContext {
             inherited_members: vec![],
         }
     }
+
+    /// Build context from an autosummary entry via the **H9a/H9d**
+    /// PyO3 runtime-import bridge (`crate::autodoc_runtime`), populating
+    /// real member lists instead of the empty ones `Documenter` normally
+    /// fills in during a full Sphinx build.
+    ///
+    /// Falls back to [`StubContext::from_entry`]'s heuristic (empty member
+    /// lists, type inferred from name casing) when the target can't be
+    /// imported even with `mock_imports` applied — never a hard error.
+    pub fn from_entry_runtime(entry: &AutosummaryEntry, mock_imports: &[String]) -> Self {
+        use crate::autodoc_runtime::MemberKind;
+
+        let mut ctx = StubContext::from_entry(entry);
+
+        match infer_obj_type(&entry.name) {
+            ObjType::Class => {
+                let (module, class_name) = split_fqn(&entry.name);
+                if let Ok(classinfo) =
+                    crate::autodoc_runtime::introspect_class(&module, &class_name, mock_imports)
+                {
+                    ctx.methods = classinfo
+                        .members
+                        .iter()
+                        .filter(|m| m.kind == MemberKind::Method && !m.name.starts_with('_'))
+                        .map(|m| m.name.clone())
+                        .collect();
+                    ctx.all_methods = classinfo
+                        .members
+                        .iter()
+                        .filter(|m| m.kind == MemberKind::Method)
+                        .map(|m| m.name.clone())
+                        .collect();
+                    ctx.attributes = classinfo
+                        .members
+                        .iter()
+                        .filter(|m| {
+                            matches!(m.kind, MemberKind::Attribute | MemberKind::Property)
+                                && !m.name.starts_with('_')
+                        })
+                        .map(|m| m.name.clone())
+                        .collect();
+                    ctx.all_attributes = classinfo
+                        .members
+                        .iter()
+                        .filter(|m| matches!(m.kind, MemberKind::Attribute | MemberKind::Property))
+                        .map(|m| m.name.clone())
+                        .collect();
+                }
+            }
+            ObjType::Module | ObjType::Base => {
+                if let Ok(modinfo) =
+                    crate::autodoc_runtime::introspect_module(&entry.name, mock_imports)
+                {
+                    ctx.functions = modinfo.functions();
+                    ctx.all_functions = modinfo.all_functions();
+                    ctx.classes = modinfo.classes();
+                    ctx.all_classes = modinfo.all_classes();
+                    ctx.exceptions = modinfo.exceptions();
+                    ctx.all_exceptions = modinfo.all_exceptions();
+                    ctx.modules = modinfo.modules();
+                    ctx.all_modules = modinfo.all_modules();
+                    ctx.attributes = modinfo.attributes();
+                    ctx.all_attributes = modinfo.all_attributes();
+                }
+            }
+        }
+
+        ctx
+    }
 }
 
 // ── template selection ────────────────────────────────────────────────────────
@@ -174,9 +243,49 @@ pub fn generate_stub(
     overwrite: bool,
     templates: &AutogenTemplates,
 ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    write_stub(
+        entry,
+        &StubContext::from_entry(entry),
+        output_dir,
+        suffix,
+        overwrite,
+        templates,
+    )
+}
+
+/// Like [`generate_stub`], but populates real member lists through the
+/// **H9a/H9d** PyO3 runtime-import bridge
+/// ([`StubContext::from_entry_runtime`]) instead of leaving them empty.
+/// Falls back to the same heuristic-only output as `generate_stub` when the
+/// target can't be imported even with `mock_imports` applied.
+pub fn generate_stub_runtime(
+    entry: &AutosummaryEntry,
+    output_dir: &Path,
+    suffix: &str,
+    overwrite: bool,
+    templates: &AutogenTemplates,
+    mock_imports: &[String],
+) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    write_stub(
+        entry,
+        &StubContext::from_entry_runtime(entry, mock_imports),
+        output_dir,
+        suffix,
+        overwrite,
+        templates,
+    )
+}
+
+fn write_stub(
+    entry: &AutosummaryEntry,
+    ctx: &StubContext,
+    output_dir: &Path,
+    suffix: &str,
+    overwrite: bool,
+    templates: &AutogenTemplates,
+) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
     let tname = select_template(entry);
-    let ctx = StubContext::from_entry(entry);
-    let content = templates.render(tname, &ctx)?;
+    let content = templates.render(tname, ctx)?;
 
     // Python uses:  filename = Path(path) / (name + suffix)
     // where suffix already has the leading dot.
@@ -223,10 +332,48 @@ pub fn generate_stubs(
     remove_old: bool,
     templates: &AutogenTemplates,
 ) -> Vec<PathBuf> {
+    generate_stubs_impl(entries, output_dir, suffix, overwrite, remove_old, |entry| {
+        generate_stub(entry, output_dir, suffix, overwrite, templates)
+    })
+}
+
+/// Like [`generate_stubs`], but uses [`generate_stub_runtime`] for real
+/// member lists (**H9d**) instead of `generate_stub`'s empty ones.
+pub fn generate_stubs_runtime(
+    entries: &[AutosummaryEntry],
+    output_dir: &Path,
+    suffix: &str,
+    overwrite: bool,
+    remove_old: bool,
+    templates: &AutogenTemplates,
+    mock_imports: &[String],
+) -> Vec<PathBuf> {
+    generate_stubs_impl(entries, output_dir, suffix, overwrite, remove_old, |entry| {
+        generate_stub_runtime(
+            entry,
+            output_dir,
+            suffix,
+            overwrite,
+            templates,
+            mock_imports,
+        )
+    })
+}
+
+fn generate_stubs_impl(
+    entries: &[AutosummaryEntry],
+    output_dir: &Path,
+    suffix: &str,
+    _overwrite: bool,
+    remove_old: bool,
+    mut generate_one: impl FnMut(
+        &AutosummaryEntry,
+    ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>>,
+) -> Vec<PathBuf> {
     let mut generated = Vec::new();
 
     for entry in entries {
-        match generate_stub(entry, output_dir, suffix, overwrite, templates) {
+        match generate_one(entry) {
             Ok(Some(path)) => generated.push(path),
             Ok(None) => {} // skipped (no-overwrite on changed content)
             Err(e) => eprintln!("Warning: failed to generate stub for {}: {e}", entry.name),
@@ -333,6 +480,82 @@ mod tests {
         assert_eq!(ctx.objtype, "class");
         assert_eq!(ctx.module, "sphinx.cmd.build");
         assert_eq!(ctx.objname, "Sphinx");
+    }
+
+    // ── from_entry_runtime (H9a/H9d) ─────────────────────────────────────────
+
+    #[test]
+    fn from_entry_runtime_populates_module_functions() {
+        let entry = AutosummaryEntry {
+            name: "json".to_string(),
+            toctree: None,
+            template: String::new(),
+            recursive: false,
+        };
+        let ctx = StubContext::from_entry_runtime(&entry, &[]);
+        assert_eq!(ctx.objtype, "module");
+        assert!(
+            ctx.functions.iter().any(|f| f == "dumps"),
+            "functions: {:?}",
+            ctx.functions
+        );
+        assert!(
+            ctx.all_functions.iter().any(|f| f == "loads"),
+            "all_functions: {:?}",
+            ctx.all_functions
+        );
+    }
+
+    #[test]
+    fn from_entry_runtime_populates_class_methods() {
+        let entry = AutosummaryEntry {
+            name: "collections.OrderedDict".to_string(),
+            toctree: None,
+            template: String::new(),
+            recursive: false,
+        };
+        let ctx = StubContext::from_entry_runtime(&entry, &[]);
+        assert_eq!(ctx.objtype, "class");
+        assert!(
+            ctx.methods.iter().any(|m| m == "popitem"),
+            "methods: {:?}",
+            ctx.methods
+        );
+    }
+
+    #[test]
+    fn from_entry_runtime_falls_back_to_heuristic_for_unimportable() {
+        let entry = AutosummaryEntry {
+            name: "totally_not_a_real_module_xyz".to_string(),
+            toctree: None,
+            template: String::new(),
+            recursive: false,
+        };
+        let ctx = StubContext::from_entry_runtime(&entry, &[]);
+        // Falls back to `from_entry`'s empty-member heuristic instead of
+        // panicking or erroring.
+        assert_eq!(ctx.objtype, "module");
+        assert!(ctx.functions.is_empty());
+        assert!(ctx.classes.is_empty());
+    }
+
+    // ── generate_stub_runtime ─────────────────────────────────────────────────
+
+    #[test]
+    fn generate_stub_runtime_populates_real_members() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let templates = AutogenTemplates::vendored();
+        let entry = AutosummaryEntry {
+            name: "json".to_string(),
+            toctree: None,
+            template: String::new(),
+            recursive: false,
+        };
+        let path = generate_stub_runtime(&entry, tmpdir.path(), "rst", true, &templates, &[])
+            .unwrap()
+            .unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("dumps"), "content: {content}");
     }
 
     // ── generate_stub ───────────────────────────────────────────────────────

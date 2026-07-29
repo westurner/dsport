@@ -114,7 +114,7 @@ in the notes column of the relevant row.
 | `application.py` | `application` | P3 | **partial** | `SphinxApp`: path validation, config, registry, env, `read()` (**H2**: `find_files` + `read_all`), `build()` (`&mut self`, two-phase). **Gaps:** events, extension loading, parallel build, incremental rebuild, i18n (→ **H4**, **H8**) |
 | `theming.py` | `theme`, `theme_static`, `theme_render` | P3 | **mirrored** ✅ | self-contained `sphinxdocrs_basic` theme + real third-party theme inheritance (`alabaster`/`basic`) rendered through `jinja2rs`; full per-page context (`pathto`/`hasdoc`/`toctree()`/`toc`/relbar/sidebars/`html_context`/`html-page-context`) (**H6**, done). **Accepted deviation:** `theme.conf`/`theme.toml` inheritance-chain parsing still goes through an embedded PyO3 bootstrap rather than pure Rust (**H6a**) |
 | `search/` | `search` | P3 | **done** | `SearchIndex`, `split_words`, `feed`, `to_json`, Snowball stemming for all 15 `sphinx.search` languages (**H1f**, via `stemmer.rs`). **Accepted deviation:** `rust_stemmers`' Dutch algorithm is the legacy `dutch_porter` Snowball revision, not the one `snowballstemmer.stemmer('dutch')` resolves to — patched via built-in `ParityOverrides` for Sphinx's own Dutch stopword vocabulary; broader vocabularies may need project-supplied overrides. `objects`/`objtypes`/`objnames`/`indexentries` now populated from domain data (**H3d**) — see the accepted deviations noted on that row in §3 |
-| `ext/autodoc/` | `autodoc` | P3 | **partial** | static extraction via `ruff_python_parser`: `document_module`, `render_function`, `render_class`. **Gaps:** runtime import, `:members:` filtering, inherited members, type hints, overloads, decorators, `__all__` ordering (→ **H9**) |
+| `ext/autodoc/` | `autodoc` | P3 | **mirrored** ✅ | `document_module`/`document_module_auto`/`render_function`/`render_class` with a PyO3 runtime-import bridge (`autodoc_runtime.rs`, falling back to `ruff_python_parser` static extraction when import fails), `:members:`/`:undoc-members:`/`:private-members:`/`:special-members:`/`:exclude-members:`/`:member-order:` option handling, type hints, decorators (`@property`/`@staticmethod`/`@classmethod`), `__all__` ordering, `autodoc_mock_imports` (**H9**, done). **Accepted deviations:** `:inherited-members:` parsed but not expanded; overload sets render only the last definition; `autodoc_typehints="description"` treated as `"signature"` — see the Tier H9 writeup in §9 |
 | `ext/intersphinx/` | `intersphinx` | P3 | **partial** | `fetch_inventories`, `InvCache`, `Inventory` / `InventoryItem` / `InventoryError` (v1 + v2 `loads`, `load_file`), `dumps`. **Gap:** xref fallback — the parsed inventories are not consulted during reference resolution (→ **H5c**) |
 | `highlighting.py` | — | P3 | **deferred** | blocked on `pygmentsrs` lexer coverage (→ **H10**) |
 | `pycode/` | — | P3 | **keep-python** | superseded by `autodoc.rs` + `ruff_python_ast` |
@@ -185,7 +185,7 @@ manually because minijinja lacks it.
 | `--full` mode | `run_full_quickstart` | wired to `quickstart::generate` |
 | `find_autosummary_in_lines` / `_in_files` | `autogen::scan` | regex parser matching upstream |
 | autosummary stub templates | `assets/autosummary/*.rst` | `base`, `class`, `module`; `underline` + `_` identity filters |
-| `generate_autosummary_docs` (stub writing) | `autogen::generate` | `infer_obj_type` (CamelCase→class, else→module), `StubContext`, `generate_stub(s)`, `--remove-old`. **Accepted deviation:** member lists emitted empty; autodoc fills them at build time (→ **H9d**) |
+| `generate_autosummary_docs` (stub writing) | `autogen::generate` | `infer_obj_type` (CamelCase→class, else→module), `StubContext`, `generate_stub(s)`, `--remove-old`. `StubContext::from_entry_runtime`/`generate_stub(s)_runtime` (**H9d**, done) populate real member lists via the `autodoc_runtime` PyO3 bridge when the target is importable, falling back to the empty-list heuristic otherwise; `bin/sphinx_autogen.rs` uses the runtime variant |
 
 ---
 
@@ -307,7 +307,7 @@ Tagged from `src/sphinx/tests/`.
 | `test_highlighting.py` | highlighting | P3 | **deferred** — blocked on `pygmentsrs` (→ **H10**) |
 | `test_markup/` | markup | P3 | **deferred** — depends on the docutils converter |
 | `test_pycode/` | pycode | P3 | **keep-python** |
-| `test_ext_autodoc/` | autodoc | P3 | **partial** (→ **H9**) |
+| `test_ext_autodoc/` | autodoc | P3 | **partial** — inline unit tests in `autodoc.rs`/`autodoc_runtime.rs`/`autogen/generate.rs` cover option handling, type hints, decorators, runtime introspection, and static-path fallback (**H9**, done); a dedicated `tests/ext_autodoc.rs` mirroring upstream's fixture-based cases directly is still pending |
 | `test_ext_intersphinx/`, `test_util_inventory.py` | intersphinx | P3 | **partial** — `tests/intersphinx.rs` covers `InventoryFile` parsing with an upstream-generated fixture (exact parity); xref-resolution cases still pending (→ **H5c**) |
 | `test_ext_imgconverter/`, `test_ext_napoleon/`, other `test_ext_*` | extensions | P3 | **keep-python** — run against vendored sphinx |
 | `js/` | search JS | — | external |
@@ -851,17 +851,109 @@ now reports the real sets, as three separate `EventArg::StrList`
 arguments matching upstream's `emit('env-get-outdated', app, env,
 added, changed, removed)` shape).
 
-### Tier H9 — autodoc completeness
+### Tier H9 — autodoc completeness ✅
 
 | id | task |
 | --- | --- |
-| **H9a** | Runtime-import bridge: import the target module through PyO3 and introspect, keeping the `ruff_python_ast` static path as the fallback when import fails |
-| **H9b** | Option handling: `:members:`, `:undoc-members:`, `:private-members:`, `:special-members:`, `:inherited-members:`, `:exclude-members:`, `:member-order:` |
-| **H9c** | Signature fidelity: type hints (`autodoc_typehints` modes), overloads, decorators, properties, `__all__` ordering, `autodoc_mock_imports` |
-| **H9d** | Feed real member lists back into `autogen::generate`, retiring the current empty-member accepted deviation |
+| **H9a** | ✅ Runtime-import bridge: import the target module through PyO3 and introspect, keeping the `ruff_python_ast` static path as the fallback when import fails |
+| **H9b** | ✅ Option handling: `:members:`, `:undoc-members:`, `:private-members:`, `:special-members:`, `:inherited-members:`, `:exclude-members:`, `:member-order:` |
+| **H9c** | ✅ Signature fidelity: type hints (`autodoc_typehints` modes), overloads, decorators, properties, `__all__` ordering, `autodoc_mock_imports` |
+| **H9d** | ✅ Feed real member lists back into `autogen::generate`, retiring the current empty-member accepted deviation |
 
 **Gate:** mirror the `test_ext_autodoc/` cases that do not require the
 full Python extension pipeline.
+
+**H9a landed as:** `src/sphinxdocrs/src/autodoc_runtime.rs` (new file)
+— `introspect_module(module_name, mock_imports) -> ModuleIntrospection`
+and `introspect_class(module_name, class_name, mock_imports) ->
+ClassIntrospection`, both going through `Python::attach` + the stdlib
+`inspect` module (`getdoc`, `getmembers`, `ismodule`/`isclass`/
+`isfunction`/`isbuiltin`/`isroutine`, `signature`) rather than
+hand-rolled reflection. `install_mock_imports` seeds
+`sys.modules[name] = unittest.mock.MagicMock()` for each configured
+`autodoc_mock_imports` entry and all of its parent packages, matching
+upstream's `mock()` context manager behavior for unimportable optional
+dependencies. `__all__` is read directly off the imported module object
+(`.getattr("__all__").extract::<Vec<String>>()`) when present and used
+to filter which members upstream would call "documented by default".
+`MemberInfo`/`MemberKind` carry a `str(inspect.signature(obj))` string
+per member so the render step never needs to re-derive a signature for
+runtime-sourced members.
+
+**H9b/H9c landed as:** a full rewrite of `src/sphinxdocrs/src/autodoc.rs`
+(452 → ~1200 lines). `AutodocOptions` (`members`/`undoc_members`/
+`private_members`/`special_members`/`inherited_members`/
+`exclude_members`/`member_order`/`typehints`) plus
+`AutodocOptions::from_option_pairs` parses directive option
+name/value pairs the same way `Documenter.options` does (bare flag ⇒
+"all", comma list ⇒ explicit names). `select_members` ports
+`Documenter.filter_members`'s option-interaction rules faithfully:
+explicitly-`Named` members bypass the `undoc_members` filter,
+`exclude_members` always wins last, and `member_order` sorts
+Alphabetical/`Bysource` (by parse order)/`Groupwise` (by kind, then
+name) exactly as upstream's three modes do. Signature fidelity added
+`format_signature_with_hints`/`render_param` (inline type hints,
+`autodoc_typehints = "signature"` and `"description"` both render
+inline — an accepted deviation, see below), extended `render_expr` with
+`Expr::Subscript`/`Expr::BinOp`/`Expr::Tuple`/`Expr::List`/
+`Expr::UnaryOp` (needed for `Optional[int]`, `int | None`, tuple/list
+defaults, `-x` defaults), and `function_kind`/`is_exception_class`
+detect `@staticmethod`/`@classmethod`/`@property` decorators and
+`Exception`/`*Error` base classes to pick the right `py:` directive
+(`staticmethod`/`classmethod`/`property`/`function`/`method`/`class`/
+`exception`). Fixed a latent pre-existing bug in `render_expr`'s numeric
+literal case in the process: `format!("{:?}", n.value)` on
+`ruff_python_ast::Number::Int` produces a Debug string like `"Int(0)"`,
+and the old code only stripped the `"Int("` prefix, leaving a stray
+trailing `)` in every rendered integer default — invisible before
+because the one test that exercised it (`e=5`) used `.contains()`,
+which doesn't catch a trailing `)`. Now matches on `Number::Int/Float/
+Complex` directly and uses `int::Int`'s real `Display` impl.
+
+**H9d landed as:** `StubContext::from_entry_runtime(entry,
+mock_imports)` in `src/sphinxdocrs/src/autogen/generate.rs` — same
+shape as `StubContext::from_entry`, but calls
+`autodoc_runtime::introspect_module`/`introspect_class` and fills
+`functions`/`all_functions`/`classes`/`all_classes`/`exceptions`/
+`all_exceptions`/`modules`/`all_modules`/`attributes`/`all_attributes`/
+`methods`/`all_methods` from the real introspection result, falling
+back to `from_entry`'s all-empty heuristic when the target isn't
+importable (never a hard error — matches H9a's own fallback
+philosophy). `generate_stub_runtime`/`generate_stubs_runtime` are the
+corresponding file-writing entry points (a shared private `write_stub`/
+`generate_stubs_impl` helper avoids duplicating the existing
+`generate_stub`/`generate_stubs` file-diffing logic); `bin/
+sphinx_autogen.rs` now calls `generate_stubs_runtime` instead of
+`generate_stubs`, so the CLI's stub files get real member lists in
+`.. autosummary::` blocks whenever the target module/class can actually
+be imported. `generate_stub`/`generate_stubs` (empty-member heuristic)
+are kept as-is for callers that don't want to pay the PyO3 import cost.
+
+**Accepted deviations (documented in `autodoc.rs`'s module doc
+comment):**
+- `:inherited-members:` is parsed into `AutodocOptions` but not expanded
+  into base-class members — the static AST path has no MRO to walk, and
+  the runtime path doesn't chase it either.
+- Overload sets (`@overload`-decorated function groups) render only the
+  last definition, mirroring Python's own runtime name-shadowing
+  behavior rather than upstream's multi-signature block rendering.
+- `autodoc_typehints = "description"` is treated identically to
+  `"signature"` (inline) rather than moved into the body as a separate
+  `:type:`/`:rtype:` field list.
+- Static-path `__all__` extraction (`extract_module_all`) only handles
+  a plain `__all__ = [...]`/`(...)` assignment of string literals — no
+  `__all__ += [...]`, conditional branches, or computed lists. The
+  runtime path (`ModuleIntrospection.all`) has none of these
+  limitations since it reads the real attribute off the imported
+  module.
+- `is_exception_class` (static path) is a name heuristic (`Exception`/
+  `BaseException`/`*Error` in the base-class list) rather than true MRO
+  inspection; the runtime path (`introspect_class`) uses real
+  `issubclass()` and has no such limitation.
+
+Verification: `cargo test -p sphinxdocrs` (711 lib tests + all
+integration-test binaries) and `cargo clippy -p sphinxdocrs
+--all-targets -- -D warnings` are both clean.
 
 ### Tier H10 — highlighting
 
@@ -889,12 +981,14 @@ session (also 2026-07-28) closed **H8a**/**H8b**/**H8c** in full (see
 the Tier H8 table above for what landed and its accepted deviations);
 **H8d** (parallel read/write) was explicitly scoped out as its own
 follow-up given the risk to the event-bus/`BuildEnvironment` mutation
-model. `epub`/`texinfo` (the rest of **H7d**) and **H9**/**H10**/**H11**
-are **not implemented** — each is large enough to warrant its own
-session. This section is a concrete starting point for picking them
-back up, based on what these sessions learned about the codebase's
-actual shape (as opposed to `docutilsrs::doctree::NodeKind` in the
-abstract):
+model. A third session (2026-07-28) closed **H9a**/**H9b**/**H9c**/
+**H9d** in full (see the Tier H9 writeup above for what landed and its
+accepted deviations). `epub`/`texinfo` (the rest of **H7d**) and
+**H10**/**H11** are **not implemented** — each is large enough to
+warrant its own session. This section is a concrete starting point for
+picking them back up, based on what these sessions learned about the
+codebase's actual shape (as opposed to `docutilsrs::doctree::NodeKind`
+in the abstract):
 
 - **`epub` (H7d remainder).** The output is a zip archive
   (`crate::zip_writer` in `docutilsrs` already exists and is exercised
@@ -925,17 +1019,10 @@ abstract):
   wrap non-`Send` Python callables). Needs either a shard-by-docname +
   merge-afterward design (upstream's own approach) or a `Send`-safe
   event bus variant for the parallel case specifically.
-- **H9 (autodoc completeness).** The real unblock is **H9a**: a
-  runtime-import bridge through PyO3 (import the target module for
-  real, introspect via `inspect`-equivalent PyO3 calls), since
-  `autodoc.rs`'s current `ruff_python_ast`-only static extraction
-  structurally cannot see runtime-only things (decorated/dynamically
-  created members, C-extension modules, `__all__` computed at import
-  time). This is a hybrid-bridge design problem more than a
-  text-transform one — closer in spirit to **H4b**'s
-  `docutilsrs_plugins` PyO3 resolver than to any H7 builder. Don't
-  attempt **H9b**/**H9c**/**H9d** before **H9a** lands; they all depend
-  on having a real member list to filter/format.
+- **H9 (autodoc completeness) — done.** See the Tier H9 writeup above
+  for what landed (runtime-import bridge via PyO3, option handling,
+  signature fidelity, `autogen::generate` wiring) and its accepted
+  deviations.
 - **H10 (highlighting).** Explicitly gated on `pygmentsrs` lexer
   *breadth*, not on anything in `sphinxdocrs` — see the
   `port-pygments-lexer` skill for that separate workstream. Nothing to
@@ -953,7 +1040,7 @@ abstract):
 
 Suggested order if resuming: **H11** first (cheapest, and will likely
 surface real parity gaps in the builders already added, which is
-valuable feedback before investing in H7d's remainder/H9); then
+valuable feedback before investing in H7d's remainder); then
 **H7d**'s `epub` (self-contained, reuses `zip_writer`); then **H8d**
 (parallel read/write, the one remaining H8 item, now that H8a/b/c's
 sequential incremental pipeline is the proven baseline to parallelize

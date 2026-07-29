@@ -22,6 +22,7 @@ pub mod app_facade;
 pub mod application;
 pub mod assets;
 pub mod autodoc;
+pub mod autodoc_runtime;
 pub mod autogen;
 pub mod build;
 pub mod builders;

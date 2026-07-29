@@ -329,3 +329,185 @@ fn build_otherdocs_parity(#[case] docs_rel: &str, #[case] builder: &str) {
     insta::assert_yaml_snapshot!(format!("{snap_base}_python_tree"), py_tree.clone());
     insta::assert_yaml_snapshot!(format!("{snap_base}_rust_tree"), rs_tree.clone());
 }
+
+// ── index.html content parity ─────────────────────────────────────────────────
+//
+// `build_otherdocs_parity` (above) only compares file *names* — it says
+// nothing about whether the pages Rust does produce match Python's
+// rendered *content*. This test builds the same real doc trees again and
+// diffs each side's rendered `index.html` after stripping known-volatile
+// substrings (the Sphinx / `sphinxdocrs` generator version strings),
+// tracking the diff as an insta snapshot — the same "snapshot the current
+// parity gap, shrink it over time" pattern `tests/parity.rs`'s
+// `html_parity_gap_*`/`sphinx_docs_parity_gap_*` tests already use for
+// structural gaps. A snapshot failure means the diff between the two
+// sides changed (for better or worse) — review with `cargo insta review`.
+
+/// Strip substrings from rendered HTML that legitimately differ between a
+/// Python and a Rust build of the identical project, so this test tracks
+/// real content drift rather than expected per-build noise.
+fn normalize_html_for_diff(html: &str) -> String {
+    // Sphinx's own generator string, e.g. "Sphinx v9.1.1+/f60972202" /
+    // "Sphinx 9.1.1".
+    let re_sphinx_version =
+        regex::Regex::new(r"Sphinx v?\d+\.\d+(\.\d+)?(\+/[0-9a-f]+)?").expect("valid regex");
+    let mut out = re_sphinx_version
+        .replace_all(html, "Sphinx VERSION")
+        .into_owned();
+    // `theme_render.rs` reports this crate's own version as
+    // `sphinx_version` in lieu of a bundled Python Sphinx version.
+    out = out.replace(env!("CARGO_PKG_VERSION"), "VERSION");
+    out
+}
+
+/// Render a compact unified-style diff between `a` (labelled `label_a`)
+/// and `b` (labelled `label_b`), capped to `max_lines` changed lines so a
+/// wildly different page (e.g. Rust's output missing autodoc/graphviz
+/// content entirely) doesn't blow up the snapshot file — callers only
+/// need enough to see *what kind* of drift is happening, not a full
+/// byte-level transcript.
+fn compact_line_diff(label_a: &str, a: &str, label_b: &str, b: &str, max_lines: usize) -> String {
+    let diff = similar::TextDiff::from_lines(a, b);
+    let mut out = String::new();
+    let mut shown = 0usize;
+    let mut truncated = false;
+    for change in diff.iter_all_changes() {
+        if change.tag() == similar::ChangeTag::Equal {
+            continue;
+        }
+        if max_lines != 0 && shown >= max_lines {
+            truncated = true;
+            break;
+        }
+        let sign = match change.tag() {
+            similar::ChangeTag::Delete => '-',
+            similar::ChangeTag::Insert => '+',
+            similar::ChangeTag::Equal => ' ',
+        };
+        out.push(sign);
+        out.push(' ');
+        out.push_str(change.value());
+        if !change.value().ends_with('\n') {
+            out.push('\n');
+        }
+        shown += 1;
+    }
+    if truncated {
+        out.push_str("... (diff truncated) ...\n");
+    }
+    if out.is_empty() {
+        format!("{label_a} and {label_b} are identical after normalization\n")
+    } else {
+        out
+    }
+}
+
+#[rstest]
+#[case("docs", "html")]
+#[case("src/sphinx/doc", "html")]
+#[case("src/sphinxdocrs/docs", "html")]
+#[case("src/jinja2/docs", "html")]
+#[case("src/MyST-Parser/docs", "html")]
+#[case("src/pygments/doc", "html")]
+#[case("src/pygmentsrs/docs", "html")]
+fn build_otherdocs_index_html_content_parity(#[case] docs_rel: &str, #[case] builder: &str) {
+    // ── pre-flight checks (mirrors build_otherdocs_parity) ─────────────────
+    let docs_root = workspace_docs_path(docs_rel);
+
+    if !qualifies(&docs_root) {
+        eprintln!("SKIP {docs_rel}: directory missing or lacks Makefile/conf.py");
+        return;
+    }
+    if !has_program("make") {
+        eprintln!("SKIP {docs_rel}: `make` not found in PATH");
+        return;
+    }
+    if !has_program("sphinx-build") {
+        eprintln!("SKIP {docs_rel}: `sphinx-build` not found in PATH");
+        return;
+    }
+
+    let workspace_root = workspace_docs_path("");
+    if let Some(msg) = check_missing_deps_for_skip(&docs_root, &workspace_root) {
+        eprintln!("SKIP {docs_rel}: missing Python dependencies required for docs build\n{msg}");
+        return;
+    }
+
+    // ── build both sides ────────────────────────────────────────────────────
+    let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
+    let rs_out = TempDir::new().expect("create rs_out tempdir");
+    let py_out = TempDir::new().expect("create py_out tempdir");
+
+    let (rs_code, rs_stderr) = sphinx_make_build(&docs_root, rs_bin, builder, rs_out.path());
+    let (py_code, py_stderr) =
+        sphinx_make_build(&docs_root, "sphinx-build", builder, py_out.path());
+
+    if py_code != 0
+        && (py_stderr.contains("ModuleNotFoundError") || py_stderr.contains("ImportError"))
+    {
+        let missing: Vec<&str> = py_stderr
+            .lines()
+            .filter(|l| l.contains("ModuleNotFoundError") || l.contains("No module named"))
+            .collect();
+        eprintln!(
+            "SKIP {docs_rel}: Python build failed due to missing packages:\n{}",
+            missing.join("\n")
+        );
+        return;
+    }
+    if py_code != 0 {
+        eprintln!("SKIP {docs_rel}: Python build failed (exit {py_code}):\n{py_stderr}");
+        return;
+    }
+    if rs_code != 0 {
+        eprintln!(
+            "SKIP {docs_rel}: Rust build failed (exit {rs_code}), nothing to compare:\n{rs_stderr}"
+        );
+        return;
+    }
+
+    // ── locate index.html on each side ──────────────────────────────────────
+    let rs_build_sub = rs_out.path().join(builder);
+    let py_build_sub = py_out.path().join(builder);
+    let rs_root = if rs_build_sub.is_dir() {
+        rs_build_sub.as_path()
+    } else {
+        rs_out.path()
+    };
+    let py_root = if py_build_sub.is_dir() {
+        py_build_sub.as_path()
+    } else {
+        py_out.path()
+    };
+
+    let py_index = py_root.join("index.html");
+    let rs_index = rs_root.join("index.html");
+
+    if !py_index.is_file() {
+        eprintln!("SKIP {docs_rel}: Python build produced no index.html");
+        return;
+    }
+    assert!(
+        rs_index.is_file(),
+        "Rust build for `{docs_rel}` produced no index.html at {} even though Python did",
+        rs_index.display()
+    );
+
+    let py_html = std::fs::read_to_string(&py_index)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", py_index.display()));
+    let rs_html = std::fs::read_to_string(&rs_index)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", rs_index.display()));
+
+    let py_norm = normalize_html_for_diff(&py_html);
+    let rs_norm = normalize_html_for_diff(&rs_html);
+
+    // ── diff + snapshot ──────────────────────────────────────────────────────
+    let diff = compact_line_diff("python", &py_norm, "rust", &rs_norm, 0);
+
+    let snap_name = format!(
+        "otherdocs__{}__{}__index_html_diff",
+        docs_rel.replace(['/', '\\', '.'], "_"),
+        builder,
+    );
+    insta::assert_snapshot!(snap_name, diff);
+}

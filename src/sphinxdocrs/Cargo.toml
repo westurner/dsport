@@ -107,6 +107,11 @@ criterion = { version = "0.8", features = ["html_reports"] }
 # Async runtime required only to drive `wiremock::MockServer` in
 # `tests/linkcheck_wiremock.rs`; the code under test remains synchronous.
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# Line/word diffing for tests/otherdocs.rs's index.html content-parity
+# check. Already resolved in the workspace lockfile as `insta`'s own
+# diffing engine, so depending on it directly here adds no new fetch --
+# just exposes the same crate's public API to test code.
+similar = "2"
 
 [[test]]
 name = "otherdocs"

@@ -21,6 +21,8 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use super::scan::{ScannedObject, scan_domain_objects};
 use super::{Domain, ObjectEntry, XrefTarget, normalize_id};
 use crate::environment::BuildEnvironment;
@@ -105,9 +107,10 @@ pub fn py_signature_of(objtype: &str, args: &str) -> (String, String) {
 }
 
 /// Rust port of `sphinx.domains.python.PythonDomain`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PyDomain {
     /// `(objtype, fullname) -> (docname, anchor, rendered_signature)`.
+    #[serde(with = "crate::domains::tuple_key_map")]
     pub objects: HashMap<(String, String), (String, String, String)>,
 }
 

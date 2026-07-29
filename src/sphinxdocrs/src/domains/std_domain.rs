@@ -13,6 +13,8 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use super::{Domain, ObjectEntry, XrefTarget, normalize_id};
 use crate::environment::BuildEnvironment;
 
@@ -23,11 +25,12 @@ pub type Labels = HashMap<String, (String, String, String)>;
 pub type AnonLabels = HashMap<String, (String, String)>;
 
 /// Rust port of `sphinx.domains.std.StandardDomain`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StdDomain {
     pub labels: Labels,
     pub anonlabels: AnonLabels,
     /// `(objtype, name) -> (docname, labelid)`. Mirrors `StandardDomain.objects`.
+    #[serde(with = "crate::domains::tuple_key_map")]
     pub objects: HashMap<(String, String), (String, String)>,
     /// `term.lower() -> (docname, labelid)`. Mirrors `StandardDomain._terms`.
     pub terms: HashMap<String, (String, String)>,

@@ -47,7 +47,46 @@ pub use py_domain::PyDomain;
 pub use rst_domain::RstDomain;
 pub use std_domain::StdDomain;
 
+use serde::{Deserialize, Serialize};
+
 use crate::environment::BuildEnvironment;
+
+// ── (de)serialization helper for tuple-keyed maps (H8b) ──────────────────
+
+/// `serde(with = ...)` helper for `HashMap<(String, String), V>` fields
+/// (every domain's `objects` map): `serde_json` cannot serialize a map
+/// whose keys aren't strings, so this round-trips the map through a
+/// `Vec<((String, String), V)>` instead. Used by
+/// [`std_domain::StdDomain`]/[`rst_domain::RstDomain`]/
+/// [`py_domain::PyDomain`]/[`js_domain::JsDomain`] so `BuildEnvironment`
+/// persistence (**H8b**) can derive `Serialize`/`Deserialize` directly on
+/// the live domain structs instead of maintaining a parallel snapshot type.
+pub mod tuple_key_map {
+    use std::collections::HashMap;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S, V>(
+        map: &HashMap<(String, String), V>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        V: Serialize,
+    {
+        let entries: Vec<(&(String, String), &V)> = map.iter().collect();
+        entries.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D, V>(deserializer: D) -> Result<HashMap<(String, String), V>, D::Error>
+    where
+        D: Deserializer<'de>,
+        V: Deserialize<'de>,
+    {
+        let entries: Vec<((String, String), V)> = Vec::deserialize(deserializer)?;
+        Ok(entries.into_iter().collect())
+    }
+}
 
 // ── shared types ──────────────────────────────────────────────────────────────
 
@@ -71,7 +110,7 @@ pub struct XrefTarget {
 ///
 /// See the module-level accepted-deviation note for why this is a
 /// text-scan result rather than a real `pending_xref` doctree node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingXref {
     /// Domain prefix (`"std"` for unprefixed roles like `:ref:`, `"rst"`
     /// for `:rst:dir:`, etc.).
@@ -122,7 +161,7 @@ pub struct ObjectEntry {
 
 /// The five `.. index::` entry forms recognized by
 /// `sphinx.util.nodes.process_index_entry`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IndexEntryKind {
     Single,
     Pair,
@@ -135,7 +174,7 @@ pub enum IndexEntryKind {
 ///
 /// See [`scan::scan_index_entries`] for the accepted deviation (text-scan,
 /// no in-page anchor tracking).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IndexEntry {
     pub kind: IndexEntryKind,
     /// The entry's display text. For `pair`/`triple` entries this is the

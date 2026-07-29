@@ -11,14 +11,17 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use super::{Domain, ObjectEntry, XrefTarget};
 use crate::environment::BuildEnvironment;
 
 /// Rust port of `sphinx.domains.rst.ReSTDomain`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RstDomain {
     /// `(objtype, name) -> (docname, labelid)`, objtype one of
     /// `"directive"` / `"role"`.
+    #[serde(with = "crate::domains::tuple_key_map")]
     pub objects: HashMap<(String, String), (String, String)>,
 }
 

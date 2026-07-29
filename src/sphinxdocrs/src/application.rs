@@ -26,10 +26,10 @@ use pyo3::prelude::*;
 
 use crate::app_events::{AppEventManager, EventArg, SharedEvents};
 use crate::app_facade::{PyAppFacade, SharedAssets, SharedConfig, seed_shared_config};
-use crate::builders::html::HtmlBuilder;
 use crate::builders::changes::ChangesBuilder;
 use crate::builders::dirhtml::DirhtmlBuilder;
 use crate::builders::gettext::GettextBuilder;
+use crate::builders::html::HtmlBuilder;
 use crate::builders::json::JsonBuilder;
 use crate::builders::latex::LatexBuilder;
 use crate::builders::linkcheck::LinkcheckBuilder;
@@ -40,7 +40,7 @@ use crate::builders::text::TextBuilder;
 use crate::builders::xml::XmlBuilder;
 use crate::builders::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
-use crate::environment::{BuildEnvironment, EnvProject};
+use crate::environment::{BuildEnvironment, CONFIG_CHANGED, CONFIG_NEW, CONFIG_OK, EnvProject};
 use crate::extension::Extension;
 use crate::registry::SphinxComponentRegistry;
 
@@ -195,6 +195,21 @@ pub struct SphinxApp {
     /// `BuildEnvironment::added_css_files`/`added_js_files` by
     /// [`build`](Self::build) just before dispatching to a builder.
     pub assets: SharedAssets,
+    /// `-E`/`--fresh-env`: when `true`, [`read`](Self::read) never loads
+    /// a previously-persisted environment (**H8a**/**H8b**), so every
+    /// found document is reported `added` and gets a full fresh read.
+    /// Set via [`set_incremental_options`](Self::set_incremental_options);
+    /// defaults to `false` (use a saved environment when one exists,
+    /// matching upstream's default).
+    pub freshenv: bool,
+    /// `-a`/`--write-all`. Recorded for CLI parity and diagnostics, but
+    /// **does not change [`read`](Self::read)'s behavior**: every native
+    /// builder in this crate already re-renders every document on every
+    /// build (none has an "is this doc's output already up to date"
+    /// write-skip to bypass), which is exactly what `-a` asks for — so
+    /// the flag's effect is already the unconditional default here.
+    /// Set via [`set_incremental_options`](Self::set_incremental_options).
+    pub force_all: bool,
 }
 
 impl std::fmt::Debug for SphinxApp {
@@ -303,6 +318,8 @@ impl SphinxApp {
             extension_sources: HashMap::new(),
             py_config,
             assets,
+            freshenv: false,
+            force_all: false,
         };
 
         // Mirrors the tail of `Sphinx.__init__`: load every extension named
@@ -391,7 +408,11 @@ impl SphinxApp {
 
             let facade = Py::new(
                 py,
-                PyAppFacade::new(self.events.clone(), self.py_config.clone(), self.assets.clone()),
+                PyAppFacade::new(
+                    self.events.clone(),
+                    self.py_config.clone(),
+                    self.assets.clone(),
+                ),
             )?;
             let metadata = setup.call1((facade,))?;
 
@@ -496,7 +517,24 @@ impl SphinxApp {
     /// Mirrors `Sphinx._init_builder` → `BuildEnvironment.find_files` +
     /// `Builder.read` (i.e. `env-get-outdated` / `env-purge-doc` /
     /// `read-source` machinery collapsed into [`BuildEnvironment::find_files`]
-    /// + [`BuildEnvironment::read_all`] for the **H2** two-phase pipeline).
+    /// + [`BuildEnvironment::read_docs`] for the **H2** two-phase pipeline).
+    ///
+    /// **H8a/H8b** (incremental rebuild): unless [`freshenv`](Self::freshenv)
+    /// is set, this first tries to load a previously-persisted environment
+    /// ([`BuildEnvironment::load_persisted`]) from a prior invocation
+    /// against the same `doctreedir`. If one loads, its
+    /// [`SphinxConfig::stable_hash`] is compared against the current
+    /// config's — a mismatch is treated as `CONFIG_CHANGED` (forcing every
+    /// previously-read document to be reported as `changed`, matching
+    /// upstream's "config changed -> re-read everything" behavior); a
+    /// match is `CONFIG_OK`. No persisted environment (or `freshenv`) is
+    /// `CONFIG_NEW`. [`BuildEnvironment::get_outdated`] then decides which
+    /// documents actually need re-reading — only those are passed to
+    /// [`BuildEnvironment::read_docs`], and every `removed` document is
+    /// purged via [`BuildEnvironment::remove_doc`]. The environment is
+    /// persisted again at the end via
+    /// [`BuildEnvironment::save_persisted`] so the *next* invocation
+    /// against the same `doctreedir` can skip unchanged documents too.
     ///
     /// Called automatically by [`build`](Self::build); exposed separately so
     /// callers/tests can inspect the environment (`found_docs`, `all_docs`,
@@ -505,21 +543,68 @@ impl SphinxApp {
     pub fn read(&mut self) -> Result<(), AppError> {
         self.env.find_files()?;
 
-        let mut docnames: Vec<String> = self.env.found_docs().iter().cloned().collect();
-        docnames.sort();
-        self.events
-            .borrow_mut()
-            .emit("env-get-outdated", &[EventArg::StrList(vec![])]);
-        self.events
-            .borrow_mut()
-            .emit("env-before-read-docs", &[EventArg::StrList(docnames)]);
+        let mut config_changed = false;
+        if !self.freshenv {
+            if let Some(persisted) = self.env.load_persisted() {
+                let saved_hash = self.env.apply_persisted(persisted);
+                if saved_hash != self.config.stable_hash() {
+                    config_changed = true;
+                    self.env.set_config_status(CONFIG_CHANGED, "config changed");
+                } else {
+                    self.env.set_config_status(CONFIG_OK, "");
+                }
+            } else {
+                self.env.set_config_status(CONFIG_NEW, "new config");
+            }
+        } else {
+            self.env
+                .set_config_status(CONFIG_NEW, "fresh environment requested (-E)");
+        }
 
-        self.env.read_all_with_events(&self.events)?;
+        let (added, changed, removed) = self.env.get_outdated(config_changed);
+
+        for docname in &removed {
+            self.env.remove_doc(docname);
+        }
+
+        let mut to_read = added.clone();
+        to_read.extend(changed.iter().cloned());
+        to_read.sort();
+        to_read.dedup();
+
+        self.events.borrow_mut().emit(
+            "env-get-outdated",
+            &[
+                EventArg::StrList(added),
+                EventArg::StrList(changed),
+                EventArg::StrList(removed),
+            ],
+        );
+        self.events.borrow_mut().emit(
+            "env-before-read-docs",
+            &[EventArg::StrList(to_read.clone())],
+        );
+
+        self.env.read_docs(to_read, Some(&self.events))?;
 
         self.events.borrow_mut().emit("env-updated", &[]);
         self.warnings.extend(self.env.check_consistency());
         self.events.borrow_mut().emit("env-check-consistency", &[]);
+
+        self.env.save_persisted().map_err(AppError::from)?;
+
         Ok(())
+    }
+
+    /// Set the **H8a** incremental-rebuild flags
+    /// (`-E`/`--fresh-env` and `-a`/`--write-all`). Must be called before
+    /// [`read`](Self::read) (and therefore before [`build`](Self::build))
+    /// to have any effect. Defaults to `false`/`false` (use a saved
+    /// environment and read only outdated documents, matching upstream's
+    /// default incremental behavior) when never called.
+    pub fn set_incremental_options(&mut self, freshenv: bool, force_all: bool) {
+        self.freshenv = freshenv;
+        self.force_all = force_all;
     }
 
     /// Run the build.

@@ -33,9 +33,10 @@
 //! full `setup()` hook, `get_doctree`, `resolve_references`, search index.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use docutilsrs::doctree::{Doctree, NodeKind};
+use serde::{Deserialize, Serialize};
 
 use crate::builders::BuildError;
 use crate::config::SphinxConfig;
@@ -541,7 +542,9 @@ impl BuildEnvironment {
     /// the port; they are picked up again in **H8** and **H3a**
     /// respectively.
     pub fn read_all(&mut self) -> Result<Vec<String>, BuildError> {
-        self.read_all_impl(None)
+        let mut docnames: Vec<String> = self.found_docs().iter().cloned().collect();
+        docnames.sort();
+        self.read_all_impl(docnames, None)
     }
 
     /// Same as [`read_all`](Self::read_all), but emits `source-read`
@@ -552,17 +555,34 @@ impl BuildEnvironment {
         &mut self,
         events: &crate::app_events::SharedEvents,
     ) -> Result<Vec<String>, BuildError> {
-        self.read_all_impl(Some(events))
+        let mut docnames: Vec<String> = self.found_docs().iter().cloned().collect();
+        docnames.sort();
+        self.read_all_impl(docnames, Some(events))
+    }
+
+    /// Read exactly `docnames` (parsed, domain-scanned, and persisted to
+    /// the doctree store — same per-document work `read_all` does),
+    /// rather than every [`found_docs`](Self::found_docs) entry.
+    ///
+    /// Used by [`crate::application::SphinxApp::read`]'s **H8a**
+    /// incremental path to re-read only the documents `get_outdated`
+    /// reported as added/changed, leaving already-up-to-date documents'
+    /// persisted doctrees and domain data (restored by
+    /// [`apply_persisted`](Self::apply_persisted)) untouched.
+    pub fn read_docs(
+        &mut self,
+        docnames: Vec<String>,
+        events: Option<&crate::app_events::SharedEvents>,
+    ) -> Result<Vec<String>, BuildError> {
+        self.read_all_impl(docnames, events)
     }
 
     fn read_all_impl(
         &mut self,
+        docnames: Vec<String>,
         events: Option<&crate::app_events::SharedEvents>,
     ) -> Result<Vec<String>, BuildError> {
         use crate::app_events::EventArg;
-
-        let mut docnames: Vec<String> = self.found_docs().iter().cloned().collect();
-        docnames.sort();
 
         for docname in &docnames {
             if let Some(events) = events {
@@ -806,6 +826,264 @@ impl BuildEnvironment {
         warnings.sort();
         warnings
     }
+
+    // ── H8a: incremental rebuild — outdated detection ─────────────────────────
+
+    /// Determine which documents need (re-)reading.
+    ///
+    /// Mirrors `BuildEnvironment.get_outdated_files(config_changed)`,
+    /// returning `(added, changed, removed)` docname lists (each sorted).
+    ///
+    /// - `added`: found but never read before (no `all_docs` entry).
+    /// - `changed`: previously read, but `config_changed` is `true`, the
+    ///   docname is in [`reread_always`](Self) (mirrors upstream's
+    ///   `env.reread_always`, e.g. documents using `today`/`now`), or its
+    ///   source file (or any recorded dependency) has a newer mtime than
+    ///   its last-read time.
+    /// - `removed`: previously read (has an `all_docs` entry) but no
+    ///   longer in [`found_docs`](Self::found_docs).
+    ///
+    /// `config_changed` should be `true` when the caller has determined
+    /// the resolved config differs from what was persisted with this env
+    /// (compare [`SphinxConfig::stable_hash`](crate::config::SphinxConfig::stable_hash)
+    /// against [`EnvPersisted::config_hash`]) — every previously-read
+    /// document is then reported as `changed` regardless of mtime,
+    /// matching upstream's "config changed -> re-read everything"
+    /// fallback.
+    ///
+    /// **Accepted deviation:** mtime resolution is whatever the
+    /// filesystem/OS clock gives (the same source upstream's `os.stat`
+    /// uses), not content hashing.
+    pub fn get_outdated(&self, config_changed: bool) -> (Vec<String>, Vec<String>, Vec<String>) {
+        let found = self.found_docs();
+        let mut removed: Vec<String> = self
+            .all_docs
+            .keys()
+            .filter(|d| !found.contains(d.as_str()))
+            .cloned()
+            .collect();
+        removed.sort();
+
+        let mut added = Vec::new();
+        let mut changed = Vec::new();
+
+        for docname in found {
+            let Some(&last_read) = self.all_docs.get(docname) else {
+                added.push(docname.clone());
+                continue;
+            };
+            if config_changed || self.reread_always.contains(docname) {
+                changed.push(docname.clone());
+                continue;
+            }
+            let src_path = self.doc2path(docname);
+            let mut outdated = mtime_micros(&src_path)
+                .map(|m| m > last_read)
+                .unwrap_or(true);
+            if !outdated {
+                if let Some(deps) = self.dependencies.get(docname) {
+                    for dep in deps {
+                        let dep_path = self.srcdir.join(dep);
+                        if mtime_micros(&dep_path)
+                            .map(|m| m > last_read)
+                            .unwrap_or(true)
+                        {
+                            outdated = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if outdated {
+                changed.push(docname.clone());
+            }
+        }
+        added.sort();
+        changed.sort();
+        (added, changed, removed)
+    }
+
+    /// Purge every trace of `docname` from this environment (mirrors
+    /// `BuildEnvironment.clear_doc`), including its persisted doctree
+    /// file. Called for every docname [`get_outdated`](Self::get_outdated)
+    /// reports as `removed`.
+    pub fn remove_doc(&mut self, docname: &str) {
+        use crate::domains::Domain as _;
+
+        self.all_docs.remove(docname);
+        self.dependencies.remove(docname);
+        self.included.remove(docname);
+        self.reread_always.remove(docname);
+        self.metadata.remove(docname);
+        self.titles.remove(docname);
+        self.longtitles.remove(docname);
+        self.toc_num_entries.remove(docname);
+        self.toc_secnumbers.remove(docname);
+        self.toctree_includes.remove(docname);
+        self.files_to_rebuild.remove(docname);
+        for deps in self.files_to_rebuild.values_mut() {
+            deps.remove(docname);
+        }
+        self.glob_toctrees.remove(docname);
+        self.numbered_toctrees.remove(docname);
+        self.pending_xrefs.remove(docname);
+        self.indexentries.remove(docname);
+        self.std_domain.clear_doc(docname);
+        self.rst_domain.clear_doc(docname);
+        self.py_domain.clear_doc(docname);
+        self.js_domain.clear_doc(docname);
+        if let Ok(path) = self.doctree_path(docname) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    // ── H8b: environment persistence ──────────────────────────────────────────
+
+    /// Snapshot the persistable subset of this environment. See
+    /// [`EnvPersisted`] for exactly what is (and isn't) included.
+    pub fn to_persisted(&self) -> EnvPersisted {
+        EnvPersisted {
+            version: ENV_PERSISTED_VERSION,
+            config_hash: self.config.stable_hash(),
+            all_docs: self.all_docs.clone(),
+            dependencies: self.dependencies.clone(),
+            included: self.included.clone(),
+            reread_always: self.reread_always.clone(),
+            metadata: self.metadata.clone(),
+            titles: self.titles.clone(),
+            longtitles: self.longtitles.clone(),
+            toc_num_entries: self.toc_num_entries.clone(),
+            toc_secnumbers: self.toc_secnumbers.clone(),
+            toctree_includes: self.toctree_includes.clone(),
+            files_to_rebuild: self.files_to_rebuild.clone(),
+            glob_toctrees: self.glob_toctrees.clone(),
+            numbered_toctrees: self.numbered_toctrees.clone(),
+            domaindata: self.domaindata.clone(),
+            std_domain: self.std_domain.clone(),
+            rst_domain: self.rst_domain.clone(),
+            py_domain: self.py_domain.clone(),
+            js_domain: self.js_domain.clone(),
+            pending_xrefs: self.pending_xrefs.clone(),
+            indexentries: self.indexentries.clone(),
+        }
+    }
+
+    /// Apply a previously-saved snapshot onto this (freshly-constructed)
+    /// environment, overwriting every field [`EnvPersisted`] carries.
+    /// Returns the snapshot's `config_hash` so the caller can compare it
+    /// against the current config's
+    /// [`SphinxConfig::stable_hash`](crate::config::SphinxConfig::stable_hash)
+    /// to decide whether a full re-read is needed anyway.
+    pub fn apply_persisted(&mut self, p: EnvPersisted) -> u64 {
+        let config_hash = p.config_hash;
+        self.all_docs = p.all_docs;
+        self.dependencies = p.dependencies;
+        self.included = p.included;
+        self.reread_always = p.reread_always;
+        self.metadata = p.metadata;
+        self.titles = p.titles;
+        self.longtitles = p.longtitles;
+        self.toc_num_entries = p.toc_num_entries;
+        self.toc_secnumbers = p.toc_secnumbers;
+        self.toctree_includes = p.toctree_includes;
+        self.files_to_rebuild = p.files_to_rebuild;
+        self.glob_toctrees = p.glob_toctrees;
+        self.numbered_toctrees = p.numbered_toctrees;
+        self.domaindata = p.domaindata;
+        self.std_domain = p.std_domain;
+        self.rst_domain = p.rst_domain;
+        self.py_domain = p.py_domain;
+        self.js_domain = p.js_domain;
+        self.pending_xrefs = p.pending_xrefs;
+        self.indexentries = p.indexentries;
+        config_hash
+    }
+
+    /// Path to the persisted environment snapshot. Mirrors upstream's
+    /// `doctreedir/environment.pickle`, using `.json` instead (see
+    /// [`EnvPersisted`]'s doc comment for the format deviation).
+    pub fn persisted_path(&self) -> PathBuf {
+        self.doctreedir.join("environment.json")
+    }
+
+    /// Serialize [`to_persisted`](Self::to_persisted) to
+    /// [`persisted_path`](Self::persisted_path).
+    pub fn save_persisted(&self) -> Result<(), BuildError> {
+        let path = self.persisted_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let bytes = serde_json::to_vec(&self.to_persisted())
+            .map_err(|e| BuildError::Other(format!("failed to serialize environment: {e}")))?;
+        std::fs::write(&path, bytes)?;
+        Ok(())
+    }
+
+    /// Load a previously-saved environment snapshot, if one exists at
+    /// [`persisted_path`](Self::persisted_path) and its
+    /// [`EnvPersisted::version`] matches [`ENV_PERSISTED_VERSION`].
+    ///
+    /// Returns `None` (never an error) for a missing file, an
+    /// unreadable/corrupt file, or a version mismatch — all three are
+    /// treated identically to upstream's `EnvironmentError` fallback:
+    /// "no usable saved environment, start fresh".
+    pub fn load_persisted(&self) -> Option<EnvPersisted> {
+        let bytes = std::fs::read(self.persisted_path()).ok()?;
+        let p: EnvPersisted = serde_json::from_slice(&bytes).ok()?;
+        if p.version != ENV_PERSISTED_VERSION {
+            return None;
+        }
+        Some(p)
+    }
+}
+
+/// Current [`EnvPersisted::version`]. Bump on any breaking change to that
+/// struct's shape so an on-disk file saved by a previous `sphinxdocrs`
+/// version is detected as stale (treated as absent) rather than
+/// misinterpreted by `serde_json` (which would otherwise silently accept
+/// a structurally-compatible-but-semantically-different old file).
+pub const ENV_PERSISTED_VERSION: u32 = 1;
+
+/// On-disk snapshot of the parts of [`BuildEnvironment`] that must
+/// survive between separate `sphinx-build-rs` invocations for
+/// incremental rebuild (**H8a**) to work: which documents were read and
+/// when, their titles/toctree structure, and every domain's recovered
+/// objects/labels/xrefs. Excludes anything cheaply recomputed every run
+/// (`project`, `settings`) or inherently non-serializable (`events`,
+/// which holds boxed closures).
+///
+/// Stored as JSON at `doctreedir/environment.json`
+/// ([`BuildEnvironment::persisted_path`]), matching the existing
+/// `Doctree::to_bytes`/`from_bytes` (**H2b**) precedent of a versioned
+/// serde-json format instead of Python's pickle — an accepted deviation
+/// recorded in the port plan (§3, `H8b` row).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvPersisted {
+    /// Format version; see [`ENV_PERSISTED_VERSION`].
+    pub version: u32,
+    /// [`SphinxConfig::stable_hash`](crate::config::SphinxConfig::stable_hash)
+    /// at the time this snapshot was saved.
+    pub config_hash: u64,
+    pub all_docs: HashMap<String, i64>,
+    pub dependencies: HashMap<String, HashSet<String>>,
+    pub included: HashMap<String, HashSet<String>>,
+    pub reread_always: HashSet<String>,
+    pub metadata: HashMap<String, HashMap<String, String>>,
+    pub titles: HashMap<String, String>,
+    pub longtitles: HashMap<String, String>,
+    pub toc_num_entries: HashMap<String, usize>,
+    pub toc_secnumbers: HashMap<String, HashMap<String, Vec<u32>>>,
+    pub toctree_includes: HashMap<String, Vec<String>>,
+    pub files_to_rebuild: HashMap<String, HashSet<String>>,
+    pub glob_toctrees: HashSet<String>,
+    pub numbered_toctrees: HashSet<String>,
+    pub domaindata: HashMap<String, HashMap<String, String>>,
+    pub std_domain: StdDomain,
+    pub rst_domain: RstDomain,
+    pub py_domain: PyDomain,
+    pub js_domain: JsDomain,
+    pub pending_xrefs: HashMap<String, Vec<PendingXref>>,
+    pub indexentries: HashMap<String, Vec<IndexEntry>>,
 }
 
 /// Always-excluded path patterns, matching upstream `sphinx.project.EXCLUDE_PATHS`.
@@ -835,6 +1113,20 @@ fn now_micros() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_micros() as i64)
         .unwrap_or(0)
+}
+
+/// `path`'s modification time in microseconds since the Unix epoch, for
+/// [`BuildEnvironment::get_outdated`]'s mtime comparison. `None` when the
+/// file doesn't exist or its mtime can't be read (treated as "always
+/// outdated" by the caller, the safe default).
+fn mtime_micros(path: &Path) -> Option<i64> {
+    std::fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_micros() as i64)
 }
 
 /// Very small text-level scan for `.. toctree::` directive bodies,
@@ -1014,5 +1306,165 @@ mod tests {
     fn domaindata_starts_empty() {
         let env = make_env();
         assert!(env.domaindata.is_empty());
+    }
+
+    // ── H8a: get_outdated / remove_doc ────────────────────────────────────────
+
+    fn make_env_with_tempdir() -> (tempfile::TempDir, BuildEnvironment) {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let srcdir = tmp.path().join("src");
+        let doctreedir = tmp.path().join("doctrees");
+        std::fs::create_dir_all(&srcdir).unwrap();
+        std::fs::create_dir_all(&doctreedir).unwrap();
+        let config = SphinxConfig::new_defaults();
+        let project = EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
+        let env = BuildEnvironment::new(config, project, &srcdir, &doctreedir);
+        (tmp, env)
+    }
+
+    #[test]
+    fn get_outdated_reports_found_but_unread_docname_as_added() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.project.docnames.insert("index".to_string());
+        let (added, changed, removed) = env.get_outdated(false);
+        assert_eq!(added, vec!["index".to_string()]);
+        assert!(changed.is_empty());
+        assert!(removed.is_empty());
+    }
+
+    #[test]
+    fn get_outdated_reports_unchanged_read_docname_as_neither() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
+        env.project.docnames.insert("index".to_string());
+        // Record a read time far in the future so the file's real mtime
+        // is never newer than it, regardless of test execution speed.
+        let far_future = now_micros() + 60_000_000_000; // +60,000s
+        env.record_doc_read("index", far_future);
+        let (added, changed, removed) = env.get_outdated(false);
+        assert!(added.is_empty());
+        assert!(changed.is_empty(), "got changed: {changed:?}");
+        assert!(removed.is_empty());
+    }
+
+    #[test]
+    fn get_outdated_reports_source_newer_than_last_read_as_changed() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
+        env.project.docnames.insert("index".to_string());
+        // Record a read time far in the past so the file's real mtime is
+        // always newer than it.
+        env.record_doc_read("index", 0);
+        let (added, changed, removed) = env.get_outdated(false);
+        assert!(added.is_empty());
+        assert_eq!(changed, vec!["index".to_string()]);
+        assert!(removed.is_empty());
+    }
+
+    #[test]
+    fn get_outdated_reports_previously_read_now_unfound_as_removed() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.record_doc_read("gone", now_micros());
+        let (added, changed, removed) = env.get_outdated(false);
+        assert!(added.is_empty());
+        assert!(changed.is_empty());
+        assert_eq!(removed, vec!["gone".to_string()]);
+    }
+
+    #[test]
+    fn get_outdated_config_changed_forces_every_read_doc_as_changed() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
+        env.project.docnames.insert("index".to_string());
+        env.record_doc_read("index", now_micros() + 60_000_000_000);
+        let (added, changed, removed) = env.get_outdated(true);
+        assert!(added.is_empty());
+        assert_eq!(changed, vec!["index".to_string()]);
+        assert!(removed.is_empty());
+    }
+
+    #[test]
+    fn get_outdated_reread_always_forces_changed() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
+        env.project.docnames.insert("index".to_string());
+        env.record_doc_read("index", now_micros() + 60_000_000_000);
+        env.reread_always.insert("index".to_string());
+        let (_added, changed, _removed) = env.get_outdated(false);
+        assert_eq!(changed, vec!["index".to_string()]);
+    }
+
+    #[test]
+    fn remove_doc_purges_titles_and_toctree_state() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.record_doc_read("index", 0);
+        env.set_title("index", "Welcome");
+        env.note_toctree("index", vec!["guide".to_string()]);
+        env.remove_doc("index");
+        assert!(!env.all_docs.contains_key("index"));
+        assert!(env.get_title("index").is_none());
+        assert!(!env.toctree_includes.contains_key("index"));
+        assert!(
+            !env.files_to_rebuild
+                .get("guide")
+                .is_some_and(|s| s.contains("index"))
+        );
+    }
+
+    // ── H8b: environment persistence ──────────────────────────────────────────
+
+    #[test]
+    fn load_persisted_returns_none_when_absent() {
+        let (_tmp, env) = make_env_with_tempdir();
+        assert!(env.load_persisted().is_none());
+    }
+
+    #[test]
+    fn save_and_load_persisted_round_trips_core_state() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.record_doc_read("index", 42);
+        env.set_title("index", "Welcome");
+        env.note_toctree("index", vec!["guide".to_string()]);
+        env.save_persisted().unwrap();
+
+        let loaded = env.load_persisted().expect("just-saved env should load");
+        assert_eq!(loaded.all_docs.get("index"), Some(&42));
+        assert_eq!(
+            loaded.titles.get("index").map(String::as_str),
+            Some("Welcome")
+        );
+        assert_eq!(
+            loaded.toctree_includes.get("index"),
+            Some(&vec!["guide".to_string()])
+        );
+        assert_eq!(loaded.config_hash, env.config.stable_hash());
+    }
+
+    #[test]
+    fn apply_persisted_restores_state_onto_a_fresh_env() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.record_doc_read("index", 42);
+        env.set_title("index", "Welcome");
+        let persisted = env.to_persisted();
+
+        let config = SphinxConfig::new_defaults();
+        let project = EnvProject::new(&env.srcdir, &[(".rst", "restructuredtext")]);
+        let mut fresh = BuildEnvironment::new(config, project, &env.srcdir, &env.doctreedir);
+        assert!(fresh.all_docs.is_empty());
+
+        let hash = fresh.apply_persisted(persisted);
+        assert_eq!(hash, env.config.stable_hash());
+        assert_eq!(fresh.all_docs.get("index"), Some(&42));
+        assert_eq!(fresh.get_title("index"), Some("Welcome"));
+    }
+
+    #[test]
+    fn load_persisted_returns_none_for_version_mismatch() {
+        let (_tmp, env) = make_env_with_tempdir();
+        let mut persisted = env.to_persisted();
+        persisted.version = ENV_PERSISTED_VERSION + 1;
+        let bytes = serde_json::to_vec(&persisted).unwrap();
+        std::fs::write(env.persisted_path(), bytes).unwrap();
+        assert!(env.load_persisted().is_none());
     }
 }

@@ -1148,6 +1148,36 @@ impl SphinxConfig {
         self.iter().filter(move |cv| cv.rebuild == rebuild)
     }
 
+    /// A stable hash over every config value whose `rebuild` kind is not
+    /// [`RebuildKind::None`] (i.e. every value that upstream's own
+    /// `BuildEnvironment.config_status` diffing would care about),
+    /// persisted alongside the environment (**H8b**) so a later build can
+    /// tell whether `conf.py`/`-D` overrides changed since the env was
+    /// last saved.
+    ///
+    /// **Accepted deviation:** upstream compares the *previous* `Config`
+    /// object value-by-value (distinguishing "an `Env`-rebuild value
+    /// changed" from "only an `Html`-rebuild value changed", to choose
+    /// between [`CONFIG_CHANGED`](crate::environment::CONFIG_CHANGED) and
+    /// a builder-specific rebuild). This is a single combined hash: any
+    /// change to any rebuild-relevant value is reported as
+    /// `CONFIG_CHANGED`, forcing a full re-read rather than upstream's
+    /// finer-grained partial rebuild. Simpler and safe (never under-detects
+    /// a change), at the cost of over-invalidating in the rarer case where
+    /// only an `Html`/`Epub`/`Gettext`-only value changed.
+    pub fn stable_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut entries: Vec<(String, String)> = self
+            .iter()
+            .filter(|cv| cv.rebuild != RebuildKind::None)
+            .map(|cv| (cv.name, cv.value.display()))
+            .collect();
+        entries.sort();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        entries.hash(&mut hasher);
+        hasher.finish()
+    }
+
     // ── typed accessors ───────────────────────────────────────────────────────
 
     /// `project` — project name.

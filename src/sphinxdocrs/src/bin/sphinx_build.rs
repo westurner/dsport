@@ -14,6 +14,7 @@ use std::collections::HashMap;
 
 use sphinxdocrs::application::{SphinxApp, is_native_builder};
 use sphinxdocrs::build::NativeMakeRunner;
+use sphinxdocrs::build::logging::{finish_build, parse_logging};
 use sphinxdocrs::build::make_mode::run_make_mode;
 use sphinxdocrs::build::parse_args;
 use sphinxdocrs::cli::io::{py_fallback_requested, run_python_impl};
@@ -77,22 +78,39 @@ fn main() {
             .map(|(k, v)| (k.clone(), v.to_string()))
             .collect();
 
-        eprintln!("sphinxdocrs: running SphinxApp::new");
+        // H8c: -q/-Q/-w FILE resolved once, consulted for every status/
+        // warning line and the final warn-file write below.
+        let logging = parse_logging(parsed.quiet, parsed.really_quiet, parsed.warnfile.clone());
+
+        if !logging.suppress_status {
+            eprintln!("sphinxdocrs: running SphinxApp::new");
+        }
         match SphinxApp::new(&srcdir, &outdir, &doctreedir, &parsed.builder, overrides) {
             Err(e) => {
-                eprintln!("Error: {e}");
+                if !logging.suppress_warnings {
+                    eprintln!("Error: {e}");
+                }
                 std::process::exit(1);
             }
-            Ok(mut app) => match app.build() {
-                Ok(result) => {
-                    eprintln!("Build succeeded: {} file(s) written.", result.written);
-                    std::process::exit(0);
+            Ok(mut app) => {
+                // H8a: -E/--fresh-env and -a/--write-all.
+                app.set_incremental_options(parsed.freshenv, parsed.force_all);
+                match app.build() {
+                    Ok(result) => {
+                        if !logging.suppress_status {
+                            eprintln!("Build succeeded: {} file(s) written.", result.written);
+                        }
+                        let code = finish_build(&app.warnings, &logging, parsed.warningiserror);
+                        std::process::exit(code);
+                    }
+                    Err(e) => {
+                        if !logging.suppress_warnings {
+                            eprintln!("Build error: {e}");
+                        }
+                        std::process::exit(1);
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Build error: {e}");
-                    std::process::exit(1);
-                }
-            },
+            }
         }
     }
 

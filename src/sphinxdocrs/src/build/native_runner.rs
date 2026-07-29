@@ -86,10 +86,19 @@ impl Runner for NativeMakeRunner {
             .map(|(k, v)| (k.clone(), v.to_string()))
             .collect();
 
-        eprintln!(
-            "sphinxdocrs: make mode: running SphinxApp (builder={})",
-            parsed.builder
+        // H8c: -q/-Q/-w FILE.
+        let logging = crate::build::logging::parse_logging(
+            parsed.quiet,
+            parsed.really_quiet,
+            parsed.warnfile.clone(),
         );
+
+        if !logging.suppress_status {
+            eprintln!(
+                "sphinxdocrs: make mode: running SphinxApp (builder={})",
+                parsed.builder
+            );
+        }
         match SphinxApp::new(
             &parsed.sourcedir,
             &parsed.outputdir,
@@ -98,19 +107,33 @@ impl Runner for NativeMakeRunner {
             overrides,
         ) {
             Err(e) => {
-                eprintln!("Error: {e}");
+                if !logging.suppress_warnings {
+                    eprintln!("Error: {e}");
+                }
                 Ok(1)
             }
-            Ok(mut app) => match app.build() {
-                Ok(result) => {
-                    eprintln!("Build succeeded: {} file(s) written.", result.written);
-                    Ok(0)
+            Ok(mut app) => {
+                // H8a: -E/--fresh-env and -a/--write-all.
+                app.set_incremental_options(parsed.freshenv, parsed.force_all);
+                match app.build() {
+                    Ok(result) => {
+                        if !logging.suppress_status {
+                            eprintln!("Build succeeded: {} file(s) written.", result.written);
+                        }
+                        Ok(crate::build::logging::finish_build(
+                            &app.warnings,
+                            &logging,
+                            parsed.warningiserror,
+                        ))
+                    }
+                    Err(e) => {
+                        if !logging.suppress_warnings {
+                            eprintln!("Build error: {e}");
+                        }
+                        Ok(1)
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Build error: {e}");
-                    Ok(1)
-                }
-            },
+            }
         }
     }
 }

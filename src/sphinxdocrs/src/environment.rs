@@ -588,7 +588,8 @@ impl BuildEnvironment {
             if let Some(events) = events {
                 events
                     .borrow_mut()
-                    .emit("source-read", &[EventArg::Str(docname.clone())]);
+                    .emit("source-read", &[EventArg::Str(docname.clone())])
+                    .map_err(|e| BuildError::Other(e.0))?;
             }
 
             let path = self.doc2path(docname);
@@ -621,7 +622,8 @@ impl BuildEnvironment {
             if let Some(events) = events {
                 events
                     .borrow_mut()
-                    .emit("doctree-read", &[EventArg::Str(docname.clone())]);
+                    .emit("doctree-read", &[EventArg::Str(docname.clone())])
+                    .map_err(|e| BuildError::Other(e.0))?;
             }
         }
 

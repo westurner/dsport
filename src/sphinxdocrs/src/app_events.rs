@@ -18,12 +18,23 @@
 //! event registrations collapsed into one constant, since this port has no
 //! per-extension event registration yet).
 //!
-//! **Accepted deviation:** `emit`/`emit_firstresult` here do not implement
-//! upstream's `allowed_exceptions` / `ExtensionError` wrapping / `app.pdb`
-//! short-circuit — listener errors are swallowed. Full parity with that
-//! machinery lives in the PyO3-facing [`crate::events::EventManager`];
-//! bringing the same behavior to the native pipeline is deferred to H8c
-//! (logging polish) since it is not needed for emission-order parity.
+//! **Listener errors now propagate** (closes the former "listener errors
+//! are swallowed" deviation): [`AppEventManager::emit`] returns
+//! `Result<(), EventError>` and stops dispatching to any later listener the
+//! moment one fails, mirroring upstream `EventManager.emit`'s fail-fast
+//! behavior. [`crate::app_facade::PyAppFacade::connect`] converts a
+//! listener's `PyErr` into an [`EventError`] (message includes the
+//! callback's `repr()` and the event name, matching the
+//! `"Handler {handler!r} for event '{name}' threw an exception"` text the
+//! PyO3-facing [`crate::events::EventManager::emit`] already produces) so a
+//! failing Python extension callback now aborts the build the same way a
+//! failing native listener does. **Remaining accepted deviation:** this
+//! native bus has no concept of `allowed_exceptions` / `SphinxError`
+//! pass-through or an `app.pdb` short-circuit — every listener error is
+//! always wrapped and always propagates. Full fidelity for those two knobs
+//! stays on the PyO3-facing [`crate::events::EventManager`], which is a
+//! `Bound` Python object and can inspect exception types/`app.pdb`
+//! directly; no native (non-Python) listener needs either knob yet.
 //! **Also accepted:** listeners must not call `connect`/`disconnect`/`emit`
 //! reentrantly on the same [`SharedEvents`] handle while being invoked —
 //! `SharedEvents` is a `RefCell`, and a nested mutable borrow panics.
@@ -31,7 +42,24 @@
 //! listener needs reentrancy yet.
 
 use std::cell::RefCell;
+use std::fmt;
 use std::rc::Rc;
+
+/// Error surfaced when an event listener fails during
+/// [`AppEventManager::emit`]. Mirrors the *message shape* of upstream's
+/// `ExtensionError`-wrapped listener failure — see this module's
+/// "Listener errors now propagate" doc note above for what is and isn't
+/// replicated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventError(pub String);
+
+impl fmt::Display for EventError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for EventError {}
 
 /// Core event names, in the order `sphinx.application.Sphinx` fires them
 /// across a full build. Mirrors `sphinx.events.EventManager.core_events`
@@ -68,8 +96,10 @@ pub enum EventArg {
 /// callables (via [`crate::app_facade::PyAppFacade`]), which are only
 /// safely callable from the thread holding the GIL. [`SharedEvents`] is
 /// therefore an `Rc<RefCell<_>>`, not an `Arc<Mutex<_>>` — this bus is not
-/// meant to be shared across threads.
-type Handler = Box<dyn FnMut(&[EventArg])>;
+/// meant to be shared across threads. Returns `Result` so a failing
+/// listener (e.g. a Python callback that raised) can abort the rest of the
+/// dispatch instead of being silently swallowed — see [`EventError`].
+type Handler = Box<dyn FnMut(&[EventArg]) -> Result<(), EventError>>;
 
 struct Listener {
     id: usize,
@@ -125,7 +155,7 @@ impl AppEventManager {
         &mut self,
         name: impl Into<String>,
         priority: i64,
-        handler: impl FnMut(&[EventArg]) + 'static,
+        handler: impl FnMut(&[EventArg]) -> Result<(), EventError> + 'static,
     ) -> usize {
         let name = name.into();
         self.add(name.clone());
@@ -150,7 +180,11 @@ impl AppEventManager {
     /// Emit `name` with `args`, calling every matching listener in
     /// ascending-priority order. Records `name` in the emission log
     /// regardless of whether any listener is registered.
-    pub fn emit(&mut self, name: &str, args: &[EventArg]) {
+    ///
+    /// Stops at (and returns) the first listener error — mirrors upstream
+    /// `EventManager.emit`'s fail-fast behavior: a later listener never
+    /// runs once an earlier one has failed.
+    pub fn emit(&mut self, name: &str, args: &[EventArg]) -> Result<(), EventError> {
         self.add(name);
         self.log.push(name.to_string());
 
@@ -164,8 +198,9 @@ impl AppEventManager {
         matching.sort_by_key(|&i| self.listeners[i].1.priority);
 
         for i in matching {
-            (self.listeners[i].1.handler)(args);
+            (self.listeners[i].1.handler)(args)?;
         }
+        Ok(())
     }
 
     /// The full emission log, in call order (may contain duplicates —
@@ -194,8 +229,8 @@ mod tests {
     #[test]
     fn emit_records_log_even_without_listeners() {
         let mut mgr = AppEventManager::new();
-        mgr.emit("config-inited", &[]);
-        mgr.emit("builder-inited", &[]);
+        mgr.emit("config-inited", &[]).unwrap();
+        mgr.emit("builder-inited", &[]).unwrap();
         assert_eq!(mgr.emitted(), &["config-inited", "builder-inited"]);
     }
 
@@ -205,13 +240,22 @@ mod tests {
         let order = Rc::new(RefCell::new(Vec::<i64>::new()));
 
         let o1 = order.clone();
-        mgr.connect("doctree-resolved", 900, move |_| o1.borrow_mut().push(900));
+        mgr.connect("doctree-resolved", 900, move |_| {
+            o1.borrow_mut().push(900);
+            Ok(())
+        });
         let o2 = order.clone();
-        mgr.connect("doctree-resolved", 100, move |_| o2.borrow_mut().push(100));
+        mgr.connect("doctree-resolved", 100, move |_| {
+            o2.borrow_mut().push(100);
+            Ok(())
+        });
         let o3 = order.clone();
-        mgr.connect("doctree-resolved", 500, move |_| o3.borrow_mut().push(500));
+        mgr.connect("doctree-resolved", 500, move |_| {
+            o3.borrow_mut().push(500);
+            Ok(())
+        });
 
-        mgr.emit("doctree-resolved", &[]);
+        mgr.emit("doctree-resolved", &[]).unwrap();
         assert_eq!(*order.borrow(), vec![100, 500, 900]);
     }
 
@@ -220,17 +264,42 @@ mod tests {
         let mut mgr = AppEventManager::new();
         let calls = Rc::new(RefCell::new(0));
         let c = calls.clone();
-        let id = mgr.connect("build-finished", 0, move |_| *c.borrow_mut() += 1);
-        mgr.emit("build-finished", &[]);
+        let id = mgr.connect("build-finished", 0, move |_| {
+            *c.borrow_mut() += 1;
+            Ok(())
+        });
+        mgr.emit("build-finished", &[]).unwrap();
         mgr.disconnect(id);
-        mgr.emit("build-finished", &[]);
+        mgr.emit("build-finished", &[]).unwrap();
         assert_eq!(*calls.borrow(), 1);
+    }
+
+    #[test]
+    fn emit_stops_at_first_listener_error_and_propagates_it() {
+        let mut mgr = AppEventManager::new();
+        let calls = Rc::new(RefCell::new(Vec::<&'static str>::new()));
+
+        let c1 = calls.clone();
+        mgr.connect("build-finished", 0, move |_| {
+            c1.borrow_mut().push("first");
+            Err(EventError("boom".to_string()))
+        });
+        let c2 = calls.clone();
+        mgr.connect("build-finished", 10, move |_| {
+            c2.borrow_mut().push("second");
+            Ok(())
+        });
+
+        let err = mgr.emit("build-finished", &[]).unwrap_err();
+        assert_eq!(err.0, "boom");
+        // The second (lower-priority) listener never ran once the first failed.
+        assert_eq!(*calls.borrow(), vec!["first"]);
     }
 
     #[test]
     fn unknown_event_names_are_recorded_too() {
         let mut mgr = AppEventManager::new();
-        mgr.emit("my-custom-event", &[]);
+        mgr.emit("my-custom-event", &[]).unwrap();
         assert!(mgr.known_events().iter().any(|n| n == "my-custom-event"));
     }
 

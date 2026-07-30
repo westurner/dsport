@@ -117,7 +117,7 @@ fn load_extension_config_inited_round_trip() {
 called = []
 
 def setup(app):
-    def on_config_inited(app):
+    def on_config_inited(app, config):
         called.append(True)
 
     app.connect("config-inited", on_config_inited)

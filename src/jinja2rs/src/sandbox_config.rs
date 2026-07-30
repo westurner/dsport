@@ -820,7 +820,7 @@ fn enable_seccomp_whitelist(whitelist: SeccompWhitelist) -> Result<(), Box<dyn s
 
     // Create a new seccomp filter context.
     // Default action is to kill the process if a syscall is not explicitly allowed.
-    let mut ctx = libseccomp::ScmpFilterContext::new_filter(ScmpAction::KillProcess)?;
+    let mut ctx = libseccomp::ScmpFilterContext::new(ScmpAction::KillProcess)?;
 
     // Add each allowed syscall to the whitelist.
     for syscall_name in allow_syscalls {

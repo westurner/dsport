@@ -20,8 +20,10 @@
 //! types at this level. The PyO3 bridge (P3) will resolve class names to
 //! actual Python types when constructing a parser instance.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 // ── errors ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +67,18 @@ pub struct JsFile {
 }
 
 // ── SphinxComponentRegistry ───────────────────────────────────────────────────
+
+/// Shared handle to a [`SphinxComponentRegistry`] — mirrors the
+/// `Rc<RefCell<_>>` sharing pattern `crate::app_events::SharedEvents` and
+/// `crate::app_facade::SharedConfig`/`SharedAssets` already use: one
+/// instance lives on `SphinxApp` for the whole build and is cloned (cheap
+/// `Rc` clone, same backing registry) into every
+/// [`crate::app_facade::PyAppFacade`] constructed for that app, so
+/// `app.add_builder`/`app.add_domain`/`app.add_html_theme`/
+/// `app.add_post_transform` calls made by a Python extension's
+/// `setup(app)` mutate the exact same registry `SphinxApp` itself
+/// consults (e.g. via [`SphinxComponentRegistry::get_builder`]).
+pub type SharedRegistry = Rc<RefCell<SphinxComponentRegistry>>;
 
 /// Rust port of `sphinx.registry.SphinxComponentRegistry` — P2 subset.
 ///

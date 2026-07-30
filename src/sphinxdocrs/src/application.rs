@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use pyo3::prelude::*;
 
-use crate::app_events::{AppEventManager, EventArg, SharedEvents};
+use crate::app_events::{AppEventManager, EventArg, EventError, SharedEvents};
 use crate::app_facade::{PyAppFacade, SharedAssets, SharedConfig, seed_shared_config};
 use crate::builders::changes::ChangesBuilder;
 use crate::builders::dirhtml::DirhtmlBuilder;
@@ -42,7 +42,7 @@ use crate::builders::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
 use crate::environment::{BuildEnvironment, CONFIG_CHANGED, CONFIG_NEW, CONFIG_OK, EnvProject};
 use crate::extension::Extension;
-use crate::registry::SphinxComponentRegistry;
+use crate::registry::{SharedRegistry, SphinxComponentRegistry};
 
 // ── AppError ──────────────────────────────────────────────────────────────────
 
@@ -91,6 +91,12 @@ impl From<std::io::Error> for AppError {
 impl From<PyErr> for AppError {
     fn from(e: PyErr) -> Self {
         AppError::Extension(e.to_string())
+    }
+}
+
+impl From<EventError> for AppError {
+    fn from(e: EventError) -> Self {
+        AppError::Extension(e.0)
     }
 }
 
@@ -163,8 +169,13 @@ pub struct SphinxApp {
     pub doctreedir: PathBuf,
     /// Build config (from conf.py or defaults).
     pub config: SphinxConfig,
-    /// Component registry.
-    pub registry: SphinxComponentRegistry,
+    /// Component registry. Shared (`Rc<RefCell<_>>`, same pattern as
+    /// `events`/`py_config`/`assets`) with every [`PyAppFacade`] constructed
+    /// by [`load_extension`](Self::load_extension), so `app.add_builder` /
+    /// `app.add_domain` / `app.add_html_theme` / `app.add_post_transform`
+    /// calls from a Python extension's `setup(app)` land in the same
+    /// registry this field reads from.
+    pub registry: SharedRegistry,
     /// The resolved environment.
     pub env: BuildEnvironment,
     /// The selected builder name.
@@ -292,6 +303,7 @@ impl SphinxApp {
         for (name, class) in NATIVE_BUILDER_CLASSES {
             reg.add_builder(*name, *class);
         }
+        let registry: SharedRegistry = std::rc::Rc::new(std::cell::RefCell::new(reg));
 
         // Build environment.
         let project = EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
@@ -309,7 +321,7 @@ impl SphinxApp {
             outdir,
             doctreedir,
             config,
-            registry: reg,
+            registry,
             env,
             buildername,
             warnings: Vec::new(),
@@ -335,8 +347,8 @@ impl SphinxApp {
         }
         app.verify_needs_extensions()?;
 
-        app.events.borrow_mut().emit("config-inited", &[]);
-        app.events.borrow_mut().emit("builder-inited", &[]);
+        app.events.borrow_mut().emit("config-inited", &[])?;
+        app.events.borrow_mut().emit("builder-inited", &[])?;
 
         Ok(app)
     }
@@ -412,6 +424,7 @@ impl SphinxApp {
                     self.events.clone(),
                     self.py_config.clone(),
                     self.assets.clone(),
+                    self.registry.clone(),
                 ),
             )?;
             let metadata = setup.call1((facade,))?;
@@ -579,17 +592,17 @@ impl SphinxApp {
                 EventArg::StrList(changed),
                 EventArg::StrList(removed),
             ],
-        );
+        )?;
         self.events.borrow_mut().emit(
             "env-before-read-docs",
             &[EventArg::StrList(to_read.clone())],
-        );
+        )?;
 
         self.env.read_docs(to_read, Some(&self.events))?;
 
-        self.events.borrow_mut().emit("env-updated", &[]);
+        self.events.borrow_mut().emit("env-updated", &[])?;
         self.warnings.extend(self.env.check_consistency());
-        self.events.borrow_mut().emit("env-check-consistency", &[]);
+        self.events.borrow_mut().emit("env-check-consistency", &[])?;
 
         self.env.save_persisted().map_err(AppError::from)?;
 
@@ -706,8 +719,18 @@ impl SphinxApp {
             other => Err(AppError::UnknownBuilder(other.into())),
         };
 
-        self.events.borrow_mut().emit("build-finished", &[]);
-        result
+        // Mirrors upstream: `build-finished` always fires, even when the
+        // build itself failed. A pre-existing build error always wins over
+        // a `build-finished` listener failure (never mask a real build
+        // failure with an unrelated listener bug); a listener failure after
+        // an otherwise-successful build does propagate, matching upstream's
+        // `emit('build-finished', err)` re-raising when no listener
+        // suppresses it.
+        let emit_result = self.events.borrow_mut().emit("build-finished", &[]);
+        match result {
+            Ok(value) => emit_result.map(|()| value).map_err(AppError::from),
+            Err(e) => Err(e),
+        }
     }
 
     /// Return `true` if `buildername` is supported natively.

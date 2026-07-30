@@ -34,6 +34,7 @@ fn capture_docname_event(
             if let Some(EventArg::Str(name)) = args.first() {
                 captured_for_closure.borrow_mut().push(name.clone());
             }
+            Ok(())
         });
     captured
 }

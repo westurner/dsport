@@ -577,11 +577,15 @@ impl ThemeRenderer {
         ctx.insert("sourcename".into(), sourcename.into());
 
         // `html-page-context` (H4a): let any connected listener mutate the
-        // page before render. Best-effort — no-op if no app owns this env.
+        // page before render. Best-effort in the sense that it's a no-op if
+        // no app owns this env; a *connected* listener that raises now does
+        // propagate as a render error (closing the former "listener errors
+        // are swallowed" deviation — see `crate::app_events`'s module docs).
         if let Some(events) = env.events_handle() {
             events
                 .borrow_mut()
-                .emit("html-page-context", &[EventArg::Str(docname.to_string())]);
+                .emit("html-page-context", &[EventArg::Str(docname.to_string())])
+                .map_err(|e| e.0)?;
         }
 
         self.env

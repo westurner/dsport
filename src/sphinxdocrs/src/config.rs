@@ -284,7 +284,12 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
         }
 
         // ── list-of-strings options (html_static_path, html_extra_path) ──────
-        for key in &["html_static_path", "html_extra_path", "templates_path"] {
+        for key in &[
+            "html_static_path",
+            "html_extra_path",
+            "templates_path",
+            "html_theme_path",
+        ] {
             if let Ok(Some(v)) = globals.get_item(*key) {
                 if let Ok(list) = v.cast::<PyList>() {
                     let items: Vec<ConfigVal> = list
@@ -407,6 +412,51 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
         }
 
         Ok(raw)
+    })
+}
+
+/// Re-executes `conf.py` and returns its module-level `setup` callable, if
+/// it defines one.
+///
+/// Mirrors upstream `sphinx.config.Config.setup` / the `if self.config.setup:
+/// self.config.setup(self)` branch near the top of `Sphinx.__init__`
+/// (`sphinx/application.py`) — `conf.py` itself is treated exactly like an
+/// extension module: if it defines a top-level `def setup(app): ...`
+/// function, Sphinx calls it with the running `app`, letting a project's
+/// own `conf.py` register event listeners (`app.connect(...)`), add config
+/// values, etc. without needing to package a separate extension module.
+///
+/// This is a second, separate execution of `conf.py` (rather than reusing
+/// [`raw_config_from_conf_py`]'s `globals`) because that function's
+/// `Python::attach` closure — and the `globals` dict living inside it — do
+/// not outlive the call; re-running the (idempotent, side-effect-light)
+/// module body is simpler than threading a GIL-bound `Bound<'py, PyDict>`
+/// back out through a `PyResult`-returning API. `Py<PyAny>` (unlike
+/// `Bound`) owns a GIL-independent reference, so it can be safely returned
+/// and later invoked from a fresh `Python::attach` block by the caller.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the file cannot be read or if conf.py raises during
+/// execution.
+pub fn conf_py_setup(path: &Path) -> PyResult<Option<Py<PyAny>>> {
+    let source = std::fs::read_to_string(path)
+        .map_err(|e| ConfigError::new_err(format!("cannot read {}: {e}", path.display())))?;
+
+    Python::attach(|py| {
+        let globals = PyDict::new(py);
+        globals.set_item("__file__", path.to_string_lossy().as_ref())?;
+        py.run(
+            &std::ffi::CString::new(source.as_str()).unwrap(),
+            Some(&globals),
+            None,
+        )
+        .map_err(|e| ConfigError::new_err(format!("conf.py failed: {e}")))?;
+
+        match globals.get_item("setup")? {
+            Some(v) if v.hasattr("__call__").unwrap_or(false) => Ok(Some(v.unbind())),
+            _ => Ok(None),
+        }
     })
 }
 
@@ -937,6 +987,12 @@ impl SphinxConfig {
             Str("alabaster".into()),
             Html,
             "Active HTML theme name",
+        );
+        add(
+            "html_theme_path",
+            List(vec![]),
+            Html,
+            "Extra directories (relative to confdir) to search for HTML themes",
         );
         add(
             "html_static_path",
@@ -1583,6 +1639,30 @@ impl SphinxConfig {
     /// sets `html_static_path = ['_static']`.
     pub fn html_static_path(&self) -> Vec<String> {
         self.get("html_static_path")
+            .and_then(|v| {
+                if let ConfigVal::List(items) = v {
+                    Some(
+                        items
+                            .iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    /// `html_theme_path` — extra directories (relative to `confdir`) to
+    /// search for HTML themes, in addition to Sphinx's builtin themes and
+    /// any installed theme package's entry points.
+    ///
+    /// Defaults to an empty list (matching sphinx). The `sphinx/doc` project
+    /// sets `html_theme_path = ['_themes']` to locate its local `sphinx13`
+    /// theme.
+    pub fn html_theme_path(&self) -> Vec<String> {
+        self.get("html_theme_path")
             .and_then(|v| {
                 if let ConfigVal::List(items) = v {
                     Some(

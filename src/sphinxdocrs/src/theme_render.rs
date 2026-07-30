@@ -441,8 +441,11 @@ impl ThemeRenderer {
         all_docs: impl IntoIterator<Item = &'a String>,
     ) -> Option<Self> {
         let theme_name = env.config.html_theme();
-        let (template_dirs, theme_conf_options) =
-            crate::theme_static::resolve_theme_templates(&theme_name)?;
+        let (template_dirs, theme_conf_options) = crate::theme_static::resolve_theme_templates(
+            &theme_name,
+            &env.srcdir,
+            &env.config.html_theme_path(),
+        )?;
 
         // Mirrors upstream `BuiltinTemplateLoader.init`'s
         // `loaderchain = pathchain + [p.parent for p in pathchain]`: a

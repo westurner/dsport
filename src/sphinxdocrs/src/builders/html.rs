@@ -28,6 +28,7 @@ use docutilsrs::{html5, parse_rst_with_source};
 use super::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
 use crate::environment::BuildEnvironment;
+use crate::genindex::{GenIndexTerm, ModIndexEntry};
 
 // ── HtmlBuilder ───────────────────────────────────────────────────────────────
 
@@ -297,6 +298,130 @@ impl HtmlBuilder {
         std::fs::write(&out_path, page.as_bytes())?;
         Ok(())
     }
+
+    /// Render a link to `docname` (optionally `#anchor`, empty when H5e's
+    /// anchors-are-page-level deviation applies), using this builder's
+    /// [`PathStyle`]-aware [`Builder::get_target_uri`].
+    fn index_link(&self, docname: &str, anchor: &str) -> String {
+        let uri = self.get_target_uri(docname);
+        let href = if anchor.is_empty() {
+            uri
+        } else {
+            format!("{uri}#{anchor}")
+        };
+        format!(
+            "<a href=\"{}\">{}</a>",
+            html_escape(&href),
+            html_escape(docname)
+        )
+    }
+
+    /// Render [`crate::genindex::build_genindex`]'s alphabetical buckets as a
+    /// real navigable HTML page (H5e).
+    ///
+    /// **Accepted deviation:** link text is the docname rather than the
+    /// real page title (title lookup isn't threaded through here) and, per
+    /// `genindex.rs`'s own accepted deviation, anchors are page-level only
+    /// (no in-page id tracking), so every link for a term simply points at
+    /// its containing document.
+    fn render_genindex_page(&self, buckets: &[(String, Vec<GenIndexTerm>)], meta: &PageMeta) -> String {
+        let mut body = String::new();
+        body.push_str("<h1 id=\"index\">Index</h1>\n");
+        if buckets.is_empty() {
+            body.push_str("<p><em>No index entries.</em></p>\n");
+            return Self::render_embedded_or_wrap("genindex", "Index", &body, meta);
+        }
+        body.push_str("<div class=\"genindex-jumpbox\">\n");
+        for (letter, _) in buckets {
+            let l = html_escape(letter);
+            body.push_str(&format!("<a href=\"#{l}\"><strong>{l}</strong></a> | "));
+        }
+        body.push_str("\n</div>\n");
+        for (letter, terms) in buckets {
+            let l = html_escape(letter);
+            body.push_str(&format!("<h2 id=\"{l}\">{l}</h2>\n<ul>\n"));
+            for term in terms {
+                body.push_str("<li>");
+                if let Some((target, is_seealso)) = &term.see {
+                    let label = if *is_seealso { "see also" } else { "see" };
+                    body.push_str(&format!(
+                        "{} <em>({label} {})</em>",
+                        html_escape(&term.name),
+                        html_escape(target)
+                    ));
+                } else if term.subterms.is_empty() {
+                    let links: Vec<String> = term
+                        .links
+                        .iter()
+                        .map(|(d, a)| self.index_link(d, a))
+                        .collect();
+                    body.push_str(&format!("{}: {}", html_escape(&term.name), links.join(", ")));
+                } else {
+                    let direct = if term.links.is_empty() {
+                        String::new()
+                    } else {
+                        let links: Vec<String> = term
+                            .links
+                            .iter()
+                            .map(|(d, a)| self.index_link(d, a))
+                            .collect();
+                        format!(" ({})", links.join(", "))
+                    };
+                    body.push_str(&format!(
+                        "{}{direct}\n<ul>\n",
+                        html_escape(&term.name)
+                    ));
+                    for (sub, sublinks) in &term.subterms {
+                        let links: Vec<String> = sublinks
+                            .iter()
+                            .map(|(d, a)| self.index_link(d, a))
+                            .collect();
+                        body.push_str(&format!(
+                            "<li>{}: {}</li>\n",
+                            html_escape(sub),
+                            links.join(", ")
+                        ));
+                    }
+                    body.push_str("</ul>\n");
+                }
+                body.push_str("</li>\n");
+            }
+            body.push_str("</ul>\n");
+        }
+        Self::render_embedded_or_wrap("genindex", "Index", &body, meta)
+    }
+
+    /// Render [`crate::genindex::build_modindex`]'s alphabetical buckets as
+    /// a real Python module index page (H5e). Same accepted deviations as
+    /// [`render_genindex_page`](Self::render_genindex_page).
+    fn render_modindex_page(
+        &self,
+        buckets: &[(String, Vec<ModIndexEntry>)],
+        meta: &PageMeta,
+    ) -> String {
+        let mut body = String::new();
+        body.push_str("<h1 id=\"module-index\">Python Module Index</h1>\n");
+        if buckets.is_empty() {
+            body.push_str("<p><em>No modules recorded.</em></p>\n");
+            return Self::render_embedded_or_wrap("py-modindex", "Python Module Index", &body, meta);
+        }
+        body.push_str("<table>\n");
+        for (letter, modules) in buckets {
+            body.push_str(&format!(
+                "<tr><td colspan=\"2\"><strong>{}</strong></td></tr>\n",
+                html_escape(letter)
+            ));
+            for module in modules {
+                let link = self.index_link(&module.docname, &module.anchor);
+                body.push_str(&format!(
+                    "<tr><td></td><td><code>{}</code> {link}</td></tr>\n",
+                    html_escape(&module.name)
+                ));
+            }
+        }
+        body.push_str("</table>\n");
+        Self::render_embedded_or_wrap("py-modindex", "Python Module Index", &body, meta)
+    }
 }
 
 /// Page-level metadata passed to the theme when rendering a document.
@@ -403,7 +528,9 @@ impl Builder for HtmlBuilder {
 
         // Copy the active theme's static assets (CSS/JS/images) from the
         // installed Sphinx / theme packages, plus stemmer JS and pygments.css.
-        if let Err(e) = crate::theme_static::copy_theme_static_files(&env.config, outdir) {
+        if let Err(e) =
+            crate::theme_static::copy_theme_static_files(&env.config, outdir, srcdir)
+        {
             eprintln!("Warning: failed to copy theme static files: {e}");
         }
 
@@ -469,6 +596,25 @@ impl Builder for HtmlBuilder {
             // Copy source to _sources/{docname}.rst.txt (mirrors StandaloneHTMLBuilder).
             copy_source_file(&src_path, docname, outdir)?;
             result.written += 1;
+        }
+
+        // genindex.html / py-modindex.html (H5e): real pages built from
+        // `env.indexentries`/`env.py_domain` via `crate::genindex`, rather
+        // than the placeholder stub `write_static_files` used to write
+        // unconditionally.
+        let genindex_buckets = crate::genindex::build_genindex(env);
+        self.write_page(
+            "genindex",
+            &self.render_genindex_page(&genindex_buckets, &meta),
+            outdir,
+        )?;
+        let modindex_buckets = crate::genindex::build_modindex(env);
+        if !modindex_buckets.is_empty() {
+            self.write_page(
+                "py-modindex",
+                &self.render_modindex_page(&modindex_buckets, &meta),
+                outdir,
+            )?;
         }
 
         // Generate the JS search index (searchindex.js) over all built docs,
@@ -538,8 +684,12 @@ th { background: #f0f0f0; }
 /// - `.buildinfo` — sphinx build fingerprint (mirrors StandaloneHTMLBuilder)
 /// - `_static/sphinxdocrs.css` — minimal embedded stylesheet
 /// - `objects.inv` — empty intersphinx inventory stub
-/// - `genindex.html` — empty general-index stub
 /// - `search.html` — minimal search-page stub
+///
+/// `genindex.html`/`py-modindex.html` are written separately by
+/// [`Builder::build_all`] (via [`HtmlBuilder::render_genindex_page`]/
+/// [`HtmlBuilder::render_modindex_page`]), since they need `env` data
+/// unavailable here.
 ///
 /// These are the minimum set needed so that HTML pages render usably and
 /// parity-checking tools do not flag absent mandatory files.
@@ -570,17 +720,6 @@ fn write_static_files(outdir: &Path) -> Result<(), BuildError> {
     let inv_path = outdir.join("objects.inv");
     if !inv_path.exists() {
         std::fs::write(&inv_path, inv.as_bytes())?;
-    }
-
-    // genindex.html — general index (populated by domains, deferred).
-    let genindex = HtmlBuilder::wrap_page(
-        "Index",
-        "<p><em>Index not yet generated by the native builder.</em></p>",
-        "",
-    );
-    let gen_path = outdir.join("genindex.html");
-    if !gen_path.exists() {
-        std::fs::write(&gen_path, genindex.as_bytes())?;
     }
 
     // search.html — minimal search page stub (mirrors StandaloneHTMLBuilder).

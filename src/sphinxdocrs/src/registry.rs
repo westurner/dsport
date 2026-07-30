@@ -167,6 +167,14 @@ pub struct SphinxComponentRegistry {
     /// *names*, not arbitrary rendering callables).
     pub roles: HashMap<String, String>,
 
+    /// Object types registered via `Sphinx.add_object_type(directivename,
+    /// rolename, ...)` (directive name → role name). Same accepted
+    /// deviation as [`directives`](Self::directives)/[`roles`](Self::roles)
+    /// — bookkeeping only, no domain object-description rendering hook
+    /// (there is no generic "std domain object type" renderer in
+    /// `docutilsrs`/`sphinxdocrs` yet for this to drive).
+    pub object_types: HashMap<String, String>,
+
     /// Extension nodes registered via `Sphinx.add_node` (ADR 0006):
     /// registering class's `__name__` → the list of builder *formats*
     /// (`"html"`, `"latex"`, ...) it registered a visit/depart pair for.
@@ -476,6 +484,20 @@ impl SphinxComponentRegistry {
     /// Return `true` if a role with `name` is registered.
     pub fn has_role(&self, name: &str) -> bool {
         self.roles.contains_key(name)
+    }
+
+    /// Register an object type's directive → role name mapping.
+    ///
+    /// Mirrors `SphinxComponentRegistry.add_object_type(directivename,
+    /// rolename, ...)`. See [`object_types`](Self::object_types)'s doc
+    /// comment for the accepted deviation.
+    pub fn add_object_type(&mut self, directivename: impl Into<String>, rolename: impl Into<String>) {
+        self.object_types.insert(directivename.into(), rolename.into());
+    }
+
+    /// Return `true` if an object type with `directivename` is registered.
+    pub fn has_object_type(&self, directivename: &str) -> bool {
+        self.object_types.contains_key(directivename)
     }
 
     /// Record that `class_name` registered a visit/depart pair for

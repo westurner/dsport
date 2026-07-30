@@ -610,6 +610,45 @@ impl PyEventsFacade {
     }
 }
 
+/// Minimal `app.builder`-shaped facade exposing only `.name`/`.format`
+/// (mirrors `sphinx.builders.Builder.name`/`.format`, the two class
+/// attributes real extension/`conf.py` code actually reads off
+/// `app.builder`). Not a live view of anything mutable — just the fixed
+/// buildername string the owning `SphinxApp` was constructed with.
+#[pyclass(unsendable, skip_from_py_object, name = "_BuilderFacade", module = "sphinxdocrs")]
+#[derive(Clone)]
+pub struct PyBuilderFacade {
+    name: String,
+}
+
+impl PyBuilderFacade {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+}
+
+#[pymethods]
+impl PyBuilderFacade {
+    /// Mirrors `Builder.name` (e.g. `"html"`, `"dirhtml"`, `"latex"`).
+    #[getter]
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Mirrors `Builder.format`: the *output format* class attribute,
+    /// which several HTML-family builders share (`html`/`dirhtml`/
+    /// `singlehtml` all report `format == "html"`, matching upstream's
+    /// `StandaloneHTMLBuilder.format = 'html'` being inherited by its
+    /// subclasses) — everything else defaults to its own `name`.
+    #[getter]
+    fn format(&self) -> &str {
+        match self.name.as_str() {
+            "html" | "dirhtml" | "singlehtml" => "html",
+            other => other,
+        }
+    }
+}
+
 /// Minimal `app`-shaped facade over a [`SharedEvents`] handle.
 ///
 /// Constructed by `SphinxApp::load_extension` for the duration of a
@@ -638,6 +677,13 @@ pub struct PyAppFacade {
     env: crate::environment::SharedEnv,
     raw_config: SharedRawConfig,
     env_extra: SharedEnvExtra,
+    /// `Sphinx.outdir` / `Sphinx.builder.name`. `None` when this facade is
+    /// constructed before the active builder is known (there is currently
+    /// no such call site, but keeps the type honest rather than requiring
+    /// a placeholder path/name at every call site — see
+    /// [`Self::outdir`]/[`Self::builder`]).
+    outdir: Option<std::rc::Rc<std::path::PathBuf>>,
+    buildername: Option<std::rc::Rc<String>>,
 }
 
 impl PyAppFacade {
@@ -658,6 +704,40 @@ impl PyAppFacade {
             env,
             raw_config,
             env_extra,
+            outdir: None,
+            buildername: None,
+        }
+    }
+
+    /// Same as [`Self::new`], but also sets `outdir`/`builder.name` (mirrors
+    /// `Sphinx.outdir`/`Sphinx.builder.name`) — used wherever the calling
+    /// `SphinxApp` already knows both (i.e. everywhere except the very
+    /// first `conf.py`-`setup(app)` call, which happens before a builder
+    /// is selected... actually `SphinxApp::new` takes `buildername` up
+    /// front, so this is always available in practice; kept as `Option`
+    /// defensively rather than assuming every current and future call site
+    /// has it to hand).
+    pub fn with_builder(
+        events: SharedEvents,
+        config: SharedConfig,
+        assets: SharedAssets,
+        registry: SharedRegistry,
+        env: crate::environment::SharedEnv,
+        raw_config: SharedRawConfig,
+        env_extra: SharedEnvExtra,
+        outdir: std::rc::Rc<std::path::PathBuf>,
+        buildername: std::rc::Rc<String>,
+    ) -> Self {
+        Self {
+            events,
+            config,
+            assets,
+            registry,
+            env,
+            raw_config,
+            env_extra,
+            outdir: Some(outdir),
+            buildername: Some(buildername),
         }
     }
 }
@@ -684,6 +764,8 @@ impl PyAppFacade {
         let env_for_call = self.env.clone();
         let raw_config_for_call = self.raw_config.clone();
         let env_extra_for_call = self.env_extra.clone();
+        let outdir_for_call = self.outdir.clone();
+        let buildername_for_call = self.buildername.clone();
         let event_name = event.to_string();
         let mut mgr = self.events.borrow_mut();
         let id = mgr.connect(event_name.clone(), priority, move |args: &[EventArg]| {
@@ -694,20 +776,22 @@ impl PyAppFacade {
             let env_for_call = env_for_call.clone();
             let raw_config_for_call = raw_config_for_call.clone();
             let env_extra_for_call = env_extra_for_call.clone();
+            let outdir_for_call = outdir_for_call.clone();
+            let buildername_for_call = buildername_for_call.clone();
             let config_for_second_arg = config_for_call.clone();
             Python::attach(|py| -> Result<(), EventError> {
-                let facade = Py::new(
-                    py,
-                    PyAppFacade::new(
-                        events_for_call,
-                        config_for_call,
-                        assets_for_call,
-                        registry_for_call,
-                        env_for_call,
-                        raw_config_for_call,
-                        env_extra_for_call,
-                    ),
-                )
+                let mut new_facade = PyAppFacade::new(
+                    events_for_call,
+                    config_for_call,
+                    assets_for_call,
+                    registry_for_call,
+                    env_for_call,
+                    raw_config_for_call,
+                    env_extra_for_call,
+                );
+                new_facade.outdir = outdir_for_call;
+                new_facade.buildername = buildername_for_call;
+                let facade = Py::new(py, new_facade)
                 .map_err(|e| py_err_to_event_error(py, &event_name, &callback, e))?;
                 let mut call_args: Vec<Py<PyAny>> = Vec::with_capacity(args.len() + 2);
                 call_args.push(facade.into_any());
@@ -790,6 +874,34 @@ impl PyAppFacade {
     #[getter]
     fn doctreedir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         path_to_pyobject(py, &self.env.borrow().doctreedir)
+    }
+
+    /// Mirrors `Sphinx.outdir` (a `pathlib.Path`). `None`/unset when this
+    /// facade predates builder selection (see
+    /// [`PyAppFacade::with_builder`]'s doc comment) — falls back to
+    /// `env.doctreedir`'s parent as a best-effort guess rather than
+    /// raising, since a listener reading `app.outdir` too early is a
+    /// caller bug this bridge shouldn't crash over.
+    #[getter]
+    fn outdir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        match &self.outdir {
+            Some(p) => path_to_pyobject(py, p),
+            None => path_to_pyobject(py, &self.env.borrow().doctreedir),
+        }
+    }
+
+    /// Mirrors `Sphinx.builder` — a minimal [`PyBuilderFacade`] exposing
+    /// only `.name`/`.format` (the two attributes real extensions actually
+    /// read; see e.g. `sphinx/doc/conf.py`'s `build_redirects`, which
+    /// checks `app.builder.name != 'html'`).
+    #[getter]
+    fn builder(&self, py: Python<'_>) -> PyResult<Py<PyBuilderFacade>> {
+        let name = self
+            .buildername
+            .as_deref()
+            .cloned()
+            .unwrap_or_default();
+        Py::new(py, PyBuilderFacade::new(name))
     }
 
     /// Mirrors `Sphinx.events` — a live [`PyEventsFacade`] over this app's
@@ -883,6 +995,31 @@ impl PyAppFacade {
             .and_then(|n| n.extract::<String>())
             .unwrap_or_else(|_| role.repr().map(|s| s.to_string()).unwrap_or_default());
         self.registry.borrow_mut().add_role(name, class_name);
+        Ok(())
+    }
+
+    /// Mirrors `Sphinx.add_object_type(directivename, rolename, indextemplate='',
+    /// parse_node=None, ref_nodeclass=None, objname='', doc_field_types=[],
+    /// override=False)`: records `directivename` → `rolename` in the
+    /// shared [`SharedRegistry`] (bookkeeping only — see
+    /// [`crate::registry::SphinxComponentRegistry::object_types`]'s doc
+    /// comment; there is no generic std-domain object-description renderer
+    /// in this port for a registration to actually drive). Accepts and
+    /// discards every other positional/keyword argument via `*_args`/
+    /// `**_kwargs`, matching this module's `add_directive`/`add_role`
+    /// pattern of tolerating upstream's full, wider signature without
+    /// erroring.
+    #[pyo3(signature = (directivename, rolename, *_args, **_kwargs))]
+    fn add_object_type(
+        &self,
+        directivename: String,
+        rolename: String,
+        _args: &Bound<'_, PyTuple>,
+        _kwargs: Option<Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<()> {
+        self.registry
+            .borrow_mut()
+            .add_object_type(directivename, rolename);
         Ok(())
     }
 

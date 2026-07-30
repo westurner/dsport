@@ -65,7 +65,14 @@ struct ResolvedTheme {
 const RESOLVE_PY: &str = r#"
 import os, json, configparser
 
-def _locate_theme_dir(name):
+def _locate_theme_dir(name, theme_path_dirs):
+    # `html_theme_path` — project-local theme directories (e.g. sphinx/doc's
+    # `_themes/sphinx13`) take priority, matching `Theme.load_extra_theme`'s
+    # `html_theme_path` handling: a project can shadow a builtin theme name.
+    for base in theme_path_dirs:
+        candidate = os.path.join(base, name)
+        if os.path.isdir(candidate):
+            return candidate
     import sphinx
     builtin = os.path.join(os.path.dirname(sphinx.__file__), 'themes', name)
     if os.path.isdir(builtin):
@@ -119,14 +126,14 @@ def _parse_conf(theme_dir):
         inherit = None
     return inherit, options, pyg
 
-def resolve(theme_name):
+def resolve(theme_name, theme_path_dirs):
     chain = []
     seen = set()
     name = theme_name
     pygments_style = None
     while name and name not in seen:
         seen.add(name)
-        d = _locate_theme_dir(name)
+        d = _locate_theme_dir(name, theme_path_dirs)
         if not d:
             break
         inherit, options, pyg = _parse_conf(d)
@@ -172,9 +179,12 @@ def resolve(theme_name):
     }
 "#;
 
-/// Resolve the active theme via PyO3.  Returns `None` if Python or Sphinx is
-/// unavailable (build proceeds without theme assets).
-fn resolve_theme(theme_name: &str) -> Option<ResolvedTheme> {
+/// Resolve the active theme via PyO3. `theme_path_dirs` are absolute
+/// directories (already resolved against `confdir`) from the project's
+/// `html_theme_path` config value, searched before builtin/entry-point
+/// themes. Returns `None` if Python or Sphinx is unavailable (build
+/// proceeds without theme assets).
+fn resolve_theme(theme_name: &str, theme_path_dirs: &[String]) -> Option<ResolvedTheme> {
     Python::attach(|py| -> PyResult<ResolvedTheme> {
         let globals = PyDict::new(py);
         py.run(
@@ -183,7 +193,7 @@ fn resolve_theme(theme_name: &str) -> Option<ResolvedTheme> {
             None,
         )?;
         let resolve = globals.get_item("resolve")?.unwrap();
-        let result = resolve.call1((theme_name,))?;
+        let result = resolve.call1((theme_name, theme_path_dirs.to_vec()))?;
         let dict = result.cast::<PyDict>()?;
 
         let static_dirs: Vec<String> = dict
@@ -234,13 +244,19 @@ fn resolve_theme(theme_name: &str) -> Option<ResolvedTheme> {
 
 /// Resolve the real theme's template directory chain (child-first) for
 /// [`crate::theme_render`] to load actual Sphinx theme templates through
-/// `jinja2rs`, plus its merged `theme_<option>` map. Returns `None` if
-/// Python/Sphinx is unavailable or the theme can't be located — callers
-/// should fall back to the embedded placeholder theme in that case.
+/// `jinja2rs`, plus its merged `theme_<option>` map. `confdir` and
+/// `theme_path` mirror `html_theme_path` config entries (resolved relative
+/// to `confdir`) so project-local themes (e.g. sphinx/doc's `_themes/
+/// sphinx13`) can be located, not just builtin/installed ones. Returns
+/// `None` if Python/Sphinx is unavailable or the theme can't be located —
+/// callers should fall back to the embedded placeholder theme in that case.
 pub fn resolve_theme_templates(
     theme_name: &str,
+    confdir: &Path,
+    theme_path: &[String],
 ) -> Option<(Vec<std::path::PathBuf>, BTreeMap<String, String>)> {
-    let theme = resolve_theme(theme_name)?;
+    let theme_path_dirs = resolve_theme_path_dirs(confdir, theme_path);
+    let theme = resolve_theme(theme_name, &theme_path_dirs)?;
     if theme.template_dirs.is_empty() {
         return None;
     }
@@ -252,6 +268,25 @@ pub fn resolve_theme_templates(
             .collect(),
         theme.options,
     ))
+}
+
+/// Resolve `html_theme_path` entries (relative to `confdir`) into absolute,
+/// existing-directory path strings for the embedded Python resolver.
+/// Non-existent entries are skipped with a warning (matching
+/// `copy_html_static_path`'s handling of missing `html_static_path` dirs).
+fn resolve_theme_path_dirs(confdir: &Path, theme_path: &[String]) -> Vec<String> {
+    theme_path
+        .iter()
+        .filter_map(|entry| {
+            let dir = confdir.join(entry);
+            if dir.is_dir() {
+                Some(dir.to_string_lossy().into_owned())
+            } else {
+                eprintln!("Warning: html_theme_path entry {:?} does not exist", dir.display());
+                None
+            }
+        })
+        .collect()
 }
 
 /// Return `true` for asset file names that are Jinja2 templates.
@@ -296,10 +331,19 @@ fn build_render_context(
 /// Copy (and render) all static assets of the active theme into
 /// `outdir/_static/`, plus stemmer JS and `pygments.css`.
 ///
+/// `confdir` is the project's source/config directory, used (together with
+/// `config.html_theme_path()`) to locate project-local themes such as
+/// sphinx/doc's own `_themes/sphinx13`.
+///
 /// Best-effort: returns `Ok(())` even when Python/Sphinx are unavailable.
-pub fn copy_theme_static_files(config: &SphinxConfig, outdir: &Path) -> std::io::Result<()> {
+pub fn copy_theme_static_files(
+    config: &SphinxConfig,
+    outdir: &Path,
+    confdir: &Path,
+) -> std::io::Result<()> {
     let theme_name = config.html_theme();
-    let Some(theme) = resolve_theme(&theme_name) else {
+    let theme_path_dirs = resolve_theme_path_dirs(confdir, &config.html_theme_path());
+    let Some(theme) = resolve_theme(&theme_name, &theme_path_dirs) else {
         // No Python/Sphinx — skip theme assets silently.
         return Ok(());
     };
@@ -468,6 +512,6 @@ mod tests {
         );
         let cfg = SphinxConfig::new(raw, std::collections::HashMap::new());
         // Must not panic or error.
-        copy_theme_static_files(&cfg, out.path()).unwrap();
+        copy_theme_static_files(&cfg, out.path(), out.path()).unwrap();
     }
 }

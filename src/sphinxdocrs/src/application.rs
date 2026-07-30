@@ -313,6 +313,7 @@ impl SphinxApp {
 
         // Read config. If `conf.py` exists in srcdir, read it via PyO3;
         // otherwise use defaults + overrides.
+        let conf_py = srcdir.join("conf.py");
         let config = build_config(&srcdir, overrides);
 
         let _registry = SphinxComponentRegistry::new();
@@ -374,6 +375,18 @@ impl SphinxApp {
         // [`load_extension`](Self::load_extension) manually *after*
         // `new()` returns will, like upstream, miss `config-inited` — it has
         // already been emitted by then.)
+        //
+        // `conf.py` itself is treated exactly like an extension module: if
+        // it defines a top-level `setup(app)` function, upstream
+        // `Sphinx.__init__` calls it before loading the `extensions =
+        // [...]` list (see `if self.config.setup: self.config.setup(self)`
+        // in `sphinx/application.py`) — this is how e.g. `sphinx/doc/conf.py`
+        // registers its own `build_redirects` `build-finished` listener
+        // without packaging a separate extension module.
+        if conf_py.exists() {
+            app.load_conf_py_setup(&conf_py)?;
+        }
+
         for ext_name in app.config.extensions() {
             app.load_extension(&ext_name)?;
         }
@@ -391,6 +404,45 @@ impl SphinxApp {
         app.events.borrow_mut().emit("builder-inited", &[])?;
 
         Ok(app)
+    }
+
+    /// Call `conf.py`'s own top-level `setup(app)` function, if it defines
+    /// one, exactly like an extension's `setup(app)`.
+    ///
+    /// Mirrors upstream `sphinx/application.py`'s
+    /// `if self.config.setup: self.config.setup(self)`. Unlike
+    /// [`load_extension`](Self::load_extension), the callable isn't wrapped
+    /// in an [`Extension`] record — upstream doesn't track `conf.py` itself
+    /// as a named extension either, since there is no module name to key it
+    /// under.
+    ///
+    /// # Errors
+    ///
+    /// `AppError::Extension` if `conf.py` cannot be re-executed or its
+    /// `setup(app)` raises.
+    fn load_conf_py_setup(&mut self, conf_py: &Path) -> Result<(), AppError> {
+        let Some(setup) = crate::config::conf_py_setup(conf_py).map_err(AppError::from)? else {
+            return Ok(());
+        };
+        Python::attach(|py| -> PyResult<()> {
+            let facade = Py::new(
+                py,
+                PyAppFacade::with_builder(
+                    self.events.clone(),
+                    self.py_config.clone(),
+                    self.assets.clone(),
+                    self.registry.clone(),
+                    self.env.clone(),
+                    self.raw_config.clone(),
+                    self.env_extra.clone(),
+                    std::rc::Rc::new(self.outdir.clone()),
+                    std::rc::Rc::new(self.buildername.clone()),
+                ),
+            )?;
+            setup.bind(py).call1((facade,))?;
+            Ok(())
+        })
+        .map_err(AppError::from)
     }
 
     /// Load a Python extension by dotted module name.
@@ -460,7 +512,7 @@ impl SphinxApp {
 
             let facade = Py::new(
                 py,
-                PyAppFacade::new(
+                PyAppFacade::with_builder(
                     self.events.clone(),
                     self.py_config.clone(),
                     self.assets.clone(),
@@ -468,6 +520,8 @@ impl SphinxApp {
                     self.env.clone(),
                     self.raw_config.clone(),
                     self.env_extra.clone(),
+                    std::rc::Rc::new(self.outdir.clone()),
+                    std::rc::Rc::new(self.buildername.clone()),
                 ),
             )?;
             let metadata = setup.call1((facade,))?;
@@ -815,7 +869,20 @@ impl SphinxApp {
         // an otherwise-successful build does propagate, matching upstream's
         // `emit('build-finished', err)` re-raising when no listener
         // suppresses it.
-        let emit_result = self.events.borrow_mut().emit("build-finished", &[]);
+        //
+        // Upstream always passes the exception (or `None` on success) as
+        // `build-finished`'s second positional argument — e.g.
+        // `sphinx/doc/conf.py`'s `build_redirects` listener checks
+        // `if exception is not None: return` before doing anything, so it
+        // must actually receive `None` here to run at all.
+        let build_finished_arg = match &result {
+            Ok(_) => EventArg::None,
+            Err(e) => EventArg::Str(e.to_string()),
+        };
+        let emit_result = self
+            .events
+            .borrow_mut()
+            .emit("build-finished", &[build_finished_arg]);
         match result {
             Ok(value) => emit_result.map(|()| value).map_err(AppError::from),
             Err(e) => Err(e),
@@ -1153,5 +1220,75 @@ mod tests {
             let result = app.build().unwrap();
             assert_eq!(result.written, 1, "builder {builder} should write 1 doc");
         }
+    }
+
+    // ── conf.py's own `setup(app)` (H-conf-setup) ──────────────────────────────
+
+    /// Regression test for the gap this session closed: `conf.py`'s own
+    /// top-level `setup(app)` function used to never be called at all, so
+    /// e.g. `sphinx/doc/conf.py`'s `app.connect('build-finished',
+    /// build_redirects)` registration silently never took effect and
+    /// `build_redirects` never ran. This mirrors that real-world shape:
+    /// `conf.py` connects a `build-finished` listener that writes a marker
+    /// file, and asserts the listener actually fired with the right
+    /// `app.outdir`/`app.builder.name`/`exception` values.
+    #[test]
+    fn conf_py_setup_function_is_invoked_and_can_connect_build_finished() {
+        let src = make_src();
+        std::fs::write(
+            src.path().join("conf.py"),
+            r#"
+project = 'Test'
+marker = None
+
+def setup(app):
+    def on_build_finished(app, exception):
+        import pathlib
+        out = pathlib.Path(app.outdir) / "build_finished_marker.txt"
+        out.write_text(f"builder={app.builder.name} format={app.builder.format} exception={exception!r}")
+    app.connect('build-finished', on_build_finished)
+"#,
+        )
+        .unwrap();
+
+        let out = TempDir::new().unwrap();
+        let doctrees = TempDir::new().unwrap();
+        let mut app = SphinxApp::new(
+            src.path(),
+            out.path(),
+            doctrees.path(),
+            "html",
+            HashMap::new(),
+        )
+        .unwrap();
+        app.build().unwrap();
+
+        let marker_path = out.path().join("build_finished_marker.txt");
+        assert!(
+            marker_path.exists(),
+            "conf.py's setup(app)-connected build-finished listener should have run"
+        );
+        let contents = std::fs::read_to_string(marker_path).unwrap();
+        assert_eq!(contents, "builder=html format=html exception=None");
+    }
+
+    #[test]
+    fn conf_py_without_setup_function_builds_fine() {
+        // No `setup` defined at all — must not error, must not require one.
+        let src = make_src();
+        std::fs::write(src.path().join("conf.py"), "project = 'Test'\n").unwrap();
+
+        let out = TempDir::new().unwrap();
+        let doctrees = TempDir::new().unwrap();
+        let mut app = SphinxApp::new(
+            src.path(),
+            out.path(),
+            doctrees.path(),
+            "html",
+            HashMap::new(),
+        )
+        .unwrap();
+        let result = app.build().unwrap();
+        assert_eq!(result.written, 1);
     }
 }

@@ -40,7 +40,9 @@ use crate::builders::text::TextBuilder;
 use crate::builders::xml::XmlBuilder;
 use crate::builders::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
-use crate::environment::{BuildEnvironment, CONFIG_CHANGED, CONFIG_NEW, CONFIG_OK, EnvProject};
+use crate::environment::{
+    BuildEnvironment, CONFIG_CHANGED, CONFIG_NEW, CONFIG_OK, EnvProject, SharedEnv,
+};
 use crate::extension::Extension;
 use crate::registry::{SharedRegistry, SphinxComponentRegistry};
 
@@ -176,8 +178,15 @@ pub struct SphinxApp {
     /// calls from a Python extension's `setup(app)` land in the same
     /// registry this field reads from.
     pub registry: SharedRegistry,
-    /// The resolved environment.
-    pub env: BuildEnvironment,
+    /// The resolved environment. Shared (`Rc<RefCell<_>>`, see [`SharedEnv`])
+    /// with every [`PyAppFacade`] constructed by
+    /// [`load_extension`](Self::load_extension) — as the live `app.env` —
+    /// so a Python extension listener reads (and, where
+    /// [`crate::app_facade::PyEnvFacade`] exposes a mutator, writes) the
+    /// *same* environment this field owns, matching upstream where
+    /// `app.env` is the single persistent `BuildEnvironment` for the whole
+    /// build.
+    pub env: SharedEnv,
     /// The selected builder name.
     pub buildername: String,
     /// Warnings collected during the build.
@@ -201,6 +210,16 @@ pub struct SphinxApp {
     /// one extension's `setup()` is visible to every extension loaded
     /// afterward, matching upstream's single persistent `Config` object.
     pub py_config: SharedConfig,
+    /// Immutable snapshot of `conf.py`'s raw values, shared with every
+    /// [`PyAppFacade`] so [`PyAppFacade::add_config_value`] can replicate
+    /// upstream's `_raw_config`-always-wins-over-a-newly-registered-
+    /// option's-default precedence. See
+    /// [`crate::config::SphinxConfig::raw_config`]'s doc comment.
+    pub raw_config: crate::app_facade::SharedRawConfig,
+    /// Shared store backing `app.env`'s arbitrary-attribute fallback
+    /// (see [`crate::app_facade::PyEnvFacade`]'s doc comment). Threaded
+    /// alongside `env` into every [`PyAppFacade`] the same way.
+    pub env_extra: crate::app_facade::SharedEnvExtra,
     /// CSS/JS files registered via `app.add_css_file`/`app.add_js_file`
     /// (**H4c**) by any loaded extension. Synced into
     /// `BuildEnvironment::added_css_files`/`added_js_files` by
@@ -305,15 +324,26 @@ impl SphinxApp {
         }
         let registry: SharedRegistry = std::rc::Rc::new(std::cell::RefCell::new(reg));
 
-        // Build environment.
+        // Build environment. Shared (`Rc<RefCell<_>>`) so it can be handed
+        // to Python extension listeners as the live `app.env` (see
+        // `SharedEnv`'s doc comment).
         let project = EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
-        let env = BuildEnvironment::new(config.clone(), project, &srcdir, &doctreedir);
+        let env: SharedEnv = std::rc::Rc::new(std::cell::RefCell::new(BuildEnvironment::new(
+            config.clone(),
+            project,
+            &srcdir,
+            &doctreedir,
+        )));
 
         // Seed the Python-facing `app.config` store from the already-resolved
         // `SphinxConfig` (conf.py + `-D` overrides + built-in defaults) before
         // any extension's `setup(app)` runs, so e.g. `app.config.extensions`
         // reflects `conf.py`'s real `extensions = [...]` list from the start.
         let py_config = Python::attach(|py| seed_shared_config(py, &config));
+        let raw_config: crate::app_facade::SharedRawConfig =
+            std::rc::Rc::new(config.raw_config().clone());
+        let env_extra: crate::app_facade::SharedEnvExtra =
+            std::rc::Rc::new(std::cell::RefCell::new(HashMap::new()));
         let assets = SharedAssets::default();
 
         let mut app = Self {
@@ -329,6 +359,8 @@ impl SphinxApp {
             extensions: HashMap::new(),
             extension_sources: HashMap::new(),
             py_config,
+            raw_config,
+            env_extra,
             assets,
             freshenv: false,
             force_all: false,
@@ -348,6 +380,14 @@ impl SphinxApp {
         app.verify_needs_extensions()?;
 
         app.events.borrow_mut().emit("config-inited", &[])?;
+
+        // Mirrors upstream's `_post_init_env`: discover the project's
+        // documents before `builder-inited` fires, so a listener connected
+        // during `setup()` (e.g. `sphinx.ext.autosummary`'s
+        // `process_generate_options`) can rely on `app.env.found_docs`/
+        // `app.env.doc2path` already being populated, exactly like upstream.
+        app.env.borrow_mut().find_files().map_err(AppError::from)?;
+
         app.events.borrow_mut().emit("builder-inited", &[])?;
 
         Ok(app)
@@ -425,6 +465,9 @@ impl SphinxApp {
                     self.py_config.clone(),
                     self.assets.clone(),
                     self.registry.clone(),
+                    self.env.clone(),
+                    self.raw_config.clone(),
+                    self.env_extra.clone(),
                 ),
             )?;
             let metadata = setup.call1((facade,))?;
@@ -554,30 +597,41 @@ impl SphinxApp {
     /// stored doctrees, `check_consistency`) between the read and write
     /// phases.
     pub fn read(&mut self) -> Result<(), AppError> {
-        self.env.find_files()?;
+        self.env.borrow_mut().find_files()?;
 
         let mut config_changed = false;
         if !self.freshenv {
-            if let Some(persisted) = self.env.load_persisted() {
-                let saved_hash = self.env.apply_persisted(persisted);
+            // Bound to a local first (rather than matching directly on
+            // `self.env.borrow().load_persisted()`): an `if let` scrutinee's
+            // temporaries live for the whole `if let` body in this edition,
+            // so matching directly would keep the immutable `Ref` alive
+            // across the `borrow_mut()` calls below and panic.
+            let persisted = self.env.borrow().load_persisted();
+            if let Some(persisted) = persisted {
+                let saved_hash = self.env.borrow_mut().apply_persisted(persisted);
                 if saved_hash != self.config.stable_hash() {
                     config_changed = true;
-                    self.env.set_config_status(CONFIG_CHANGED, "config changed");
+                    self.env
+                        .borrow_mut()
+                        .set_config_status(CONFIG_CHANGED, "config changed");
                 } else {
-                    self.env.set_config_status(CONFIG_OK, "");
+                    self.env.borrow_mut().set_config_status(CONFIG_OK, "");
                 }
             } else {
-                self.env.set_config_status(CONFIG_NEW, "new config");
+                self.env
+                    .borrow_mut()
+                    .set_config_status(CONFIG_NEW, "new config");
             }
         } else {
             self.env
+                .borrow_mut()
                 .set_config_status(CONFIG_NEW, "fresh environment requested (-E)");
         }
 
-        let (added, changed, removed) = self.env.get_outdated(config_changed);
+        let (added, changed, removed) = self.env.borrow().get_outdated(config_changed);
 
         for docname in &removed {
-            self.env.remove_doc(docname);
+            self.env.borrow_mut().remove_doc(docname);
         }
 
         let mut to_read = added.clone();
@@ -598,13 +652,42 @@ impl SphinxApp {
             &[EventArg::StrList(to_read.clone())],
         )?;
 
-        self.env.read_docs(to_read, Some(&self.events))?;
+        // Note: each document is read with a short-lived `borrow_mut()`
+        // (`BuildEnvironment::read_one`), released *before*
+        // `source-read`/`doctree-read` fire — unlike a single
+        // `borrow_mut()` held across the whole loop, this lets a Python
+        // listener on either event safely read (or, via a future mutator,
+        // write) `app.env` — the very same `Rc<RefCell<_>>` — without a
+        // `RefCell` double-borrow panic.
+        for docname in &to_read {
+            let path = self.env.borrow().doc2path(docname);
+            let source = std::fs::read_to_string(&path).map_err(|e| {
+                AppError::from(BuildError::Other(format!(
+                    "failed to read {}: {e}",
+                    path.display()
+                )))
+            })?;
+            self.events.borrow_mut().emit(
+                "source-read",
+                &[
+                    EventArg::Str(docname.clone()),
+                    EventArg::StrList(vec![source.clone()]),
+                ],
+            )?;
+            self.env
+                .borrow_mut()
+                .read_one_with_source(docname, &source)
+                .map_err(AppError::from)?;
+            self.events
+                .borrow_mut()
+                .emit("doctree-read", &[EventArg::Str(docname.clone())])?;
+        }
 
         self.events.borrow_mut().emit("env-updated", &[])?;
-        self.warnings.extend(self.env.check_consistency());
+        self.warnings.extend(self.env.borrow().check_consistency());
         self.events.borrow_mut().emit("env-check-consistency", &[])?;
 
-        self.env.save_persisted().map_err(AppError::from)?;
+        self.env.borrow().save_persisted().map_err(AppError::from)?;
 
         Ok(())
     }
@@ -634,86 +717,87 @@ impl SphinxApp {
         self.read()?;
         // H6c: let the write phase (currently only `HtmlBuilder`) emit
         // `html-page-context` per page.
-        self.env.set_events(self.events.clone());
+        self.env.borrow_mut().set_events(self.events.clone());
         // H4c: fold any `app.add_css_file`/`app.add_js_file` registrations
         // made during extension loading into the environment so the
         // HTML-family builders' theme renderer can link them.
         {
             let acc = self.assets.borrow();
             self.env
+                .borrow_mut()
                 .set_added_assets(acc.css_files.clone(), acc.js_files.clone());
         }
         let result = match self.buildername.as_str() {
             "html" => {
                 let builder = HtmlBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "latex" => {
                 let builder = LatexBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "json" => {
                 let builder = JsonBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "man" => {
                 let builder = ManpageBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "linkcheck" => {
                 let builder = LinkcheckBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "text" => {
                 let builder = TextBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "xml" => {
                 let builder = XmlBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "pseudoxml" => {
                 let builder = PseudoxmlBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "dirhtml" => {
                 let builder = DirhtmlBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "singlehtml" => {
                 let builder = SinglehtmlBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "gettext" => {
                 let builder = GettextBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "changes" => {
                 let builder = ChangesBuilder::new();
                 builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env)
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             other => Err(AppError::UnknownBuilder(other.into())),

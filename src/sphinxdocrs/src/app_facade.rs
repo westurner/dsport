@@ -22,13 +22,18 @@
 //! with no `dyn Builder`/`dyn Domain` hook to actually construct and run
 //! an arbitrary Python-provided class, so selecting a custom builder via
 //! `-b <name>` or resolving a custom domain's roles/directives still
-//! cannot dispatch to real Python execution. **`add_directive` / `add_role`
-//! / `add_node` / `add_autodocumenter` remain no-op stubs** — these need
-//! `docutilsrs`'s directive-and-role registries (a hardcoded match in
-//! `parser.rs` with no per-extension registration hook, and a closed
-//! `NodeKind` enum with no generic "extension node" variant), deferred to
-//! H5a/H5b (directive/role execution) since that's a cross-cutting change
-//! to `docutilsrs`'s core types, not just this facade. **`add_config_value`
+//! cannot dispatch to real Python execution. **`add_directive`/`add_role`
+//! now record the same kind of registry bookkeeping** (name → class name),
+//! so a typical `setup()` call no longer raises `AttributeError` — but,
+//! like `add_domain`/`add_builder`, a document that actually *uses* the
+//! registered directive/role still isn't executed through this
+//! registration (see `SphinxComponentRegistry::directives`/`roles`'s doc
+//! comments for the narrower bridge that does support real parse-time
+//! directive execution). **`add_node`/`add_autodocumenter` remain no-op
+//! stubs** — `add_node` needs a closed `NodeKind` enum change (a generic
+//! "extension node" variant) that's deliberately gated behind an ADR
+//! (see `docs/adr/`) before implementation, and `add_autodocumenter` is
+//! explicitly out of scope for now. **`add_config_value`
 //! /`app.config`([`PyConfigFacade`]) and `add_css_file`/`add_js_file`
 //! ([`SharedAssets`]) are real too** — a typical `setup()` reads/writes
 //! `app.config.*` and registers page assets before any of the
@@ -115,6 +120,12 @@ fn configval_to_py(py: Python<'_>, value: &ConfigVal) -> PyResult<Py<PyAny>> {
 /// upstream's single persistent `Config` object.
 pub type SharedConfig = Rc<RefCell<HashMap<String, Py<PyAny>>>>;
 
+/// Immutable snapshot of `conf.py`'s raw values (never mutated after
+/// construction — unlike [`SharedConfig`], nothing needs `RefCell` here).
+/// See [`crate::config::SphinxConfig::raw_config`]'s doc comment for why
+/// [`PyAppFacade::add_config_value`] needs this alongside [`SharedConfig`].
+pub type SharedRawConfig = Rc<HashMap<String, ConfigVal>>;
+
 /// Seed a fresh [`SharedConfig`] from a resolved [`crate::config::SphinxConfig`].
 pub fn seed_shared_config(py: Python<'_>, config: &crate::config::SphinxConfig) -> SharedConfig {
     let mut map = HashMap::new();
@@ -198,6 +209,282 @@ pub struct AssetAccumulator {
     pub js_files: Vec<JsFile>,
 }
 
+// ── `app.env` (live `BuildEnvironment` facade) ────────────────────────────────
+
+fn path_to_pyobject(py: Python<'_>, path: &std::path::Path) -> PyResult<Py<PyAny>> {
+    let pathlib = py.import("pathlib")?;
+    let path_cls = pathlib.getattr("Path")?;
+    Ok(path_cls
+        .call1((path.to_string_lossy().to_string(),))?
+        .unbind())
+}
+
+/// Convert a `RefCell` borrow conflict into a clear Python exception
+/// instead of letting the panic (which PyO3 would otherwise convert into
+/// an opaque `PanicException`) surface. The only realistic way to hit this
+/// is a listener connected to a write-phase event (e.g.
+/// `html-page-context`) calling an `app.env` *mutator* while the active
+/// builder's `build_all` holds its own (immutable) borrow of the same
+/// [`crate::environment::SharedEnv`] for the whole write phase — see
+/// [`PyEnvFacade`]'s doc comment.
+fn borrow_env_mut_or_err(
+    env: &crate::environment::SharedEnv,
+) -> PyResult<std::cell::RefMut<'_, crate::environment::BuildEnvironment>> {
+    env.try_borrow_mut().map_err(|_| {
+        pyo3::exceptions::PyRuntimeError::new_err(
+            "app.env cannot be mutated while it is being read elsewhere \
+             (e.g. from within the active builder's write phase)",
+        )
+    })
+}
+
+/// Shared store backing [`PyEnvFacade`]'s arbitrary-attribute fallback
+/// (`env.some_custom_name = ...` / reading it back later) — see
+/// [`PyEnvFacade`]'s doc comment for why this can't just be a PyO3
+/// per-instance `__dict__` (`#[pyclass(dict)]`).
+pub type SharedEnvExtra = Rc<RefCell<HashMap<String, Py<PyAny>>>>;
+
+/// The `app.env`-shaped object backing [`PyAppFacade::env`]: a facade over
+/// the *live* [`crate::environment::SharedEnv`] — the very same
+/// `Rc<RefCell<BuildEnvironment>>` [`crate::application::SphinxApp`] owns
+/// for the whole build — rather than a point-in-time copy. A listener that
+/// fires late (e.g. `html-page-context`, long after `builder-inited`)
+/// therefore always sees the current state, and (via the handful of
+/// mutator methods below) can write back to it too, matching upstream
+/// where `app.env`/`env` is the one persistent `BuildEnvironment` object.
+///
+/// **Reentrancy note:** every accessor here does a short-lived
+/// `try_borrow()`/`try_borrow_mut()` rather than holding the `RefCell`
+/// borrow across a Python callback. The one case that can still fail is a
+/// *mutator* called from a listener that fires while the active builder's
+/// `build_all` holds its own immutable borrow of the whole environment for
+/// the duration of the write phase (`Builder::build_all(&self.srcdir,
+/// &self.outdir, &self.env.borrow())` in `application.rs`) — that surfaces
+/// as a `PyRuntimeError`, not a process-aborting panic (see
+/// [`borrow_env_mut_or_err`]).
+///
+/// **Accepted deviation:** `domaindata`/`temp_data`/`ref_context`/
+/// `metadata` are the simplified `HashMap<String, String>`-shaped fields
+/// this Rust port already stores them as (not arbitrary pickled Python
+/// objects like upstream) — reads/writes go through `str()`/plain strings
+/// accordingly. `env.config` is not exposed here; use `app.config` instead
+/// (this port doesn't yet share one `Config`-shaped object between the
+/// two, unlike upstream where `app.config is env.config`).
+///
+/// **Arbitrary attributes:** real Sphinx extensions commonly stash their
+/// own state directly on `env` as a plain instance attribute (e.g.
+/// `sphinx.ext.intersphinx`'s `if not hasattr(env, 'intersphinx_cache'):
+/// env.intersphinx_cache = {}`), relying on `env` being one persistent
+/// Python object for the whole build. Since a *fresh* `PyEnvFacade` is
+/// constructed on every `app.env` access (matching how [`PyAppFacade`]
+/// itself works), a plain PyO3 per-instance `__dict__` (`#[pyclass(dict)]`)
+/// would lose such an attribute the moment a different `PyEnvFacade`
+/// instance is asked for it. [`__getattr__`](Self::__getattr__)/
+/// [`__setattr__`](Self::__setattr__) instead fall back to `extra`
+/// ([`SharedEnvExtra`]) — shared the same `Rc<RefCell<_>>` way as `env`
+/// itself — so this behaves like the one persistent object upstream has.
+#[pyclass(unsendable, skip_from_py_object, name = "_EnvFacade", module = "sphinxdocrs")]
+#[derive(Clone)]
+pub struct PyEnvFacade {
+    env: crate::environment::SharedEnv,
+    extra: SharedEnvExtra,
+}
+
+impl PyEnvFacade {
+    pub fn new(env: crate::environment::SharedEnv, extra: SharedEnvExtra) -> Self {
+        Self { env, extra }
+    }
+}
+
+#[pymethods]
+impl PyEnvFacade {
+    /// Mirrors `BuildEnvironment.found_docs` (a `set[str]`).
+    #[getter]
+    fn found_docs<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PySet>> {
+        pyo3::types::PySet::new(py, self.env.borrow().found_docs().iter())
+    }
+
+    /// Mirrors `BuildEnvironment.all_docs` (`dict[str, int]`, docname →
+    /// read-time in microseconds). Returns a plain `dict` copy.
+    #[getter]
+    fn all_docs<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        for (docname, ts) in &self.env.borrow().all_docs {
+            dict.set_item(docname, ts)?;
+        }
+        Ok(dict)
+    }
+
+    /// Mirrors `BuildEnvironment.titles` (`dict[docname, str]` — the title
+    /// text of each document's first section).
+    #[getter]
+    fn titles<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        for (docname, title) in &self.env.borrow().titles {
+            dict.set_item(docname, title)?;
+        }
+        Ok(dict)
+    }
+
+    /// Mirrors `BuildEnvironment.longtitles` (`dict[docname, str]`).
+    #[getter]
+    fn longtitles<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        for (docname, title) in &self.env.borrow().longtitles {
+            dict.set_item(docname, title)?;
+        }
+        Ok(dict)
+    }
+
+    /// Mirrors `Sphinx.srcdir`/`BuildEnvironment.srcdir` (a `pathlib.Path`).
+    #[getter]
+    fn srcdir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        path_to_pyobject(py, &self.env.borrow().srcdir)
+    }
+
+    /// Mirrors `BuildEnvironment.doctreedir` (a `pathlib.Path`).
+    #[getter]
+    fn doctreedir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        path_to_pyobject(py, &self.env.borrow().doctreedir)
+    }
+
+    /// Mirrors `BuildEnvironment.doc2path(docname, base=True)`, returning a
+    /// real `pathlib.Path` (not a plain `str`) since real extension code
+    /// (e.g. `sphinx.ext.autosummary`) calls `.is_file()` on the result.
+    #[pyo3(signature = (docname, base=true))]
+    fn doc2path(&self, py: Python<'_>, docname: &str, base: bool) -> PyResult<Py<PyAny>> {
+        let env = self.env.borrow();
+        let rel = env
+            .project
+            .docname_to_path
+            .get(docname)
+            .cloned()
+            .unwrap_or_else(|| {
+                let first_suffix = env
+                    .config
+                    .source_suffix()
+                    .into_keys()
+                    .next()
+                    .unwrap_or_else(|| ".rst".to_string());
+                format!("{docname}{first_suffix}")
+            });
+        let path = if base {
+            env.srcdir.join(rel)
+        } else {
+            std::path::PathBuf::from(rel)
+        };
+        path_to_pyobject(py, &path)
+    }
+
+    /// Mirrors `BuildEnvironment.metadata[docname]` (`dict[str, str]`;
+    /// empty if `docname` has no recorded metadata).
+    fn metadata<'py>(&self, py: Python<'py>, docname: &str) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        if let Some(meta) = self.env.borrow().metadata.get(docname) {
+            for (k, v) in meta {
+                dict.set_item(k, v)?;
+            }
+        }
+        Ok(dict)
+    }
+
+    /// Mirrors `BuildEnvironment.domaindata[name]` (`dict[str, str]`;
+    /// empty if `name` has no recorded domain data). See this type's
+    /// accepted-deviation note re: string-only values.
+    fn get_domaindata<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        if let Some(data) = self.env.borrow().domaindata.get(name) {
+            for (k, v) in data {
+                dict.set_item(k, v)?;
+            }
+        }
+        Ok(dict)
+    }
+
+    /// Mirrors reading `env.temp_data[key]`; returns `None` if unset. See
+    /// this type's accepted-deviation note re: string-only values.
+    fn get_temp_data(&self, key: &str) -> PyResult<Option<String>> {
+        Ok(self.env.borrow().temp_data.get(key).cloned())
+    }
+
+    /// Mirrors `env.temp_data[key] = value` (`value` is converted via
+    /// Python `str()` — see this type's accepted-deviation note).
+    fn set_temp_data(&self, py: Python<'_>, key: String, value: Py<PyAny>) -> PyResult<()> {
+        let value_str = value.bind(py).str()?.extract::<String>()?;
+        borrow_env_mut_or_err(&self.env)?
+            .temp_data
+            .insert(key, value_str);
+        Ok(())
+    }
+
+    /// Mirrors reading `env.ref_context[key]`; returns `None` if unset.
+    fn get_ref_context(&self, key: &str) -> PyResult<Option<String>> {
+        Ok(self.env.borrow().ref_context.get(key).cloned())
+    }
+
+    /// Mirrors `env.ref_context[key] = value` (`value` is converted via
+    /// Python `str()` — see this type's accepted-deviation note).
+    fn set_ref_context(&self, py: Python<'_>, key: String, value: Py<PyAny>) -> PyResult<()> {
+        let value_str = value.bind(py).str()?.extract::<String>()?;
+        borrow_env_mut_or_err(&self.env)?
+            .ref_context
+            .insert(key, value_str);
+        Ok(())
+    }
+
+    /// Mirrors `BuildEnvironment.dependencies[docname]` (`set[str]` of
+    /// dependency file paths relative to `srcdir`), returned as a sorted
+    /// `list[str]`.
+    fn dependencies(&self, docname: &str) -> PyResult<Vec<String>> {
+        let mut deps: Vec<String> = self
+            .env
+            .borrow()
+            .dependencies
+            .get(docname)
+            .map(|s| s.iter().cloned().collect())
+            .unwrap_or_default();
+        deps.sort();
+        Ok(deps)
+    }
+
+    /// Mirrors `env.note_dependency(filename)`. **Accepted deviation:**
+    /// upstream defaults to the document currently being read
+    /// (`self.docname`) when `docname` isn't given; this port doesn't
+    /// track a global "current document" outside the read-phase loop, so
+    /// `docname` is a required argument here.
+    fn note_dependency(&self, docname: &str, filename: &str) -> PyResult<()> {
+        borrow_env_mut_or_err(&self.env)?
+            .dependencies
+            .entry(docname.to_string())
+            .or_default()
+            .insert(filename.to_string());
+        Ok(())
+    }
+
+    /// Fallback for any attribute not covered by an explicit getter/method
+    /// above — mirrors a plain Python object's arbitrary instance
+    /// attributes (see this type's "Arbitrary attributes" doc note).
+    /// Raises a real `AttributeError` for a name that was never set via
+    /// [`__setattr__`](Self::__setattr__), matching upstream so
+    /// `hasattr(env, name)` behaves correctly (`sphinx.ext.intersphinx`
+    /// relies on exactly this to lazily initialize `env.intersphinx_cache`
+    /// only once).
+    fn __getattr__(&self, py: Python<'_>, name: &str) -> PyResult<Py<PyAny>> {
+        match self.extra.borrow().get(name) {
+            Some(v) => Ok(v.clone_ref(py)),
+            None => Err(pyo3::exceptions::PyAttributeError::new_err(format!(
+                "'_EnvFacade' object has no attribute {name:?}"
+            ))),
+        }
+    }
+
+    /// See [`__getattr__`](Self::__getattr__).
+    fn __setattr__(&self, name: String, value: Py<PyAny>) {
+        self.extra.borrow_mut().insert(name, value);
+    }
+}
+
+
 /// Convert a `**kwargs` dict of extension-supplied `<link>`/`<script>`
 /// attributes (e.g. `data-project="..."`, `integrity="..."`) into a
 /// `key -> value` string map, matching how upstream stores
@@ -246,6 +533,9 @@ pub struct PyAppFacade {
     config: SharedConfig,
     assets: SharedAssets,
     registry: SharedRegistry,
+    env: crate::environment::SharedEnv,
+    raw_config: SharedRawConfig,
+    env_extra: SharedEnvExtra,
 }
 
 impl PyAppFacade {
@@ -254,12 +544,18 @@ impl PyAppFacade {
         config: SharedConfig,
         assets: SharedAssets,
         registry: SharedRegistry,
+        env: crate::environment::SharedEnv,
+        raw_config: SharedRawConfig,
+        env_extra: SharedEnvExtra,
     ) -> Self {
         Self {
             events,
             config,
             assets,
             registry,
+            env,
+            raw_config,
+            env_extra,
         }
     }
 }
@@ -283,6 +579,9 @@ impl PyAppFacade {
         let config_for_call = self.config.clone();
         let assets_for_call = self.assets.clone();
         let registry_for_call = self.registry.clone();
+        let env_for_call = self.env.clone();
+        let raw_config_for_call = self.raw_config.clone();
+        let env_extra_for_call = self.env_extra.clone();
         let event_name = event.to_string();
         let mut mgr = self.events.borrow_mut();
         let id = mgr.connect(event_name.clone(), priority, move |args: &[EventArg]| {
@@ -290,6 +589,9 @@ impl PyAppFacade {
             let config_for_call = config_for_call.clone();
             let assets_for_call = assets_for_call.clone();
             let registry_for_call = registry_for_call.clone();
+            let env_for_call = env_for_call.clone();
+            let raw_config_for_call = raw_config_for_call.clone();
+            let env_extra_for_call = env_extra_for_call.clone();
             let config_for_second_arg = config_for_call.clone();
             Python::attach(|py| -> Result<(), EventError> {
                 let facade = Py::new(
@@ -299,6 +601,9 @@ impl PyAppFacade {
                         config_for_call,
                         assets_for_call,
                         registry_for_call,
+                        env_for_call,
+                        raw_config_for_call,
+                        env_extra_for_call,
                     ),
                 )
                 .map_err(|e| py_err_to_event_error(py, &event_name, &callback, e))?;
@@ -357,48 +662,117 @@ impl PyAppFacade {
         Py::new(py, PyConfigFacade::new(self.config.clone()))
     }
 
+    /// Mirrors `Sphinx.env` — a live [`PyEnvFacade`] over the same
+    /// [`crate::environment::SharedEnv`] this app owns. Before the first
+    /// `self.env.find_files()` call (i.e. during a `setup(app)` call
+    /// itself, same as upstream — `env` doesn't exist yet at that point
+    /// either) this returns a facade over a freshly-constructed empty
+    /// environment rather than raising, since a well-behaved extension
+    /// only reads `app.env` from a listener connected for later
+    /// (`builder-inited` or after).
+    #[getter]
+    fn env(&self, py: Python<'_>) -> PyResult<Py<PyEnvFacade>> {
+        Py::new(
+            py,
+            PyEnvFacade::new(self.env.clone(), self.env_extra.clone()),
+        )
+    }
+
+    /// Mirrors `Sphinx.srcdir` (a `pathlib.Path`).
+    #[getter]
+    fn srcdir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        path_to_pyobject(py, &self.env.borrow().srcdir)
+    }
+
+    /// Mirrors `Sphinx.doctreedir` (a `pathlib.Path`).
+    #[getter]
+    fn doctreedir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        path_to_pyobject(py, &self.env.borrow().doctreedir)
+    }
+
     /// Mirrors `Sphinx.add_config_value(name, default, rebuild, types=())`:
     /// registers `name` in `app.config`'s store with `default` **only if
-    /// it isn't already present** (a prior `conf.py` value, command-line
-    /// override, or an earlier `add_config_value` call for the same name
-    /// always wins) — matching upstream's "first registration establishes
-    /// the default, `conf.py`/overrides always take precedence" behavior,
-    /// minus the `ExtensionError` upstream raises for a genuine duplicate
-    /// registration (kept permissive since re-running `setup()` idempotently
-    /// is more useful for this bridge than replicating that failure mode).
+    /// it isn't already present** (a prior `add_config_value` call for the
+    /// same name always wins, matching upstream's rejection of a genuine
+    /// duplicate registration — kept permissive here since re-running
+    /// `setup()` idempotently is more useful for this bridge than
+    /// replicating that failure mode) — but when a name is registered for
+    /// the *first* time, `conf.py`'s raw value (if any) always wins over
+    /// `default`, exactly like upstream `Config.__getattr__`: `_raw_config`
+    /// is consulted before falling back to a newly-registered option's
+    /// default. Without this, an extension whose `setup()` runs
+    /// `add_config_value("foo", True, ...)` after `conf.py` already set
+    /// `foo = False` would silently see `True` — since [`SharedConfig`] is
+    /// only pre-seeded with the built-in/already-registered options (see
+    /// [`seed_shared_config`]), not with every raw `conf.py` name.
     #[pyo3(signature = (name, default, rebuild=None, types=None))]
     fn add_config_value(
         &self,
+        py: Python<'_>,
         name: String,
         default: Py<PyAny>,
         rebuild: Option<Py<PyAny>>,
         types: Option<Py<PyAny>>,
-    ) {
+    ) -> PyResult<()> {
         let _ = (rebuild, types);
-        self.config.borrow_mut().entry(name).or_insert(default);
+        if self.config.borrow().contains_key(&name) {
+            return Ok(());
+        }
+        let value = match self.raw_config.get(&name) {
+            Some(raw) => configval_to_py(py, raw)?,
+            None => default,
+        };
+        self.config.borrow_mut().insert(name, value);
+        Ok(())
     }
 
-    /// No-op stub — see module docs. Still deferred to H5a: `docutilsrs`'s
-    /// directive dispatch is a hardcoded match in `parser.rs` with no
-    /// per-extension registration hook to add a custom directive to.
-    #[pyo3(signature = (*_args, **_kwargs))]
+    /// Mirrors `Sphinx.add_directive(name, cls, override=False)`: records
+    /// `name` → `cls.__name__` in the shared [`SharedRegistry`]
+    /// (`**_kwargs` absorbs `override` and any newer upstream keyword
+    /// without erroring). **Accepted deviation:** bookkeeping only — see
+    /// [`crate::registry::SphinxComponentRegistry::directives`]'s doc
+    /// comment for why a document that actually *uses* this directive
+    /// still won't execute it through this registration (`docutilsrs`'s
+    /// parser has a separate, simpler `(args, body) -> str` callable
+    /// bridge — `docutilsrs::plugins::register_directive` — for real
+    /// parse-time execution, not this name/class-name bookkeeping map).
+    #[pyo3(signature = (name, cls, *_args, **_kwargs))]
     fn add_directive(
         &self,
+        name: String,
+        cls: Bound<'_, PyAny>,
         _args: &Bound<'_, PyTuple>,
         _kwargs: Option<Bound<'_, pyo3::types::PyDict>>,
-    ) {
+    ) -> PyResult<()> {
+        let class_name = cls
+            .getattr("__name__")
+            .and_then(|n| n.extract::<String>())
+            .unwrap_or_else(|_| cls.repr().map(|s| s.to_string()).unwrap_or_default());
+        self.registry.borrow_mut().add_directive(name, class_name);
+        Ok(())
     }
 
-    /// No-op stub — see module docs. Still deferred to H5b: same
-    /// registry-less-dispatch blocker as [`Self::add_directive`], plus
-    /// there is no `pending_xref`-shaped `NodeKind` variant a custom role
-    /// could produce.
-    #[pyo3(signature = (*_args, **_kwargs))]
+    /// Mirrors `Sphinx.add_role(name, role, override=False)`: records
+    /// `name` → `role.__name__` in the shared [`SharedRegistry`]. Same
+    /// accepted deviation as [`Self::add_directive`] — see
+    /// [`crate::registry::SphinxComponentRegistry::roles`]'s doc comment
+    /// (`docutilsrs::roles` only models canonical role *names*, not
+    /// arbitrary rendering callables, so a registered role still isn't
+    /// invoked at parse time by this registration alone).
+    #[pyo3(signature = (name, role, *_args, **_kwargs))]
     fn add_role(
         &self,
+        name: String,
+        role: Bound<'_, PyAny>,
         _args: &Bound<'_, PyTuple>,
         _kwargs: Option<Bound<'_, pyo3::types::PyDict>>,
-    ) {
+    ) -> PyResult<()> {
+        let class_name = role
+            .getattr("__name__")
+            .and_then(|n| n.extract::<String>())
+            .unwrap_or_else(|_| role.repr().map(|s| s.to_string()).unwrap_or_default());
+        self.registry.borrow_mut().add_role(name, class_name);
+        Ok(())
     }
 
     /// Mirrors `Sphinx.add_domain(domain, override=False)`: records

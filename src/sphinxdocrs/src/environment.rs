@@ -253,6 +253,17 @@ impl std::fmt::Debug for EventsHandle {
     }
 }
 
+/// Shared handle to a [`BuildEnvironment`].
+///
+/// [`crate::application::SphinxApp`] owns the single instance for the
+/// lifetime of a build; the very same `Rc` is cloned into every
+/// [`crate::app_facade::PyAppFacade`] (as `app.env`) constructed for that
+/// app, so a Python extension listener reads/writes the *live* environment
+/// — not a point-in-time copy — exactly like upstream, where `app.env` and
+/// `env` (the argument passed to most events) are the one persistent
+/// `BuildEnvironment` object for the whole build.
+pub type SharedEnv = std::rc::Rc<std::cell::RefCell<BuildEnvironment>>;
+
 impl BuildEnvironment {
     /// Construct a new `BuildEnvironment`.
     ///
@@ -585,39 +596,25 @@ impl BuildEnvironment {
         use crate::app_events::EventArg;
 
         for docname in &docnames {
-            if let Some(events) = events {
-                events
-                    .borrow_mut()
-                    .emit("source-read", &[EventArg::Str(docname.clone())])
-                    .map_err(|e| BuildError::Other(e.0))?;
-            }
-
             let path = self.doc2path(docname);
             let source = std::fs::read_to_string(&path).map_err(|e| {
                 BuildError::Other(format!("failed to read {}: {e}", path.display()))
             })?;
 
-            let tree = docutilsrs::parse_rst_with_source(&source, docname);
-
-            let title = match &tree.node(tree.root()).kind {
-                NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
-                _ => docname.rsplit('/').next().unwrap_or(docname).to_string(),
-            };
-            self.set_title(docname.clone(), title);
-
-            let entries = scan_toctree_entries(&source);
-            if !entries.is_empty() {
-                self.note_toctree(docname.clone(), entries);
+            if let Some(events) = events {
+                events
+                    .borrow_mut()
+                    .emit(
+                        "source-read",
+                        &[
+                            EventArg::Str(docname.clone()),
+                            EventArg::StrList(vec![source.clone()]),
+                        ],
+                    )
+                    .map_err(|e| BuildError::Other(e.0))?;
             }
 
-            for include in scan_include_entries(&source) {
-                self.note_dependency(docname.clone(), include);
-            }
-
-            self.note_domain_data(docname, &source);
-
-            self.store_doctree(docname, &tree)?;
-            self.record_doc_read(docname.clone(), now_micros());
+            self.read_one_with_source(docname, &source)?;
 
             if let Some(events) = events {
                 events
@@ -628,6 +625,66 @@ impl BuildEnvironment {
         }
 
         Ok(docnames)
+    }
+
+    /// Parse, domain-scan, and persist a single document, reading its
+    /// source from disk itself. Thin wrapper around
+    /// [`read_one_with_source`](Self::read_one_with_source) — see that
+    /// method for the actual body and for why callers that need to fire
+    /// the upstream `source-read` event (with its mutable `source: list[str]`
+    /// argument) should read the file *themselves* and call
+    /// [`read_one_with_source`](Self::read_one_with_source) directly
+    /// instead.
+    pub fn read_one(&mut self, docname: &str) -> Result<(), BuildError> {
+        let path = self.doc2path(docname);
+        let source = std::fs::read_to_string(&path)
+            .map_err(|e| BuildError::Other(format!("failed to read {}: {e}", path.display())))?;
+        self.read_one_with_source(docname, &source)
+    }
+
+    /// Parse, domain-scan, and persist a single document from an
+    /// already-read `source` string — the per-document body of
+    /// [`read_all_impl`](Self::read_all_impl), factored out so
+    /// [`crate::application::SphinxApp::read`] can call it with only a
+    /// short-lived `RefCell` borrow (see `SharedEnv`'s doc comment): holding
+    /// a `borrow_mut()` across the surrounding `source-read`/`doctree-read`
+    /// event emissions would panic if a Python listener on either event
+    /// touches `app.env` (the exact same `Rc<RefCell<_>>`) while that
+    /// borrow is live.
+    ///
+    /// Taking `source` as a parameter (rather than reading the file here)
+    /// lets a caller emit the upstream `source-read` event — whose second
+    /// argument is the mutable `source: list[str]` a listener may rewrite
+    /// in place — *before* parsing, and feed back whatever content that
+    /// event left behind. **Accepted deviation:** this port does not
+    /// currently read back a Python listener's in-place edit to that list
+    /// (would need `emit`'s generic `EventArg` bus to support an
+    /// after-the-fact readback of a mutable arg); `source` is always
+    /// exactly the file's on-disk content.
+    pub fn read_one_with_source(&mut self, docname: &str, source: &str) -> Result<(), BuildError> {
+        let tree = docutilsrs::parse_rst_with_source(source, docname);
+
+        let title = match &tree.node(tree.root()).kind {
+            NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
+            _ => docname.rsplit('/').next().unwrap_or(docname).to_string(),
+        };
+        self.set_title(docname.to_string(), title);
+
+        let entries = scan_toctree_entries(source);
+        if !entries.is_empty() {
+            self.note_toctree(docname.to_string(), entries);
+        }
+
+        for include in scan_include_entries(source) {
+            self.note_dependency(docname.to_string(), include);
+        }
+
+        self.note_domain_data(docname, source);
+
+        self.store_doctree(docname, &tree)?;
+        self.record_doc_read(docname.to_string(), now_micros());
+
+        Ok(())
     }
 
     /// Populate the `std`/`rst`/`py`/`js` domains, `indexentries`, and

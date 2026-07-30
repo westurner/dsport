@@ -368,8 +368,90 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
             }
         }
 
+        // ── generic fallback: everything else ────────────────────────────────
+        //
+        // Every option handled above gets bespoke, precise conversion (e.g.
+        // `intersphinx_mapping`'s tuple-valued dict). But real `conf.py`
+        // files also set plenty of options this module has no dedicated
+        // per-key handling for — most commonly an extension's own settings
+        // (e.g. `sphinx.ext.autosummary`'s `autosummary_generate`). Without
+        // this pass those names were silently dropped, so when the owning
+        // extension's `setup()` later calls
+        // `add_config_value(name, default, ...)`,
+        // [`crate::app_facade::PyAppFacade::add_config_value`]'s
+        // "first registration wins" semantics would see no existing entry
+        // and seed the extension's *default* instead of the real
+        // `conf.py` value — silently ignoring a user's override (e.g.
+        // `autosummary_generate = False` in `conf.py` would still behave
+        // as if it were `True`, the extension's built-in default). Catches
+        // any remaining top-level name whose value is a plain data shape
+        // (`None`/`bool`/`int`/`float`/`str`/`list`/`tuple`/`dict`,
+        // recursively); anything else (an imported module, a function,
+        // `conf.py`'s own helper classes, …) is skipped, matching how
+        // upstream's `Config.read` only ever treats module-level *data*
+        // attributes as config values.
+        for (k, v) in globals.iter() {
+            let Ok(key) = k.extract::<String>() else {
+                continue;
+            };
+            if raw.contains_key(&key) || key.starts_with("__") {
+                continue;
+            }
+            if v.cast::<pyo3::types::PyModule>().is_ok() || v.hasattr("__call__").unwrap_or(false)
+            {
+                continue;
+            }
+            if let Some(val) = py_to_configval(&v) {
+                raw.insert(key, val);
+            }
+        }
+
         Ok(raw)
     })
+}
+
+/// Recursively convert an arbitrary Python value into a [`ConfigVal`].
+///
+/// Used by [`raw_config_from_conf_py`]'s generic fallback pass to capture
+/// `conf.py` options this module has no bespoke per-key handling for.
+/// Returns `None` for anything that isn't (recursively) one of
+/// `NoneType`/`bool`/`int`/`float`/`str`/`list`/`tuple`/`dict` — e.g.
+/// modules, functions, classes, or a container holding one of those —
+/// since those aren't legitimate config values upstream would ever store
+/// on `Config` either.
+fn py_to_configval(v: &pyo3::Bound<'_, pyo3::PyAny>) -> Option<ConfigVal> {
+    if v.is_none() {
+        Some(ConfigVal::Null)
+    } else if let Ok(b) = v.extract::<bool>() {
+        Some(ConfigVal::Bool(b))
+    } else if let Ok(i) = v.extract::<i64>() {
+        Some(ConfigVal::Int(i))
+    } else if let Ok(f) = v.extract::<f64>() {
+        Some(ConfigVal::Float(f))
+    } else if let Ok(s) = v.extract::<String>() {
+        Some(ConfigVal::Str(s))
+    } else if let Ok(list) = v.cast::<PyList>() {
+        let mut items = Vec::with_capacity(list.len());
+        for item in list.iter() {
+            items.push(py_to_configval(&item)?);
+        }
+        Some(ConfigVal::List(items))
+    } else if let Ok(tuple) = v.cast::<pyo3::types::PyTuple>() {
+        let mut items = Vec::with_capacity(tuple.len());
+        for item in tuple.iter() {
+            items.push(py_to_configval(&item)?);
+        }
+        Some(ConfigVal::List(items))
+    } else if let Ok(dict) = v.cast::<PyDict>() {
+        let mut entries = Vec::with_capacity(dict.len());
+        for (k, val) in dict.iter() {
+            let key = k.extract::<String>().ok()?;
+            entries.push((key, py_to_configval(&val)?));
+        }
+        Some(ConfigVal::Map(entries))
+    } else {
+        None
+    }
 }
 
 #[pyfunction(name = "read_conf_py")]
@@ -1054,6 +1136,24 @@ impl SphinxConfig {
     /// Mirrors `name in cfg` (Python `__contains__`).
     pub fn contains(&self, name: &str) -> bool {
         self.options.contains_key(name)
+    }
+
+    /// The raw `conf.py` values (string keys → [`ConfigVal`]), unfiltered
+    /// by option registration — i.e. every plain-data top-level name
+    /// `conf.py` set, whether or not any `add_config_value` has (yet)
+    /// registered a matching option.
+    ///
+    /// Mirrors upstream `Config._raw_config`. Used by
+    /// [`crate::app_facade::PyAppFacade::add_config_value`] to replicate
+    /// `Config.__getattr__`'s exact precedence (`_raw_config` always wins
+    /// over a newly-registered option's `default`, but — matching upstream
+    /// — the value only becomes visible *after* something registers the
+    /// name): this port's `SphinxApp.config` isn't a shared/mutable
+    /// `Rc<RefCell<_>>` the way `app.config`'s own `SharedConfig` is, so
+    /// `add_config_value` can't call back into `SphinxConfig::get` — it
+    /// consults this raw snapshot directly instead.
+    pub fn raw_config(&self) -> &HashMap<String, ConfigVal> {
+        &self.raw_config
     }
 
     // ── value resolution ─────────────────────────────────────────────────────

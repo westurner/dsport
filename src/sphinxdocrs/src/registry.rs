@@ -149,6 +149,24 @@ pub struct SphinxComponentRegistry {
     /// Mirrors `domains: dict[str, type[Domain]]`.
     pub domains: HashMap<String, String>,
 
+    /// Directives registered via `Sphinx.add_directive` (name → the
+    /// directive class's `__name__`). **Accepted deviation:** bookkeeping
+    /// only — this makes a custom directive *discoverable* by name, but
+    /// `docutilsrs`'s parser doesn't consult this map at parse time (its
+    /// own directive dispatch is a separate hardcoded match); a document
+    /// using the directive still needs to go through
+    /// `docutilsrs::plugins::register_directive`'s simpler
+    /// `(args, body) -> str` callable bridge for actual parse-time
+    /// execution, not this registry.
+    pub directives: HashMap<String, String>,
+
+    /// Roles registered via `Sphinx.add_role`/`Sphinx.add_generic_role`
+    /// (name → the role callable's `__name__`). Same accepted deviation as
+    /// [`directives`](Self::directives) — bookkeeping only, no parse-time
+    /// execution hook (`docutilsrs::roles` only models canonical role
+    /// *names*, not arbitrary rendering callables).
+    pub roles: HashMap<String, String>,
+
     /// Translators: builder name → translator class name.
     ///
     /// Mirrors `translators: dict[str, type[SphinxTranslator]]`.
@@ -407,6 +425,43 @@ impl SphinxComponentRegistry {
     /// Return `true` if a domain with `name` is registered.
     pub fn has_domain(&self, name: &str) -> bool {
         self.domains.contains_key(name)
+    }
+
+    /// Register a directive class name.
+    ///
+    /// Mirrors `SphinxComponentRegistry.add_directive(name, cls)`. See
+    /// [`directives`](Self::directives)'s doc comment for the accepted
+    /// deviation.
+    pub fn add_directive(&mut self, name: impl Into<String>, class_name: impl Into<String>) {
+        self.directives.insert(name.into(), class_name.into());
+    }
+
+    /// Return the registered directive class name for `name`, if any.
+    pub fn get_directive(&self, name: &str) -> Option<&str> {
+        self.directives.get(name).map(String::as_str)
+    }
+
+    /// Return `true` if a directive with `name` is registered.
+    pub fn has_directive(&self, name: &str) -> bool {
+        self.directives.contains_key(name)
+    }
+
+    /// Register a role callable's name.
+    ///
+    /// Mirrors `SphinxComponentRegistry.add_role(name, role)`. See
+    /// [`roles`](Self::roles)'s doc comment for the accepted deviation.
+    pub fn add_role(&mut self, name: impl Into<String>, class_name: impl Into<String>) {
+        self.roles.insert(name.into(), class_name.into());
+    }
+
+    /// Return the registered role callable's name for `name`, if any.
+    pub fn get_role(&self, name: &str) -> Option<&str> {
+        self.roles.get(name).map(String::as_str)
+    }
+
+    /// Return `true` if a role with `name` is registered.
+    pub fn has_role(&self, name: &str) -> bool {
+        self.roles.contains_key(name)
     }
 
     /// Register a translator class name for a given builder.

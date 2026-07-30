@@ -284,6 +284,71 @@ def setup(app):
     );
 }
 
+/// `app.add_directive`/`app.add_role` (bookkeeping-only, see
+/// `sphinxdocrs::registry::SphinxComponentRegistry::directives`/`roles`'s
+/// doc comments): a typical `setup()` call registering a custom directive
+/// class and a custom role callable must not raise `AttributeError`
+/// anymore, and the name -> class-name mapping must land in the shared
+/// registry `SphinxApp` itself owns.
+#[test]
+fn load_extension_add_directive_and_add_role_recorded() {
+    let pydir = TempDir::new().unwrap();
+    std::fs::write(
+        pydir.path().join("h5_directive_role_ext.py"),
+        r#"
+from docutils.parsers.rst import Directive
+
+
+class MyDirective(Directive):
+    has_content = True
+
+    def run(self):
+        return []
+
+
+def my_role(name, rawtext, text, lineno, inliner, options=None, content=None):
+    return [], []
+
+
+def setup(app):
+    app.add_directive("mydirective", MyDirective)
+    app.add_role("myrole", my_role)
+    return {"version": "0.1", "parallel_read_safe": True}
+"#,
+    )
+    .unwrap();
+
+    pyo3::Python::attach(|py| {
+        let sys = py.import("sys").unwrap();
+        let path = sys.getattr("path").unwrap();
+        path.call_method1("insert", (0, pydir.path().to_str().unwrap()))
+            .unwrap();
+    });
+
+    let src = TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "Welcome\n=======\n\nHomepage.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join("conf.py"),
+        "extensions = ['h5_directive_role_ext']\n",
+    )
+    .unwrap();
+
+    let out = TempDir::new().unwrap();
+    let dt = TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+
+    app.build().unwrap();
+
+    let registry = app.registry.borrow();
+    assert_eq!(registry.get_directive("mydirective"), Some("MyDirective"));
+    assert_eq!(registry.get_role("myrole"), Some("my_role"));
+}
+
 #[test]
 fn load_extension_unknown_module_errors() {
     let src = make_src();

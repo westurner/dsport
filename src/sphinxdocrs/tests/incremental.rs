@@ -139,7 +139,7 @@ fn newly_added_file_is_read_once() {
         vec!["extra".to_string()],
         "only the newly-added document should be read"
     );
-    assert!(app2.env.all_docs.contains_key("extra"));
+    assert!(app2.env.borrow().all_docs.contains_key("extra"));
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn removed_file_is_purged_from_env_and_doctree_store() {
     let mut app1 =
         SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
     app1.build().unwrap();
-    assert!(app1.env.has_stored_doctree("extra"));
+    assert!(app1.env.borrow().has_stored_doctree("extra"));
 
     std::fs::remove_file(src.path().join("extra.rst")).unwrap();
 
@@ -166,11 +166,11 @@ fn removed_file_is_purged_from_env_and_doctree_store() {
         "removing a document shouldn't cause anything to be re-read"
     );
     assert!(
-        !app2.env.all_docs.contains_key("extra"),
+        !app2.env.borrow().all_docs.contains_key("extra"),
         "removed document must be purged from all_docs"
     );
     assert!(
-        !app2.env.has_stored_doctree("extra"),
+        !app2.env.borrow().has_stored_doctree("extra"),
         "removed document's persisted doctree must be deleted"
     );
 }

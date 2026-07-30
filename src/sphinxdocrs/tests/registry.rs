@@ -296,6 +296,46 @@ fn html_theme_overwritten_by_later_add() {
     assert_eq!(r.html_themes["t"], PathBuf::from("/new"));
 }
 
+// ── directives / roles (bookkeeping only) ─────────────────────────────────
+
+#[test]
+fn directive_registered_and_retrieved() {
+    let mut r = reg();
+    r.add_directive("mydirective", "MyDirective");
+    assert!(r.has_directive("mydirective"));
+    assert_eq!(r.get_directive("mydirective"), Some("MyDirective"));
+}
+
+#[test]
+fn directive_missing_returns_none() {
+    let r = reg();
+    assert!(!r.has_directive("missing"));
+    assert_eq!(r.get_directive("missing"), None);
+}
+
+#[test]
+fn directive_overwritten_by_later_add() {
+    let mut r = reg();
+    r.add_directive("d", "First");
+    r.add_directive("d", "Second");
+    assert_eq!(r.get_directive("d"), Some("Second"));
+}
+
+#[test]
+fn role_registered_and_retrieved() {
+    let mut r = reg();
+    r.add_role("myrole", "my_role_fn");
+    assert!(r.has_role("myrole"));
+    assert_eq!(r.get_role("myrole"), Some("my_role_fn"));
+}
+
+#[test]
+fn role_missing_returns_none() {
+    let r = reg();
+    assert!(!r.has_role("missing"));
+    assert_eq!(r.get_role("missing"), None);
+}
+
 // ── empty registry ────────────────────────────────────────────────────────
 
 #[test]
@@ -311,4 +351,6 @@ fn new_registry_all_empty() {
     assert!(r.latex_packages.is_empty());
     assert!(r.latex_packages_after_hyperref.is_empty());
     assert!(r.html_themes.is_empty());
+    assert!(r.directives.is_empty());
+    assert!(r.roles.is_empty());
 }

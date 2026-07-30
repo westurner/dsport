@@ -53,6 +53,8 @@ use std::rc::Rc;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 
+use docutilsrs::python::PyDoctree;
+
 use crate::app_events::{EventArg, EventError, SharedEvents};
 use crate::config::ConfigVal;
 use crate::registry::{CssFile, JsFile, SharedRegistry};
@@ -77,6 +79,9 @@ fn event_arg_to_py(py: Python<'_>, arg: &EventArg) -> PyResult<Py<PyAny>> {
         EventArg::None => py.None(),
         EventArg::Str(s) => s.into_pyobject(py)?.into_any().unbind(),
         EventArg::StrList(items) => PyList::new(py, items)?.into_any().unbind(),
+        EventArg::Doctree(tree) => {
+            Py::new(py, PyDoctree::new(tree.clone()))?.into_any()
+        }
     })
 }
 
@@ -514,6 +519,97 @@ fn kwargs_to_attrs(kwargs: Option<&Bound<'_, PyDict>>) -> HashMap<String, String
     attrs
 }
 
+/// Convert variadic Python `*args` (as passed to `events.emit(name, *args)`/
+/// `events.emit_firstresult(name, *args)`) into native [`EventArg`]s.
+///
+/// **Accepted deviation:** intentionally lossy/stringifying — every
+/// non-`None` argument becomes `EventArg::Str(arg.str())`. `EventArg` has
+/// no richer payload shape for an arbitrary Python object anyway (see its
+/// doc comment), and this is sufficient for the module names/docnames real
+/// extensions pass to their own custom events (e.g. `viewcode-find-source`,
+/// `viewcode-follow-imported`).
+fn py_args_to_event_args(args: &Bound<'_, PyTuple>) -> PyResult<Vec<EventArg>> {
+    let mut out = Vec::with_capacity(args.len());
+    for arg in args.iter() {
+        if arg.is_none() {
+            out.push(EventArg::None);
+        } else {
+            out.push(EventArg::Str(arg.str()?.to_string()));
+        }
+    }
+    Ok(out)
+}
+
+/// Minimal `app`-shaped facade over a [`SharedEvents`] handle.
+///
+/// Mirrors `sphinx.events.EventManager`, exposed as `app.events` for the
+/// (surprisingly common — see the grep in this module's changelog note)
+/// pattern real extensions use: `events = app.events;
+/// events.emit_firstresult('some-custom-event', ...)` (e.g.
+/// `sphinx.ext.viewcode`/`linkcode`'s `doctree_read`), rather than only
+/// ever going through the top-level `app.connect`/`app.emit` aliases.
+///
+/// **Accepted deviation:** the native [`crate::app_events::AppEventManager`]
+/// `Handler` type is `FnMut(&[EventArg]) -> Result<(), EventError>` — it has
+/// no slot for a listener to return a value. So [`Self::emit`]/
+/// [`Self::emit_firstresult`] still fully dispatch to every registered
+/// listener (side effects happen), but always report "no result"
+/// (`[]`/`None`) — which matches upstream's own behavior in the common
+/// case where nothing happens to be connected to a given custom event name.
+///
+/// **Deliberately does NOT have its own `connect`/`disconnect`:** doing so
+/// would need duplicating all of [`PyAppFacade::connect`]'s captured
+/// `Shared*` fields just to reconstruct the callback's `app` argument.
+/// Use the existing top-level `app.connect`/`app.disconnect` instead —
+/// upstream's own `Sphinx.connect` is itself just `self.events.connect`.
+#[pyclass(
+    unsendable,
+    skip_from_py_object,
+    name = "_EventsFacade",
+    module = "sphinxdocrs"
+)]
+#[derive(Clone)]
+pub struct PyEventsFacade {
+    events: SharedEvents,
+}
+
+impl PyEventsFacade {
+    pub fn new(events: SharedEvents) -> Self {
+        Self { events }
+    }
+}
+
+#[pymethods]
+impl PyEventsFacade {
+    /// Mirrors `EventManager.emit(name, *args, allowed_exceptions=())`.
+    /// See this struct's doc comment for the "always returns `[]`"
+    /// accepted deviation.
+    #[pyo3(signature = (event, *args))]
+    fn emit(&self, event: &str, args: &Bound<'_, PyTuple>) -> PyResult<Vec<Py<PyAny>>> {
+        let event_args = py_args_to_event_args(args)?;
+        self.events
+            .borrow_mut()
+            .emit(event, &event_args)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.0))?;
+        Ok(Vec::new())
+    }
+
+    /// Mirrors `EventManager.emit_firstresult(name, *args,
+    /// allowed_exceptions=())`. See this struct's doc comment for the
+    /// "always returns `None`" accepted deviation.
+    #[pyo3(signature = (event, *args))]
+    fn emit_firstresult(&self, py: Python<'_>, event: &str, args: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>> {
+        self.emit(event, args)?;
+        Ok(py.None())
+    }
+
+    /// Mirrors `Sphinx.add_event(name)` (`EventManager.add`).
+    fn add_event(&self, name: &str) -> PyResult<()> {
+        self.events.borrow_mut().add(name.to_string());
+        Ok(())
+    }
+}
+
 /// Minimal `app`-shaped facade over a [`SharedEvents`] handle.
 ///
 /// Constructed by `SphinxApp::load_extension` for the duration of a
@@ -694,6 +790,15 @@ impl PyAppFacade {
     #[getter]
     fn doctreedir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         path_to_pyobject(py, &self.env.borrow().doctreedir)
+    }
+
+    /// Mirrors `Sphinx.events` — a live [`PyEventsFacade`] over this app's
+    /// [`SharedEvents`] (same handle `connect`/`disconnect`/`add_event`
+    /// already use). A fresh facade is returned on every access (cheap
+    /// `Rc` clone), same pattern as [`Self::config`]/[`Self::env`].
+    #[getter]
+    fn events(&self, py: Python<'_>) -> PyResult<Py<PyEventsFacade>> {
+        Py::new(py, PyEventsFacade::new(self.events.clone()))
     }
 
     /// Mirrors `Sphinx.add_config_value(name, default, rebuild, types=())`:

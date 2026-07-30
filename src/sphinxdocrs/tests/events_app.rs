@@ -500,6 +500,86 @@ def setup(app):
     app.build().unwrap();
 }
 
+/// `doctree-read`'s `doctree` argument (`_Doctree`/`docutilsrs.Doctree`):
+/// regression test for the `AttributeError: 'str' object has no attribute
+/// 'findall'` crash confirmed by a real `make otherdocs-sphinx-rs` run of
+/// `sphinx.ext.viewcode`/`linkcode` — both connect `doctree_read(app,
+/// doctree)` and immediately call `doctree.findall(addnodes.desc)`. This
+/// mirrors that exact shape (a class the native port has no matching node
+/// kind for, so it must find nothing rather than crash) plus a positive
+/// match against a real `paragraph` node, asserted directly inside
+/// `setup()` so any regression fails the build.
+#[test]
+fn load_extension_doctree_read_receives_real_doctree_with_findall() {
+    let pydir = TempDir::new().unwrap();
+    std::fs::write(
+        pydir.path().join("h5_doctree_read_ext.py"),
+        r#"
+seen = {}
+
+
+class desc:
+    """Stand-in for `sphinx.addnodes.desc` — this port never produces a
+    node tagged "desc" (domain objects are text-scanned, not modeled as
+    real doctree nodes), so matching by class must find nothing."""
+
+
+class FakeParagraph:
+    tagname = "paragraph"
+
+
+def doctree_read(app, doctree):
+    assert hasattr(doctree, "findall"), f"doctree has no findall(): {doctree!r}"
+
+    # Mirrors viewcode/linkcode's exact call shape: a class this port
+    # doesn't model as a real node kind must yield an empty list, not
+    # raise an AttributeError.
+    descs = list(doctree.findall(desc))
+    assert descs == [], f"expected no 'desc' matches, got {descs!r}"
+
+    # A real node kind actually present in the parsed document must be
+    # found via a class carrying the matching `tagname`.
+    paragraphs = list(doctree.findall(FakeParagraph))
+    assert len(paragraphs) == 1, f"expected 1 paragraph, got {paragraphs!r}"
+    assert paragraphs[0].tag == "paragraph"
+
+    seen["ran"] = True
+
+
+def setup(app):
+    app.connect("doctree-read", doctree_read)
+    return {"version": "0.1", "parallel_read_safe": True}
+"#,
+    )
+    .unwrap();
+
+    pyo3::Python::attach(|py| {
+        let sys = py.import("sys").unwrap();
+        let path = sys.getattr("path").unwrap();
+        path.call_method1("insert", (0, pydir.path().to_str().unwrap()))
+            .unwrap();
+    });
+
+    let src = TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "Welcome\n=======\n\nHomepage.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join("conf.py"),
+        "extensions = ['h5_doctree_read_ext']\n",
+    )
+    .unwrap();
+
+    let out = TempDir::new().unwrap();
+    let dt = TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+
+    app.build().unwrap();
+}
+
 #[test]
 fn load_extension_unknown_module_errors() {
     let src = make_src();

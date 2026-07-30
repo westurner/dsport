@@ -678,9 +678,14 @@ impl SphinxApp {
                 .borrow_mut()
                 .read_one_with_source(docname, &source)
                 .map_err(AppError::from)?;
+            // Read the just-stored doctree back so listeners get a real,
+            // `.findall()`-capable object instead of the docname string —
+            // see `EventArg::Doctree`'s doc comment for the accepted
+            // "not read back after mutation" deviation.
+            let tree = self.env.borrow().get_doctree(docname).map_err(AppError::from)?;
             self.events
                 .borrow_mut()
-                .emit("doctree-read", &[EventArg::Str(docname.clone())])?;
+                .emit("doctree-read", &[EventArg::Doctree(tree)])?;
         }
 
         self.events.borrow_mut().emit("env-updated", &[])?;

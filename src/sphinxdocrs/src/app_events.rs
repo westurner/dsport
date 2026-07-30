@@ -45,6 +45,8 @@ use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 
+use docutilsrs::doctree::Doctree;
+
 /// Error surfaced when an event listener fails during
 /// [`AppEventManager::emit`]. Mirrors the *message shape* of upstream's
 /// `ExtensionError`-wrapped listener failure — see this module's
@@ -82,14 +84,25 @@ pub const CORE_EVENTS: &[&str] = &[
 /// A positional argument passed to an event listener.
 ///
 /// Mirrors the small subset of argument shapes the native pipeline needs
-/// to pass (docnames, docname lists). Richer payloads (config objects,
-/// doctrees) are out of scope until the events fire alongside real
-/// `Domain`/`Config` Python objects (H3/H5/H6).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// to pass (docnames, docname lists, and — since **2026-07-30**, a real
+/// parsed [`Doctree`] for `doctree-read`). Richer payloads (config/env
+/// objects) are out of scope until the events fire alongside real
+/// `Domain`/`Config` Python objects (H3/H5/H6). **No `PartialEq`/`Eq`
+/// derive** (unlike before the `Doctree` variant was added): `Doctree`
+/// doesn't implement either, and no call site actually compares `EventArg`
+/// values (tests only pattern-match with `if let`).
+#[derive(Debug, Clone)]
 pub enum EventArg {
     None,
     Str(String),
     StrList(Vec<String>),
+    /// A parsed doctree, passed as `doctree-read`'s second argument.
+    /// **Accepted deviation:** this is an owned snapshot, not a live
+    /// shared reference — a listener's in-place mutation (e.g. appending
+    /// nodes) is not read back into the environment's stored doctree,
+    /// same accepted-deviation shape as `source-read`'s `StrList` arg (see
+    /// this module's other doc comments).
+    Doctree(Doctree),
 }
 
 /// Boxed listener callback. Not `Send`/`Sync`: listeners may wrap Python

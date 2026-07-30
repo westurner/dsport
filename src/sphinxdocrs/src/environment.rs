@@ -617,9 +617,15 @@ impl BuildEnvironment {
             self.read_one_with_source(docname, &source)?;
 
             if let Some(events) = events {
+                // Read the just-stored doctree back so listeners get a
+                // real, `.findall()`-capable object (see `EventArg::Doctree`'s
+                // doc comment for the accepted "not read back after mutation"
+                // deviation) instead of the docname string upstream's
+                // `doctree-read(app, doctree)` never actually passes.
+                let tree = self.get_doctree(docname)?;
                 events
                     .borrow_mut()
-                    .emit("doctree-read", &[EventArg::Str(docname.clone())])
+                    .emit("doctree-read", &[EventArg::Doctree(tree)])
                     .map_err(|e| BuildError::Other(e.0))?;
             }
         }

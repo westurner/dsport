@@ -14,7 +14,7 @@ pub mod manpage_writer;
 pub mod odt_writer;
 pub mod parser;
 pub mod plugins;
-mod python;
+pub mod python;
 pub mod roles;
 pub mod text_writer;
 pub mod transforms;

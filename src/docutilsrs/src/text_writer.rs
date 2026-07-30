@@ -266,6 +266,31 @@ fn render_block(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<Strin
         | NodeKind::Comment
         | NodeKind::SystemMessage { .. }
         | NodeKind::Problematic { .. } => {}
+        NodeKind::Extension { class_name, attrs } => {
+            let mut inner = Vec::new();
+            for &c in &node.children {
+                render_block(tree, c, depth, &mut inner);
+            }
+            let visit = crate::plugins::invoke_node_visit(class_name, "text", attrs);
+            let depart = crate::plugins::invoke_node_depart(class_name, "text", attrs);
+            if visit.is_some() || depart.is_some() {
+                if let Some(open) = visit {
+                    if let Some(first) = inner.first_mut() {
+                        *first = format!("{open}{first}");
+                    } else {
+                        inner.push(open);
+                    }
+                }
+                if let Some(close) = depart {
+                    if let Some(last) = inner.last_mut() {
+                        last.push_str(&close);
+                    } else {
+                        inner.push(close);
+                    }
+                }
+            }
+            blocks.extend(inner);
+        }
         // Anything else that reaches block position (targets, substitution
         // defs, labels, etc.) has no standalone textual form.
         _ => {

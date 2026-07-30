@@ -389,6 +389,17 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             s.push('\n');
             out.push_str(&s);
         }
+        NodeKind::Extension { class_name, attrs } => {
+            let mut s = format!("{indent}<{class_name}");
+            let mut keys: Vec<&String> = attrs.keys().collect();
+            keys.sort();
+            for k in keys {
+                let _ = write!(s, " {k}=\"{}\"", attrs[k]);
+            }
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
     }
     for &child in &node.children {
         write_node(tree, child, depth + 1, out);

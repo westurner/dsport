@@ -6,6 +6,8 @@
 //! pointers are `NodeId`s, never references, so the tree is cheap to mutate
 //! and trivial to traverse without lifetime gymnastics.
 
+use std::collections::HashMap;
+
 pub type NodeId = usize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -192,6 +194,21 @@ pub enum NodeKind {
         ty: &'static str,
         ids: String,
         backrefs: String,
+    },
+    /// An extension-defined node registered via upstream `Sphinx.add_node`
+    /// (see `docs/adr/0006-extension-nodes.md`). `class_name` is the
+    /// registering Python class's `__name__`, used to key the per-
+    /// `(class_name, builder_format)` visit/depart callable registry in
+    /// [`crate::plugins`]. `attrs` is a **string-valued-only**
+    /// simplification of the node's real `docutils.nodes.Element`
+    /// attribute dict — the same accepted deviation already used for
+    /// `domaindata`/`temp_data`/`ref_context` elsewhere in this port.
+    /// Every writer falls back to rendering children only (no wrapper
+    /// markup) when no visit/depart pair is registered for its own
+    /// builder format, mirroring upstream's `unknown_visit` fallback.
+    Extension {
+        class_name: String,
+        attrs: HashMap<String, String>,
     },
 }
 
@@ -469,6 +486,10 @@ enum NodeKindData {
         ids: String,
         backrefs: String,
     },
+    Extension {
+        class_name: String,
+        attrs: HashMap<String, String>,
+    },
 }
 
 impl From<&Doctree> for DoctreeData {
@@ -668,6 +689,9 @@ impl From<&NodeKind> for NodeKindData {
                 ids,
                 backrefs,
             },
+            NodeKind::Extension { class_name, attrs } => {
+                NodeKindData::Extension { class_name, attrs }
+            }
         }
     }
 }
@@ -827,6 +851,9 @@ impl From<NodeKindData> for NodeKind {
                 ids,
                 backrefs,
             },
+            NodeKindData::Extension { class_name, attrs } => {
+                NodeKind::Extension { class_name, attrs }
+            }
         }
     }
 }

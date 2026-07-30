@@ -477,6 +477,20 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 emit(tree, c, section_depth, out);
             }
         }
+        NodeKind::Extension { class_name, attrs } => {
+            let visit = crate::plugins::invoke_node_visit(class_name, "odt", attrs);
+            if let Some(open) = &visit {
+                out.push_str(open);
+            }
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            if visit.is_some() {
+                if let Some(close) = crate::plugins::invoke_node_depart(class_name, "odt", attrs) {
+                    out.push_str(&close);
+                }
+            }
+        }
     }
 }
 

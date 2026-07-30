@@ -393,6 +393,20 @@ fn emit(
             }
             out.push_str("</aside>");
         }
+        NodeKind::Extension { class_name, attrs } => {
+            let visit = crate::plugins::invoke_node_visit(class_name, "html", attrs);
+            if let Some(open) = &visit {
+                out.push_str(open);
+            }
+            for &c in &node.children {
+                emit(tree, c, out, options, common);
+            }
+            if visit.is_some() {
+                if let Some(close) = crate::plugins::invoke_node_depart(class_name, "html", attrs) {
+                    out.push_str(&close);
+                }
+            }
+        }
     }
 }
 

@@ -200,3 +200,101 @@ pub(crate) fn py_clear_transforms() -> PyResult<()> {
     guard.clear();
     Ok(())
 }
+
+// ── extension-node visit/depart registry (ADR 0006) ────────────────────────
+//
+// Backs `NodeKind::Extension`: a real Sphinx extension's
+// `app.add_node(cls, **format_pairs)` registers a `(visit, depart)`
+// callable pair per builder *format* (`"html"`, `"latex"`, `"man"`,
+// `"text"`, `"odt"`, `"xml"`, ...) for its own node class. Keyed by
+// `(class_name, format)` rather than just `class_name` because upstream's
+// model is exactly that granular (a format with no registered pair falls
+// back to rendering children only, matching upstream's
+// `unknown_visit`/base-class dispatch fallback).
+//
+// Unlike the directive/transform registries above, this one is populated
+// via a plain Rust function ([`register_node_visitor`]), not a
+// `#[pyfunction]` — the only caller is
+// `sphinxdocrs::app_facade::PyAppFacade::add_node`, a normal Rust call
+// site (`docutilsrs` is an ordinary path dependency of `sphinxdocrs`, so
+// no Python round-trip is needed to reach this registry from there).
+
+fn node_visitor_registry() -> &'static Mutex<HashMap<(String, String), (Py<PyAny>, Option<Py<PyAny>>)>> {
+    static R: OnceLock<Mutex<HashMap<(String, String), (Py<PyAny>, Option<Py<PyAny>>)>>> =
+        OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Register a `(visit, depart)` callable pair for `class_name` under
+/// builder `format`. Overwrites any existing registration for the same
+/// `(class_name, format)` pair (mirrors `override=True` semantics — the
+/// caller is expected to have already checked `override` if that matters).
+pub fn register_node_visitor(
+    class_name: String,
+    format: String,
+    visit: Py<PyAny>,
+    depart: Option<Py<PyAny>>,
+) {
+    if let Ok(mut guard) = node_visitor_registry().lock() {
+        guard.insert((class_name, format), (visit, depart));
+    }
+}
+
+/// True if a visit callable is registered for `(class_name, format)`.
+pub fn has_node_visitor(class_name: &str, format: &str) -> bool {
+    node_visitor_registry()
+        .lock()
+        .map(|g| g.contains_key(&(class_name.to_string(), format.to_string())))
+        .unwrap_or(false)
+}
+
+/// Invoke the registered `visit` callable for `(class_name, format)`,
+/// passing `attrs` as a plain `dict`. Returns the text it produced (the
+/// node's "opening" markup, emitted before its children are rendered), or
+/// `None` if nothing is registered or the callable raised / didn't return
+/// a `str` — a plugin bug must never abort the surrounding build, the same
+/// fail-soft contract as [`invoke_plugin`].
+pub fn invoke_node_visit(
+    class_name: &str,
+    format: &str,
+    attrs: &HashMap<String, String>,
+) -> Option<String> {
+    invoke_node_hook(class_name, format, attrs, true)
+}
+
+/// Same as [`invoke_node_visit`] but calls the `depart` callable (the
+/// node's "closing" markup, emitted after its children have been
+/// rendered). Returns `None` (renders no closing text) if no `depart` was
+/// registered for this pair, even if a `visit` was.
+pub fn invoke_node_depart(
+    class_name: &str,
+    format: &str,
+    attrs: &HashMap<String, String>,
+) -> Option<String> {
+    invoke_node_hook(class_name, format, attrs, false)
+}
+
+fn invoke_node_hook(
+    class_name: &str,
+    format: &str,
+    attrs: &HashMap<String, String>,
+    is_visit: bool,
+) -> Option<String> {
+    Python::try_attach(|py| -> Option<String> {
+        let cb = {
+            let guard = node_visitor_registry().lock().ok()?;
+            let (visit, depart) = guard.get(&(class_name.to_string(), format.to_string()))?;
+            if is_visit {
+                visit.clone_ref(py)
+            } else {
+                depart.as_ref()?.clone_ref(py)
+            }
+        };
+        let dict = pyo3::types::PyDict::new(py);
+        for (k, v) in attrs {
+            dict.set_item(k, v).ok()?;
+        }
+        let result = cb.bind(py).call1((dict,)).ok()?;
+        result.extract::<String>().ok()
+    })?
+}

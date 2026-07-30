@@ -349,6 +349,157 @@ def setup(app):
     assert_eq!(registry.get_role("myrole"), Some("my_role"));
 }
 
+/// **ADR 0006** — `app.add_node(cls, html=(visit, depart))`: the
+/// `(class_name, "html")` pair must land in both the shared
+/// `SphinxComponentRegistry::nodes` bookkeeping map (discoverability) and
+/// `docutilsrs::plugins`'s real node-visitor registry (rendering). Since
+/// this port has no directive that can construct an `Extension` node yet
+/// (see the ADR's "Related/out of scope" section), the rendering half is
+/// verified by directly building a `Doctree` containing one and rendering
+/// it through `docutilsrs::html5` — the same registry the native HTML
+/// writer consults, populated here via a real end-to-end `setup()` call.
+#[test]
+fn load_extension_add_node_records_and_renders() {
+    let pydir = TempDir::new().unwrap();
+    std::fs::write(
+        pydir.path().join("h5_node_ext.py"),
+        r#"
+class TodoNode:
+    pass
+
+
+def visit_todo(attrs):
+    return '<div class="todo">'
+
+
+def depart_todo(attrs):
+    return "</div>"
+
+
+def setup(app):
+    app.add_node(TodoNode, html=(visit_todo, depart_todo))
+    return {"version": "0.1", "parallel_read_safe": True}
+"#,
+    )
+    .unwrap();
+
+    pyo3::Python::attach(|py| {
+        let sys = py.import("sys").unwrap();
+        let path = sys.getattr("path").unwrap();
+        path.call_method1("insert", (0, pydir.path().to_str().unwrap()))
+            .unwrap();
+    });
+
+    let src = TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "Welcome\n=======\n\nHomepage.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join("conf.py"),
+        "extensions = ['h5_node_ext']\n",
+    )
+    .unwrap();
+
+    let out = TempDir::new().unwrap();
+    let dt = TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+
+    app.build().unwrap();
+
+    {
+        let registry = app.registry.borrow();
+        assert_eq!(
+            registry.get_node_formats("TodoNode"),
+            Some(&["html".to_string()][..])
+        );
+    }
+
+    let mut tree = docutilsrs::Doctree::new_document("<test>");
+    let root = tree.root();
+    let ext_id = tree.append(
+        root,
+        docutilsrs::NodeKind::Extension {
+            class_name: "TodoNode".to_string(),
+            attrs: HashMap::new(),
+        },
+    );
+    tree.append(
+        ext_id,
+        docutilsrs::NodeKind::Text("Remember this.".to_string()),
+    );
+
+    let html = docutilsrs::html5(
+        &tree,
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
+    assert!(
+        html.contains("<div class=\"todo\">Remember this.</div>"),
+        "add_node's registered visit/depart pair was not used to render the Extension node:\n{html}"
+    );
+}
+
+/// `app.events` (`_EventsFacade`): extensions commonly hold on to
+/// `app.events` directly rather than always going through
+/// `app.connect`/`app.emit` (e.g. `sphinx.ext.viewcode`'s `doctree_read`
+/// does `events = app.events; events.emit_firstresult(...)`). Regression
+/// test for the `AttributeError: '_AppFacade' object has no attribute
+/// 'events'` crash: a `setup()` that reads `app.events`, connects a
+/// listener, and calls both `emit`/`emit_firstresult` on it must not
+/// raise, and the connected listener must actually run (side effects
+/// asserted directly inside `setup()`, so any mismatch fails the build).
+#[test]
+fn load_extension_app_events_facade_emits_and_dispatches() {
+    let pydir = TempDir::new().unwrap();
+    std::fs::write(
+        pydir.path().join("h5_events_ext.py"),
+        r#"
+seen = []
+
+
+def my_listener(app, x):
+    seen.append(x)
+
+
+def setup(app):
+    app.connect("my-custom-event", my_listener)
+    events = app.events
+    result = events.emit_firstresult("my-custom-event", "hello")
+    assert result is None, f"expected None, got {result!r}"
+    assert seen == ["hello"], f"listener did not run via emit_firstresult: {seen!r}"
+    events.emit("my-custom-event", "world")
+    assert seen == ["hello", "world"], f"listener did not run via emit: {seen!r}"
+    return {"version": "0.1", "parallel_read_safe": True}
+"#,
+    )
+    .unwrap();
+
+    pyo3::Python::attach(|py| {
+        let sys = py.import("sys").unwrap();
+        let path = sys.getattr("path").unwrap();
+        path.call_method1("insert", (0, pydir.path().to_str().unwrap()))
+            .unwrap();
+    });
+
+    let src = TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "Welcome\n=======\n\nHomepage.\n",
+    )
+    .unwrap();
+    std::fs::write(src.path().join("conf.py"), "extensions = ['h5_events_ext']\n").unwrap();
+
+    let out = TempDir::new().unwrap();
+    let dt = TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+
+    app.build().unwrap();
+}
+
 #[test]
 fn load_extension_unknown_module_errors() {
     let src = make_src();

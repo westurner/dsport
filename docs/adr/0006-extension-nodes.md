@@ -1,6 +1,6 @@
 # ADR 0006 — Extension (`add_node`) doctree nodes
 
-**Status**: proposed
+**Status**: implemented
 **Date**: 2026-07-28
 
 ## Context
@@ -214,3 +214,50 @@ skip) behavior for an `Extension` node with no matching pair.
   listener during a real `make otherdocs-sphinx-rs` build.
 - `add_autodocumenter` remains explicitly out of scope (per prior
   direction), independent of this ADR.
+
+## Implementation notes
+Implemented as decided above, with one refinement to the visit/depart
+callable contract (left open by this ADR as "an implementation detail,
+not a separate ADR"): rather than upstream's mutable `self.body.append(...)`
+sink, callables here are pure functions `attrs: dict -> str`, matching the
+existing `invoke_plugin` contract already used for directives/roles.
+
+- `doctree.rs`: `NodeKind::Extension { class_name, attrs: HashMap<String,
+  String> }` added as the final variant, mirrored in `NodeKindData` and
+  both `From` conversions.
+- `docutilsrs::plugins`: new process-global `node_visitor_registry()`
+  keyed by `(class_name, format)`, with `register_node_visitor`,
+  `has_node_visitor`, `invoke_node_visit`, `invoke_node_depart` (each
+  invocation is `Python::try_attach`-wrapped and fails soft, same as
+  `invoke_plugin`).
+- Writer coverage: `html5_writer.rs` (`"html"`), `latex_writer.rs`
+  (`"latex"`), `manpage_writer.rs` (`"man"`), `odt_writer.rs` (`"odt"`),
+  `text_writer.rs` (`"text"`) all invoke the registry and recurse into
+  children regardless of whether a pair was registered (fallback to
+  children-only when not). `xml_writer.rs` and `writer.rs` (pseudo-XML)
+  deliberately render a generic tag by `class_name`/`attrs` without
+  consulting the registry — their generic structural serialization is
+  already upstream-correct without a per-format hook.
+- `python.rs`: `PyNode.tag`/`.attributes` getters gained `Extension`
+  arms (required for exhaustiveness; `attributes` bonus-exposes `attrs`
+  to Python callers).
+- `sphinxdocrs::registry::SphinxComponentRegistry`: new
+  `nodes: HashMap<String, Vec<String>>` bookkeeping field (which formats
+  were registered per class name — discoverability only; the
+  rendering-relevant state lives in `docutilsrs::plugins`), with
+  `add_node`/`get_node_formats`/`has_node`.
+- `sphinxdocrs::app_facade::PyAppFacade::add_node`: real implementation.
+  Extracts `class_name` from `cls.__name__` (falling back to `repr()`),
+  iterates `**kwargs` skipping `override`, accepts a 2-tuple
+  `(visit, depart)`, a 1-tuple `(visit,)`, or a bare callable per format,
+  and registers each into both the `docutilsrs::plugins` registry and
+  the `sphinxdocrs` bookkeeping registry.
+- Tests: `docutilsrs/tests/extension_node.rs` (registry + every writer's
+  fallback/dispatch behavior + doctree serialization round-trip) and
+  `sphinxdocrs/tests/events_app.rs::load_extension_add_node_records_and_renders`
+  (real `setup(app)` → `add_node` → registry bookkeeping →
+  `docutilsrs::html5` rendering, end to end).
+- Confirmed out of scope, unchanged from the Decision above: no
+  directive can construct an `Extension` node yet, so the new test
+  builds one directly via the `Doctree` API rather than through a real
+  `.rst` source document.

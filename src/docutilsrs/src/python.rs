@@ -125,6 +125,7 @@ impl PyNode {
             NodeKind::CitationReference { .. } => "citation_reference".into(),
             NodeKind::Problematic { .. } => "problematic".into(),
             NodeKind::SystemMessage { .. } => "system_message".into(),
+            NodeKind::Extension { class_name, .. } => class_name.clone(),
         }
     }
 
@@ -319,6 +320,11 @@ impl PyNode {
                 }
                 dict.set_item("source", "<string>")?;
                 dict.set_item("type", *ty)?;
+            }
+            NodeKind::Extension { attrs, .. } => {
+                for (k, v) in attrs {
+                    dict.set_item(k, v)?;
+                }
             }
             _ => {}
         }

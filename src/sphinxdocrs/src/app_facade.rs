@@ -29,11 +29,17 @@
 //! registered directive/role still isn't executed through this
 //! registration (see `SphinxComponentRegistry::directives`/`roles`'s doc
 //! comments for the narrower bridge that does support real parse-time
-//! directive execution). **`add_node`/`add_autodocumenter` remain no-op
-//! stubs** — `add_node` needs a closed `NodeKind` enum change (a generic
-//! "extension node" variant) that's deliberately gated behind an ADR
-//! (see `docs/adr/`) before implementation, and `add_autodocumenter` is
-//! explicitly out of scope for now. **`add_config_value`
+//! directive execution). **`add_node` is real** (ADR 0006,
+//! `docs/adr/0006-extension-nodes.md`): it registers `(visit, depart)`
+//! callable pairs per builder format directly into
+//! `docutilsrs::plugins`'s new node-visitor registry, which every native
+//! writer consults for a `NodeKind::Extension` node — so a registered
+//! extension node actually renders (with a graceful children-only
+//! fallback for any format it didn't register). **Accepted deviation:**
+//! this only covers *rendering* an already-existing `Extension` node — a
+//! custom directive's `run()` *constructing* one is a separate, larger
+//! gap (the doctree/Node Python bridge). **`add_autodocumenter` remains a
+//! no-op stub** — explicitly out of scope for now. **`add_config_value`
 //! /`app.config`([`PyConfigFacade`]) and `add_css_file`/`add_js_file`
 //! ([`SharedAssets`]) are real too** — a typical `setup()` reads/writes
 //! `app.config.*` and registers page assets before any of the
@@ -831,16 +837,71 @@ impl PyAppFacade {
         Ok(())
     }
 
-    /// No-op stub — see module docs. Still deferred to H5a: a docutils
-    /// `Transform` operates on the doctree produced by the (still
-    /// hardcoded) `docutilsrs` parser/writer pipeline, which has no
-    /// registration hook to run an arbitrary extra transform pass yet.
-    #[pyo3(signature = (*_args, **_kwargs))]
+    /// Mirrors `Sphinx.add_node(node, override=False, **kwargs)` (see ADR
+    /// 0006, `docs/adr/0006-extension-nodes.md`): extracts
+    /// `node.__name__` as `class_name`, then for every `(format, pair)`
+    /// entry in `**kwargs` (the `override` keyword, if present, is
+    /// skipped — it isn't a format) registers `pair` as a `(visit,
+    /// depart)` callable pair in `docutilsrs::plugins`'s per-`(class_name,
+    /// format)` registry. Every native writer consults that registry
+    /// directly at render time for a `NodeKind::Extension` node carrying
+    /// this `class_name`, calling `visit`/`depart` (each `(attrs: dict)
+    /// -> str`) around its children's own rendering, or falling back to
+    /// rendering children only if nothing is registered for that writer's
+    /// format — matching upstream's base-class/`unknown_visit` dispatch
+    /// fallback. `pair` may be a 2-tuple `(visit, depart)` or a single
+    /// `visit` callable (`depart` omitted, matching upstream's
+    /// optional-depart shape); anything else for a given format is
+    /// silently skipped (fail-soft, consistent with the rest of this
+    /// bridge). Also records `class_name` → registered formats in the
+    /// shared [`SharedRegistry`] (`SphinxComponentRegistry::nodes`) for
+    /// discoverability. **Accepted deviation (still, even after this ADR
+    /// lands):** this only wires up *rendering* an `Extension` node that
+    /// already exists in a doctree — a custom directive's `run()`
+    /// actually *constructing* one is a separate, larger gap (the
+    /// doctree/Node Python bridge; see this module's doc comment and the
+    /// ADR's "Related/out of scope" section).
+    #[pyo3(signature = (cls, *_args, **kwargs))]
     fn add_node(
         &self,
+        cls: Bound<'_, PyAny>,
         _args: &Bound<'_, PyTuple>,
-        _kwargs: Option<Bound<'_, pyo3::types::PyDict>>,
-    ) {
+        kwargs: Option<Bound<'_, PyDict>>,
+    ) -> PyResult<()> {
+        let class_name = cls
+            .getattr("__name__")
+            .and_then(|n| n.extract::<String>())
+            .unwrap_or_else(|_| cls.repr().map(|s| s.to_string()).unwrap_or_default());
+        let Some(kwargs) = kwargs else {
+            return Ok(());
+        };
+        for (key, value) in kwargs.iter() {
+            let Ok(format) = key.extract::<String>() else {
+                continue;
+            };
+            if format == "override" {
+                continue;
+            }
+            let (visit, depart) = if let Ok(tup) = value.cast::<PyTuple>() {
+                match tup.len() {
+                    1 => (tup.get_item(0)?.unbind(), None),
+                    2 => (tup.get_item(0)?.unbind(), Some(tup.get_item(1)?.unbind())),
+                    _ => continue,
+                }
+            } else if value.hasattr("__call__").unwrap_or(false) {
+                (value.clone().unbind(), None)
+            } else {
+                continue;
+            };
+            docutilsrs::plugins::register_node_visitor(
+                class_name.clone(),
+                format.clone(),
+                visit,
+                depart,
+            );
+            self.registry.borrow_mut().add_node(class_name.clone(), format);
+        }
+        Ok(())
     }
 
     /// Mirrors `Sphinx.add_post_transform(transform)`: records the

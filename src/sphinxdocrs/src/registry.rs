@@ -167,6 +167,20 @@ pub struct SphinxComponentRegistry {
     /// *names*, not arbitrary rendering callables).
     pub roles: HashMap<String, String>,
 
+    /// Extension nodes registered via `Sphinx.add_node` (ADR 0006):
+    /// registering class's `__name__` → the list of builder *formats*
+    /// (`"html"`, `"latex"`, ...) it registered a visit/depart pair for.
+    /// **Unlike [`directives`](Self::directives)/[`roles`](Self::roles),
+    /// this one is not bookkeeping-only** — the real visit/depart
+    /// callables backing each entry live in
+    /// `docutilsrs::plugins`'s `(class_name, format)`-keyed registry
+    /// (populated by the same `add_node` call that populates this map),
+    /// and every native writer consults that registry directly at
+    /// render time via `NodeKind::Extension`. This map exists purely for
+    /// discoverability/introspection (`app.registry.nodes`-shaped
+    /// queries), mirroring `directives`/`roles`'s shape for consistency.
+    pub nodes: HashMap<String, Vec<String>>,
+
     /// Translators: builder name → translator class name.
     ///
     /// Mirrors `translators: dict[str, type[SphinxTranslator]]`.
@@ -462,6 +476,28 @@ impl SphinxComponentRegistry {
     /// Return `true` if a role with `name` is registered.
     pub fn has_role(&self, name: &str) -> bool {
         self.roles.contains_key(name)
+    }
+
+    /// Record that `class_name` registered a visit/depart pair for
+    /// `format` (ADR 0006). Idempotent: registering the same
+    /// `(class_name, format)` pair twice does not duplicate the entry.
+    pub fn add_node(&mut self, class_name: impl Into<String>, format: impl Into<String>) {
+        let formats = self.nodes.entry(class_name.into()).or_default();
+        let format = format.into();
+        if !formats.contains(&format) {
+            formats.push(format);
+        }
+    }
+
+    /// Return the list of builder formats `class_name` registered a
+    /// visit/depart pair for, if any.
+    pub fn get_node_formats(&self, class_name: &str) -> Option<&[String]> {
+        self.nodes.get(class_name).map(Vec::as_slice)
+    }
+
+    /// Return `true` if any node class named `class_name` is registered.
+    pub fn has_node(&self, class_name: &str) -> bool {
+        self.nodes.contains_key(class_name)
     }
 
     /// Register a translator class name for a given builder.

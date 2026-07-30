@@ -336,6 +336,42 @@ fn role_missing_returns_none() {
     assert_eq!(r.get_role("missing"), None);
 }
 
+// ── extension nodes (ADR 0006) ─────────────────────────────────────────────
+
+#[test]
+fn node_registered_and_retrieved() {
+    let mut r = reg();
+    r.add_node("TodoNode", "html");
+    assert!(r.has_node("TodoNode"));
+    assert_eq!(r.get_node_formats("TodoNode"), Some(&["html".to_string()][..]));
+}
+
+#[test]
+fn node_missing_returns_none() {
+    let r = reg();
+    assert!(!r.has_node("missing"));
+    assert_eq!(r.get_node_formats("missing"), None);
+}
+
+#[test]
+fn node_accumulates_multiple_formats() {
+    let mut r = reg();
+    r.add_node("TodoNode", "html");
+    r.add_node("TodoNode", "latex");
+    assert_eq!(
+        r.get_node_formats("TodoNode"),
+        Some(&["html".to_string(), "latex".to_string()][..])
+    );
+}
+
+#[test]
+fn node_same_format_registered_twice_is_idempotent() {
+    let mut r = reg();
+    r.add_node("TodoNode", "html");
+    r.add_node("TodoNode", "html");
+    assert_eq!(r.get_node_formats("TodoNode"), Some(&["html".to_string()][..]));
+}
+
 // ── empty registry ────────────────────────────────────────────────────────
 
 #[test]
@@ -353,4 +389,5 @@ fn new_registry_all_empty() {
     assert!(r.html_themes.is_empty());
     assert!(r.directives.is_empty());
     assert!(r.roles.is_empty());
+    assert!(r.nodes.is_empty());
 }

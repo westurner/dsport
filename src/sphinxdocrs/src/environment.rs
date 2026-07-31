@@ -1009,18 +1009,64 @@ impl BuildEnvironment {
                 }
             }
 
-            // `domain` is `None` for a bare std-domain reftype
-            // (`Inline{classes: "ref"}`) and `Some("rst")` for a
-            // domain-prefixed one (`Inline{classes: "rst:dir"}`,
-            // produced by `docutilsrs::parser::emit_role`'s
-            // role-agnostic fallback for any unrecognized role name).
-            let (domain, reftype) = match &tree.node(id).kind {
+            // `domain` is `"std"` for a bare std-domain reftype
+            // (`Inline{classes: "ref"}`), `"rst"` for a domain-prefixed one,
+            // or explicitly stored on a `NodeKind::PendingXref`.
+            let (is_pending_xref, domain, reftype, raw_target, explicit_title) = match &tree
+                .node(id)
+                .kind
+            {
+                NodeKind::PendingXref {
+                    reftype,
+                    reftarget,
+                    refdomain,
+                    refexplicit,
+                    ..
+                } => {
+                    let content = flatten_text(tree, id);
+                    let exp_title = if *refexplicit { Some(content) } else { None };
+                    let dom = if refdomain.is_empty() {
+                        "std".to_string()
+                    } else {
+                        refdomain.clone()
+                    };
+                    (true, dom, reftype.clone(), reftarget.clone(), exp_title)
+                }
                 NodeKind::Inline { classes } if KNOWN_STD_REFTYPES.contains(&classes.as_str()) => {
-                    (None, classes.clone())
+                    let content = flatten_text(tree, id);
+                    let (raw_target, explicit_title) = crate::domains::scan::split_phrase(&content);
+                    (
+                        false,
+                        "std".to_string(),
+                        classes.clone(),
+                        raw_target,
+                        explicit_title,
+                    )
                 }
                 NodeKind::Inline { classes } => match classes.split_once(':') {
                     Some(("rst", rt)) if KNOWN_RST_REFTYPES.contains(&rt) => {
-                        (Some("rst"), rt.to_string())
+                        let content = flatten_text(tree, id);
+                        let (raw_target, explicit_title) =
+                            crate::domains::scan::split_phrase(&content);
+                        (
+                            false,
+                            "rst".to_string(),
+                            rt.to_string(),
+                            raw_target,
+                            explicit_title,
+                        )
+                    }
+                    Some((dom, rt)) => {
+                        let content = flatten_text(tree, id);
+                        let (raw_target, explicit_title) =
+                            crate::domains::scan::split_phrase(&content);
+                        (
+                            false,
+                            dom.to_string(),
+                            rt.to_string(),
+                            raw_target,
+                            explicit_title,
+                        )
                     }
                     _ => continue,
                 },
@@ -1040,26 +1086,66 @@ impl BuildEnvironment {
                 tree.append(id, NodeKind::Text(rest.to_string()));
                 continue;
             }
-            let (raw_target, explicit_title) = crate::domains::scan::split_phrase(&content);
             let (target, shorten) = match raw_target.strip_prefix('~') {
                 Some(rest) => (rest.to_string(), true),
-                None => (raw_target, false),
+                None => (raw_target.clone(), false),
             };
 
-            let resolved = match domain {
-                None => self.std_domain.resolve_xref_explicit(
+            let resolved = match domain.as_str() {
+                "std" | "" => self.std_domain.resolve_xref_explicit(
                     self,
                     docname,
                     &reftype,
                     &target,
                     explicit_title.is_some(),
                 ),
-                Some("rst") => self
+                "rst" => self
                     .rst_domain
+                    .resolve_xref(self, docname, &reftype, &target),
+                "py" => self
+                    .py_domain
+                    .resolve_xref(self, docname, &reftype, &target),
+                "js" => self
+                    .js_domain
                     .resolve_xref(self, docname, &reftype, &target),
                 _ => None,
             };
+
+            let inner_class = match domain.as_str() {
+                "rst" => format!("xref rst rst-{reftype}"),
+                "py" => format!("xref py py-{reftype}"),
+                "js" => format!("xref js js-{reftype}"),
+                _ if reftype == "doc" => {
+                    if resolved.is_some() {
+                        "doc".to_string()
+                    } else {
+                        "xref doc".to_string()
+                    }
+                }
+                _ => format!("xref std std-{reftype}"),
+            };
+
             let Some(resolved) = resolved else {
+                if is_pending_xref {
+                    let title = if let Some(t) = &explicit_title {
+                        t.clone()
+                    } else if shorten {
+                        target.rsplit('.').next().unwrap_or(&target).to_string()
+                    } else {
+                        target.clone()
+                    };
+                    let old_children: Vec<NodeId> = tree.node(id).children.clone();
+                    for child in old_children {
+                        tree.detach(child);
+                    }
+                    tree.set_kind(
+                        id,
+                        NodeKind::Inline {
+                            classes: inner_class,
+                        },
+                    );
+                    tree.append(id, NodeKind::Text(title));
+                }
                 continue;
             };
 
@@ -1099,12 +1185,6 @@ impl BuildEnvironment {
                 } else {
                     format!("{rel}#{}", resolved.anchor)
                 }
-            };
-
-            let inner_class = match domain {
-                Some("rst") => format!("xref rst rst-{reftype}"),
-                _ if reftype == "doc" => "doc".to_string(),
-                _ => format!("std std-{reftype}"),
             };
 
             let old_children: Vec<NodeId> = tree.node(id).children.clone();

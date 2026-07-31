@@ -301,6 +301,33 @@ fn read_all_parses_and_stores_every_doc() {
 }
 
 #[test]
+fn resolve_xref_nodes_resolves_doc_pending_xref() {
+    let (_src, _dt, mut env) = make_disk_env(&[
+        (
+            "index",
+            "Welcome\n=======\n\nSee :doc:`about` or :doc:`/about`.\n",
+        ),
+        ("about", "About Us\n========\n\nInfo.\n"),
+    ]);
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+
+    let mut tree = env.get_doctree("index").unwrap();
+    env.resolve_xref_nodes(&mut tree, "index");
+
+    let html = docutilsrs::html5(
+        &tree,
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
+
+    assert!(
+        html.contains("<a class=\"reference internal\" href=\"about.html\"><span class=\"doc\">About Us</span></a>"),
+        "HTML output: {html}"
+    );
+}
+
+#[test]
 fn read_all_notes_toctree_and_include_dependencies() {
     let (_src, _dt, mut env) = make_disk_env(&[
         (

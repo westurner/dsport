@@ -113,3 +113,16 @@ Code and docutils links: :code-py:`x = 1`, :dudir:`include`.
         "HTML output: {html}"
     );
 }
+
+#[test]
+fn test_inline_literal_ending_with_backtick() {
+    let src = "And now, you can write ``:py:func:`io.open``` and ``:ref:`` or ``:doc:``.";
+    let html = render_html(src);
+
+    assert!(
+        html.contains("<code>:py:func:`io.open`</code>"),
+        "HTML output: {html}"
+    );
+    assert!(html.contains("<code>:ref:</code>"), "HTML output: {html}");
+    assert!(html.contains("<code>:doc:</code>"), "HTML output: {html}");
+}

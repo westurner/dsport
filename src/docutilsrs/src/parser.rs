@@ -4732,12 +4732,27 @@ fn try_match_reference(
 
 fn find_close(text: &str, escaped: &[bool], from: usize, marker: &str) -> Option<usize> {
     let mut search = from;
+    let bytes = text.as_bytes();
     while let Some(rel) = text[search..].find(marker) {
-        let abs = search + rel;
+        let mut abs = search + rel;
         if escaped[abs..abs + marker.len()].iter().any(|&e| e) {
             search = abs + 1;
             continue;
         }
+
+        // For backtick markers (e.g. "``" or "`"), if there is a run of backticks
+        // starting at abs, the closing delimiter is the LAST marker.len() backticks in the run.
+        if marker.chars().all(|c| c == '`') {
+            let m_len = marker.len();
+            let mut run_len = 0;
+            while abs + run_len < bytes.len() && bytes[abs + run_len] == b'`' {
+                run_len += 1;
+            }
+            if run_len >= m_len {
+                abs = abs + run_len - m_len;
+            }
+        }
+
         let prev_char = text[..abs].chars().next_back()?;
         if prev_char.is_whitespace() {
             search = abs + marker.len();

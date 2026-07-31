@@ -255,7 +255,11 @@ fn try_match_role_at(line: &str, start: usize) -> Option<(String, String, usize)
 
 /// Split `` Title <target> `` into `(target, Some(title))`, or return
 /// `(content, None)` verbatim when there's no phrase-reference form.
-fn split_phrase(content: &str) -> (String, Option<String>) {
+///
+/// `pub(crate)` so [`crate::environment::BuildEnvironment::resolve_xref_nodes`]
+/// can reuse the exact same label/target splitting when resolving a role
+/// node's raw text content, rather than duplicating the logic.
+pub(crate) fn split_phrase(content: &str) -> (String, Option<String>) {
     let trimmed = content.trim();
     if let Some(open) = trimmed.rfind('<') {
         if trimmed.ends_with('>') {

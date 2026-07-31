@@ -35,7 +35,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use docutilsrs::doctree::{Doctree, NodeKind};
+use docutilsrs::doctree::{Doctree, NodeId, NodeKind};
 use serde::{Deserialize, Serialize};
 
 use crate::builders::BuildError;
@@ -866,6 +866,150 @@ impl BuildEnvironment {
             .collect()
     }
 
+    /// Resolve every recognized standard-domain cross-reference role
+    /// (`:ref:`/`:doc:`/`:term:`/`:numref:`/`:keyword:`) found anywhere in
+    /// `tree` into a real internal hyperlink, rewriting the doctree node
+    /// in place.
+    ///
+    /// Mirrors what upstream does to the `pending_xref` node inside
+    /// `env.resolve_references` (`_resolve_ref_xref` et al. build a real
+    /// `nodes.reference` and the transform swaps it in). This port has no
+    /// `pending_xref` node (see the accepted-deviation note on
+    /// `crate::domains`), but rather than leave resolution as a
+    /// side-channel report ([`resolve_references`](Self::resolve_references),
+    /// which has nothing to rewrite because it works from a source-text
+    /// scan), this walks the already-parsed doctree directly: every
+    /// generic `Inline { classes }` node docutilsrs's role-agnostic parser
+    /// produces for an unrecognized role name is inspected, and — when
+    /// `classes` names a std-domain reftype — turned into a
+    /// `Reference { classes: "reference internal", .. }` node wrapping an
+    /// `Inline { classes: "std std-<reftype>" | "doc" }` span, matching
+    /// real Sphinx's `<a class="reference internal" href="..."><span
+    /// class="...">title</span></a>` output.
+    ///
+    /// Walking the tree (rather than re-using the text-scanned
+    /// `pending_xrefs` list) also means roles nested inside directive
+    /// bodies (containers, admonitions, ...) resolve exactly like
+    /// top-level ones, since there's no source-position bookkeeping to
+    /// keep in sync with the parser's own recursion.
+    ///
+    /// Unresolved roles are left as the original generic `Inline` node
+    /// (matching the pre-existing `<span class="ref">...</span>`
+    /// fallback) rather than silently dropping content, mirroring
+    /// upstream logging a dangling-reference warning but leaving the
+    /// text in place.
+    pub fn resolve_xref_nodes(&self, tree: &mut Doctree, docname: &str) {
+        use crate::builders::Builder as _;
+        use crate::builders::html::HtmlBuilder;
+        use crate::util_osutil::relative_uri;
+
+        const KNOWN_STD_REFTYPES: &[&str] = &["ref", "doc", "term", "numref", "keyword"];
+
+        fn flatten_text(tree: &Doctree, id: NodeId) -> String {
+            let mut out = String::new();
+            for &child in &tree.node(id).children {
+                if let NodeKind::Text(s) = &tree.node(child).kind {
+                    out.push_str(s);
+                }
+            }
+            out
+        }
+
+        let builder = HtmlBuilder::new();
+        let base_uri = builder.get_target_uri(docname);
+
+        // A single forward pass over the arena (`0..nodes_len()`) rather
+        // than a recursive parent->child walk collected into a `Vec`
+        // first: `Doctree`'s arena already stores nodes in (pre-)creation
+        // order, since `append`/`push` always add a parent before any of
+        // its children, so indices alone give the same traversal order
+        // without the extra recursion or intermediate allocation. Nodes
+        // this loop itself appends (the new `Reference`'s `Inline` span
+        // and its `Text` child) land past the upfront `nodes_len()` and
+        // are simply never visited, which is correct — they can't match
+        // `KNOWN_STD_REFTYPES` anyway.
+        for id in 0..tree.nodes_len() {
+            let reftype = match &tree.node(id).kind {
+                NodeKind::Inline { classes } if KNOWN_STD_REFTYPES.contains(&classes.as_str()) => {
+                    classes.clone()
+                }
+                _ => continue,
+            };
+
+            let content = flatten_text(tree, id);
+            let (raw_target, explicit_title) = crate::domains::scan::split_phrase(&content);
+            let (target, shorten) = match raw_target.strip_prefix('~') {
+                Some(rest) => (rest.to_string(), true),
+                None => (raw_target, false),
+            };
+
+            let Some(resolved) = self.std_domain.resolve_xref_explicit(
+                self,
+                docname,
+                &reftype,
+                &target,
+                explicit_title.is_some(),
+            ) else {
+                continue;
+            };
+
+            let title = if let Some(t) = &explicit_title {
+                t.clone()
+            } else if shorten {
+                target.rsplit('.').next().unwrap_or(&target).to_string()
+            } else {
+                resolved.title.clone()
+            };
+
+            let target_uri = builder.get_target_uri(&resolved.docname);
+            // Mirrors `sphinx.util.nodes.make_refnode`: a same-document
+            // reference with a target id becomes a bare `#targetid`
+            // fragment (docutils resolves `refid` this way at write
+            // time), bypassing `relative_uri` entirely — which would
+            // otherwise collapse a same-page `to` down to `''`,
+            // silently dropping the fragment (see its own `b2 == t2`
+            // special case, matched here on purpose since our `to` is
+            // always fragment-stripped for that comparison too).
+            let href = if resolved.docname == docname && !resolved.anchor.is_empty() {
+                format!("#{}", resolved.anchor)
+            } else {
+                let target_uri = if resolved.anchor.is_empty() {
+                    target_uri
+                } else {
+                    format!("{target_uri}#{}", resolved.anchor)
+                };
+                relative_uri(&base_uri, &target_uri)
+            };
+
+            let inner_class = if reftype == "doc" {
+                "doc".to_string()
+            } else {
+                format!("std std-{reftype}")
+            };
+
+            let old_children: Vec<NodeId> = tree.node(id).children.clone();
+            for child in old_children {
+                tree.detach(child);
+            }
+            tree.set_kind(
+                id,
+                NodeKind::Reference {
+                    name: String::new(),
+                    refuri: href,
+                    anonymous: false,
+                    classes: "reference internal".to_string(),
+                },
+            );
+            let span = tree.append(
+                id,
+                NodeKind::Inline {
+                    classes: inner_class,
+                },
+            );
+            tree.append(span, NodeKind::Text(title));
+        }
+    }
+
     /// Record that `docname` contains a toctree with `entries` (already
     /// bare docnames, in document order).
     ///
@@ -1238,6 +1382,28 @@ fn docname_join(base: &str, other: &str) -> String {
         }
     }
     segments.join("/")
+}
+
+/// Recursive parent->child walk collecting every node reachable from
+/// `id` (`id` itself first, then its subtree, pre-order) — the same
+/// order [`BuildEnvironment::resolve_xref_nodes`]'s `0..nodes_len()`
+/// forward pass visits, for a tree freshly parsed and never mutated.
+/// Kept as a standalone helper (rather than folded back into
+/// `resolve_xref_nodes`, which uses the cheaper `0..nodes_len()` range
+/// directly — see that method's own doc comment for why) documenting
+/// and test-verifying the difference between the two: unlike a raw
+/// `0..nodes_len()` range, this only returns nodes still attached to the
+/// tree, skipping detached/orphaned arena slots (e.g. old `Text`
+/// children a prior `resolve_xref_nodes` pass left behind via
+/// `Doctree::detach`). Test-only (see `tests::collect_ids_*` below) —
+/// `#[cfg(test)]` rather than `#[allow(dead_code)]` since it has no
+/// production caller.
+#[cfg(test)]
+fn collect_ids(tree: &Doctree, id: NodeId, out: &mut Vec<NodeId>) {
+    out.push(id);
+    for &child in &tree.node(id).children {
+        collect_ids(tree, child, out);
+    }
 }
 
 /// Directive names whose body is *not* recursively parsed as
@@ -1713,5 +1879,41 @@ mod tests {
         let bytes = serde_json::to_vec(&persisted).unwrap();
         std::fs::write(env.persisted_path(), bytes).unwrap();
         assert!(env.load_persisted().is_none());
+    }
+
+    #[test]
+    fn collect_ids_visits_root_then_children_preorder() {
+        let mut tree = Doctree::new_document("test");
+        let root = tree.root();
+        let p1 = tree.append(root, NodeKind::Paragraph);
+        let t1 = tree.append(p1, NodeKind::Text("hello".into()));
+        let p2 = tree.append(root, NodeKind::Paragraph);
+        let t2 = tree.append(p2, NodeKind::Text("world".into()));
+
+        let mut ids = Vec::new();
+        collect_ids(&tree, root, &mut ids);
+
+        assert_eq!(ids, vec![root, p1, t1, p2, t2]);
+    }
+
+    #[test]
+    fn collect_ids_excludes_detached_subtrees() {
+        let mut tree = Doctree::new_document("test");
+        let root = tree.root();
+        let p1 = tree.append(root, NodeKind::Paragraph);
+        let t1 = tree.append(p1, NodeKind::Text("kept".into()));
+        let p2 = tree.append(root, NodeKind::Paragraph);
+        tree.append(p2, NodeKind::Text("dropped".into()));
+
+        // Detaching `p2` removes it (and its child) from `root`'s
+        // children, so a reachability walk from `root` must not surface
+        // either of them — unlike a raw `0..nodes_len()` arena scan,
+        // which still visits their (now-orphaned) slots.
+        tree.detach(p2);
+
+        let mut ids = Vec::new();
+        collect_ids(&tree, root, &mut ids);
+
+        assert_eq!(ids, vec![root, p1, t1]);
     }
 }

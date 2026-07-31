@@ -2959,6 +2959,7 @@ fn apply_targets<I: Iterator<Item = String>>(
         name,
         refuri,
         anonymous,
+        ..
     } = &mut tree.node_mut(id).kind
     {
         if refuri.is_empty() {
@@ -3341,6 +3342,7 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
                     name: name.clone(),
                     refuri: refuri.clone(),
                     anonymous,
+                    classes: String::new(),
                 },
             );
             if embedded_uri.is_none() && !anonymous {
@@ -3383,6 +3385,7 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
                     name: name.clone(),
                     refuri: String::new(),
                     anonymous,
+                    classes: String::new(),
                 },
             );
             if !anonymous {

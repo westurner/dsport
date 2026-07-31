@@ -415,9 +415,13 @@ impl PyNode {
                 name,
                 refuri,
                 anonymous,
+                classes,
             } => {
                 if *anonymous {
                     dict.set_item("anonymous", "1")?;
+                }
+                if !classes.is_empty() {
+                    dict.set_item("classes", classes)?;
                 }
                 dict.set_item("name", name)?;
                 dict.set_item("refuri", refuri)?;

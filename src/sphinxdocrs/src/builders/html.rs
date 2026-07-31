@@ -585,7 +585,7 @@ impl Builder for HtmlBuilder {
             // callers / tests invoking `build_all` directly) fall back to
             // parsing from source here, keeping output byte-identical
             // either way.
-            let tree = match env.get_and_resolve_doctree(docname) {
+            let mut tree = match env.get_and_resolve_doctree(docname) {
                 Ok(tree) => tree,
                 Err(_) => {
                     let source = std::fs::read_to_string(&src_path).map_err(|e| {
@@ -594,6 +594,11 @@ impl Builder for HtmlBuilder {
                     parse_rst_with_source(&source, docname)
                 }
             };
+            // Splice resolved `:ref:`/`:doc:`/... hyperlinks into the
+            // doctree before rendering (see `BuildEnvironment::resolve_xref_nodes`
+            // for why this must happen here, walking the actual tree,
+            // rather than via the text-scanned `pending_xrefs` list).
+            env.resolve_xref_nodes(&mut tree, docname);
             match &real_theme {
                 Some(renderer) => {
                     self.build_doc_real_themed_from_tree(

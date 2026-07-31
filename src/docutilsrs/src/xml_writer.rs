@@ -244,10 +244,14 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             name,
             refuri,
             anonymous,
+            classes,
         } => {
             let mut attrs = Vec::new();
             if *anonymous {
                 attrs.push(("anonymous", "1"));
+            }
+            if !classes.is_empty() {
+                attrs.push(("classes", classes.as_str()));
             }
             attrs.push(("name", name.as_str()));
             attrs.push(("refuri", refuri.as_str()));

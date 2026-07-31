@@ -237,14 +237,20 @@ fn emit(
             }
             out.push_str(" -->");
         }
-        NodeKind::Reference { refuri, .. } => {
+        NodeKind::Reference {
+            refuri, classes, ..
+        } => {
             let is_mailto = refuri.starts_with("mailto:");
             let should_cloak = is_mailto && options.cloak_email_addresses.is_some();
             let mut uri = escape(refuri);
             if should_cloak {
                 uri = uri.replace("@", "&#37;&#52;&#48;").replace(".", "&#46;");
             }
-            let _ = write!(out, "<a href=\"{}\">", uri);
+            if classes.is_empty() {
+                let _ = write!(out, "<a href=\"{}\">", uri);
+            } else {
+                let _ = write!(out, "<a class=\"{}\" href=\"{}\">", escape(classes), uri);
+            }
             if should_cloak {
                 for &c in &node.children {
                     if let NodeKind::Text(s) = &tree.node(c).kind {

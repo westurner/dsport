@@ -224,10 +224,14 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             name,
             refuri,
             anonymous,
+            classes,
         } => {
             let mut s = format!("{indent}<reference");
             if *anonymous {
                 let _ = write!(s, " anonymous=\"1\"");
+            }
+            if !classes.is_empty() {
+                let _ = write!(s, " classes=\"{classes}\"");
             }
             let _ = write!(s, " name=\"{name}\" refuri=\"{refuri}\"");
             s.push('>');

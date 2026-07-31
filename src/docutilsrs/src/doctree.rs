@@ -106,6 +106,12 @@ pub enum NodeKind {
         name: String,
         refuri: String,
         anonymous: bool,
+        /// Docutils-style `classes` attribute (space-separated), e.g.
+        /// `"reference internal"` / `"reference external"`. Empty for
+        /// plain docutils hyperlink references (whose class is left to
+        /// the writer); populated by Sphinx xref-role resolution
+        /// (`sphinxdocrs::environment::BuildEnvironment::resolve_xref_nodes`).
+        classes: String,
     },
     /// Explicit hyperlink target. `ids` is the normalized identifier,
     /// `names` is the human-readable name (space-separated).
@@ -423,6 +429,8 @@ enum NodeKindData {
         name: String,
         refuri: String,
         anonymous: bool,
+        #[serde(default)]
+        classes: String,
     },
     Target {
         ids: String,
@@ -613,10 +621,12 @@ impl From<&NodeKind> for NodeKindData {
                 name,
                 refuri,
                 anonymous,
+                classes,
             } => NodeKindData::Reference {
                 name,
                 refuri,
                 anonymous,
+                classes,
             },
             NodeKind::Target {
                 ids,
@@ -775,10 +785,12 @@ impl From<NodeKindData> for NodeKind {
                 name,
                 refuri,
                 anonymous,
+                classes,
             } => NodeKind::Reference {
                 name,
                 refuri,
                 anonymous,
+                classes,
             },
             NodeKindData::Target {
                 ids,

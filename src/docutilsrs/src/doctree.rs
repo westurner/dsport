@@ -90,6 +90,36 @@ pub enum NodeKind {
     Admonition {
         kind: &'static str,
     },
+    /// `.. container:: classes` — generic named container `<div>`.
+    Container {
+        classes: String,
+    },
+    /// `.. admonition:: Title` — generic admonition with an arbitrary
+    /// title (as opposed to the fixed-kind `Admonition` variant).
+    /// `classes` holds the optional `:class:` option value.
+    GenericAdmonition {
+        title: String,
+        classes: String,
+    },
+    /// `.. epigraph::` — a blockquote rendered with an `epigraph` class,
+    /// plus any extra classes propagated from a preceding `.. class::`/
+    /// `.. cssclass::` directive.
+    Epigraph {
+        classes: String,
+    },
+    /// `.. toctree::` — placeholder marker carrying the directive's raw
+    /// options/entries, resolved into a real `<div class="toctree-wrapper
+    /// compound">` subtree (caption + nested bullet list of
+    /// [`NodeKind::Reference`]s) by
+    /// `sphinxdocrs::environment::BuildEnvironment::resolve_toctree_nodes`,
+    /// which has the multi-document project data (`env.titles`,
+    /// `env.toctree_includes`) docutilsrs itself has no notion of.
+    Toctree {
+        caption: Option<String>,
+        maxdepth: i32,
+        hidden: bool,
+        entries: Vec<String>,
+    },
     Image {
         uri: String,
         alt: Option<String>,
@@ -215,6 +245,20 @@ pub enum NodeKind {
     Extension {
         class_name: String,
         attrs: HashMap<String, String>,
+    },
+    /// A generic Sphinx domain "object description" block, e.g.
+    /// `.. rst:directive::`/`.. rst:role::` (Tier **H3c**), reusable for
+    /// other domains' description directives later. Renders as
+    /// `<dl class="{classes}"><dt id="{ids}">{sig_text}</dt><dd>
+    /// {children}</dd></dl>`; `children` (via the arena) are the `<dd>`
+    /// body content blocks.
+    ObjectDescription {
+        /// Space-separated `<dl>`/`<dt>` classes, e.g. `"rst directive"`.
+        classes: String,
+        /// The `<dt id="...">` anchor id (empty = no id).
+        ids: String,
+        /// The rendered signature text, e.g. `".. toctree::"` or `":ref:"`.
+        sig_text: String,
     },
 }
 
@@ -415,6 +459,22 @@ enum NodeKindData {
     Admonition {
         kind: String,
     },
+    Container {
+        classes: String,
+    },
+    GenericAdmonition {
+        title: String,
+        classes: String,
+    },
+    Epigraph {
+        classes: String,
+    },
+    Toctree {
+        caption: Option<String>,
+        maxdepth: i32,
+        hidden: bool,
+        entries: Vec<String>,
+    },
     Image {
         uri: String,
         alt: Option<String>,
@@ -497,6 +557,11 @@ enum NodeKindData {
     Extension {
         class_name: String,
         attrs: HashMap<String, String>,
+    },
+    ObjectDescription {
+        classes: String,
+        ids: String,
+        sig_text: String,
     },
 }
 
@@ -604,6 +669,22 @@ impl From<&NodeKind> for NodeKindData {
             NodeKind::Admonition { kind } => NodeKindData::Admonition {
                 kind: kind.to_string(),
             },
+            NodeKind::Container { classes } => NodeKindData::Container { classes },
+            NodeKind::GenericAdmonition { title, classes } => {
+                NodeKindData::GenericAdmonition { title, classes }
+            }
+            NodeKind::Epigraph { classes } => NodeKindData::Epigraph { classes },
+            NodeKind::Toctree {
+                caption,
+                maxdepth,
+                hidden,
+                entries,
+            } => NodeKindData::Toctree {
+                caption,
+                maxdepth,
+                hidden,
+                entries,
+            },
             NodeKind::Image {
                 uri,
                 alt,
@@ -702,6 +783,15 @@ impl From<&NodeKind> for NodeKindData {
             NodeKind::Extension { class_name, attrs } => {
                 NodeKindData::Extension { class_name, attrs }
             }
+            NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+            } => NodeKindData::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+            },
         }
     }
 }
@@ -768,6 +858,22 @@ impl From<NodeKindData> for NodeKind {
             NodeKindData::Bibliographic { tag } => NodeKind::Bibliographic { tag: intern(tag) },
             NodeKindData::BlockQuote => NodeKind::BlockQuote,
             NodeKindData::Admonition { kind } => NodeKind::Admonition { kind: intern(kind) },
+            NodeKindData::Container { classes } => NodeKind::Container { classes },
+            NodeKindData::GenericAdmonition { title, classes } => {
+                NodeKind::GenericAdmonition { title, classes }
+            }
+            NodeKindData::Epigraph { classes } => NodeKind::Epigraph { classes },
+            NodeKindData::Toctree {
+                caption,
+                maxdepth,
+                hidden,
+                entries,
+            } => NodeKind::Toctree {
+                caption,
+                maxdepth,
+                hidden,
+                entries,
+            },
             NodeKindData::Image {
                 uri,
                 alt,
@@ -866,6 +972,15 @@ impl From<NodeKindData> for NodeKind {
             NodeKindData::Extension { class_name, attrs } => {
                 NodeKind::Extension { class_name, attrs }
             }
+            NodeKindData::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+            } => NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+            },
         }
     }
 }

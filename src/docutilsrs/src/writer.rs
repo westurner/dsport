@@ -190,6 +190,21 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         NodeKind::Admonition { kind } => {
             let _ = writeln!(out, "{indent}<{kind}>");
         }
+        NodeKind::Container { classes } => {
+            let _ = writeln!(out, "{indent}<container classes=\"{classes}\">");
+        }
+        NodeKind::GenericAdmonition { title, classes } => {
+            let _ = writeln!(
+                out,
+                "{indent}<admonition title=\"{title}\" classes=\"{classes}\">"
+            );
+        }
+        NodeKind::Epigraph { classes } => {
+            let _ = writeln!(out, "{indent}<block_quote classes=\"epigraph {classes}\">");
+        }
+        NodeKind::Toctree { .. } => {
+            let _ = writeln!(out, "{indent}<toctree>");
+        }
         NodeKind::Image {
             uri,
             alt,
@@ -400,6 +415,23 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             for k in keys {
                 let _ = write!(s, " {k}=\"{}\"", attrs[k]);
             }
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
+        NodeKind::ObjectDescription {
+            classes,
+            ids,
+            sig_text,
+        } => {
+            let mut s = format!("{indent}<object_description");
+            if !classes.is_empty() {
+                let _ = write!(s, " classes=\"{classes}\"");
+            }
+            if !ids.is_empty() {
+                let _ = write!(s, " ids=\"{ids}\"");
+            }
+            let _ = write!(s, " sig=\"{sig_text}\"");
             s.push('>');
             s.push('\n');
             out.push_str(&s);

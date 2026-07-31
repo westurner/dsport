@@ -205,6 +205,31 @@ fn render_block(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<Strin
             blocks.push(title);
             blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
         }
+        NodeKind::Container { .. } => {
+            for &c in &node.children {
+                render_block(tree, c, depth, blocks);
+            }
+        }
+        NodeKind::GenericAdmonition { title, .. } => {
+            let mut inner = Vec::new();
+            for &c in &node.children {
+                render_block(tree, c, depth, &mut inner);
+            }
+            blocks.push(format!("{title}:"));
+            blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
+        }
+        NodeKind::Epigraph { .. } => {
+            let mut inner = Vec::new();
+            for &c in &node.children {
+                if matches!(tree.node(c).kind, NodeKind::Attribution) {
+                    inner.push(format!("-- {}", inline_text(tree, c)));
+                } else {
+                    render_block(tree, c, depth, &mut inner);
+                }
+            }
+            blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
+        }
+        NodeKind::Toctree { .. } => {}
         NodeKind::Figure => {
             let mut inner = Vec::new();
             for &c in &node.children {
@@ -266,6 +291,14 @@ fn render_block(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<Strin
         | NodeKind::Comment
         | NodeKind::SystemMessage { .. }
         | NodeKind::Problematic { .. } => {}
+        NodeKind::ObjectDescription { sig_text, .. } => {
+            let mut inner = Vec::new();
+            for &c in &node.children {
+                render_block(tree, c, depth, &mut inner);
+            }
+            blocks.push(sig_text.clone());
+            blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
+        }
         NodeKind::Extension { class_name, attrs } => {
             let mut inner = Vec::new();
             for &c in &node.children {

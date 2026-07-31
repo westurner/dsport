@@ -359,6 +359,27 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 emit(tree, c, section_depth, out);
             }
         }
+        NodeKind::Container { .. } => {
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::GenericAdmonition { title, .. } => {
+            let _ = writeln!(
+                out,
+                "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">{}:</text:span></text:p>",
+                escape(title)
+            );
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::Epigraph { .. } => {
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::Toctree { .. } => {}
         NodeKind::Image { uri, alt, .. } => {
             let _ = write!(
                 out,
@@ -489,6 +510,14 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 if let Some(close) = crate::plugins::invoke_node_depart(class_name, "odt", attrs) {
                     out.push_str(&close);
                 }
+            }
+        }
+        NodeKind::ObjectDescription { sig_text, .. } => {
+            out.push_str("<text:p>");
+            out.push_str(sig_text);
+            out.push_str("</text:p>\n");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
             }
         }
     }

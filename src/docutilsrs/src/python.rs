@@ -115,6 +115,10 @@ fn node_kind_tag(kind: &NodeKind) -> String {
         NodeKind::Bibliographic { tag } => (*tag).into(),
         NodeKind::BlockQuote => "block_quote".into(),
         NodeKind::Admonition { kind } => (*kind).into(),
+        NodeKind::Container { .. } => "container".into(),
+        NodeKind::GenericAdmonition { .. } => "admonition".into(),
+        NodeKind::Epigraph { .. } => "block_quote".into(),
+        NodeKind::Toctree { .. } => "toctree".into(),
         NodeKind::Image { .. } => "image".into(),
         NodeKind::Raw { .. } => "raw".into(),
         NodeKind::Comment => "comment".into(),
@@ -141,6 +145,7 @@ fn node_kind_tag(kind: &NodeKind) -> String {
         NodeKind::Problematic { .. } => "problematic".into(),
         NodeKind::SystemMessage { .. } => "system_message".into(),
         NodeKind::Extension { class_name, .. } => class_name.clone(),
+        NodeKind::ObjectDescription { .. } => "object_description".into(),
     }
 }
 
@@ -523,6 +528,19 @@ impl PyNode {
                 for (k, v) in attrs {
                     dict.set_item(k, v)?;
                 }
+            }
+            NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+            } => {
+                if !classes.is_empty() {
+                    dict.set_item("classes", classes)?;
+                }
+                if !ids.is_empty() {
+                    dict.set_item("ids", ids)?;
+                }
+                dict.set_item("sig", sig_text)?;
             }
             _ => {}
         }

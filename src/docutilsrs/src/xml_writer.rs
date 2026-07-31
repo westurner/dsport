@@ -212,6 +212,26 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         NodeKind::Bibliographic { tag } => emit(tree, id, depth, tag, &[], out),
         NodeKind::BlockQuote => emit(tree, id, depth, "block_quote", &[], out),
         NodeKind::Admonition { kind } => emit(tree, id, depth, kind, &[], out),
+        NodeKind::Container { classes } => {
+            emit(tree, id, depth, "container", &[("classes", classes.as_str())], out)
+        }
+        NodeKind::GenericAdmonition { title, classes } => emit(
+            tree,
+            id,
+            depth,
+            "admonition",
+            &[("title", title.as_str()), ("classes", classes.as_str())],
+            out,
+        ),
+        NodeKind::Epigraph { classes } => emit(
+            tree,
+            id,
+            depth,
+            "block_quote",
+            &[("classes", classes.as_str())],
+            out,
+        ),
+        NodeKind::Toctree { .. } => emit(tree, id, depth, "toctree", &[], out),
         NodeKind::Image {
             uri,
             alt,
@@ -406,6 +426,21 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
                 xml_attrs.push((k.as_str(), v.as_str()));
             }
             emit(tree, id, depth, class_name, &xml_attrs, out);
+        }
+        NodeKind::ObjectDescription {
+            classes,
+            ids,
+            sig_text,
+        } => {
+            let mut xml_attrs: Vec<(&str, &str)> = Vec::new();
+            if !classes.is_empty() {
+                xml_attrs.push(("classes", classes.as_str()));
+            }
+            if !ids.is_empty() {
+                xml_attrs.push(("ids", ids.as_str()));
+            }
+            xml_attrs.push(("sig", sig_text.as_str()));
+            emit(tree, id, depth, "object_description", &xml_attrs, out);
         }
     }
 }

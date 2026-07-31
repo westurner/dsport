@@ -42,6 +42,40 @@ pub fn resolve(env: &BuildEnvironment, docname: &str, max_depth: usize) -> Vec<T
     resolve_inner(env, docname, max_depth, &mut HashSet::new())
 }
 
+/// Like [`resolve`], but for a *specific* `.. toctree::` directive
+/// occurrence's own explicit `entries` list, rather than looking up
+/// `env.toctree_includes[docname]` (which merges every toctree directive
+/// in the document together). Each listed entry is still expanded
+/// recursively via `env.toctree_includes` up to `max_depth`, exactly like
+/// [`resolve`]'s own recursion — only the *starting* entries differ.
+pub fn resolve_from_entries(
+    env: &BuildEnvironment,
+    entries: &[String],
+    max_depth: usize,
+) -> Vec<TocEntry> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for entry in entries {
+        let title = env
+            .longtitles
+            .get(entry)
+            .or_else(|| env.titles.get(entry))
+            .cloned()
+            .unwrap_or_else(|| entry.clone());
+        let children = if max_depth == 1 {
+            Vec::new()
+        } else {
+            resolve_inner(env, entry, max_depth.saturating_sub(1), &mut seen)
+        };
+        out.push(TocEntry {
+            docname: entry.clone(),
+            title,
+            children,
+        });
+    }
+    out
+}
+
 fn resolve_inner(
     env: &BuildEnvironment,
     docname: &str,

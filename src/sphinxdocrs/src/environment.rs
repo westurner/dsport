@@ -39,7 +39,7 @@ use docutilsrs::doctree::{Doctree, NodeId, NodeKind};
 use serde::{Deserialize, Serialize};
 
 use crate::builders::BuildError;
-use crate::config::SphinxConfig;
+use crate::config::{ConfigVal, SphinxConfig};
 use crate::domains::{
     IndexEntry, JsDomain, ObjectEntry, PendingXref, PyDomain, RstDomain, StdDomain, XrefResolution,
     scan,
@@ -740,7 +740,16 @@ impl BuildEnvironment {
         }
 
         for (objtype, name) in scan::scan_rst_domain_objects(source) {
-            let labelid = format!("rst-{objtype}-{}", crate::domains::normalize_id(&name));
+            // Mirrors real Sphinx's `make_id(env, document, objtype, name)`
+            // anchor scheme (e.g. `directive-toctree`, `role-ref`), not a
+            // `rst-`-prefixed anchor — this must match the `id="..."`
+            // docutilsrs's parser renders on the actual `.. rst:directive::`/
+            // `.. rst:role::` `<dt>` element (see
+            // `docutilsrs::parser::parse_directive`'s `"rst:directive" |
+            // "rst:role"` arm) for cross-references to resolve to the
+            // right place.
+            let id_prefix = objtype.replace(':', "-");
+            let labelid = format!("{id_prefix}-{}", crate::domains::normalize_id(&name));
             self.rst_domain.note_object(objtype, name, docname, labelid);
         }
 
@@ -867,7 +876,8 @@ impl BuildEnvironment {
     }
 
     /// Resolve every recognized standard-domain cross-reference role
-    /// (`:ref:`/`:doc:`/`:term:`/`:numref:`/`:keyword:`) found anywhere in
+    /// (`:ref:`/`:doc:`/`:term:`/`:numref:`/`:keyword:`), as well as the
+    /// `rst` domain's `:rst:dir:`/`:rst:role:` roles, found anywhere in
     /// `tree` into a real internal hyperlink, rewriting the doctree node
     /// in place.
     ///
@@ -901,9 +911,37 @@ impl BuildEnvironment {
     pub fn resolve_xref_nodes(&self, tree: &mut Doctree, docname: &str) {
         use crate::builders::Builder as _;
         use crate::builders::html::HtmlBuilder;
+        use crate::domains::Domain as _;
         use crate::util_osutil::relative_uri;
 
         const KNOWN_STD_REFTYPES: &[&str] = &["ref", "doc", "term", "numref", "keyword"];
+        const KNOWN_RST_REFTYPES: &[&str] = &["dir", "role"];
+
+        // `sphinx.ext.extlinks`' `extlinks = {name: (url_template, caption_template), ...}`
+        // registers one role per key that renders an external link, e.g.
+        // `:dudir:`error`` -> `<a class="extlink-dudir reference external"
+        // href="https://.../directives.html#error">error</a>`. The extension
+        // itself isn't executed (no `add_role` call happens), so its role
+        // names are recognized here directly from the raw `conf.py` dict
+        // (`self.config` may not have `extlinks` "registered" as a typed
+        // option, hence `raw_config()` rather than `get()`).
+        let extlinks: Vec<(&str, &str, Option<&str>)> = self
+            .config
+            .raw_config()
+            .get("extlinks")
+            .and_then(ConfigVal::as_map)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(|(name, val)| {
+                        let parts = val.as_list()?;
+                        let url = parts.first()?.as_str()?;
+                        let caption = parts.get(1).and_then(ConfigVal::as_str);
+                        Some((name.as_str(), url, caption))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
         fn flatten_text(tree: &Doctree, id: NodeId) -> String {
             let mut out = String::new();
@@ -929,27 +967,97 @@ impl BuildEnvironment {
         // are simply never visited, which is correct — they can't match
         // `KNOWN_STD_REFTYPES` anyway.
         for id in 0..tree.nodes_len() {
-            let reftype = match &tree.node(id).kind {
-                NodeKind::Inline { classes } if KNOWN_STD_REFTYPES.contains(&classes.as_str()) => {
-                    classes.clone()
+            // `sphinx.ext.extlinks` roles (e.g. `dudir`, `duref`) take
+            // priority over the std/rst-domain dispatch below since their
+            // names never collide with a domain-prefixed (`domain:reftype`)
+            // or std reftype name.
+            if let NodeKind::Inline { classes } = &tree.node(id).kind {
+                if let Some(&(name, url_tmpl, caption_tmpl)) =
+                    extlinks.iter().find(|(name, ..)| *name == classes.as_str())
+                {
+                    let content = flatten_text(tree, id);
+                    let old_children: Vec<NodeId> = tree.node(id).children.clone();
+                    if let Some(rest) = content.strip_prefix('!') {
+                        // Bang prefix disables the link (same `XRefRole`
+                        // "disabled" behavior as std/rst-domain roles).
+                        for child in old_children {
+                            tree.detach(child);
+                        }
+                        tree.append(id, NodeKind::Text(rest.to_string()));
+                        continue;
+                    }
+                    let (part, explicit_title) = crate::domains::scan::split_phrase(&content);
+                    let url = url_tmpl.replace("%s", &part);
+                    let title = explicit_title.unwrap_or_else(|| match caption_tmpl {
+                        Some(c) => c.replace("%s", &part),
+                        None => part.clone(),
+                    });
+                    for child in old_children {
+                        tree.detach(child);
+                    }
+                    tree.set_kind(
+                        id,
+                        NodeKind::Reference {
+                            name: String::new(),
+                            refuri: url,
+                            anonymous: false,
+                            classes: format!("extlink-{name} reference external"),
+                        },
+                    );
+                    tree.append(id, NodeKind::Text(title));
+                    continue;
                 }
+            }
+
+            // `domain` is `None` for a bare std-domain reftype
+            // (`Inline{classes: "ref"}`) and `Some("rst")` for a
+            // domain-prefixed one (`Inline{classes: "rst:dir"}`,
+            // produced by `docutilsrs::parser::emit_role`'s
+            // role-agnostic fallback for any unrecognized role name).
+            let (domain, reftype) = match &tree.node(id).kind {
+                NodeKind::Inline { classes } if KNOWN_STD_REFTYPES.contains(&classes.as_str()) => {
+                    (None, classes.clone())
+                }
+                NodeKind::Inline { classes } => match classes.split_once(':') {
+                    Some(("rst", rt)) if KNOWN_RST_REFTYPES.contains(&rt) => {
+                        (Some("rst"), rt.to_string())
+                    }
+                    _ => continue,
+                },
                 _ => continue,
             };
 
             let content = flatten_text(tree, id);
+            // A leading `!` disables cross-reference resolution entirely
+            // (mirrors `sphinx.roles.XRefRole.__call__`'s `disabled` flag):
+            // the role still renders, but as plain text with the bang
+            // stripped and no `pending_xref`/link ever created.
+            if let Some(rest) = content.strip_prefix('!') {
+                let old_children: Vec<NodeId> = tree.node(id).children.clone();
+                for child in old_children {
+                    tree.detach(child);
+                }
+                tree.append(id, NodeKind::Text(rest.to_string()));
+                continue;
+            }
             let (raw_target, explicit_title) = crate::domains::scan::split_phrase(&content);
             let (target, shorten) = match raw_target.strip_prefix('~') {
                 Some(rest) => (rest.to_string(), true),
                 None => (raw_target, false),
             };
 
-            let Some(resolved) = self.std_domain.resolve_xref_explicit(
-                self,
-                docname,
-                &reftype,
-                &target,
-                explicit_title.is_some(),
-            ) else {
+            let resolved = match domain {
+                None => self.std_domain.resolve_xref_explicit(
+                    self,
+                    docname,
+                    &reftype,
+                    &target,
+                    explicit_title.is_some(),
+                ),
+                Some("rst") => self.rst_domain.resolve_xref(self, docname, &reftype, &target),
+                _ => None,
+            };
+            let Some(resolved) = resolved else {
                 continue;
             };
 
@@ -970,21 +1078,31 @@ impl BuildEnvironment {
             // silently dropping the fragment (see its own `b2 == t2`
             // special case, matched here on purpose since our `to` is
             // always fragment-stripped for that comparison too).
+            //
+            // For the cross-document case, `make_refnode` computes
+            // `get_relative_uri(fromdocname, todocname)` on the *bare*
+            // uri and only appends `'#' + targetid` to that *result*
+            // afterwards — never feeding the anchor into `relative_uri`
+            // itself. That ordering matters: `relative_uri` (both here
+            // and upstream) strips any `#fragment` off `to` before
+            // comparing paths, so embedding the anchor into `target_uri`
+            // first (rather than after) would just have it silently
+            // stripped back out again.
             let href = if resolved.docname == docname && !resolved.anchor.is_empty() {
                 format!("#{}", resolved.anchor)
             } else {
-                let target_uri = if resolved.anchor.is_empty() {
-                    target_uri
+                let rel = relative_uri(&base_uri, &target_uri);
+                if resolved.anchor.is_empty() {
+                    rel
                 } else {
-                    format!("{target_uri}#{}", resolved.anchor)
-                };
-                relative_uri(&base_uri, &target_uri)
+                    format!("{rel}#{}", resolved.anchor)
+                }
             };
 
-            let inner_class = if reftype == "doc" {
-                "doc".to_string()
-            } else {
-                format!("std std-{reftype}")
+            let inner_class = match domain {
+                Some("rst") => format!("xref rst rst-{reftype}"),
+                _ if reftype == "doc" => "doc".to_string(),
+                _ => format!("std std-{reftype}"),
             };
 
             let old_children: Vec<NodeId> = tree.node(id).children.clone();
@@ -1007,6 +1125,118 @@ impl BuildEnvironment {
                 },
             );
             tree.append(span, NodeKind::Text(title));
+        }
+    }
+
+    /// Expands every `docutilsrs::doctree::NodeKind::Toctree` placeholder
+    /// node in `tree` into the real HTML5-visible subtree Sphinx renders
+    /// inline in the body for a non-hidden `.. toctree::`: a
+    /// `<div class="toctree-wrapper compound">` (mirrored here as a
+    /// [`NodeKind::Container`]) containing an optional caption paragraph
+    /// followed by a nested bullet list of [`NodeKind::Reference`]s,
+    /// titled from `env.titles`/`env.longtitles` and linked with
+    /// `docname`-relative hrefs (mirrors `sphinx.util.nodes.make_refnode`
+    /// via the same `relative_uri`/`get_target_uri` pair
+    /// `resolve_xref_nodes` uses).
+    ///
+    /// Must run after `resolve_xref_nodes` splices in `:ref:`/`:doc:`
+    /// links (order doesn't actually matter between the two passes, but
+    /// keeping this one second avoids the new nodes it appends being
+    /// walked by the other pass's `0..nodes_len()` loop for no reason).
+    ///
+    /// **Accepted deviation** (see `crate::toctree`'s own module doc):
+    /// nested entries are only resolved via `env.toctree_includes`
+    /// (i.e. a listed document that itself contains a `.. toctree::`),
+    /// never by pulling in a target document's own internal section
+    /// structure the way upstream's `TocTree.resolve` does for
+    /// `maxdepth` levels beyond 1 when no nested toctree exists.
+    pub fn resolve_toctree_nodes(&self, tree: &mut Doctree, docname: &str) {
+        use crate::builders::Builder as _;
+        use crate::builders::html::HtmlBuilder;
+
+        let builder = HtmlBuilder::new();
+        let base_uri = builder.get_target_uri(docname);
+
+        for id in 0..tree.nodes_len() {
+            let (caption, maxdepth, hidden, entries) = match &tree.node(id).kind {
+                NodeKind::Toctree {
+                    caption,
+                    maxdepth,
+                    hidden,
+                    entries,
+                } => (caption.clone(), *maxdepth, *hidden, entries.clone()),
+                _ => continue,
+            };
+            if hidden {
+                tree.set_kind(id, NodeKind::Comment);
+                continue;
+            }
+            tree.set_kind(
+                id,
+                NodeKind::Container {
+                    classes: "toctree-wrapper compound".to_string(),
+                },
+            );
+            if let Some(caption) = caption {
+                let p = tree.append(id, NodeKind::Paragraph);
+                let span = tree.append(
+                    p,
+                    NodeKind::Inline {
+                        classes: "caption-text".to_string(),
+                    },
+                );
+                tree.append(span, NodeKind::Text(caption));
+            }
+            // Entries are written relative to the directory containing
+            // *this* document (e.g. `usage/restructuredtext/index.rst`
+            // listing `basics` really means `usage/restructuredtext/basics`),
+            // matching `scan_toctree_entries`'s own qualification above.
+            let entries: Vec<String> = entries
+                .into_iter()
+                .map(|entry| docname_join(docname, &entry))
+                .collect();
+            let depth = if maxdepth <= 0 { 0 } else { maxdepth as usize };
+            let resolved = crate::toctree::resolve_from_entries(self, &entries, depth);
+            if !resolved.is_empty() {
+                Self::append_toc_entries(tree, id, &resolved, &builder, &base_uri);
+            }
+        }
+    }
+
+    /// Recursively append `entries` under `parent` as a
+    /// `NodeKind::BulletList` of `NodeKind::ListItem`s, each holding a
+    /// `NodeKind::Reference` (linked via `docname`-relative href) and,
+    /// when the entry has children, a nested `BulletList` after it —
+    /// mirrors the `<li><a href="...">Title</a><ul>...</ul></li>` shape
+    /// `resolve_toctree_nodes` doc comment describes.
+    fn append_toc_entries(
+        tree: &mut Doctree,
+        parent: NodeId,
+        entries: &[crate::toctree::TocEntry],
+        builder: &crate::builders::html::HtmlBuilder,
+        base_uri: &str,
+    ) {
+        use crate::builders::Builder as _;
+        use crate::util_osutil::relative_uri;
+
+        let list = tree.append(parent, NodeKind::BulletList { bullet: '*' });
+        for entry in entries {
+            let item = tree.append(list, NodeKind::ListItem);
+            let target_uri = builder.get_target_uri(&entry.docname);
+            let href = relative_uri(base_uri, &target_uri);
+            let refnode = tree.append(
+                item,
+                NodeKind::Reference {
+                    name: String::new(),
+                    refuri: href,
+                    anonymous: false,
+                    classes: "reference internal".to_string(),
+                },
+            );
+            tree.append(refnode, NodeKind::Text(entry.title.clone()));
+            if !entry.children.is_empty() {
+                Self::append_toc_entries(tree, item, &entry.children, builder, base_uri);
+            }
         }
     }
 

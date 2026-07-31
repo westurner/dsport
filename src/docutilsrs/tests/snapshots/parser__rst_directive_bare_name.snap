@@ -1,0 +1,9 @@
+---
+source: src/docutilsrs/tests/parser.rs
+assertion_line: 202
+expression: pseudo_xml(&parse_rst(src))
+---
+<document source="<string>">
+    <object_description classes="rst directive" ids="directive-toctree" sig=".. toctree::">
+        <paragraph>
+            Insert a toc tree.

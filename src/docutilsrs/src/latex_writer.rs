@@ -182,6 +182,25 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 emit(tree, c, section_depth, out);
             }
         }
+        NodeKind::Container { .. } => {
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::GenericAdmonition { title, .. } => {
+            let _ = writeln!(out, "\\textbf{{{}}}\\par", escape(title));
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::Epigraph { .. } => {
+            out.push_str("\\begin{quote}\n");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            out.push_str("\\end{quote}\n");
+        }
+        NodeKind::Toctree { .. } => {}
         NodeKind::Image { uri, .. } => {
             let _ = writeln!(out, "\\includegraphics{{{}}}", escape(uri));
         }
@@ -316,6 +335,15 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                     out.push_str(&close);
                 }
             }
+        }
+        NodeKind::ObjectDescription { sig_text, .. } => {
+            out.push_str("\\begin{quote}\n\\texttt{");
+            out.push_str(sig_text);
+            out.push_str("}\n\n");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            out.push_str("\\end{quote}\n");
         }
     }
 }

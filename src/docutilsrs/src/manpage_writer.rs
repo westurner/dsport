@@ -195,6 +195,25 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 emit(tree, c, section_depth, out);
             }
         }
+        NodeKind::Container { .. } => {
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::GenericAdmonition { title, .. } => {
+            let _ = writeln!(out, ".PP\n\\fB{}\\fR", title);
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::Epigraph { .. } => {
+            out.push_str(".RS\n");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            out.push_str(".RE\n");
+        }
+        NodeKind::Toctree { .. } => {}
         NodeKind::Image { uri, .. } => {
             let _ = writeln!(out, "[image: {}]", uri);
         }
@@ -292,6 +311,13 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
             }
         }
         NodeKind::SystemMessage { .. } => {}
+        NodeKind::ObjectDescription { sig_text, .. } => {
+            out.push_str(sig_text);
+            out.push_str("\n");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
         NodeKind::Extension { class_name, attrs } => {
             let visit = crate::plugins::invoke_node_visit(class_name, "man", attrs);
             if let Some(open) = &visit {

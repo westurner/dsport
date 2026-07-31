@@ -4,7 +4,7 @@
 //! asserted from Python in `src/tests/test_parity_pseudoxml.py`, which has
 //! the upstream available.
 
-use docutilsrs::{parse_rst, pseudo_xml};
+use docutilsrs::{html5, parse_rst, pseudo_xml};
 
 #[test]
 fn empty_input_yields_only_document() {
@@ -194,4 +194,63 @@ fn enumerated_list_loweralpha_start() {
 fn enumerated_list_lowerroman_ambiguous() {
     let src = "i. roman\nii. two";
     insta::assert_snapshot!("enum_lowerroman_ambiguous", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn rst_directive_bare_name_renders_as_object_description() {
+    let src = ".. rst:directive:: toctree\n\n   Insert a toc tree.\n";
+    insta::assert_snapshot!("rst_directive_bare_name", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn rst_directive_full_signature_renders_dotted_form() {
+    let src = ".. rst:directive:: .. attention::\n\n   An attention admonition.\n";
+    insta::assert_snapshot!("rst_directive_full_signature", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn rst_role_renders_as_object_description() {
+    let src = ".. rst:role:: ref\n\n   Cross-reference an arbitrary location.\n";
+    insta::assert_snapshot!("rst_role", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn rst_directive_html5_renders_dl_dt_dd_with_anchor() {
+    let src = ".. rst:directive:: toctree\n\n   Insert a toc tree.\n";
+    let html = html5(
+        &parse_rst(src),
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
+    assert!(html.contains(r#"<dl class="rst directive">"#), "got:\n{html}");
+    assert!(
+        html.contains(r#"<dt id="directive-toctree">.. toctree::</dt>"#),
+        "got:\n{html}"
+    );
+    assert!(html.contains("<dd>"), "got:\n{html}");
+    assert!(html.contains("Insert a toc tree."), "got:\n{html}");
+}
+
+#[test]
+fn domain_prefixed_role_renders_as_inline_with_full_role_name() {
+    // `:rst:dir:`toctree`` must be recognized as a single role named
+    // `rst:dir`, not fail to parse or truncate at the first colon.
+    let src = "See :rst:dir:`toctree` for details.";
+    let html = html5(
+        &parse_rst(src),
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
+    assert!(
+        html.contains(r#"<span class="rst:dir">toctree</span>"#)
+            || html.contains("rst:dir"),
+        "expected rst:dir role classes in output, got:\n{html}"
+    );
+    assert!(!html.contains(":rst:dir:`toctree`"), "role was left unparsed, got:\n{html}");
+}
+
+#[test]
+fn plain_role_without_domain_prefix_still_works() {
+    let src = ":emphasis:`text`";
+    insta::assert_snapshot!("plain_role_no_domain", pseudo_xml(&parse_rst(src)));
 }

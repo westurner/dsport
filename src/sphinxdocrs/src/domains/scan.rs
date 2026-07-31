@@ -11,16 +11,24 @@
 use super::{IndexEntry, IndexEntryKind, PendingXref};
 
 /// Scan for `.. _label:` explicit hyperlink targets, pairing each with
-/// the section title immediately following it (if any).
+/// the section title (or definition-list/field-list term) immediately
+/// following it, if any.
 ///
-/// Returns `(label_name, Some(section_title))` when the target sits
-/// directly above an underlined section title, else `(label_name, None)`.
+/// Returns `(label_name, Some(sectionname))` when the target sits
+/// directly above an underlined section title or a definition/field-list
+/// term, else `(label_name, None)`.
 ///
 /// Mirrors the subset of `docutils.transforms.references.PropagateTargets`
-/// and `Sphinx.note_labels` relevant to plain `:ref:` resolution.
-/// Overline+title+underline sections and multi-target chains such as
-/// `` .. _a:\n.. _b:\n\nTitle\n===== `` are accepted deviations: only the
-/// single target directly preceding a title is recognized.
+/// and `StandardDomain.process_doc` relevant to plain `:ref:` resolution:
+/// upstream's fallback chain (section title -> rubric -> enumerable
+/// caption -> definition-list/field-list's first term) is followed here
+/// for the definition-list-term case specifically, since that's the
+/// common non-section-title pattern in this corpus (an explicit target
+/// directly above a term like ``` ``'fontpkg'`` ``` introducing its
+/// definition). Rubrics, enumerable captions, and field-list terms are
+/// accepted deviations, same as overline+title+underline sections and
+/// multi-target chains such as `` .. _a:\n.. _b:\n\nTitle\n===== `` (only
+/// the single target directly preceding a title/term is recognized).
 pub fn scan_labels(source: &str) -> Vec<(String, Option<String>)> {
     let mut out = Vec::new();
     let lines: Vec<&str> = source.lines().collect();
@@ -55,9 +63,58 @@ pub fn scan_labels(source: &str) -> Vec<(String, Option<String>)> {
         } else {
             None
         };
+        let sectionname = sectionname.or_else(|| definition_list_term_at(&lines, j));
         out.push((name.to_string(), sectionname));
     }
     out
+}
+
+/// `true` if `lines[j]` looks like a definition-list (or field-list)
+/// term introducing an indented body immediately below it — the
+/// `` term\n   definition `` shape `StandardDomain.process_doc` falls
+/// back to (via `definition_list`/`definition_list_item` ->
+/// `term`/`field_name`) when a `.. _label:` target isn't attached to a
+/// real section title. Returns the term's text with its (docutils
+/// inline-markup) surrounding markers stripped, mirroring `clean_astext`
+/// on the real `term`/`field_name` node.
+fn definition_list_term_at(lines: &[&str], j: usize) -> Option<String> {
+    let term_line = lines.get(j)?;
+    let term_trimmed = term_line.trim();
+    if term_trimmed.is_empty()
+        || term_trimmed.starts_with("..")
+        || term_trimmed.ends_with("::")
+    {
+        return None;
+    }
+    let term_indent = term_line.len() - term_line.trim_start().len();
+
+    let body_line = lines.get(j + 1)?;
+    if body_line.trim().is_empty() {
+        return None;
+    }
+    let body_indent = body_line.len() - body_line.trim_start().len();
+    if body_indent <= term_indent {
+        return None;
+    }
+
+    Some(strip_inline_markup(term_trimmed))
+}
+
+/// Strips one layer of docutils inline-markup delimiters (`` `` `` / `**`
+/// / `*` / `` ` ``, checked longest-first so `` ``x`` `` isn't
+/// mis-stripped as `` `x` ``) from `s`, approximating `clean_astext` for
+/// the single-inline-node case common in a definition-list term.
+/// Multi-node/mixed-markup terms are an accepted deviation — returned
+/// as-is.
+fn strip_inline_markup(s: &str) -> String {
+    for (open, close) in [("``", "``"), ("**", "**"), ("*", "*"), ("`", "`")] {
+        if let Some(inner) = s.strip_prefix(open).and_then(|r| r.strip_suffix(close)) {
+            if !inner.is_empty() {
+                return inner.to_string();
+            }
+        }
+    }
+    s.to_string()
 }
 
 /// `true` if `under` is a valid docutils section-underline for `title`:
@@ -130,12 +187,31 @@ pub fn scan_glossary_terms(source: &str) -> Vec<String> {
 /// Scan `.. rst:directive:: name` / `.. rst:role:: name` object
 /// descriptions, returning `(objtype, name)` pairs (`objtype` is
 /// `"directive"` or `"role"`).
+///
+/// A directive's `name` may be given either bare (`toctree`) or in full
+/// `.. name::` syntax (`.. attention::`, used for admonition-style
+/// directives in `doc/usage/restructuredtext/directives.rst`); both forms
+/// register under the bare name, mirroring
+/// `sphinx.domains.rst.parse_directive` and
+/// `docutilsrs::parser::parse_domain_object_sig` (the doctree-rendering
+/// side, which must extract the same bare name for its `<dt id="...">`
+/// anchor to match this registry's anchor).
 pub fn scan_rst_domain_objects(source: &str) -> Vec<(String, String)> {
+    fn bare_directive_name(sig: &str) -> &str {
+        if let Some(rest) = sig.strip_prefix("..") {
+            let rest = rest.trim_start();
+            if let Some(idx) = rest.find("::") {
+                return rest[..idx].trim();
+            }
+        }
+        sig
+    }
+
     let mut out = Vec::new();
     for line in source.lines() {
         let trimmed = line.trim_start();
         if let Some(rest) = trimmed.strip_prefix(".. rst:directive::") {
-            let name = rest.trim();
+            let name = bare_directive_name(rest.trim());
             if !name.is_empty() {
                 out.push(("directive".to_string(), name.to_string()));
             }
@@ -588,6 +664,36 @@ mod tests {
         let src = ".. _standalone:\n\nJust a paragraph, not a heading.\n";
         let labels = scan_labels(src);
         assert_eq!(labels, vec![("standalone".to_string(), None)]);
+    }
+
+    #[test]
+    fn scan_labels_definition_list_term_strips_literal_markup() {
+        // Mirrors `doc/latex.rst`'s `.. _fontpkg:` / `.. _fvset:` shape:
+        // a target directly above a definition-list term (no section
+        // title), whose definition body is indented beneath it.
+        let src = ".. _fontpkg:\n\n``'fontpkg'``\n   Font package inclusion.\n";
+        let labels = scan_labels(src);
+        assert_eq!(
+            labels,
+            vec![("fontpkg".to_string(), Some("'fontpkg'".to_string()))]
+        );
+    }
+
+    #[test]
+    fn scan_labels_plain_paragraph_is_not_mistaken_for_a_term() {
+        // A wrapped paragraph continuing at the *same* indentation must
+        // not be mistaken for a definition-list term (which requires the
+        // following line to be indented *deeper*, not equal).
+        let src = ".. _standalone:\n\nJust a paragraph,\nnot a heading.\n";
+        let labels = scan_labels(src);
+        assert_eq!(labels, vec![("standalone".to_string(), None)]);
+    }
+
+    #[test]
+    fn strip_inline_markup_unwraps_double_backticks() {
+        assert_eq!(strip_inline_markup("``'fontpkg'``"), "'fontpkg'");
+        assert_eq!(strip_inline_markup("plain text"), "plain text");
+        assert_eq!(strip_inline_markup("**bold**"), "bold");
     }
 
     #[test]

@@ -146,6 +146,47 @@ enum Block {
         kind: &'static str,
         children: Vec<Block>,
     },
+    /// `.. container:: classes` \u2014 generic named container.
+    Container {
+        classes: String,
+        children: Vec<Block>,
+    },
+    /// `.. admonition:: Title` (optionally `:class: extra`) \u2014 generic
+    /// admonition with an arbitrary title, distinct from the fixed-kind
+    /// `Admonition` variant used for `.. note::`/`.. warning::`/etc.
+    GenericAdmonition {
+        title: String,
+        classes: String,
+        children: Vec<Block>,
+    },
+    /// `.. epigraph::` \u2014 a blockquote with the `epigraph` class.
+    Epigraph {
+        classes: String,
+        children: Vec<Block>,
+    },
+    /// `.. toctree::` \u2014 placeholder marker; expanded into a real
+    /// visible subtree later by `sphinxdocrs` (see `NodeKind::Toctree`).
+    Toctree {
+        caption: Option<String>,
+        maxdepth: i32,
+        hidden: bool,
+        entries: Vec<String>,
+    },
+    /// `.. class::`/`.. cssclass:: name` with no body: attaches `name` as
+    /// an extra CSS class onto the following sibling block (mirrors
+    /// docutils' "pending" class-attribute mechanism, applied here at
+    /// parse time to the immediately following block in the same list).
+    PendingClass(String),
+    /// A domain "object description" directive, e.g.
+    /// `.. rst:directive::`/`.. rst:role::` (Tier **H3c**). `sig_text` is
+    /// the already-formatted signature line (e.g. `".. toctree::"` or
+    /// `":ref:"`), `ids` the `<dt id="...">` anchor.
+    ObjectDescription {
+        classes: String,
+        ids: String,
+        sig_text: String,
+        children: Vec<Block>,
+    },
     Image {
         uri: String,
         alt: Option<String>,
@@ -551,7 +592,43 @@ fn parse_blocks(lines: &[&str], base_indent: usize, base_line: u32) -> Vec<Block
             }
         }
     }
-    blocks
+    merge_pending_classes(blocks)
+}
+
+/// Merges `Block::PendingClass` markers (from `.. class::`/`.. cssclass::`
+/// with no body) into the `classes` field of the immediately following
+/// sibling block, for the block kinds that carry a `classes` field.
+/// Mirrors docutils' "pending" class-attribute propagation, applied here
+/// at parse time within a single block list.
+fn merge_pending_classes(blocks: Vec<Block>) -> Vec<Block> {
+    let mut out: Vec<Block> = Vec::with_capacity(blocks.len());
+    let mut pending: Vec<String> = Vec::new();
+    for b in blocks {
+        match b {
+            Block::PendingClass(c) => pending.push(c),
+            mut other => {
+                if !pending.is_empty() {
+                    let extra = pending.join(" ");
+                    let target = match &mut other {
+                        Block::Container { classes, .. }
+                        | Block::GenericAdmonition { classes, .. }
+                        | Block::Epigraph { classes, .. } => Some(classes),
+                        _ => None,
+                    };
+                    if let Some(classes) = target {
+                        *classes = if classes.is_empty() {
+                            extra
+                        } else {
+                            format!("{classes} {extra}")
+                        };
+                    }
+                    pending.clear();
+                }
+                out.push(other);
+            }
+        }
+    }
+    out
 }
 
 fn at_indent(line: &str, indent: usize) -> bool {
@@ -1306,6 +1383,23 @@ fn split_directive(s: &str) -> Option<(String, &str)> {
     Some((name.to_string(), args))
 }
 
+/// Parse a domain "object description" directive signature, mirroring
+/// `sphinx.domains.rst.parse_directive`: if `sig` starts with `..` (the
+/// full `.. name:: args` form), split out the bare directive/role name
+/// and any trailing arguments; otherwise `sig` is already the bare name
+/// with no arguments.
+fn parse_domain_object_sig(sig: &str) -> (String, String) {
+    if let Some(rest) = sig.strip_prefix("..") {
+        let rest = rest.trim_start();
+        if let Some(idx) = rest.find("::") {
+            let name = rest[..idx].trim().to_string();
+            let extra = rest[idx + 2..].trim().to_string();
+            return (name, extra);
+        }
+    }
+    (sig.to_string(), String::new())
+}
+
 fn parse_directive_inline_or_indented(
     lines: &[&str],
     i_ref: &mut usize,
@@ -1330,7 +1424,7 @@ fn parse_directive(
 ) -> Block {
     match name.as_str() {
         "note" | "warning" | "tip" | "hint" | "important" | "attention" | "caution" | "danger"
-        | "error" => {
+        | "error" | "seealso" => {
             let kind: &'static str = match name.as_str() {
                 "note" => "note",
                 "warning" => "warning",
@@ -1341,6 +1435,7 @@ fn parse_directive(
                 "caution" => "caution",
                 "danger" => "danger",
                 "error" => "error",
+                "seealso" => "seealso",
                 _ => unreachable!(),
             };
             let mut child_blocks: Vec<Block> = Vec::new();
@@ -1362,6 +1457,152 @@ fn parse_directive(
             Block::Admonition {
                 kind,
                 children: child_blocks,
+            }
+        }
+        "admonition" => {
+            // `.. admonition:: Title` (optionally `:class: extra`) \u2014
+            // generic admonition with an arbitrary title.
+            let title = args.trim().to_string();
+            *i_ref += 1;
+            let mut j = *i_ref;
+            while j < lines.len() && lines[j].trim().is_empty() {
+                j += 1;
+            }
+            let mut classes = String::new();
+            let mut body_indent = None;
+            if j < lines.len()
+                && let Some(ind) = leading_spaces(lines[j])
+                && ind > base_indent
+            {
+                body_indent = Some(ind);
+                while j < lines.len() {
+                    let l = lines[j];
+                    if l.trim().is_empty() {
+                        break;
+                    }
+                    if leading_spaces(l).unwrap_or(0) < ind {
+                        break;
+                    }
+                    let stripped = &l[ind..];
+                    if let Some((k, v)) = field_marker(stripped) {
+                        if k == "class" {
+                            classes = v.trim().to_string();
+                        }
+                        j += 1;
+                    } else {
+                        break;
+                    }
+                }
+                *i_ref = j;
+            }
+            let content_indent =
+                body_indent.or_else(|| peek_inner_indent(lines, *i_ref, base_indent));
+            let mut children = Vec::new();
+            if let Some(ci) = content_indent {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                children = parse_blocks(&refs, ci, 0);
+            }
+            Block::GenericAdmonition {
+                title,
+                classes,
+                children,
+            }
+        }
+        "container" => {
+            let classes = args.trim().to_string();
+            *i_ref += 1;
+            let mut children = Vec::new();
+            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                children = parse_blocks(&refs, ci, 0);
+            }
+            Block::Container { classes, children }
+        }
+        "epigraph" => {
+            let mut child_blocks: Vec<Block> = Vec::new();
+            if !args.is_empty() {
+                child_blocks.push(Block::Paragraph {
+                    text: args.to_string(),
+                    line: 0,
+                });
+            }
+            *i_ref += 1;
+            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                let mut more = parse_blocks(&refs, ci, 0);
+                child_blocks.append(&mut more);
+            }
+            Block::Epigraph {
+                classes: String::new(),
+                children: child_blocks,
+            }
+        }
+        "class" | "cssclass" => {
+            let classes = args
+                .trim()
+                .replace(',', " ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            *i_ref += 1;
+            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                let children = parse_blocks(&refs, ci, 0);
+                Block::Container { classes, children }
+            } else {
+                Block::PendingClass(classes)
+            }
+        }
+        "toctree" => {
+            *i_ref += 1;
+            let mut maxdepth: i32 = 0;
+            let mut caption: Option<String> = None;
+            let mut hidden = false;
+            let mut entries: Vec<String> = Vec::new();
+            let mut j = *i_ref;
+            while j < lines.len() && lines[j].trim().is_empty() {
+                j += 1;
+            }
+            if j < lines.len()
+                && let Some(ind) = leading_spaces(lines[j])
+                && ind > base_indent
+            {
+                while j < lines.len() {
+                    let l = lines[j];
+                    if l.trim().is_empty() {
+                        j += 1;
+                        continue;
+                    }
+                    if leading_spaces(l).unwrap_or(0) < ind {
+                        break;
+                    }
+                    let stripped = &l[ind..];
+                    if let Some((k, v)) = field_marker(stripped) {
+                        match k.as_str() {
+                            "maxdepth" => maxdepth = v.trim().parse().unwrap_or(0),
+                            "caption" => caption = Some(v.trim().to_string()),
+                            "hidden" => hidden = true,
+                            _ => {}
+                        }
+                    } else {
+                        let entry = stripped.trim();
+                        if !entry.is_empty() {
+                            entries.push(entry.to_string());
+                        }
+                    }
+                    j += 1;
+                }
+                *i_ref = j;
+            }
+            Block::Toctree {
+                caption,
+                maxdepth,
+                hidden,
+                entries,
             }
         }
         "image" | "figure" => {
@@ -1510,6 +1751,45 @@ fn parse_directive(
             *i_ref += 1;
             let name = args.trim();
             Block::DefaultRole((!name.is_empty()).then(|| name.to_owned()))
+        }
+        "rst:directive" | "rst:role" => {
+            // `.. rst:directive:: sig` / `.. rst:role:: name` (Tier H3c).
+            // Mirrors `sphinx.domains.rst.ReSTDirective`/`ReSTRole`:
+            // the visible signature is always synthesized as
+            // `.. {name}::` (directive) or `:{name}:` (role), regardless
+            // of whether the source `sig` used the full `.. name::`
+            // syntax or a bare name.
+            let objtype = if name == "rst:directive" {
+                "directive"
+            } else {
+                "role"
+            };
+            let (bare_name, extra_args) = parse_domain_object_sig(args.trim());
+            let sig_text = if objtype == "directive" {
+                if extra_args.is_empty() {
+                    format!(".. {bare_name}::")
+                } else {
+                    format!(".. {bare_name}:: {extra_args}")
+                }
+            } else {
+                format!(":{bare_name}:")
+            };
+            let ids = format!("{objtype}-{}", normalize_id(&bare_name));
+            let classes = format!("rst {objtype}");
+            *i_ref += 1;
+            let content_indent = peek_inner_indent(lines, *i_ref, base_indent);
+            let mut children = Vec::new();
+            if let Some(ci) = content_indent {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                children = parse_blocks(&refs, ci, 0);
+            }
+            Block::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                children,
+            }
         }
         _ => {
             // Unknown directive: consult the Python plugin registry. A
@@ -2290,6 +2570,66 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             let a = tree.append(parent, NodeKind::Admonition { kind });
             for b in children {
                 emit_block(tree, a, ctx, b);
+            }
+        }
+        Block::Container { classes, children } => {
+            let c = tree.append(parent, NodeKind::Container { classes });
+            for b in children {
+                emit_block(tree, c, ctx, b);
+            }
+        }
+        Block::GenericAdmonition {
+            title,
+            classes,
+            children,
+        } => {
+            let a = tree.append(parent, NodeKind::GenericAdmonition { title, classes });
+            for b in children {
+                emit_block(tree, a, ctx, b);
+            }
+        }
+        Block::Epigraph { classes, children } => {
+            let e = tree.append(parent, NodeKind::Epigraph { classes });
+            for b in children {
+                emit_block(tree, e, ctx, b);
+            }
+        }
+        Block::Toctree {
+            caption,
+            maxdepth,
+            hidden,
+            entries,
+        } => {
+            tree.append(
+                parent,
+                NodeKind::Toctree {
+                    caption,
+                    maxdepth,
+                    hidden,
+                    entries,
+                },
+            );
+        }
+        Block::PendingClass(_) => {
+            // Not attached to a following sibling (e.g. trailing in its
+            // block list) \u2014 nothing to render.
+        }
+        Block::ObjectDescription {
+            classes,
+            ids,
+            sig_text,
+            children,
+        } => {
+            let d = tree.append(
+                parent,
+                NodeKind::ObjectDescription {
+                    classes,
+                    ids,
+                    sig_text,
+                },
+            );
+            for b in children {
+                emit_block(tree, d, ctx, b);
             }
         }
         Block::Image {
@@ -3550,6 +3890,13 @@ fn try_match_substitution(text: &str, escaped: &[bool], start: usize) -> Option<
     Some((name.to_string(), abs_end + 1))
 }
 
+/// A single role-name segment: letters, digits, `-`, `_`, `+` (matching
+/// docutils' `simplename` character class used for both plain role names
+/// and domain names/reftypes in `:domain:reftype:` roles).
+fn is_role_segment_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '-' || c == '_' || c == '+'
+}
+
 fn try_match_role(text: &str, escaped: &[bool], start: usize) -> Option<(String, String, usize)> {
     if escaped.get(start).copied().unwrap_or(false) {
         return None;
@@ -3561,25 +3908,35 @@ fn try_match_role(text: &str, escaped: &[bool], start: usize) -> Option<(String,
         return None;
     }
     let after = &text[start + 1..];
-    let end_role = after.find(':')?;
-    let role = &after[..end_role];
-    if role.is_empty()
-        || !role
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-    {
+    let end_first = after.find(':')?;
+    let first = &after[..end_first];
+    if first.is_empty() || !first.chars().all(is_role_segment_char) {
         return None;
     }
-    let abs_after_role = start + 1 + end_role + 1;
-    if text.as_bytes().get(abs_after_role)? != &b'`' {
-        return None;
-    }
+    let abs_after_first = start + 1 + end_first + 1;
+    // Domain-prefixed role, e.g. `:rst:dir:`x` or `:py:func:`x`: an
+    // optional second `segment:` before the backtick.
+    let (role, abs_after_role) = if text.as_bytes().get(abs_after_first) == Some(&b'`') {
+        (first.to_string(), abs_after_first)
+    } else {
+        let after_first = &text[abs_after_first..];
+        let end_second = after_first.find(':')?;
+        let second = &after_first[..end_second];
+        if second.is_empty() || !second.chars().all(is_role_segment_char) {
+            return None;
+        }
+        let abs_after_second = abs_after_first + end_second + 1;
+        if text.as_bytes().get(abs_after_second)? != &b'`' {
+            return None;
+        }
+        (format!("{first}:{second}"), abs_after_second)
+    };
     let content_start = abs_after_role + 1;
     let rest = &text[content_start..];
     let end_rel = rest.find('`')?;
     let content = &rest[..end_rel];
     Some((
-        role.to_string(),
+        role,
         content.to_string(),
         content_start + end_rel + 1,
     ))

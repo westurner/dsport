@@ -599,6 +599,10 @@ impl Builder for HtmlBuilder {
             // for why this must happen here, walking the actual tree,
             // rather than via the text-scanned `pending_xrefs` list).
             env.resolve_xref_nodes(&mut tree, docname);
+            // Expand `.. toctree::` placeholders into their real
+            // caption + nested bullet-list-of-links subtree (see
+            // `BuildEnvironment::resolve_toctree_nodes`).
+            env.resolve_toctree_nodes(&mut tree, docname);
             match &real_theme {
                 Some(renderer) => {
                     self.build_doc_real_themed_from_tree(

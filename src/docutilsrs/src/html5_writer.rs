@@ -189,11 +189,76 @@ fn emit(
         }
         NodeKind::BlockQuote => wrap(tree, &node.children, "blockquote", out, options, common),
         NodeKind::Admonition { kind } => {
-            let _ = write!(out, "<aside class=\"{kind}\">");
+            // Mirrors docutils' HTML5 writer: a fixed-kind admonition
+            // (`.. note::`, `.. seealso::`, ...) renders as
+            // `<div class="admonition {kind}"><p class="admonition-title">
+            // {Title}</p>{body}</div>` — real Sphinx builds never use
+            // `<aside>` for these.
+            let title = match *kind {
+                "seealso" => "See also",
+                "note" => "Note",
+                "warning" => "Warning",
+                "tip" => "Tip",
+                "hint" => "Hint",
+                "important" => "Important",
+                "attention" => "Attention",
+                "caution" => "Caution",
+                "danger" => "Danger",
+                "error" => "Error",
+                _ => kind,
+            };
+            let _ = write!(out, "<div class=\"admonition {kind}\">");
+            let _ = write!(out, "<p class=\"admonition-title\">{}</p>", escape(title));
             for &c in &node.children {
                 emit(tree, c, out, options, common);
             }
-            out.push_str("</aside>");
+            out.push_str("</div>");
+        }
+        NodeKind::Container { classes } => {
+            // `.. container:: classes` — real docutils/Sphinx markup:
+            // `<div class="{classes} docutils container">`.
+            if classes.is_empty() {
+                out.push_str("<div class=\"docutils container\">");
+            } else {
+                let _ = write!(out, "<div class=\"{classes} docutils container\">");
+            }
+            for &c in &node.children {
+                emit(tree, c, out, options, common);
+            }
+            out.push_str("</div>");
+        }
+        NodeKind::GenericAdmonition { title, classes } => {
+            // `.. admonition:: Title` (optionally `:class: extra`) — real
+            // markup reverses the class order vs. fixed-kind admonitions:
+            // `<div class="{classes or 'admonition'} admonition">`.
+            if classes.is_empty() {
+                out.push_str("<div class=\"admonition\">");
+            } else {
+                let _ = write!(out, "<div class=\"{classes} admonition\">");
+            }
+            let _ = write!(out, "<p class=\"admonition-title\">{}</p>", escape(title));
+            for &c in &node.children {
+                emit(tree, c, out, options, common);
+            }
+            out.push_str("</div>");
+        }
+        NodeKind::Epigraph { classes } => {
+            if classes.is_empty() {
+                out.push_str("<blockquote class=\"epigraph\">");
+            } else {
+                let _ = write!(out, "<blockquote class=\"epigraph {classes}\">");
+            }
+            for &c in &node.children {
+                emit(tree, c, out, options, common);
+            }
+            out.push_str("</blockquote>");
+        }
+        NodeKind::Toctree { .. } => {
+            // Standalone docutilsrs has no notion of a multi-document
+            // project to expand this into; `sphinxdocrs` resolves it
+            // into a real subtree before this writer ever sees it (see
+            // `BuildEnvironment::resolve_toctree_nodes`). Renders nothing
+            // here, matching a `:hidden:` toctree's real behavior.
         }
         NodeKind::Image { uri, alt, .. } => {
             let _ = write!(out, "<img src=\"{}\"", escape(uri));
@@ -412,6 +477,28 @@ fn emit(
                     out.push_str(&close);
                 }
             }
+        }
+        NodeKind::ObjectDescription {
+            classes,
+            ids,
+            sig_text,
+        } => {
+            if classes.is_empty() {
+                out.push_str("<dl>");
+            } else {
+                let _ = write!(out, "<dl class=\"{}\">", escape(classes));
+            }
+            if ids.is_empty() {
+                out.push_str("<dt>");
+            } else {
+                let _ = write!(out, "<dt id=\"{}\">", escape(ids));
+            }
+            out.push_str(&escape(sig_text));
+            out.push_str("</dt><dd>");
+            for &c in &node.children {
+                emit(tree, c, out, options, common);
+            }
+            out.push_str("</dd></dl>");
         }
     }
 }

@@ -343,7 +343,10 @@ fn node_registered_and_retrieved() {
     let mut r = reg();
     r.add_node("TodoNode", "html");
     assert!(r.has_node("TodoNode"));
-    assert_eq!(r.get_node_formats("TodoNode"), Some(&["html".to_string()][..]));
+    assert_eq!(
+        r.get_node_formats("TodoNode"),
+        Some(&["html".to_string()][..])
+    );
 }
 
 #[test]
@@ -369,7 +372,10 @@ fn node_same_format_registered_twice_is_idempotent() {
     let mut r = reg();
     r.add_node("TodoNode", "html");
     r.add_node("TodoNode", "html");
-    assert_eq!(r.get_node_formats("TodoNode"), Some(&["html".to_string()][..]));
+    assert_eq!(
+        r.get_node_formats("TodoNode"),
+        Some(&["html".to_string()][..])
+    );
 }
 
 // ── empty registry ────────────────────────────────────────────────────────

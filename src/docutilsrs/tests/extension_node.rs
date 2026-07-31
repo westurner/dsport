@@ -36,16 +36,10 @@ fn tree_with_extension(class_name: &str) -> Doctree {
 /// A Python callable (`attrs: dict -> str`) built from a literal.
 fn py_lambda(py: Python<'_>, returning: &str) -> Py<PyAny> {
     let globals = PyDict::new(py);
-    globals
-        .set_item("_RET", returning)
-        .unwrap();
-    py.eval(
-        c"lambda attrs: _RET",
-        Some(&globals),
-        None,
-    )
-    .unwrap()
-    .unbind()
+    globals.set_item("_RET", returning).unwrap();
+    py.eval(c"lambda attrs: _RET", Some(&globals), None)
+        .unwrap()
+        .unbind()
 }
 
 #[test]
@@ -164,7 +158,10 @@ fn doctree_serialization_round_trips_extension_node() {
     let restored = Doctree::from_bytes(&bytes).unwrap();
     let child_id = restored.node(restored.root()).children[0];
     match &restored.node(child_id).kind {
-        NodeKind::Extension { class_name, attrs: a } => {
+        NodeKind::Extension {
+            class_name,
+            attrs: a,
+        } => {
             assert_eq!(class_name, "ExtRoundTrip");
             assert_eq!(a, &attrs);
         }

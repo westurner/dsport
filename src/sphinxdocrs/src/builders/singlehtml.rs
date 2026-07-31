@@ -185,10 +185,7 @@ fn toctree_order(env: &BuildEnvironment, docnames: Vec<String>) -> Vec<String> {
     let toc = crate::toctree::global_toctree_for_doc(env, 0);
     flatten_toctree(&toc, &all, &mut ordered, &mut seen);
 
-    let mut leftovers: Vec<String> = docnames
-        .into_iter()
-        .filter(|d| !seen.contains(d))
-        .collect();
+    let mut leftovers: Vec<String> = docnames.into_iter().filter(|d| !seen.contains(d)).collect();
     leftovers.sort();
     ordered.extend(leftovers);
     ordered
@@ -262,11 +259,7 @@ mod tests {
             "Welcome\n=======\n\nHomepage.\n",
         )
         .unwrap();
-        std::fs::write(
-            src.path().join("about.rst"),
-            "About\n=====\n\nSome info.\n",
-        )
-        .unwrap();
+        std::fs::write(src.path().join("about.rst"), "About\n=====\n\nSome info.\n").unwrap();
         let config = crate::config::SphinxConfig::new_defaults();
         let project =
             crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
@@ -359,6 +352,9 @@ mod tests {
         assert!(combined.contains("id=\"orphan\""));
         let idx_aaa = combined.find("id=\"aaa\"").unwrap();
         let idx_orphan = combined.find("id=\"orphan\"").unwrap();
-        assert!(idx_aaa < idx_orphan, "orphan doc must be appended after toctree-ordered docs");
+        assert!(
+            idx_aaa < idx_orphan,
+            "orphan doc must be appended after toctree-ordered docs"
+        );
     }
 }

@@ -122,11 +122,7 @@ mod tests {
             "Welcome\n=======\n\nHomepage.\n",
         )
         .unwrap();
-        std::fs::write(
-            src.path().join("about.rst"),
-            "About\n=====\n\nSome info.\n",
-        )
-        .unwrap();
+        std::fs::write(src.path().join("about.rst"), "About\n=====\n\nSome info.\n").unwrap();
         let config = crate::config::SphinxConfig::new_defaults();
         let project =
             crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);

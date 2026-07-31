@@ -331,7 +331,8 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 emit(tree, c, section_depth, out);
             }
             if visit.is_some() {
-                if let Some(close) = crate::plugins::invoke_node_depart(class_name, "latex", attrs) {
+                if let Some(close) = crate::plugins::invoke_node_depart(class_name, "latex", attrs)
+                {
                     out.push_str(&close);
                 }
             }
@@ -344,6 +345,17 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 emit(tree, c, section_depth, out);
             }
             out.push_str("\\end{quote}\n");
+        }
+        NodeKind::Abbreviation { .. }
+        | NodeKind::Subscript
+        | NodeKind::Superscript
+        | NodeKind::Keyboard
+        | NodeKind::Rubric
+        | NodeKind::VersionModified { .. }
+        | NodeKind::PendingXref { .. } => {
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
         }
     }
 }

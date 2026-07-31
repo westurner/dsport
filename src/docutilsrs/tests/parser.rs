@@ -101,7 +101,10 @@ fn document_title(src: &str) -> String {
 
 #[test]
 fn title_promoted_for_underline_only_section() {
-    assert_eq!(document_title("Getting started\n===============\n\nBody.\n"), "Getting started");
+    assert_eq!(
+        document_title("Getting started\n===============\n\nBody.\n"),
+        "Getting started"
+    );
 }
 
 #[test]
@@ -222,7 +225,10 @@ fn rst_directive_html5_renders_dl_dt_dd_with_anchor() {
         &docutilsrs::cli::Html5Options::default(),
         &docutilsrs::cli::CommonOptions::default(),
     );
-    assert!(html.contains(r#"<dl class="rst directive">"#), "got:\n{html}");
+    assert!(
+        html.contains(r#"<dl class="rst directive">"#),
+        "got:\n{html}"
+    );
     assert!(
         html.contains(r#"<dt id="directive-toctree">.. toctree::</dt>"#),
         "got:\n{html}"
@@ -242,11 +248,13 @@ fn domain_prefixed_role_renders_as_inline_with_full_role_name() {
         &docutilsrs::cli::CommonOptions::default(),
     );
     assert!(
-        html.contains(r#"<span class="rst:dir">toctree</span>"#)
-            || html.contains("rst:dir"),
+        html.contains(r#"<span class="rst:dir">toctree</span>"#) || html.contains("rst:dir"),
         "expected rst:dir role classes in output, got:\n{html}"
     );
-    assert!(!html.contains(":rst:dir:`toctree`"), "role was left unparsed, got:\n{html}");
+    assert!(
+        !html.contains(":rst:dir:`toctree`"),
+        "role was left unparsed, got:\n{html}"
+    );
 }
 
 #[test]

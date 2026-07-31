@@ -480,11 +480,19 @@ pub(crate) fn render_expr(expr: &Expr) -> String {
         ),
         Expr::Tuple(t) => format!(
             "({})",
-            t.elts.iter().map(render_expr).collect::<Vec<_>>().join(", ")
+            t.elts
+                .iter()
+                .map(render_expr)
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         Expr::List(l) => format!(
             "[{}]",
-            l.elts.iter().map(render_expr).collect::<Vec<_>>().join(", ")
+            l.elts
+                .iter()
+                .map(render_expr)
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         Expr::UnaryOp(u) => {
             if matches!(u.op, ruff_python_ast::UnaryOp::Not) {
@@ -872,7 +880,12 @@ pub fn document_module_source_with_options(
         match by_name.get(name.as_str()) {
             Some(TopLevel::Function(func)) => {
                 out.push('\n');
-                out.push_str(&render_function(func, FunctionKind::Function, 0, options.typehints));
+                out.push_str(&render_function(
+                    func,
+                    FunctionKind::Function,
+                    0,
+                    options.typehints,
+                ));
             }
             Some(TopLevel::Class(class)) => {
                 out.push('\n');
@@ -1199,10 +1212,7 @@ def add(a: int, b: int = 0) -> int:
         let mut opts = AutodocOptions::legacy_default();
         opts.typehints = TypeHints::None;
         let rst = document_module_source_with_options("m", src, &opts).unwrap();
-        assert!(
-            rst.contains(".. py:function:: add(a, b=0)"),
-            "got:\n{rst}"
-        );
+        assert!(rst.contains(".. py:function:: add(a, b=0)"), "got:\n{rst}");
         assert!(!rst.contains("int"), "got:\n{rst}");
     }
 

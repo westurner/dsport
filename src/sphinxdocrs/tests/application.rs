@@ -109,7 +109,11 @@ fn new_registers_each_builder_under_its_own_class() {
     .unwrap();
 
     for (name, class) in NATIVE_BUILDER_CLASSES {
-        assert_eq!(app.registry.borrow().get_builder(name), Some(*class), "{name}");
+        assert_eq!(
+            app.registry.borrow().get_builder(name),
+            Some(*class),
+            "{name}"
+        );
     }
 }
 

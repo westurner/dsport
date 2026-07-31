@@ -491,8 +491,13 @@ impl SphinxComponentRegistry {
     /// Mirrors `SphinxComponentRegistry.add_object_type(directivename,
     /// rolename, ...)`. See [`object_types`](Self::object_types)'s doc
     /// comment for the accepted deviation.
-    pub fn add_object_type(&mut self, directivename: impl Into<String>, rolename: impl Into<String>) {
-        self.object_types.insert(directivename.into(), rolename.into());
+    pub fn add_object_type(
+        &mut self,
+        directivename: impl Into<String>,
+        rolename: impl Into<String>,
+    ) {
+        self.object_types
+            .insert(directivename.into(), rolename.into());
     }
 
     /// Return `true` if an object type with `directivename` is registered.

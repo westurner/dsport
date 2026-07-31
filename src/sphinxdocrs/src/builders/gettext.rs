@@ -112,8 +112,7 @@ impl Builder for GettextBuilder {
             &catalog,
             &env.config.project(),
             &env.config.version(),
-            &env
-                .config
+            &env.config
                 .get("project_copyright")
                 .and_then(|v| v.as_str().map(String::from))
                 .unwrap_or_default(),
@@ -194,14 +193,22 @@ fn render_pot(catalog: &MessageCatalog, project: &str, version: &str, copyright:
         out.push_str(&format!("# Copyright (C) {copyright}\n"));
     }
     out.push_str("# This file is distributed under the same license as the ");
-    out.push_str(if project.is_empty() { "PACKAGE" } else { project });
+    out.push_str(if project.is_empty() {
+        "PACKAGE"
+    } else {
+        project
+    });
     out.push_str(" package.\n");
     out.push_str("#\n");
     out.push_str("msgid \"\"\n");
     out.push_str("msgstr \"\"\n");
     out.push_str(&format!(
         "\"Project-Id-Version: {} {}\\n\"\n",
-        if project.is_empty() { "PACKAGE" } else { project },
+        if project.is_empty() {
+            "PACKAGE"
+        } else {
+            project
+        },
         version
     ));
     out.push_str("\"MIME-Version: 1.0\\n\"\n");

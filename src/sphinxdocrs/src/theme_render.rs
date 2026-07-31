@@ -1078,8 +1078,7 @@ mod tests {
 
     fn make_test_env(srcdir: &str, doctreedir: &str) -> crate::environment::BuildEnvironment {
         let config = crate::config::SphinxConfig::new_defaults();
-        let project =
-            crate::environment::EnvProject::new(srcdir, &[(".rst", "restructuredtext")]);
+        let project = crate::environment::EnvProject::new(srcdir, &[(".rst", "restructuredtext")]);
         crate::environment::BuildEnvironment::new(config, project, srcdir, doctreedir)
     }
 
@@ -1112,7 +1111,10 @@ mod tests {
             .iter()
             .map(|v| v.as_str().unwrap().to_string())
             .collect();
-        assert!(css_files.contains(&"extra.css".to_string()), "{css_files:?}");
+        assert!(
+            css_files.contains(&"extra.css".to_string()),
+            "{css_files:?}"
+        );
 
         let script_files: Vec<String> = ctx["script_files"]
             .as_array()

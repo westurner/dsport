@@ -33,7 +33,9 @@ pub fn text(tree: &Doctree) -> String {
     // flattened) children at depth 0 rather than depth 1.
     if let NodeKind::Document { title, .. } = &tree.node(tree.root()).kind {
         if !title.is_empty() {
-            let underline = section_underline_char(0).to_string().repeat(display_width(title));
+            let underline = section_underline_char(0)
+                .to_string()
+                .repeat(display_width(title));
             blocks.push(format!("{title}\n{underline}"));
         }
     }
@@ -83,8 +85,9 @@ fn render_block(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<Strin
             }
             if !title_text.is_empty() {
                 let underline_char = section_underline_char(depth);
-                let underline: String =
-                    underline_char.to_string().repeat(display_width(&title_text));
+                let underline: String = underline_char
+                    .to_string()
+                    .repeat(display_width(&title_text));
                 blocks.push(format!("{title_text}\n{underline}"));
             }
             blocks.extend(body_blocks);
@@ -98,7 +101,9 @@ fn render_block(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<Strin
             // single top-level section containing a single nested section;
             // render one level deeper than the document title itself.
             let t = inline_text(tree, id);
-            let underline = section_underline_char(1).to_string().repeat(display_width(&t));
+            let underline = section_underline_char(1)
+                .to_string()
+                .repeat(display_width(&t));
             blocks.push(format!("{t}\n{underline}"));
         }
         NodeKind::Transition => blocks.push("-".repeat(20)),
@@ -150,7 +155,11 @@ fn render_block(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<Strin
                 }
             }
             blocks.push(term_line);
-            blocks.extend(def_blocks.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
+            blocks.extend(
+                def_blocks
+                    .into_iter()
+                    .map(|b| indent_lines(&b, INDENT_STEP)),
+            );
         }
         NodeKind::FieldList => {
             for &field in &node.children {
@@ -174,7 +183,11 @@ fn render_block(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<Strin
             let body = body_blocks.join(" ");
             if body.contains('\n') || body.is_empty() {
                 blocks.push(format!(":{name}:"));
-                blocks.extend(body_blocks.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
+                blocks.extend(
+                    body_blocks
+                        .into_iter()
+                        .map(|b| indent_lines(&b, INDENT_STEP)),
+                );
             } else {
                 blocks.push(format!(":{name}: {body}"));
             }
@@ -184,7 +197,9 @@ fn render_block(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<Strin
                 render_block(tree, c, depth, blocks);
             }
         }
-        NodeKind::Bibliographic { tag } => blocks.push(format!(":{tag}: {}", inline_text(tree, id))),
+        NodeKind::Bibliographic { tag } => {
+            blocks.push(format!(":{tag}: {}", inline_text(tree, id)))
+        }
         NodeKind::BlockQuote => {
             let mut inner = Vec::new();
             for &c in &node.children {
@@ -258,7 +273,11 @@ fn render_block(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<Strin
                     render_block(tree, c, depth, &mut inner);
                 }
             }
-            let label = if names.is_empty() { "*".to_string() } else { names.clone() };
+            let label = if names.is_empty() {
+                "*".to_string()
+            } else {
+                names.clone()
+            };
             if let Some(first) = inner.first() {
                 blocks.push(format!("[{label}] {first}"));
                 blocks.extend(inner.into_iter().skip(1));
@@ -266,7 +285,11 @@ fn render_block(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<Strin
                 blocks.push(format!("[{label}]"));
             }
         }
-        NodeKind::Citation { ids: _, names, backrefs: _ } => {
+        NodeKind::Citation {
+            ids: _,
+            names,
+            backrefs: _,
+        } => {
             let mut inner = Vec::new();
             for &c in &node.children {
                 if !matches!(tree.node(c).kind, NodeKind::Label) {
@@ -404,7 +427,11 @@ fn inline_text(tree: &Doctree, id: NodeId) -> String {
         NodeKind::Literal => wrap_children(tree, id, "`", "`"),
         NodeKind::TitleReference => wrap_children(tree, id, "\u{2018}", "\u{2019}"),
         NodeKind::Math { latex } => format!(":math:`{latex}`"),
-        NodeKind::FootnoteReference { ids: _, refid: _, auto: _ } => "[?]".to_string(),
+        NodeKind::FootnoteReference {
+            ids: _,
+            refid: _,
+            auto: _,
+        } => "[?]".to_string(),
         NodeKind::CitationReference { ids: _, refid: _ } => "[?]".to_string(),
         NodeKind::Reference { name, .. } => {
             let inner = children_inline(tree, id);
@@ -447,10 +474,7 @@ mod tests {
 
     #[test]
     fn nested_sections_use_rotating_underline_chars() {
-        let tree = parse_rst_with_source(
-            "Top\n===\n\nSub\n---\n\nbody\n",
-            "<string>",
-        );
+        let tree = parse_rst_with_source("Top\n===\n\nSub\n---\n\nbody\n", "<string>");
         let out = text(&tree);
         assert!(out.contains("Top\n===\n"));
         assert!(out.contains("Sub\n---\n"));

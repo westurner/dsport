@@ -29,6 +29,65 @@ fn transform_registry() -> &'static Mutex<Vec<(String, Py<PyAny>)>> {
     R.get_or_init(|| Mutex::new(Vec::new()))
 }
 
+pub type NativeDirectiveHandler =
+    Box<dyn Fn(&str, &[&str]) -> Option<Vec<crate::parser::Block>> + Send + Sync>;
+
+pub type NativeRoleHandler = Box<dyn Fn(&str, &str) -> Option<NodeKind> + Send + Sync>;
+
+fn native_directives() -> &'static Mutex<HashMap<String, NativeDirectiveHandler>> {
+    static R: OnceLock<Mutex<HashMap<String, NativeDirectiveHandler>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn native_roles() -> &'static Mutex<HashMap<String, NativeRoleHandler>> {
+    static R: OnceLock<Mutex<HashMap<String, NativeRoleHandler>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Register a native Rust directive handler for `name`.
+pub fn register_native_directive<F>(name: &str, handler: F)
+where
+    F: Fn(&str, &[&str]) -> Option<Vec<crate::parser::Block>> + Send + Sync + 'static,
+{
+    if let Ok(mut map) = native_directives().lock() {
+        map.insert(name.to_string(), Box::new(handler));
+    }
+}
+
+/// Invoke a registered native directive handler for `name`.
+pub fn invoke_native_directive(
+    name: &str,
+    args: &str,
+    content: &[&str],
+) -> Option<Vec<crate::parser::Block>> {
+    if let Ok(map) = native_directives().lock() {
+        if let Some(handler) = map.get(name) {
+            return handler(args, content);
+        }
+    }
+    None
+}
+
+/// Register a native Rust role handler for `name`.
+pub fn register_native_role<F>(name: &str, handler: F)
+where
+    F: Fn(&str, &str) -> Option<NodeKind> + Send + Sync + 'static,
+{
+    if let Ok(mut map) = native_roles().lock() {
+        map.insert(name.to_string(), Box::new(handler));
+    }
+}
+
+/// Invoke a registered native role handler for `name`.
+pub fn invoke_native_role(name: &str, role_name: &str, content: &str) -> Option<NodeKind> {
+    if let Ok(map) = native_roles().lock() {
+        if let Some(handler) = map.get(name) {
+            return handler(role_name, content);
+        }
+    }
+    None
+}
+
 /// True if any Python transform plugin is currently registered.
 pub fn has_transforms() -> bool {
     transform_registry()
@@ -219,7 +278,8 @@ pub(crate) fn py_clear_transforms() -> PyResult<()> {
 // site (`docutilsrs` is an ordinary path dependency of `sphinxdocrs`, so
 // no Python round-trip is needed to reach this registry from there).
 
-fn node_visitor_registry() -> &'static Mutex<HashMap<(String, String), (Py<PyAny>, Option<Py<PyAny>>)>> {
+fn node_visitor_registry()
+-> &'static Mutex<HashMap<(String, String), (Py<PyAny>, Option<Py<PyAny>>)>> {
     static R: OnceLock<Mutex<HashMap<(String, String), (Py<PyAny>, Option<Py<PyAny>>)>>> =
         OnceLock::new();
     R.get_or_init(|| Mutex::new(HashMap::new()))

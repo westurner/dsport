@@ -246,6 +246,32 @@ pub enum NodeKind {
         class_name: String,
         attrs: HashMap<String, String>,
     },
+    /// `<abbreviation explanation="...">` element produced by `:abbr:` / `:abbreviation:`.
+    Abbreviation {
+        explanation: String,
+    },
+    /// `<subscript>` element produced by `:sub:` / `:subscript:`.
+    Subscript,
+    /// `<superscript>` element produced by `:sup:` / `:superscript:`.
+    Superscript,
+    /// `<keyboard>` element produced by `:kbd:`.
+    Keyboard,
+    /// `<rubric>` element produced by `.. rubric::`.
+    Rubric,
+    /// `<versionmodified>` element produced by `.. versionadded::`, `.. versionchanged::`, etc.
+    VersionModified {
+        kind: &'static str,
+        version: String,
+    },
+    /// Cross-reference node to be resolved during post-read reference resolution.
+    PendingXref {
+        reftype: String,
+        reftarget: String,
+        refdoc: String,
+        refdomain: String,
+        refexplicit: bool,
+        warn_missing: bool,
+    },
     /// A generic Sphinx domain "object description" block, e.g.
     /// `.. rst:directive::`/`.. rst:role::` (Tier **H3c**), reusable for
     /// other domains' description directives later. Renders as
@@ -558,6 +584,25 @@ enum NodeKindData {
         class_name: String,
         attrs: HashMap<String, String>,
     },
+    Abbreviation {
+        explanation: String,
+    },
+    Subscript,
+    Superscript,
+    Keyboard,
+    Rubric,
+    VersionModified {
+        kind: String,
+        version: String,
+    },
+    PendingXref {
+        reftype: String,
+        reftarget: String,
+        refdoc: String,
+        refdomain: String,
+        refexplicit: bool,
+        warn_missing: bool,
+    },
     ObjectDescription {
         classes: String,
         ids: String,
@@ -783,6 +828,30 @@ impl From<&NodeKind> for NodeKindData {
             NodeKind::Extension { class_name, attrs } => {
                 NodeKindData::Extension { class_name, attrs }
             }
+            NodeKind::Abbreviation { explanation } => NodeKindData::Abbreviation { explanation },
+            NodeKind::Subscript => NodeKindData::Subscript,
+            NodeKind::Superscript => NodeKindData::Superscript,
+            NodeKind::Keyboard => NodeKindData::Keyboard,
+            NodeKind::Rubric => NodeKindData::Rubric,
+            NodeKind::VersionModified { kind, version } => NodeKindData::VersionModified {
+                kind: kind.to_string(),
+                version,
+            },
+            NodeKind::PendingXref {
+                reftype,
+                reftarget,
+                refdoc,
+                refdomain,
+                refexplicit,
+                warn_missing,
+            } => NodeKindData::PendingXref {
+                reftype,
+                reftarget,
+                refdoc,
+                refdomain,
+                refexplicit,
+                warn_missing,
+            },
             NodeKind::ObjectDescription {
                 classes,
                 ids,
@@ -972,6 +1041,30 @@ impl From<NodeKindData> for NodeKind {
             NodeKindData::Extension { class_name, attrs } => {
                 NodeKind::Extension { class_name, attrs }
             }
+            NodeKindData::Abbreviation { explanation } => NodeKind::Abbreviation { explanation },
+            NodeKindData::Subscript => NodeKind::Subscript,
+            NodeKindData::Superscript => NodeKind::Superscript,
+            NodeKindData::Keyboard => NodeKind::Keyboard,
+            NodeKindData::Rubric => NodeKind::Rubric,
+            NodeKindData::VersionModified { kind, version } => NodeKind::VersionModified {
+                kind: intern(kind),
+                version,
+            },
+            NodeKindData::PendingXref {
+                reftype,
+                reftarget,
+                refdoc,
+                refdomain,
+                refexplicit,
+                warn_missing,
+            } => NodeKind::PendingXref {
+                reftype,
+                reftarget,
+                refdoc,
+                refdomain,
+                refexplicit,
+                warn_missing,
+            },
             NodeKindData::ObjectDescription {
                 classes,
                 ids,

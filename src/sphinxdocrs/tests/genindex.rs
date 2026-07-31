@@ -92,7 +92,7 @@ fn rereading_document_clears_stale_index_entries() {
 
 #[test]
 fn build_all_writes_real_genindex_html() {
-    use sphinxdocrs::builders::{html::HtmlBuilder, Builder};
+    use sphinxdocrs::builders::{Builder, html::HtmlBuilder};
 
     let (src, _dt, mut env) = make_disk_env(&[(
         "guide",
@@ -120,7 +120,7 @@ fn build_all_writes_real_genindex_html() {
 
 #[test]
 fn build_all_writes_real_py_modindex_html_when_modules_present() {
-    use sphinxdocrs::builders::{html::HtmlBuilder, Builder};
+    use sphinxdocrs::builders::{Builder, html::HtmlBuilder};
 
     let (src, _dt, mut env) = make_disk_env(&[
         ("api/alpha", ".. py:module:: pkg.alpha\n"),
@@ -143,7 +143,7 @@ fn build_all_writes_real_py_modindex_html_when_modules_present() {
 
 #[test]
 fn build_all_omits_py_modindex_html_when_no_modules() {
-    use sphinxdocrs::builders::{html::HtmlBuilder, Builder};
+    use sphinxdocrs::builders::{Builder, html::HtmlBuilder};
 
     let (src, _dt, mut env) = make_disk_env(&[("guide", "Guide\n=====\n\nBody text.\n")]);
     env.find_files().unwrap();

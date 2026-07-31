@@ -1054,7 +1054,9 @@ impl BuildEnvironment {
                     &target,
                     explicit_title.is_some(),
                 ),
-                Some("rst") => self.rst_domain.resolve_xref(self, docname, &reftype, &target),
+                Some("rst") => self
+                    .rst_domain
+                    .resolve_xref(self, docname, &reftype, &target),
                 _ => None,
             };
             let Some(resolved) = resolved else {
@@ -1661,9 +1663,10 @@ fn strip_opaque_literal_blocks(source: &str) -> String {
 
         let is_opaque_directive = trimmed.strip_prefix("..").is_some_and(|rest| {
             let rest = rest.trim_start();
-            OPAQUE_LITERAL_DIRECTIVES
-                .iter()
-                .any(|name| rest.strip_prefix(name).is_some_and(|r| r.trim_start().starts_with("::")))
+            OPAQUE_LITERAL_DIRECTIVES.iter().any(|name| {
+                rest.strip_prefix(name)
+                    .is_some_and(|r| r.trim_start().starts_with("::"))
+            })
         });
         // A paragraph ending in `::` (and not itself a directive line)
         // also introduces a literal block for its following indented
@@ -1995,13 +1998,19 @@ mod tests {
 
     #[test]
     fn docname_join_root_level_base_leaves_entry_unqualified() {
-        assert_eq!(docname_join("index", "usage/installation"), "usage/installation");
+        assert_eq!(
+            docname_join("index", "usage/installation"),
+            "usage/installation"
+        );
         assert_eq!(docname_join("index", "about"), "about");
     }
 
     #[test]
     fn docname_join_normalizes_dotdot_segments() {
-        assert_eq!(docname_join("tutorial/sub/index", "../other"), "tutorial/other");
+        assert_eq!(
+            docname_join("tutorial/sub/index", "../other"),
+            "tutorial/other"
+        );
     }
 
     #[test]

@@ -63,7 +63,12 @@ use crate::registry::{CssFile, JsFile, SharedRegistry};
 /// [`EventError`], with a message mirroring the PyO3-facing
 /// [`crate::events::EventManager::emit`]'s wrapping text so both event
 /// buses report a failing extension listener the same way.
-fn py_err_to_event_error(py: Python<'_>, event: &str, callback: &Py<PyAny>, err: PyErr) -> EventError {
+fn py_err_to_event_error(
+    py: Python<'_>,
+    event: &str,
+    callback: &Py<PyAny>,
+    err: PyErr,
+) -> EventError {
     let handler_repr = callback
         .bind(py)
         .repr()
@@ -79,9 +84,7 @@ fn event_arg_to_py(py: Python<'_>, arg: &EventArg) -> PyResult<Py<PyAny>> {
         EventArg::None => py.None(),
         EventArg::Str(s) => s.into_pyobject(py)?.into_any().unbind(),
         EventArg::StrList(items) => PyList::new(py, items)?.into_any().unbind(),
-        EventArg::Doctree(tree) => {
-            Py::new(py, PyDoctree::new(tree.clone()))?.into_any()
-        }
+        EventArg::Doctree(tree) => Py::new(py, PyDoctree::new(tree.clone()))?.into_any(),
     })
 }
 
@@ -294,7 +297,12 @@ pub type SharedEnvExtra = Rc<RefCell<HashMap<String, Py<PyAny>>>>;
 /// [`__setattr__`](Self::__setattr__) instead fall back to `extra`
 /// ([`SharedEnvExtra`]) — shared the same `Rc<RefCell<_>>` way as `env`
 /// itself — so this behaves like the one persistent object upstream has.
-#[pyclass(unsendable, skip_from_py_object, name = "_EnvFacade", module = "sphinxdocrs")]
+#[pyclass(
+    unsendable,
+    skip_from_py_object,
+    name = "_EnvFacade",
+    module = "sphinxdocrs"
+)]
 #[derive(Clone)]
 pub struct PyEnvFacade {
     env: crate::environment::SharedEnv,
@@ -495,7 +503,6 @@ impl PyEnvFacade {
     }
 }
 
-
 /// Convert a `**kwargs` dict of extension-supplied `<link>`/`<script>`
 /// attributes (e.g. `data-project="..."`, `integrity="..."`) into a
 /// `key -> value` string map, matching how upstream stores
@@ -598,7 +605,12 @@ impl PyEventsFacade {
     /// allowed_exceptions=())`. See this struct's doc comment for the
     /// "always returns `None`" accepted deviation.
     #[pyo3(signature = (event, *args))]
-    fn emit_firstresult(&self, py: Python<'_>, event: &str, args: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>> {
+    fn emit_firstresult(
+        &self,
+        py: Python<'_>,
+        event: &str,
+        args: &Bound<'_, PyTuple>,
+    ) -> PyResult<Py<PyAny>> {
         self.emit(event, args)?;
         Ok(py.None())
     }
@@ -615,7 +627,12 @@ impl PyEventsFacade {
 /// attributes real extension/`conf.py` code actually reads off
 /// `app.builder`). Not a live view of anything mutable — just the fixed
 /// buildername string the owning `SphinxApp` was constructed with.
-#[pyclass(unsendable, skip_from_py_object, name = "_BuilderFacade", module = "sphinxdocrs")]
+#[pyclass(
+    unsendable,
+    skip_from_py_object,
+    name = "_BuilderFacade",
+    module = "sphinxdocrs"
+)]
 #[derive(Clone)]
 pub struct PyBuilderFacade {
     name: String,
@@ -792,7 +809,7 @@ impl PyAppFacade {
                 new_facade.outdir = outdir_for_call;
                 new_facade.buildername = buildername_for_call;
                 let facade = Py::new(py, new_facade)
-                .map_err(|e| py_err_to_event_error(py, &event_name, &callback, e))?;
+                    .map_err(|e| py_err_to_event_error(py, &event_name, &callback, e))?;
                 let mut call_args: Vec<Py<PyAny>> = Vec::with_capacity(args.len() + 2);
                 call_args.push(facade.into_any());
                 // Mirrors upstream `emit("config-inited", self, self.config)`:
@@ -896,11 +913,7 @@ impl PyAppFacade {
     /// checks `app.builder.name != 'html'`).
     #[getter]
     fn builder(&self, py: Python<'_>) -> PyResult<Py<PyBuilderFacade>> {
-        let name = self
-            .buildername
-            .as_deref()
-            .cloned()
-            .unwrap_or_default();
+        let name = self.buildername.as_deref().cloned().unwrap_or_default();
         Py::new(py, PyBuilderFacade::new(name))
     }
 
@@ -1141,7 +1154,9 @@ impl PyAppFacade {
                 visit,
                 depart,
             );
-            self.registry.borrow_mut().add_node(class_name.clone(), format);
+            self.registry
+                .borrow_mut()
+                .add_node(class_name.clone(), format);
         }
         Ok(())
     }

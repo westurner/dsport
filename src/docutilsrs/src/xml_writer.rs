@@ -145,9 +145,14 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             emit(tree, id, depth, "section", &attrs, out);
         }
         NodeKind::Title => emit(tree, id, depth, "title", &[], out),
-        NodeKind::Subtitle { ids, names } => {
-            emit(tree, id, depth, "subtitle", &[("ids", ids), ("names", names)], out)
-        }
+        NodeKind::Subtitle { ids, names } => emit(
+            tree,
+            id,
+            depth,
+            "subtitle",
+            &[("ids", ids), ("names", names)],
+            out,
+        ),
         NodeKind::Transition => emit(tree, id, depth, "transition", &[], out),
         NodeKind::Paragraph => emit(tree, id, depth, "paragraph", &[], out),
         NodeKind::Emphasis => emit(tree, id, depth, "emphasis", &[], out),
@@ -212,9 +217,14 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         NodeKind::Bibliographic { tag } => emit(tree, id, depth, tag, &[], out),
         NodeKind::BlockQuote => emit(tree, id, depth, "block_quote", &[], out),
         NodeKind::Admonition { kind } => emit(tree, id, depth, kind, &[], out),
-        NodeKind::Container { classes } => {
-            emit(tree, id, depth, "container", &[("classes", classes.as_str())], out)
-        }
+        NodeKind::Container { classes } => emit(
+            tree,
+            id,
+            depth,
+            "container",
+            &[("classes", classes.as_str())],
+            out,
+        ),
         NodeKind::GenericAdmonition { title, classes } => emit(
             tree,
             id,
@@ -259,7 +269,14 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             &[("format", format.as_str()), ("xml:space", "preserve")],
             out,
         ),
-        NodeKind::Comment => emit(tree, id, depth, "comment", &[("xml:space", "preserve")], out),
+        NodeKind::Comment => emit(
+            tree,
+            id,
+            depth,
+            "comment",
+            &[("xml:space", "preserve")],
+            out,
+        ),
         NodeKind::Reference {
             name,
             refuri,
@@ -427,6 +444,45 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             }
             emit(tree, id, depth, class_name, &xml_attrs, out);
         }
+        NodeKind::Abbreviation { explanation } => {
+            if explanation.is_empty() {
+                emit(tree, id, depth, "abbreviation", &[], out);
+            } else {
+                emit(
+                    tree,
+                    id,
+                    depth,
+                    "abbreviation",
+                    &[("explanation", explanation.as_str())],
+                    out,
+                );
+            }
+        }
+        NodeKind::Subscript => emit(tree, id, depth, "subscript", &[], out),
+        NodeKind::Superscript => emit(tree, id, depth, "superscript", &[], out),
+        NodeKind::Keyboard => emit(tree, id, depth, "keyboard", &[], out),
+        NodeKind::Rubric => emit(tree, id, depth, "rubric", &[], out),
+        NodeKind::VersionModified { kind, version } => emit(
+            tree,
+            id,
+            depth,
+            "versionmodified",
+            &[("type", *kind), ("version", version.as_str())],
+            out,
+        ),
+        NodeKind::PendingXref {
+            reftype, reftarget, ..
+        } => emit(
+            tree,
+            id,
+            depth,
+            "pending_xref",
+            &[
+                ("reftype", reftype.as_str()),
+                ("reftarget", reftarget.as_str()),
+            ],
+            out,
+        ),
         NodeKind::ObjectDescription {
             classes,
             ids,
@@ -490,7 +546,8 @@ mod tests {
 
     #[test]
     fn escapes_quotes_in_attribute_values() {
-        let tree = parse_rst_with_source("Section \"Title\"\n================\n\nBody.\n", "<string>");
+        let tree =
+            parse_rst_with_source("Section \"Title\"\n================\n\nBody.\n", "<string>");
         let xml = to_xml(&tree);
         // names="section-title" style ids never contain quotes, but the
         // escape_attr helper itself must be exercised directly too.
@@ -502,7 +559,8 @@ mod tests {
 
     #[test]
     fn literal_block_marks_preserve_whitespace() {
-        let tree = parse_rst_with_source("::\n\n    code line one\n    code line two\n", "<string>");
+        let tree =
+            parse_rst_with_source("::\n\n    code line one\n    code line two\n", "<string>");
         let xml = to_xml(&tree);
         assert!(xml.contains("xml:space=\"preserve\""));
         assert!(xml.contains("code line one"));

@@ -241,7 +241,10 @@ def setup(app):
         let module = py.import("h4c_assets_ext").unwrap();
         let snapshot = module.getattr("snapshot").unwrap();
         let flag_before: bool = snapshot.get_item("flag_before").unwrap().extract().unwrap();
-        assert!(flag_before, "add_config_value default not visible via app.config");
+        assert!(
+            flag_before,
+            "add_config_value default not visible via app.config"
+        );
 
         let extensions_after: Vec<String> = snapshot
             .get_item("extensions_after")
@@ -265,7 +268,10 @@ def setup(app):
             .unwrap()
             .extract()
             .unwrap();
-        assert!(unset_is_none, "reading an unset config name should yield None");
+        assert!(
+            unset_is_none,
+            "reading an unset config name should yield None"
+        );
     });
 
     // `SphinxApp::py_config` seeded `extensions` from `conf.py` at
@@ -396,11 +402,7 @@ def setup(app):
         "Welcome\n=======\n\nHomepage.\n",
     )
     .unwrap();
-    std::fs::write(
-        src.path().join("conf.py"),
-        "extensions = ['h5_node_ext']\n",
-    )
-    .unwrap();
+    std::fs::write(src.path().join("conf.py"), "extensions = ['h5_node_ext']\n").unwrap();
 
     let out = TempDir::new().unwrap();
     let dt = TempDir::new().unwrap();
@@ -490,7 +492,11 @@ def setup(app):
         "Welcome\n=======\n\nHomepage.\n",
     )
     .unwrap();
-    std::fs::write(src.path().join("conf.py"), "extensions = ['h5_events_ext']\n").unwrap();
+    std::fs::write(
+        src.path().join("conf.py"),
+        "extensions = ['h5_events_ext']\n",
+    )
+    .unwrap();
 
     let out = TempDir::new().unwrap();
     let dt = TempDir::new().unwrap();

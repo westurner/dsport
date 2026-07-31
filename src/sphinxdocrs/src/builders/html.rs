@@ -122,7 +122,11 @@ impl HtmlBuilder {
     /// `build_all`), where the read phase
     /// ([`BuildEnvironment::read_all`]) has already parsed and stored the
     /// doctree, so the write phase never re-parses the source.
-    pub(crate) fn render_fragment_from_tree(&self, docname: &str, tree: &Doctree) -> (String, String) {
+    pub(crate) fn render_fragment_from_tree(
+        &self,
+        docname: &str,
+        tree: &Doctree,
+    ) -> (String, String) {
         // Extract promoted document title from NodeKind::Document { title, .. }
         let title = match &tree.node(tree.root()).kind {
             NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
@@ -335,7 +339,11 @@ impl HtmlBuilder {
     /// `genindex.rs`'s own accepted deviation, anchors are page-level only
     /// (no in-page id tracking), so every link for a term simply points at
     /// its containing document.
-    fn render_genindex_page(&self, buckets: &[(String, Vec<GenIndexTerm>)], meta: &PageMeta) -> String {
+    fn render_genindex_page(
+        &self,
+        buckets: &[(String, Vec<GenIndexTerm>)],
+        meta: &PageMeta,
+    ) -> String {
         let mut body = String::new();
         body.push_str("<h1 id=\"index\">Index</h1>\n");
         if buckets.is_empty() {
@@ -366,7 +374,11 @@ impl HtmlBuilder {
                         .iter()
                         .map(|(d, a)| self.index_link(d, a))
                         .collect();
-                    body.push_str(&format!("{}: {}", html_escape(&term.name), links.join(", ")));
+                    body.push_str(&format!(
+                        "{}: {}",
+                        html_escape(&term.name),
+                        links.join(", ")
+                    ));
                 } else {
                     let direct = if term.links.is_empty() {
                         String::new()
@@ -378,10 +390,7 @@ impl HtmlBuilder {
                             .collect();
                         format!(" ({})", links.join(", "))
                     };
-                    body.push_str(&format!(
-                        "{}{direct}\n<ul>\n",
-                        html_escape(&term.name)
-                    ));
+                    body.push_str(&format!("{}{direct}\n<ul>\n", html_escape(&term.name)));
                     for (sub, sublinks) in &term.subterms {
                         let links: Vec<String> = sublinks
                             .iter()
@@ -414,7 +423,12 @@ impl HtmlBuilder {
         body.push_str("<h1 id=\"module-index\">Python Module Index</h1>\n");
         if buckets.is_empty() {
             body.push_str("<p><em>No modules recorded.</em></p>\n");
-            return Self::render_embedded_or_wrap("py-modindex", "Python Module Index", &body, meta);
+            return Self::render_embedded_or_wrap(
+                "py-modindex",
+                "Python Module Index",
+                &body,
+                meta,
+            );
         }
         body.push_str("<table>\n");
         for (letter, modules) in buckets {
@@ -539,9 +553,7 @@ impl Builder for HtmlBuilder {
 
         // Copy the active theme's static assets (CSS/JS/images) from the
         // installed Sphinx / theme packages, plus stemmer JS and pygments.css.
-        if let Err(e) =
-            crate::theme_static::copy_theme_static_files(&env.config, outdir, srcdir)
-        {
+        if let Err(e) = crate::theme_static::copy_theme_static_files(&env.config, outdir, srcdir) {
             eprintln!("Warning: failed to copy theme static files: {e}");
         }
 

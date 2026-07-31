@@ -119,7 +119,6 @@ pub fn css_style_defs(selector: &str) -> String {
     out
 }
 
-
 #[cfg(test)]
 mod css_tests {
     use super::css_style_defs;
@@ -128,11 +127,20 @@ mod css_tests {
     fn emits_rules_for_styled_tokens() {
         let css = css_style_defs(".highlight");
         // Keyword is blue + bold.
-        assert!(css.contains(".highlight .k { color: #0000ff; font-weight: bold }"), "got:\n{css}");
+        assert!(
+            css.contains(".highlight .k { color: #0000ff; font-weight: bold }"),
+            "got:\n{css}"
+        );
         // Comment is gray.
-        assert!(css.contains(".highlight .c { color: #969696 }"), "got:\n{css}");
+        assert!(
+            css.contains(".highlight .c { color: #969696 }"),
+            "got:\n{css}"
+        );
         // String is red.
-        assert!(css.contains(".highlight .s { color: #c80000 }"), "got:\n{css}");
+        assert!(
+            css.contains(".highlight .s { color: #c80000 }"),
+            "got:\n{css}"
+        );
         // Every line is scoped to the selector.
         for line in css.lines().filter(|l| !l.is_empty()) {
             assert!(line.starts_with(".highlight ."), "unscoped rule: {line}");

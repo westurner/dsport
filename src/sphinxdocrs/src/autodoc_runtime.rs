@@ -305,7 +305,10 @@ pub fn introspect_class(
             }
             let obj = pair.get_item(1)?;
 
-            let kind = if inspect.call_method1("isroutine", (&obj,))?.extract::<bool>()? {
+            let kind = if inspect
+                .call_method1("isroutine", (&obj,))?
+                .extract::<bool>()?
+            {
                 MemberKind::Method
             } else if is_property(py, &obj)? {
                 MemberKind::Property
@@ -378,7 +381,10 @@ fn classify(
     {
         return Ok(Some(MemberKind::Function));
     }
-    if inspect.call_method1("ismodule", (obj,))?.extract::<bool>()? {
+    if inspect
+        .call_method1("ismodule", (obj,))?
+        .extract::<bool>()?
+    {
         // A re-exported module that isn't a direct submodule (e.g.
         // `import os` inside the target module) — not a documentable member.
         return Ok(None);

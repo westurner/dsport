@@ -81,7 +81,10 @@ impl Builder for ChangesBuilder {
                 .push((docname.to_string(), change));
         }
         std::fs::create_dir_all(outdir)?;
-        std::fs::write(outdir.join("index.html"), render_report(&by_version).as_bytes())?;
+        std::fs::write(
+            outdir.join("index.html"),
+            render_report(&by_version).as_bytes(),
+        )?;
         Ok(())
     }
 
@@ -116,7 +119,10 @@ impl Builder for ChangesBuilder {
             result.written += 1;
         }
 
-        std::fs::write(outdir.join("index.html"), render_report(&by_version).as_bytes())?;
+        std::fs::write(
+            outdir.join("index.html"),
+            render_report(&by_version).as_bytes(),
+        )?;
         Ok(result)
     }
 }

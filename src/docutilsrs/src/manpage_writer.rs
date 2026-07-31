@@ -332,6 +332,17 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 }
             }
         }
+        NodeKind::Abbreviation { .. }
+        | NodeKind::Subscript
+        | NodeKind::Superscript
+        | NodeKind::Keyboard
+        | NodeKind::Rubric
+        | NodeKind::VersionModified { .. }
+        | NodeKind::PendingXref { .. } => {
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
     }
 }
 

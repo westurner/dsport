@@ -145,6 +145,13 @@ fn node_kind_tag(kind: &NodeKind) -> String {
         NodeKind::Problematic { .. } => "problematic".into(),
         NodeKind::SystemMessage { .. } => "system_message".into(),
         NodeKind::Extension { class_name, .. } => class_name.clone(),
+        NodeKind::Abbreviation { .. } => "abbreviation".into(),
+        NodeKind::Subscript => "subscript".into(),
+        NodeKind::Superscript => "superscript".into(),
+        NodeKind::Keyboard => "keyboard".into(),
+        NodeKind::Rubric => "rubric".into(),
+        NodeKind::VersionModified { .. } => "versionmodified".into(),
+        NodeKind::PendingXref { .. } => "pending_xref".into(),
         NodeKind::ObjectDescription { .. } => "object_description".into(),
     }
 }
@@ -160,7 +167,13 @@ fn findall_candidate_ids(
     siblings: bool,
     ascend: bool,
 ) -> Vec<NodeId> {
-    fn collect(tree: &Doctree, id: NodeId, include_self: bool, descend: bool, out: &mut Vec<NodeId>) {
+    fn collect(
+        tree: &Doctree,
+        id: NodeId,
+        include_self: bool,
+        descend: bool,
+        out: &mut Vec<NodeId>,
+    ) {
         if include_self {
             out.push(id);
         }

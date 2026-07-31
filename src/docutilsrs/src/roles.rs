@@ -50,6 +50,7 @@ pub const DEFAULT_INTERPRETED_ROLE: &str = "title-reference";
 pub const EN_ROLE_ALIASES: &[(&str, &str)] = &[
     ("abbreviation", "abbreviation"),
     ("ab", "abbreviation"),
+    ("abbr", "abbreviation"),
     ("acronym", "acronym"),
     ("ac", "acronym"),
     ("code", "code"),
@@ -246,13 +247,20 @@ pub(crate) fn restore_default_role() {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    pub fn lock_roles() -> std::sync::MutexGuard<'static, ()> {
+        TEST_MUTEX.lock().unwrap()
+    }
 
     /// The registries are process-global, so every assertion that mutates them
     /// lives in one test to stay isolated from the parallel test runner.
     #[test]
     fn registry_lookup_matches_upstream_semantics() {
+        let _guard = crate::roles::tests::lock_roles();
         reset_roles();
 
         // English aliases resolve to canonical names.

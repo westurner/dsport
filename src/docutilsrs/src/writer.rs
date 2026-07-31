@@ -419,6 +419,39 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             s.push('\n');
             out.push_str(&s);
         }
+        NodeKind::Abbreviation { explanation } => {
+            if explanation.is_empty() {
+                let _ = writeln!(out, "{indent}<abbreviation>");
+            } else {
+                let _ = writeln!(out, "{indent}<abbreviation explanation=\"{explanation}\">");
+            }
+        }
+        NodeKind::Subscript => {
+            let _ = writeln!(out, "{indent}<subscript>");
+        }
+        NodeKind::Superscript => {
+            let _ = writeln!(out, "{indent}<superscript>");
+        }
+        NodeKind::Keyboard => {
+            let _ = writeln!(out, "{indent}<keyboard>");
+        }
+        NodeKind::Rubric => {
+            let _ = writeln!(out, "{indent}<rubric>");
+        }
+        NodeKind::VersionModified { kind, version } => {
+            let _ = writeln!(
+                out,
+                "{indent}<versionmodified type=\"{kind}\" version=\"{version}\">"
+            );
+        }
+        NodeKind::PendingXref {
+            reftype, reftarget, ..
+        } => {
+            let _ = writeln!(
+                out,
+                "{indent}<pending_xref reftype=\"{reftype}\" reftarget=\"{reftarget}\">"
+            );
+        }
         NodeKind::ObjectDescription {
             classes,
             ids,

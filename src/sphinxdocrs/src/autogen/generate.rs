@@ -332,9 +332,14 @@ pub fn generate_stubs(
     remove_old: bool,
     templates: &AutogenTemplates,
 ) -> Vec<PathBuf> {
-    generate_stubs_impl(entries, output_dir, suffix, overwrite, remove_old, |entry| {
-        generate_stub(entry, output_dir, suffix, overwrite, templates)
-    })
+    generate_stubs_impl(
+        entries,
+        output_dir,
+        suffix,
+        overwrite,
+        remove_old,
+        |entry| generate_stub(entry, output_dir, suffix, overwrite, templates),
+    )
 }
 
 /// Like [`generate_stubs`], but uses [`generate_stub_runtime`] for real
@@ -348,16 +353,23 @@ pub fn generate_stubs_runtime(
     templates: &AutogenTemplates,
     mock_imports: &[String],
 ) -> Vec<PathBuf> {
-    generate_stubs_impl(entries, output_dir, suffix, overwrite, remove_old, |entry| {
-        generate_stub_runtime(
-            entry,
-            output_dir,
-            suffix,
-            overwrite,
-            templates,
-            mock_imports,
-        )
-    })
+    generate_stubs_impl(
+        entries,
+        output_dir,
+        suffix,
+        overwrite,
+        remove_old,
+        |entry| {
+            generate_stub_runtime(
+                entry,
+                output_dir,
+                suffix,
+                overwrite,
+                templates,
+                mock_imports,
+            )
+        },
+    )
 }
 
 fn generate_stubs_impl(

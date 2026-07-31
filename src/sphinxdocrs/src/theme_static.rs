@@ -282,7 +282,10 @@ fn resolve_theme_path_dirs(confdir: &Path, theme_path: &[String]) -> Vec<String>
             if dir.is_dir() {
                 Some(dir.to_string_lossy().into_owned())
             } else {
-                eprintln!("Warning: html_theme_path entry {:?} does not exist", dir.display());
+                eprintln!(
+                    "Warning: html_theme_path entry {:?} does not exist",
+                    dir.display()
+                );
                 None
             }
         })

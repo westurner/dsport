@@ -478,6 +478,54 @@ fn emit(
                 }
             }
         }
+        NodeKind::Abbreviation { explanation } => {
+            if explanation.is_empty() {
+                out.push_str("<abbr>");
+            } else {
+                let _ = write!(out, "<abbr title=\"{}\">", escape(explanation));
+            }
+            for &c in &node.children {
+                emit(tree, c, out, options, common);
+            }
+            out.push_str("</abbr>");
+        }
+        NodeKind::Subscript => wrap(tree, &node.children, "sub", out, options, common),
+        NodeKind::Superscript => wrap(tree, &node.children, "sup", out, options, common),
+        NodeKind::Keyboard => {
+            wrap_with_class(tree, &node.children, "kbd", "kbd", out, options, common)
+        }
+        NodeKind::Rubric => {
+            wrap_with_class(tree, &node.children, "p", "rubric", out, options, common)
+        }
+        NodeKind::VersionModified { kind, version } => {
+            let _ = write!(
+                out,
+                "<div class=\"versionmodified {kind}\"><span class=\"versionmodified\">"
+            );
+            let prefix = match *kind {
+                "added" => "Added in version",
+                "changed" => "Changed in version",
+                "deprecated" => "Deprecated since version",
+                _ => "Modified in version",
+            };
+            let _ = write!(out, "{} {}", prefix, escape(version));
+            if !node.children.is_empty() {
+                out.push_str(": </span>");
+                for &c in &node.children {
+                    emit(tree, c, out, options, common);
+                }
+            } else {
+                out.push_str(".</span>");
+            }
+            out.push_str("</div>");
+        }
+        NodeKind::PendingXref { reftype, .. } => {
+            let _ = write!(out, "<span class=\"xref {}\">", escape(reftype));
+            for &c in &node.children {
+                emit(tree, c, out, options, common);
+            }
+            out.push_str("</span>");
+        }
         NodeKind::ObjectDescription {
             classes,
             ids,

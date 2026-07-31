@@ -47,7 +47,11 @@ fn build_all_over_a_multi_document_project_with_subdirectory() {
         "Welcome\n=======\n\nHomepage.\n",
     )
     .unwrap();
-    std::fs::write(src.path().join("guide/intro.rst"), "Intro\n=====\n\nBody.\n").unwrap();
+    std::fs::write(
+        src.path().join("guide/intro.rst"),
+        "Intro\n=====\n\nBody.\n",
+    )
+    .unwrap();
 
     let config = SphinxConfig::new_defaults();
     let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);

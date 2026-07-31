@@ -736,7 +736,11 @@ impl SphinxApp {
             // `.findall()`-capable object instead of the docname string —
             // see `EventArg::Doctree`'s doc comment for the accepted
             // "not read back after mutation" deviation.
-            let tree = self.env.borrow().get_doctree(docname).map_err(AppError::from)?;
+            let tree = self
+                .env
+                .borrow()
+                .get_doctree(docname)
+                .map_err(AppError::from)?;
             self.events
                 .borrow_mut()
                 .emit("doctree-read", &[EventArg::Doctree(tree)])?;
@@ -744,7 +748,9 @@ impl SphinxApp {
 
         self.events.borrow_mut().emit("env-updated", &[])?;
         self.warnings.extend(self.env.borrow().check_consistency());
-        self.events.borrow_mut().emit("env-check-consistency", &[])?;
+        self.events
+            .borrow_mut()
+            .emit("env-check-consistency", &[])?;
 
         self.env.borrow().save_persisted().map_err(AppError::from)?;
 

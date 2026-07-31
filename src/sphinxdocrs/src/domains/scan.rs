@@ -80,10 +80,7 @@ pub fn scan_labels(source: &str) -> Vec<(String, Option<String>)> {
 fn definition_list_term_at(lines: &[&str], j: usize) -> Option<String> {
     let term_line = lines.get(j)?;
     let term_trimmed = term_line.trim();
-    if term_trimmed.is_empty()
-        || term_trimmed.starts_with("..")
-        || term_trimmed.ends_with("::")
-    {
+    if term_trimmed.is_empty() || term_trimmed.starts_with("..") || term_trimmed.ends_with("::") {
         return None;
     }
     let term_indent = term_line.len() - term_line.trim_start().len();

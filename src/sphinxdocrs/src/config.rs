@@ -402,8 +402,7 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
             if raw.contains_key(&key) || key.starts_with("__") {
                 continue;
             }
-            if v.cast::<pyo3::types::PyModule>().is_ok() || v.hasattr("__call__").unwrap_or(false)
-            {
+            if v.cast::<pyo3::types::PyModule>().is_ok() || v.hasattr("__call__").unwrap_or(false) {
                 continue;
             }
             if let Some(val) = py_to_configval(&v) {

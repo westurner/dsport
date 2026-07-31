@@ -218,6 +218,17 @@ impl HtmlBuilder {
                 ctx.copyright = meta.copyright.clone();
                 ctx.show_copyright = !meta.copyright.is_empty();
                 ctx.language = meta.language.clone();
+                // `genindex`/`py-modindex` are synthetic pages with no
+                // backing `.rst` source file (mirrors real Sphinx, whose
+                // `write_genindex`/`write_domain_indices` never set a
+                // `sourcename` in their page context, so `sourcelink.html`'s
+                // `{%- if ... and sourcename %}` guard hides the link) —
+                // clear the docname-derived default so the "Page source"
+                // link isn't rendered pointing at a `_sources/*.rst.txt`
+                // file that doesn't exist.
+                if matches!(docname, "genindex" | "py-modindex") {
+                    ctx.sourcename.clear();
+                }
                 // Theme stylesheet + legacy sphinxdocrs stylesheet.
                 ctx.css_files = vec![
                     "_static/basic.css".to_string(),

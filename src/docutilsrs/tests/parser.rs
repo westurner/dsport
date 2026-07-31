@@ -88,6 +88,90 @@ fn reference_resolves_to_target() {
     insta::assert_snapshot!("reference_resolved", pseudo_xml(&parse_rst(src)));
 }
 
+// ── document title promotion (with leading preamble nodes) ─────────────────
+
+fn document_title(src: &str) -> String {
+    use docutilsrs::NodeKind;
+    let tree = parse_rst(src);
+    match &tree.node(tree.root()).kind {
+        NodeKind::Document { title, .. } => title.clone(),
+        _ => String::new(),
+    }
+}
+
+#[test]
+fn title_promoted_for_underline_only_section() {
+    assert_eq!(document_title("Getting started\n===============\n\nBody.\n"), "Getting started");
+}
+
+#[test]
+fn title_promoted_for_overline_and_underline_section() {
+    assert_eq!(
+        document_title("============\nUsing Sphinx\n============\n\nBody.\n"),
+        "Using Sphinx"
+    );
+}
+
+#[test]
+fn title_promoted_past_leading_hyperlink_target() {
+    // A common Sphinx convention: a `.. _label:` cross-reference target
+    // immediately before the title. Mirrors upstream docutils'
+    // `DocTitle` transform, which treats hyperlink targets (and comments,
+    // substitution definitions) as invisible "preamble" for title
+    // promotion purposes.
+    let src = ".. _my-label:\n\nreStructuredText Primer\n=======================\n\nBody.\n";
+    assert_eq!(document_title(src), "reStructuredText Primer");
+}
+
+#[test]
+fn title_promoted_past_leading_comment_and_target() {
+    let src = ".. highlight:: rst\n\n.. _rst-primer:\n\n=======================\nreStructuredText Primer\n=======================\n\nBody.\n";
+    assert_eq!(document_title(src), "reStructuredText Primer");
+}
+
+#[test]
+fn title_not_promoted_when_multiple_top_level_sections() {
+    // Real docutils only promotes when the (post-preamble) section is the
+    // *sole* top-level child; two top-level sections must not promote.
+    let src = "One\n===\n\nBody.\n\nTwo\n===\n\nBody.\n";
+    assert_eq!(document_title(src), "");
+}
+
+#[test]
+fn overlined_title_and_underline_only_subsection_share_punctuation_but_differ_in_style() {
+    // A very common Sphinx convention: the document title uses an
+    // overline+underline `=` adornment, while its immediate child
+    // sections use an *underline-only* `=` adornment. Real docutils keys
+    // section nesting level on the (character, overline-present) *style*,
+    // not the character alone — so these are different levels (title
+    // level 0, subsection level 1) even though both use `=`. Getting this
+    // wrong flattens every subsection into a document-level sibling of
+    // the title, which also breaks title promotion outright (multiple
+    // top-level sections).
+    let src = "\
+=============
+Configuration
+=============
+
+Intro paragraph.
+
+Builder Options
+================
+
+Builder body.
+
+Project Information
+====================
+
+Project body.
+";
+    insta::assert_snapshot!(
+        "overlined_title_with_underline_only_subsections",
+        pseudo_xml(&parse_rst(src))
+    );
+    assert_eq!(document_title(src), "Configuration");
+}
+
 #[test]
 fn enumerated_list_arabic_period() {
     let src = "1. one\n2. two\n3. three";

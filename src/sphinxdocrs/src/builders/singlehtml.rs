@@ -13,11 +13,13 @@
 //! fragment is rendered independently (same as `HtmlBuilder`'s embedded
 //! placeholder-theme path) and merely concatenated with an anchor `id`, so
 //! within-page navigation (`#docname`) works but there is no single merged
-//! table of contents. Real per-document ordering also falls back to a
-//! lexicographic sort of `env.all_docs`/discovered docnames rather than a
-//! toctree-driven document order, since [`crate::toctree`]'s resolved
-//! order is keyed by root document and this builder has no "current root"
-//! concept the way upstream's `assemble_doctree` does.
+//! table of contents. Document order follows [`crate::toctree`]'s resolved
+//! toctree rooted at `env.config.root_doc()` (mirroring upstream's
+//! `assemble_doctree`/`inline_all_toctrees`, which walks the toctree
+//! structure rather than sorting docnames); any document not reachable
+//! from the root toctree (orphans, or projects with no `.. toctree::` at
+//! all) is appended afterwards in lexicographic order so nothing silently
+//! disappears from the merged page.
 //!
 //! ## What is ported
 //!
@@ -95,18 +97,12 @@ impl Builder for SinglehtmlBuilder {
         env: &BuildEnvironment,
     ) -> Result<BuildResult, BuildError> {
         let mut result = BuildResult::default();
-        let mut docnames: Vec<String> = if !env.all_docs.is_empty() {
+        let docnames: Vec<String> = if !env.all_docs.is_empty() {
             env.all_docs.keys().cloned().collect()
         } else {
             super::html::discover_rst_docnames_pub(srcdir)
         };
-        docnames.sort();
-        // `index` (the project root) always renders first, matching
-        // upstream's `assemble_doctree` starting from `root_doc`.
-        if let Some(pos) = docnames.iter().position(|d| d == "index") {
-            let root = docnames.remove(pos);
-            docnames.insert(0, root);
-        }
+        let docnames = toctree_order(env, docnames);
 
         std::fs::create_dir_all(outdir)?;
 
@@ -165,6 +161,55 @@ fn write_index(outdir: &Path, page: &str) -> Result<(), BuildError> {
     std::fs::create_dir_all(outdir)?;
     std::fs::write(outdir.join("index.html"), page.as_bytes())?;
     Ok(())
+}
+
+/// Orders `docnames` following the project's toctree structure rooted at
+/// `env.config.root_doc()`, mirroring upstream's `assemble_doctree` /
+/// `inline_all_toctrees` document-order walk (see module docs). Documents
+/// not reachable from the root toctree (including projects that define no
+/// `.. toctree::` at all) are appended afterwards in lexicographic order,
+/// so no discovered document is ever dropped from the merged page.
+fn toctree_order(env: &BuildEnvironment, docnames: Vec<String>) -> Vec<String> {
+    use std::collections::HashSet;
+
+    let all: HashSet<&str> = docnames.iter().map(String::as_str).collect();
+    let mut ordered: Vec<String> = Vec::with_capacity(docnames.len());
+    let mut seen: HashSet<String> = HashSet::new();
+
+    let root = env.config.root_doc();
+    if all.contains(root.as_str()) {
+        ordered.push(root.clone());
+        seen.insert(root.clone());
+    }
+
+    let toc = crate::toctree::global_toctree_for_doc(env, 0);
+    flatten_toctree(&toc, &all, &mut ordered, &mut seen);
+
+    let mut leftovers: Vec<String> = docnames
+        .into_iter()
+        .filter(|d| !seen.contains(d))
+        .collect();
+    leftovers.sort();
+    ordered.extend(leftovers);
+    ordered
+}
+
+/// Depth-first flattening of a resolved toctree into document order,
+/// skipping anything not present in `all` (defensive: `toctree_includes`
+/// could in principle reference a document this build doesn't know
+/// about) and anything already visited (cycle protection).
+fn flatten_toctree(
+    entries: &[crate::toctree::TocEntry],
+    all: &std::collections::HashSet<&str>,
+    ordered: &mut Vec<String>,
+    seen: &mut std::collections::HashSet<String>,
+) {
+    for entry in entries {
+        if all.contains(entry.docname.as_str()) && seen.insert(entry.docname.clone()) {
+            ordered.push(entry.docname.clone());
+        }
+        flatten_toctree(&entry.children, all, ordered, seen);
+    }
 }
 
 /// Minimal attribute-safe escaping for the `id="..."` anchors built from
@@ -241,5 +286,79 @@ mod tests {
         assert!(combined.contains("Some info."));
         // `index` renders before `about` in document order.
         assert!(combined.find("id=\"index\"").unwrap() < combined.find("id=\"about\"").unwrap());
+    }
+
+    #[test]
+    fn build_all_follows_toctree_order_not_alphabetical() {
+        // `zzz` sorts after `aaa` alphabetically, but the toctree lists
+        // `zzz` before `aaa` — the merged page must follow the toctree.
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        std::fs::write(
+            src.path().join("index.rst"),
+            "Welcome\n=======\n\n.. toctree::\n\n   zzz\n   aaa\n",
+        )
+        .unwrap();
+        std::fs::write(src.path().join("aaa.rst"), "Aaa\n===\n\nAaa content.\n").unwrap();
+        std::fs::write(src.path().join("zzz.rst"), "Zzz\n===\n\nZzz content.\n").unwrap();
+
+        let config = crate::config::SphinxConfig::new_defaults();
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let mut env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+        env.find_files().unwrap();
+        env.read_all().unwrap();
+
+        let result = SinglehtmlBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
+        assert_eq!(result.written, 3);
+        let combined = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+        let idx_index = combined.find("id=\"index\"").unwrap();
+        let idx_zzz = combined.find("id=\"zzz\"").unwrap();
+        let idx_aaa = combined.find("id=\"aaa\"").unwrap();
+        assert!(idx_index < idx_zzz, "root doc must render first");
+        assert!(
+            idx_zzz < idx_aaa,
+            "toctree order (zzz before aaa) must win over alphabetical order"
+        );
+    }
+
+    #[test]
+    fn build_all_appends_orphan_docs_not_in_any_toctree() {
+        // `orphan` has no toctree entry anywhere — it must still appear
+        // (nothing is silently dropped), just after the toctree-ordered docs.
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        std::fs::write(
+            src.path().join("index.rst"),
+            "Welcome\n=======\n\n.. toctree::\n\n   aaa\n",
+        )
+        .unwrap();
+        std::fs::write(src.path().join("aaa.rst"), "Aaa\n===\n\nAaa content.\n").unwrap();
+        std::fs::write(
+            src.path().join("orphan.rst"),
+            "Orphan\n======\n\nOrphan content.\n",
+        )
+        .unwrap();
+
+        let config = crate::config::SphinxConfig::new_defaults();
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let mut env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+        env.find_files().unwrap();
+        env.read_all().unwrap();
+
+        let result = SinglehtmlBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
+        assert_eq!(result.written, 3);
+        let combined = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+        assert!(combined.contains("id=\"orphan\""));
+        let idx_aaa = combined.find("id=\"aaa\"").unwrap();
+        let idx_orphan = combined.find("id=\"orphan\"").unwrap();
+        assert!(idx_aaa < idx_orphan, "orphan doc must be appended after toctree-ordered docs");
     }
 }

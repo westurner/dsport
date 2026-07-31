@@ -17,7 +17,7 @@
 //! | --- | --- |
 //! | `pathto` | [`PathtoGlobal`] — `crate::util_osutil::relative_uri` between two `get_target_uri` results |
 //! | `hasdoc` | [`HasdocGlobal`] — `env.all_docs` / `use_index` / a fixed `has_search = true` |
-//! | `toctree()` | [`ToctreeGlobal`] — the *global* toctree, pre-rendered from `crate::toctree::global_toctree_for_doc` (H5d) |
+//! | `toctree()` | [`ToctreeGlobal`] — the *global* toctree from `crate::toctree::global_toctree_for_doc` (H5d), rendered fresh to HTML on every call with hrefs relative to the current page (see [`render_toc_html`]) |
 //! | `toc` (per-page) | rendered from `crate::toctree::get_toc_for(env, docname)` — the subtree *rooted at this document*, distinct from the global `toctree()` above |
 //! | `sidebars` | [`resolve_sidebars`] — `html_sidebars` pattern-matched per docname via `crate::util_matching` (the same `fnmatch`-style glob translator `exclude_patterns`/`include_patterns` use), mirroring `StandaloneHTMLBuilder._get_sidebars`'s wildcard-precedence rule |
 //! | `parents`/`next`/`prev`/`rellinks` | [`collect_relations`] — a pre-order flatten of the global toctree, mirroring `BuildEnvironment.collect_relations` |
@@ -87,10 +87,15 @@ struct PageState {
     /// Whether a `genindex` page will be generated — backs
     /// `hasdoc('genindex')`.
     use_index: bool,
-    /// Pre-rendered `<ul>`-nested HTML for the global toctree — backs both
-    /// `toctree()` and the per-page `toc` context key (see the module
-    /// accepted-deviation note: no true local/global distinction).
-    toc_html: String,
+    /// The global toctree structure, re-rendered to HTML on every
+    /// `toctree()` call (not just once at build start) because each link's
+    /// href must be relative to whichever page is currently being
+    /// rendered — a page nested under a subdirectory (e.g.
+    /// `tutorial/foo.html`) needs `../usage/bar.html`, not the root-relative
+    /// `usage/bar.html` a page at the root would need. Mirrors upstream's
+    /// `toctree()` Jinja global, which is itself a per-page call computing
+    /// fresh `pathto()`-relativized hrefs every time, not a fixed string.
+    toc_entries: Vec<TocEntry>,
 }
 
 impl PageState {
@@ -127,7 +132,7 @@ impl Object for PathtoGlobal {
         let resource = args.get(1).map(|v| v.is_true()).unwrap_or(false);
 
         if resource && otheruri.contains("://") {
-            return Ok(Value::from(otheruri));
+            return Ok(Value::from_safe_string(otheruri));
         }
         let target_uri = if resource {
             otheruri
@@ -137,7 +142,14 @@ impl Object for PathtoGlobal {
         let base_uri = self.0.current_target_uri();
         let uri = relative_uri(&base_uri, &target_uri);
         let uri = if uri.is_empty() { "#".to_string() } else { uri };
-        Ok(Value::from(uri))
+        // Mark the URI as already-safe markup: real templates apply this
+        // through `{{ pathto(...)|e }}` (see e.g. `basic/layout.html`), and
+        // real MarkupSafe's `escape()` is a no-op on values that are
+        // already `Markup` — which real Sphinx relies on since a raw
+        // path/URL string is never meant to have its `/` characters
+        // HTML-entity-encoded. `Value::from_safe_string` gives the same
+        // behavior here (the `|e` filter short-circuits on `is_safe()`).
+        Ok(Value::from_safe_string(uri))
     }
 }
 
@@ -183,8 +195,10 @@ impl Object for ToctreeGlobal {
     }
 
     fn call(self: &Arc<Self>, _state: &State<'_, '_>, _args: &[Value]) -> Result<Value, Error> {
+        let base_uri = self.0.current_target_uri();
+        let html = render_toc_html(&self.0.toc_entries, &base_uri);
         Ok(markupsafers::minijinja_compat::markup_to_value(
-            Markup::from_safe(self.0.toc_html.clone()),
+            Markup::from_safe(html),
         ))
     }
 }
@@ -260,14 +274,19 @@ fn resource_pathto(state: &PageState, name: &str) -> String {
 /// Render a [`TocEntry`] tree as nested `<ul>`/`<li>` HTML, mirroring the
 /// shape (not the exact class names/IDs) of
 /// `sphinx.environment.adapters.toctree`'s `compact_paragraph`/`bullet_list`
-/// output.
-fn render_toc_html(entries: &[TocEntry]) -> String {
+/// output. `base_uri` is the `get_target_uri`-style URI of the page this
+/// HTML is being rendered *for*, so every link can be relativized against
+/// it (mirrors upstream's `pathto()`-based link construction) — a raw
+/// `get_target_uri` result is root-relative and 404s from any page not at
+/// the project root.
+fn render_toc_html(entries: &[TocEntry], base_uri: &str) -> String {
     if entries.is_empty() {
         return String::new();
     }
     let mut out = String::from("<ul>\n");
     for entry in entries {
-        let href = HtmlBuilder::new().get_target_uri(&entry.docname);
+        let target_uri = HtmlBuilder::new().get_target_uri(&entry.docname);
+        let href = relative_uri(base_uri, &target_uri);
         out.push_str(&format!(
             "<li class=\"toctree-l1\"><a href=\"{}\">{}</a>",
             html_escape_attr(&href),
@@ -275,7 +294,7 @@ fn render_toc_html(entries: &[TocEntry]) -> String {
         ));
         if !entry.children.is_empty() {
             out.push('\n');
-            out.push_str(&render_toc_html(&entry.children));
+            out.push_str(&render_toc_html(&entry.children, base_uri));
         }
         out.push_str("</li>\n");
     }
@@ -467,14 +486,13 @@ impl ThemeRenderer {
 
         let all_docs: HashSet<String> = all_docs.into_iter().cloned().collect();
         let toc_entries = toctree::global_toctree_for_doc(env, 0);
-        let toc_html = render_toc_html(&toc_entries);
         let relations = collect_relations(&toc_entries);
 
         let state = Arc::new(PageState {
             current_docname: Mutex::new(String::new()),
             all_docs,
             use_index: env.config.html_use_index(),
-            toc_html,
+            toc_entries: toc_entries.clone(),
         });
 
         let mut jinja_env = jinja_env;
@@ -526,7 +544,8 @@ impl ThemeRenderer {
 
         let relation = self.relations.get(docname).cloned().unwrap_or_default();
         let titles = &env.titles;
-        let link_of = |d: &str| HtmlBuilder::new().get_target_uri(d);
+        let base_uri = self.state.current_target_uri();
+        let link_of = |d: &str| relative_uri(&base_uri, &HtmlBuilder::new().get_target_uri(d));
         let title_of = |d: &str| titles.get(d).cloned().unwrap_or_else(|| d.to_string());
         ctx.insert(
             "next".to_string(),
@@ -558,7 +577,10 @@ impl ThemeRenderer {
         // Local TOC: the subtree rooted at *this* document (distinct from
         // `toctree()`'s global tree — see the module accepted-deviation
         // note on granularity).
-        ctx.insert("toc".into(), render_toc_html(&toc_entries_for_doc).into());
+        ctx.insert(
+            "toc".into(),
+            render_toc_html(&toc_entries_for_doc, &base_uri).into(),
+        );
         ctx.insert(
             "display_toc".into(),
             (!toc_entries_for_doc.is_empty()).into(),
@@ -603,12 +625,16 @@ impl ThemeRenderer {
 /// `HashMap<String, minijinja::Value>`, marking already-rendered-HTML
 /// fields (`body`, `toc`) as native minijinja "safe strings"
 /// ([`Value::from_safe_string`]) so the auto-escaper doesn't re-escape
-/// them. Plain values go through `Value::from_serialize`; since
-/// `minijinja::Value` special-cases serializing *itself*, each field's
-/// safety marker round-trips correctly through this per-field
-/// `HashMap<String, Value>` context — passing the whole context as a
-/// single `serde_json::Value` instead would have no way to mark any
-/// individual field safe at all.
+/// them, and marking the `link` sub-field of `next`/`prev`/`parents` (each
+/// a `pathto()`-style href — see [`relation_link_value`]) safe the same
+/// way, since real templates render these with `{{ prev.link|e }}` /
+/// `{{ next.link|e }}` (e.g. `haiku/layout.html`) and a raw path/URL is
+/// never meant to have its `/` characters HTML-entity-encoded. Plain
+/// values go through `Value::from_serialize`; since `minijinja::Value`
+/// special-cases serializing *itself*, each field's safety marker
+/// round-trips correctly through this per-field `HashMap<String, Value>`
+/// context — passing the whole context as a single `serde_json::Value`
+/// instead would have no way to mark any individual field safe at all.
 fn to_minijinja_context(ctx: serde_json::Map<String, serde_json::Value>) -> HashMap<String, Value> {
     let mut out = HashMap::with_capacity(ctx.len());
     for (key, value) in ctx {
@@ -616,11 +642,41 @@ fn to_minijinja_context(ctx: serde_json::Map<String, serde_json::Value>) -> Hash
             "body" | "toc" => {
                 Value::from_safe_string(value.as_str().unwrap_or_default().to_string())
             }
+            "next" | "prev" => relation_link_value(&value),
+            "parents" => Value::from_serialize(
+                value
+                    .as_array()
+                    .map(|items| items.iter().map(relation_link_value).collect::<Vec<_>>())
+                    .unwrap_or_default(),
+            ),
             _ => Value::from_serialize(&value),
         };
         out.insert(key, converted);
     }
     out
+}
+
+/// Convert one `{"link": ..., "title": ...}` relation object (built by
+/// [`ThemeRenderer::render_page`]'s `link_of`/`title_of` closures) into a
+/// minijinja `Value`, marking `link` as already-safe markup — mirrors
+/// [`PathtoGlobal::call`]'s same reasoning, since these hrefs are computed
+/// with the exact same `relative_uri`/`get_target_uri` pair. `title` stays
+/// a plain (auto-escaped) string. `serde_json::Value::Null` (no
+/// next/prev/parent) maps to minijinja's undefined-like `()`.
+fn relation_link_value(value: &serde_json::Value) -> Value {
+    let Some(obj) = value.as_object() else {
+        return Value::from_serialize(value);
+    };
+    let mut out: std::collections::BTreeMap<String, Value> = std::collections::BTreeMap::new();
+    for (k, v) in obj {
+        let converted = if k == "link" {
+            Value::from_safe_string(v.as_str().unwrap_or_default().to_string())
+        } else {
+            Value::from_serialize(v)
+        };
+        out.insert(k.clone(), converted);
+    }
+    Value::from_serialize(&out)
 }
 
 /// Build the context shared by every page of this build: theme options,
@@ -835,10 +891,41 @@ mod tests {
                 children: vec![],
             }],
         }];
-        let html = render_toc_html(&entries);
+        let html = render_toc_html(&entries, "index.html");
         assert!(html.contains("guide/intro.html"), "got: {html}");
         assert!(html.contains("Intro"), "got: {html}");
         assert!(html.contains("guide/sub.html"), "got: {html}");
+    }
+
+    #[test]
+    fn render_toc_html_relativizes_links_from_a_nested_page() {
+        // The bug this guards against: links rendered for a page nested in
+        // a subdirectory (e.g. `tutorial/foo.html`) must climb back out
+        // (`../usage/bar.html`), not reuse the root-relative
+        // `get_target_uri` result (`usage/bar.html`) verbatim — the latter
+        // 404s because it resolves relative to `tutorial/` instead of the
+        // site root.
+        let entries = vec![
+            TocEntry {
+                docname: "tutorial/index".into(),
+                title: "Tutorial".into(),
+                children: vec![],
+            },
+            TocEntry {
+                docname: "usage/installation".into(),
+                title: "Installing".into(),
+                children: vec![],
+            },
+        ];
+        let html = render_toc_html(&entries, "tutorial/foo.html");
+        assert!(
+            html.contains("href=\"index.html\""),
+            "same-directory link should have no ../ prefix, got: {html}"
+        );
+        assert!(
+            html.contains("href=\"../usage/installation.html\""),
+            "cross-directory link should climb back out, got: {html}"
+        );
     }
 
     #[test]
@@ -981,9 +1068,9 @@ mod tests {
                 children: vec![],
             }],
         }];
-        let global_html = render_toc_html(&root_entries);
+        let global_html = render_toc_html(&root_entries, "index.html");
         // The document "guide/intro" has no nested toctree of its own.
-        let local_html = render_toc_html(&[]);
+        let local_html = render_toc_html(&[], "index.html");
         assert!(global_html.contains("guide/intro.html"));
         assert!(local_html.is_empty());
         assert_ne!(global_html, local_html);

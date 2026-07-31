@@ -1,0 +1,19 @@
+---
+source: src/docutilsrs/tests/parser.rs
+expression: pseudo_xml(&parse_rst(src))
+---
+<document ids="configuration" names="configuration" source="<string>" title="Configuration">
+    <title>
+        Configuration
+    <paragraph>
+        Intro paragraph.
+    <section ids="builder-options" names="builder options">
+        <title>
+            Builder Options
+        <paragraph>
+            Builder body.
+    <section ids="project-information" names="project information">
+        <title>
+            Project Information
+        <paragraph>
+            Project body.

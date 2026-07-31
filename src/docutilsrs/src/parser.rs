@@ -219,7 +219,7 @@ fn parse_blocks(lines: &[&str], base_indent: usize, base_line: u32) -> Vec<Block
     let mut blocks = Vec::new();
     let mut i = 0;
     // Section detection: track underline level → integer.
-    let mut section_chars: Vec<char> = Vec::new();
+    let mut section_chars: Vec<(char, bool)> = Vec::new();
     while i < lines.len() {
         let line = lines[i];
         // Blank line.
@@ -592,11 +592,15 @@ fn is_transition(line: &str) -> bool {
 
 /// If `lines[i..]` begins with a title line + matching underline, return
 /// `(level, title_text, lines_consumed)`. `section_chars` records the
-/// punctuation per level encountered so far.
+/// adornment *style* (punctuation character plus whether it's used with a
+/// matching overline) per level encountered so far — mirroring real
+/// docutils, an overlined `=` title and a underline-only `=` heading are
+/// different styles (and thus different nesting levels) even though they
+/// share the same punctuation character.
 fn section_at(
     lines: &[&str],
     i: usize,
-    section_chars: &mut Vec<char>,
+    section_chars: &mut Vec<(char, bool)>,
 ) -> Option<(usize, String, usize)> {
     if i + 1 >= lines.len() {
         return None;
@@ -617,11 +621,11 @@ fn section_at(
                 {
                     // Overlined sections always get level 0 in docutils when
                     // they appear as the document title; nested overlines
-                    // get their own level keyed on the char.
-                    let level = match section_chars.iter().position(|&c| c == first) {
+                    // get their own level keyed on the (char, overlined) style.
+                    let level = match section_chars.iter().position(|&s| s == (first, true)) {
                         Some(idx) => idx,
                         None => {
-                            section_chars.push(first);
+                            section_chars.push((first, true));
                             section_chars.len() - 1
                         }
                     };
@@ -649,10 +653,10 @@ fn section_at(
     if under_trim.chars().count() < title.trim_end().chars().count() {
         return None;
     }
-    let level = match section_chars.iter().position(|&c| c == first) {
+    let level = match section_chars.iter().position(|&s| s == (first, false)) {
         Some(idx) => idx,
         None => {
-            section_chars.push(first);
+            section_chars.push((first, false));
             section_chars.len() - 1
         }
     };
@@ -2981,26 +2985,27 @@ fn apply_targets<I: Iterator<Item = String>>(
 pub(crate) fn promote_document_title(tree: &mut Doctree) {
     let root = tree.root();
     let children = tree.node(root).children.clone();
-    let mut sec_idx = None;
-    for (i, c) in children.iter().enumerate() {
-        if matches!(&tree.node(*c).kind, NodeKind::Section { .. }) {
-            sec_idx = Some(i);
-            break;
-        }
-    }
-    let i = match sec_idx {
+
+    // Mirrors upstream docutils' `DocTitle.candidate_index`: skip leading
+    // "invisible for title purposes" nodes (comments, hyperlink targets,
+    // substitution definitions — real docutils' `PreBibliographic` class)
+    // before looking for the sole top-level section to promote. Without
+    // this, a document starting with e.g. `.. highlight:: rst` or a
+    // `.. _label:` target before its title (an extremely common Sphinx
+    // convention) would never get its title promoted at all.
+    let candidate_idx = children
+        .iter()
+        .position(|c| !is_preamble_node(&tree.node(*c).kind));
+    let i = match candidate_idx {
         Some(i) => i,
         None => return,
     };
-    // Must be exactly one top-level section (other siblings are non-section).
-    let count = children
-        .iter()
-        .filter(|c| matches!(&tree.node(**c).kind, NodeKind::Section { .. }))
-        .count();
-    if count != 1 || i != 0 {
+    // The candidate must be the *only* remaining top-level child (nothing
+    // else follows it) and must itself be a section.
+    if i != children.len() - 1 {
         return;
     }
-    let sec_id = children[0];
+    let sec_id = children[i];
     let (sec_ids, sec_names) = match &tree.node(sec_id).kind {
         NodeKind::Section { ids, names, .. } => (ids.clone(), names.clone()),
         _ => return,
@@ -3016,8 +3021,9 @@ pub(crate) fn promote_document_title(tree: &mut Doctree) {
     }
     // Extract title text.
     let title_text = collect_text(tree, title_id);
-    // Move title to be a child of root; replace document's source attr with
-    // ids/names/title.
+    // Move title to be a child of root (right where the section used to
+    // be, so any leading preamble nodes stay before it); replace
+    // document's source attr with ids/names/title.
     tree.detach(title_id);
     tree.detach(sec_id);
     if let NodeKind::Document {
@@ -3031,15 +3037,10 @@ pub(crate) fn promote_document_title(tree: &mut Doctree) {
         *names = sec_names.clone();
         *title = title_text;
     }
-    // Re-attach title as first child of root.
-    tree.node_mut(root).children.insert(0, title_id);
+    tree.node_mut(root).children.insert(i, title_id);
     tree.node_mut(title_id).parent = Some(root);
     // Hoist the section's other children to be children of root, in order.
-    let mut insert_at = 1;
-    for c in sec_children.iter().skip(1) {
-        // Check: if exactly one section among them, lift it as subtitle.
-        let _ = c;
-    }
+    let mut insert_at = i + 1;
     let promoted_to_subtitle = {
         let body = &sec_children[1..];
         body.len() == 1 && matches!(&tree.node(body[0]).kind, NodeKind::Section { .. })
@@ -3066,7 +3067,7 @@ pub(crate) fn promote_document_title(tree: &mut Doctree) {
         // Move the subtitle just after the title.
         let last_idx = tree.node(root).children.len() - 1;
         let id = tree.node_mut(root).children.remove(last_idx);
-        tree.node_mut(root).children.insert(1, id);
+        tree.node_mut(root).children.insert(insert_at, id);
         // Hoist the subtitle's remaining body to root.
         for c in sub_children.into_iter().skip(1) {
             tree.detach(c);
@@ -3082,6 +3083,18 @@ pub(crate) fn promote_document_title(tree: &mut Doctree) {
         }
     }
 }
+
+/// Node kinds docutils treats as invisible "preamble" for the purposes of
+/// title promotion (its `PreBibliographic` marker class): comments,
+/// hyperlink targets, and substitution definitions may all legally precede
+/// a document's title section without blocking its promotion.
+fn is_preamble_node(kind: &NodeKind) -> bool {
+    matches!(
+        kind,
+        NodeKind::Comment | NodeKind::Target { .. } | NodeKind::SubstitutionDefinition { .. }
+    )
+}
+
 
 fn collect_text(tree: &Doctree, id: NodeId) -> String {
     let mut out = String::new();

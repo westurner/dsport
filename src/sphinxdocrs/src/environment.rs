@@ -676,12 +676,31 @@ impl BuildEnvironment {
         };
         self.set_title(docname.to_string(), title);
 
-        let entries = scan_toctree_entries(source);
+        // Blank out code-block/literal-block bodies before text-scanning
+        // for directives: a documentation page that *illustrates*
+        // `.. toctree::`/`.. include::` syntax inside a
+        // `.. code-block:: rst` example (as Sphinx's own docs do) must not
+        // have that example misread as a real directive.
+        let scan_source = strip_opaque_literal_blocks(source);
+
+        // `.. toctree::` entries are written *relative to the directory
+        // containing this document* (e.g. `tutorial/index.rst` listing
+        // `getting-started` really means `tutorial/getting-started`), not
+        // relative to the project root. Mirrors upstream
+        // `sphinx.util.docname_join` / `TocTree.run()` qualifying each
+        // entry against its own docname before recording it — without
+        // this, `toctree_includes`/sidebar-nav lookups keyed by the real
+        // docname (`env.titles`, `get_target_uri`, ...) would silently
+        // miss every non-root-level toctree entry.
+        let entries: Vec<String> = scan_toctree_entries(&scan_source)
+            .into_iter()
+            .map(|entry| docname_join(docname, &entry))
+            .collect();
         if !entries.is_empty() {
             self.note_toctree(docname.to_string(), entries);
         }
 
-        for include in scan_include_entries(source) {
+        for include in scan_include_entries(&scan_source) {
             self.note_dependency(docname.to_string(), include);
         }
 
@@ -1194,6 +1213,94 @@ fn mtime_micros(path: &Path) -> Option<i64> {
         .map(|d| d.as_micros() as i64)
 }
 
+/// Resolve a `.. toctree::` entry written relative to the directory
+/// containing `base` into a full, project-root-relative docname.
+///
+/// Mirrors `sphinx.util.docname_join(base, other)`
+/// (`posixpath.normpath(posixpath.join('#' + base, '..', other))[1:]`):
+/// entries are relative to `base`'s *parent directory*, not the project
+/// root, so `docname_join("tutorial/index", "getting-started")` is
+/// `"tutorial/getting-started"` while `docname_join("index",
+/// "usage/installation")` stays `"usage/installation"`. `..`/`.` segments
+/// in `other` are normalized against `base`'s directory the same way.
+fn docname_join(base: &str, other: &str) -> String {
+    let mut segments: Vec<&str> = match base.rfind('/') {
+        Some(idx) => base[..idx].split('/').collect(),
+        None => Vec::new(),
+    };
+    for seg in other.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            seg => segments.push(seg),
+        }
+    }
+    segments.join("/")
+}
+
+/// Directive names whose body is *not* recursively parsed as
+/// reStructuredText by real docutils — source code / math text is taken
+/// verbatim, so a nested-looking `.. toctree::`/`.. include::` shown
+/// *inside* one of these (e.g. an example snippet in a
+/// `.. code-block:: rst`) is just text, not a real directive.
+const OPAQUE_LITERAL_DIRECTIVES: &[&str] =
+    &["code-block", "code", "sourcecode", "math", "literalinclude"];
+
+/// Blanks out (line-count-preserving, so this remains safe to run before
+/// any line-indexed scan) every code-block/literal-block body in
+/// `source`, so [`scan_toctree_entries`]/[`scan_include_entries`] never
+/// mistake an *illustrative* directive shown inside one for a real one.
+/// Handles both explicit opaque directives (`.. code-block:: rst`, ...)
+/// and the plain `::` paragraph-literal-block marker docutils recognizes.
+fn strip_opaque_literal_blocks(source: &str) -> String {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut out: Vec<&str> = vec![""; lines.len()];
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+
+        let is_opaque_directive = trimmed.strip_prefix("..").is_some_and(|rest| {
+            let rest = rest.trim_start();
+            OPAQUE_LITERAL_DIRECTIVES
+                .iter()
+                .any(|name| rest.strip_prefix(name).is_some_and(|r| r.trim_start().starts_with("::")))
+        });
+        // A paragraph ending in `::` (and not itself a directive line)
+        // also introduces a literal block for its following indented
+        // lines — the standard rst "expanded marker" literal-block form.
+        let is_literal_marker = !trimmed.starts_with("..") && trimmed.ends_with("::");
+
+        if is_opaque_directive || is_literal_marker {
+            out[i] = line;
+            i += 1;
+            while i < lines.len() && lines[i].trim().is_empty() {
+                i += 1;
+            }
+            while i < lines.len() {
+                let body_line = lines[i];
+                if body_line.trim().is_empty() {
+                    i += 1;
+                    continue;
+                }
+                let body_indent = body_line.len() - body_line.trim_start().len();
+                if body_indent <= indent {
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+
+        out[i] = line;
+        i += 1;
+    }
+    out.join("\n")
+}
+
 /// Very small text-level scan for `.. toctree::` directive bodies,
 /// extracting the listed docnames.
 ///
@@ -1473,6 +1580,81 @@ mod tests {
             !env.files_to_rebuild
                 .get("guide")
                 .is_some_and(|s| s.contains("index"))
+        );
+    }
+
+    // ── docname_join / toctree entry qualification ─────────────────────────────
+
+    #[test]
+    fn docname_join_qualifies_entry_against_base_directory() {
+        assert_eq!(
+            docname_join("tutorial/index", "getting-started"),
+            "tutorial/getting-started"
+        );
+        assert_eq!(
+            docname_join("tutorial/index", "more/details"),
+            "tutorial/more/details"
+        );
+    }
+
+    #[test]
+    fn docname_join_root_level_base_leaves_entry_unqualified() {
+        assert_eq!(docname_join("index", "usage/installation"), "usage/installation");
+        assert_eq!(docname_join("index", "about"), "about");
+    }
+
+    #[test]
+    fn docname_join_normalizes_dotdot_segments() {
+        assert_eq!(docname_join("tutorial/sub/index", "../other"), "tutorial/other");
+    }
+
+    #[test]
+    fn read_one_with_source_qualifies_toctree_entries_relative_to_docname() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.read_one_with_source(
+            "tutorial/index",
+            "Build your first project\n========================\n\n.. toctree::\n\n   getting-started\n   first-steps\n",
+        )
+        .unwrap();
+        assert_eq!(
+            env.toctree_includes.get("tutorial/index"),
+            Some(&vec![
+                "tutorial/getting-started".to_string(),
+                "tutorial/first-steps".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn read_one_with_source_root_level_toctree_entries_unqualified() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.read_one_with_source(
+            "index",
+            "Welcome\n=======\n\n.. toctree::\n\n   usage/installation\n",
+        )
+        .unwrap();
+        assert_eq!(
+            env.toctree_includes.get("index"),
+            Some(&vec!["usage/installation".to_string()])
+        );
+    }
+
+    #[test]
+    fn read_one_with_source_ignores_toctree_shown_inside_code_block_example() {
+        // Regression test: a documentation page that *illustrates*
+        // `.. toctree::` syntax inside a `.. code-block:: rst` example
+        // (exactly as `sphinx/doc/usage/quickstart.rst` does) must not
+        // have that example misread as a second, real toctree.
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.read_one_with_source(
+            "usage/quickstart",
+            "Quickstart\n==========\n\nReal content here.\n\n.. code-block:: rst\n\n   .. toctree::\n      :maxdepth: 2\n\n      usage/installation\n      usage/quickstart\n      ...\n\nMore real content.\n",
+        )
+        .unwrap();
+        assert!(
+            !env.toctree_includes.contains_key("usage/quickstart"),
+            "toctree example inside a code-block must not be recorded as real: {:?}",
+            env.toctree_includes.get("usage/quickstart")
         );
     }
 

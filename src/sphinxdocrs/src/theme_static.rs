@@ -313,6 +313,7 @@ fn strip_template_suffix(name: &str) -> String {
 fn build_render_context(
     config: &SphinxConfig,
     theme: &ResolvedTheme,
+    builder: &str,
 ) -> BTreeMap<String, serde_json::Value> {
     use serde_json::Value;
     let mut ctx: BTreeMap<String, Value> = BTreeMap::new();
@@ -322,11 +323,19 @@ fn build_render_context(
     ctx.insert("release".into(), Value::String(config.release()));
     ctx.insert("version".into(), Value::String(config.version()));
     ctx.insert("language".into(), Value::String(config.language()));
-    ctx.insert("builder".into(), Value::String("html".into()));
-    ctx.insert("file_suffix".into(), Value::String(".html".into()));
-    ctx.insert("link_suffix".into(), Value::String(".html".into()));
-    ctx.insert("sourcelink_suffix".into(), Value::String(".txt".into()));
-    ctx.insert("has_source".into(), Value::Bool(true));
+    let (file_suffix, link_suffix) = if builder == "dirhtml" {
+        (".html", "/")
+    } else {
+        (".html", ".html")
+    };
+    ctx.insert("builder".into(), Value::String(builder.into()));
+    ctx.insert("file_suffix".into(), Value::String(file_suffix.into()));
+    ctx.insert("link_suffix".into(), Value::String(link_suffix.into()));
+    ctx.insert(
+        "sourcelink_suffix".into(),
+        Value::String(config.html_sourcelink_suffix()),
+    );
+    ctx.insert("has_source".into(), Value::Bool(config.html_copy_source()));
     ctx.insert("show_search_summary".into(), Value::Bool(true));
     ctx
 }
@@ -344,6 +353,19 @@ pub fn copy_theme_static_files(
     outdir: &Path,
     confdir: &Path,
 ) -> std::io::Result<()> {
+    copy_theme_static_files_for_builder(config, outdir, confdir, "html")
+}
+
+/// Copy theme assets using the output metadata for a specific HTML-family
+/// builder.  The generated `documentation_options.js` must identify the
+/// builder and its suffixes because Sphinx's search runtime uses those values
+/// to resolve document URLs.
+pub fn copy_theme_static_files_for_builder(
+    config: &SphinxConfig,
+    outdir: &Path,
+    confdir: &Path,
+    builder: &str,
+) -> std::io::Result<()> {
     let theme_name = config.html_theme();
     let theme_path_dirs = resolve_theme_path_dirs(confdir, &config.html_theme_path());
     let Some(theme) = resolve_theme(&theme_name, &theme_path_dirs) else {
@@ -355,7 +377,7 @@ pub fn copy_theme_static_files(
     std::fs::create_dir_all(&static_out)?;
 
     // Render context + jinja2rs environment (reused for every template asset).
-    let ctx = build_render_context(config, &theme);
+    let ctx = build_render_context(config, &theme, builder);
     let renderer = ThemeAssetRenderer::new();
 
     // Copy each theme layer's static dir (base-first so child files override).
@@ -379,11 +401,11 @@ pub fn copy_theme_static_files(
 
     // Pygments stylesheet — render from the native `pygmentsrs` crate; fall
     // back to the Python-generated CSS only if the native output is empty.
-    let pygments_css = pygmentsrs::formatters::html::css_style_defs(".highlight");
-    let pygments_css = if pygments_css.trim().is_empty() {
-        theme.pygments_css.clone()
+    let native_pygments_css = pygmentsrs::formatters::html::css_style_defs(".highlight");
+    let pygments_css = if theme.pygments_css.trim().is_empty() {
+        native_pygments_css
     } else {
-        pygments_css
+        theme.pygments_css.clone()
     };
     if !pygments_css.is_empty() {
         std::fs::write(static_out.join("pygments.css"), pygments_css.as_bytes())?;

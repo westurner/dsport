@@ -1308,6 +1308,13 @@ deviation unless a future decision explicitly requires reproducing pickle.
 
 ##### H11.2 HTML, dirhtml, and singlehtml
 
+Status: **implemented** for layout plumbing and artifact generation. The
+remaining snapshot entries in this workstream are deliberate byte-level
+differences in upstream theme markup/assets, `.buildinfo`, inventory
+compression/content, and search-index data; they remain visible as accepted
+deviations until the corresponding lower-level theme and search contracts are
+ported.
+
 Apply the shared contract to `builders/html.rs`, `builders/dirhtml.rs`, and
 `builders/singlehtml.rs` in this order:
 
@@ -1323,10 +1330,15 @@ Apply the shared contract to `builders/html.rs`, `builders/dirhtml.rs`, and
    same installed theme. Otherwise record the Rust theme asset set as an
    explicit H6 deviation rather than silently normalizing it away.
 
-Add focused fixture cases for flat HTML, directory HTML, single HTML, source
-copy enabled/disabled, search enabled/disabled, and an index page with a
-nested toctree. Promote each fixed artifact from the gap report into a direct
-assertion before regenerating the full matrix snapshot.
+The native builders now thread flat versus directory path style through theme
+URI generation, `content_root`, relations, and toctrees; emit the correct
+search page location; render the real theme search template when available;
+stage theme assets for `singlehtml`; render builder-specific asset metadata;
+and write compressed inventories containing native domain/document objects.
+Focused fixture coverage exercises flat HTML, directory HTML, single HTML,
+source-copy/index configuration, and nested toctrees through the matrix and
+the direct builder tests. Remaining byte-level differences stay classified in
+the snapshot rather than being normalized away.
 
 ##### H11.3 Text, XML, and pseudo-XML writers
 

@@ -105,6 +105,15 @@ impl Builder for SinglehtmlBuilder {
         let docnames = toctree_order(env, docnames);
 
         std::fs::create_dir_all(outdir)?;
+        super::html::write_static_files(outdir, super::html::PathStyle::Flat, false)?;
+        super::html::copy_html_static_path(srcdir, outdir, &env.config)?;
+        crate::theme_static::copy_theme_static_files_for_builder(
+            &env.config,
+            outdir,
+            srcdir,
+            "singlehtml",
+        )
+        .map_err(BuildError::Io)?;
 
         let meta = crate::builders::html::PageMeta {
             project: env.config.project(),
@@ -157,6 +166,7 @@ impl Builder for SinglehtmlBuilder {
             &meta,
         );
         write_index(outdir, &page)?;
+        super::html::write_objects_inventory(&self.inner, env, outdir, &docnames)?;
         Ok(result)
     }
 }

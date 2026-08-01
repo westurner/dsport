@@ -1688,7 +1688,7 @@ impl SphinxConfig {
     // ── H6c: full page context ────────────────────────────────────────────────
 
     /// `html_title` — mirrors `Config.html_title`'s computed default:
-    /// `"{project} v{release} documentation"` (or without the version
+    /// `"{project} {release} documentation"` (or without the version
     /// segment when `release` is empty).
     pub fn html_title(&self) -> String {
         if let Some(ConfigVal::Str(s)) = self.get("html_title") {
@@ -1699,7 +1699,7 @@ impl SphinxConfig {
         if release.is_empty() {
             format!("{project} documentation")
         } else {
-            format!("{project} v{release} documentation")
+            format!("{project} {release} documentation")
         }
     }
 

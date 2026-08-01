@@ -75,7 +75,7 @@ pub struct HtmlBuilder {
 /// embedded in the themed chrome may still point at the flat `.html`
 /// naming. Recorded in the H7b plan notes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum PathStyle {
+pub(crate) enum PathStyle {
     /// `<docname>.html`.
     #[default]
     Flat,
@@ -546,14 +546,24 @@ impl Builder for HtmlBuilder {
 
         std::fs::create_dir_all(outdir)?;
         // Write static assets (minimal CSS, objects.inv stub, genindex stub, .buildinfo)
-        write_static_files(outdir)?;
+        write_static_files(outdir, self.path_style, true)?;
 
         // Copy user static files (html_static_path) into outdir/_static/.
         copy_html_static_path(srcdir, outdir, &env.config)?;
 
         // Copy the active theme's static assets (CSS/JS/images) from the
         // installed Sphinx / theme packages, plus stemmer JS and pygments.css.
-        if let Err(e) = crate::theme_static::copy_theme_static_files(&env.config, outdir, srcdir) {
+        let asset_builder = if self.path_style == PathStyle::Dir {
+            "dirhtml"
+        } else {
+            "html"
+        };
+        if let Err(e) = crate::theme_static::copy_theme_static_files_for_builder(
+            &env.config,
+            outdir,
+            srcdir,
+            asset_builder,
+        ) {
             eprintln!("Warning: failed to copy theme static files: {e}");
         }
 
@@ -574,7 +584,20 @@ impl Builder for HtmlBuilder {
         // was skipped), env.all_docs is empty even though `docnames` is
         // not, which previously made `hasdoc()` silently disagree between
         // the single-phase and two-phase paths for the exact same project.
-        let real_theme = crate::theme_render::ThemeRenderer::new(env, outdir, &docnames);
+        let real_theme =
+            crate::theme_render::ThemeRenderer::new(env, outdir, &docnames, self.path_style);
+        if let Some(renderer) = &real_theme {
+            if let Ok(search_page) = renderer.render_search_page(env) {
+                let search_path = match self.path_style {
+                    PathStyle::Flat => outdir.join("search.html"),
+                    PathStyle::Dir => outdir.join("search/index.html"),
+                };
+                if let Some(parent) = search_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(search_path, search_page.as_bytes())?;
+            }
+        }
 
         // Page metadata shared by every document (from conf.py).
         let meta = PageMeta {
@@ -667,6 +690,8 @@ impl Builder for HtmlBuilder {
             eprintln!("Warning: failed to write searchindex.js: {e}");
         }
 
+        write_objects_inventory(self, env, outdir, &docnames)?;
+
         Ok(result)
     }
 }
@@ -735,7 +760,11 @@ th { background: #f0f0f0; }
 ///
 /// These are the minimum set needed so that HTML pages render usably and
 /// parity-checking tools do not flag absent mandatory files.
-fn write_static_files(outdir: &Path) -> Result<(), BuildError> {
+pub(crate) fn write_static_files(
+    outdir: &Path,
+    path_style: PathStyle,
+    include_search: bool,
+) -> Result<(), BuildError> {
     let static_dir = outdir.join("_static");
     std::fs::create_dir_all(&static_dir)?;
     std::fs::write(static_dir.join("sphinxdocrs.css"), MINIMAL_CSS.as_bytes())?;
@@ -765,16 +794,66 @@ fn write_static_files(outdir: &Path) -> Result<(), BuildError> {
     }
 
     // search.html — minimal search page stub (mirrors StandaloneHTMLBuilder).
-    let search = HtmlBuilder::wrap_page(
-        "Search",
-        "<p><em>Search not yet implemented by the native builder.</em></p>",
-        "",
-    );
-    let search_path = outdir.join("search.html");
-    if !search_path.exists() {
-        std::fs::write(&search_path, search.as_bytes())?;
+    if include_search {
+        let search = HtmlBuilder::wrap_page(
+            "Search",
+            "<p><em>Search not yet implemented by the native builder.</em></p>",
+            "",
+        );
+        let search_path = match path_style {
+            PathStyle::Flat => outdir.join("search.html"),
+            PathStyle::Dir => outdir.join("search/index.html"),
+        };
+        if let Some(parent) = search_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        if !search_path.exists() {
+            std::fs::write(&search_path, search.as_bytes())?;
+        }
     }
 
+    Ok(())
+}
+
+pub(crate) fn write_objects_inventory(
+    builder: &HtmlBuilder,
+    env: &BuildEnvironment,
+    outdir: &Path,
+    docnames: &[String],
+) -> Result<(), BuildError> {
+    let mut entries = env
+        .domain_objects()
+        .into_iter()
+        .map(|(domain, object)| crate::intersphinx::InventoryEntry {
+            name: object.name.clone(),
+            item_type: format!("{domain}:{}", object.obj_type),
+            priority: 0,
+            uri: {
+                let target = builder.get_target_uri(&object.docname);
+                if object.anchor.is_empty() {
+                    target
+                } else {
+                    format!("{target}#{}", object.anchor)
+                }
+            },
+            display_name: object.name,
+        })
+        .collect::<Vec<_>>();
+    for docname in docnames {
+        entries.push(crate::intersphinx::InventoryEntry {
+            name: docname.clone(),
+            item_type: "std:doc".to_string(),
+            priority: 0,
+            uri: builder.get_target_uri(docname),
+            display_name: env.titles.get(docname).cloned().unwrap_or_default(),
+        });
+    }
+    entries.sort_by(|left, right| {
+        (&left.item_type, &left.name, &left.uri).cmp(&(&right.item_type, &right.name, &right.uri))
+    });
+    let content =
+        crate::intersphinx::dumps(&env.config.project(), &env.config.version(), &entries)?;
+    std::fs::write(outdir.join("objects.inv"), content)?;
     Ok(())
 }
 
@@ -787,7 +866,7 @@ fn write_static_files(outdir: &Path) -> Result<(), BuildError> {
 ///
 /// Theme-provided assets (alabaster.css, doctools.js, …) are **not** produced
 /// because the Jinja2 theme pipeline is not ported — only user files are copied.
-fn copy_html_static_path(
+pub(crate) fn copy_html_static_path(
     srcdir: &Path,
     outdir: &Path,
     config: &SphinxConfig,

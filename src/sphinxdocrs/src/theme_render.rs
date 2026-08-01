@@ -67,7 +67,7 @@ use minijinja::{Error, ErrorKind, State};
 
 use crate::app_events::EventArg;
 use crate::builders::Builder;
-use crate::builders::html::HtmlBuilder;
+use crate::builders::html::{HtmlBuilder, PathStyle};
 use crate::environment::BuildEnvironment;
 use crate::toctree::{self, TocEntry};
 use crate::util_osutil::relative_uri;
@@ -96,6 +96,8 @@ struct PageState {
     /// `toctree()` Jinja global, which is itself a per-page call computing
     /// fresh `pathto()`-relativized hrefs every time, not a fixed string.
     toc_entries: Vec<TocEntry>,
+    /// Output layout used to resolve page URIs and asset roots.
+    path_style: PathStyle,
 }
 
 impl PageState {
@@ -103,7 +105,33 @@ impl PageState {
     /// rendered.
     fn current_target_uri(&self) -> String {
         let docname = self.current_docname.lock().unwrap().clone();
-        HtmlBuilder::new().get_target_uri(&docname)
+        target_uri(self.path_style, &docname)
+    }
+}
+
+fn target_uri(path_style: PathStyle, docname: &str) -> String {
+    match path_style {
+        PathStyle::Flat => HtmlBuilder::new().get_target_uri(docname),
+        PathStyle::Dir => HtmlBuilder::new_dir_style().get_target_uri(docname),
+    }
+}
+
+fn content_root(path_style: PathStyle, docname: &str) -> String {
+    if path_style == PathStyle::Flat {
+        return "./".to_string();
+    }
+
+    let depth = if docname == "index" {
+        0
+    } else if docname.ends_with("/index") {
+        docname.split('/').count().saturating_sub(1)
+    } else {
+        docname.split('/').count()
+    };
+    if depth == 0 {
+        "./".to_string()
+    } else {
+        "../".repeat(depth)
     }
 }
 
@@ -137,7 +165,7 @@ impl Object for PathtoGlobal {
         let target_uri = if resource {
             otheruri
         } else {
-            HtmlBuilder::new().get_target_uri(&otheruri)
+            target_uri(self.0.path_style, &otheruri)
         };
         let base_uri = self.0.current_target_uri();
         let uri = relative_uri(&base_uri, &target_uri);
@@ -196,7 +224,7 @@ impl Object for ToctreeGlobal {
 
     fn call(self: &Arc<Self>, _state: &State<'_, '_>, _args: &[Value]) -> Result<Value, Error> {
         let base_uri = self.0.current_target_uri();
-        let html = render_toc_html(&self.0.toc_entries, &base_uri);
+        let html = render_toc_html_for_style(&self.0.toc_entries, &base_uri, self.0.path_style);
         Ok(markupsafers::minijinja_compat::markup_to_value(
             Markup::from_safe(html),
         ))
@@ -280,12 +308,20 @@ fn resource_pathto(state: &PageState, name: &str) -> String {
 /// `get_target_uri` result is root-relative and 404s from any page not at
 /// the project root.
 fn render_toc_html(entries: &[TocEntry], base_uri: &str) -> String {
+    render_toc_html_for_style(entries, base_uri, PathStyle::Flat)
+}
+
+fn render_toc_html_for_style(
+    entries: &[TocEntry],
+    base_uri: &str,
+    path_style: PathStyle,
+) -> String {
     if entries.is_empty() {
         return String::new();
     }
     let mut out = String::from("<ul>\n");
     for entry in entries {
-        let target_uri = HtmlBuilder::new().get_target_uri(&entry.docname);
+        let target_uri = target_uri(path_style, &entry.docname);
         let href = relative_uri(base_uri, &target_uri);
         out.push_str(&format!(
             "<li class=\"toctree-l1\"><a href=\"{}\">{}</a>",
@@ -294,7 +330,11 @@ fn render_toc_html(entries: &[TocEntry], base_uri: &str) -> String {
         ));
         if !entry.children.is_empty() {
             out.push('\n');
-            out.push_str(&render_toc_html(&entry.children, base_uri));
+            out.push_str(&render_toc_html_for_style(
+                &entry.children,
+                base_uri,
+                path_style,
+            ));
         }
         out.push_str("</li>\n");
     }
@@ -454,10 +494,11 @@ impl ThemeRenderer {
     ///
     /// Returns `None` on any resolution failure (no Python, theme not
     /// found, ...) — always a soft failure, never a build error.
-    pub fn new<'a>(
+    pub(crate) fn new<'a>(
         env: &BuildEnvironment,
         outdir: &Path,
         all_docs: impl IntoIterator<Item = &'a String>,
+        path_style: PathStyle,
     ) -> Option<Self> {
         let theme_name = env.config.html_theme();
         let (template_dirs, theme_conf_options) = crate::theme_static::resolve_theme_templates(
@@ -493,6 +534,7 @@ impl ThemeRenderer {
             all_docs,
             use_index: env.config.html_use_index(),
             toc_entries: toc_entries.clone(),
+            path_style,
         });
 
         let mut jinja_env = jinja_env;
@@ -502,7 +544,8 @@ impl ThemeRenderer {
         jinja_env.add_global("js_tag", Value::from_object(JsTagGlobal(state.clone())));
         jinja_env.add_global("css_tag", Value::from_object(CssTagGlobal(state.clone())));
 
-        let global_ctx = build_global_context(env, outdir, &theme_conf_options, &toc_entries);
+        let global_ctx =
+            build_global_context(env, outdir, &theme_conf_options, &toc_entries, path_style);
 
         Some(Self {
             env: jinja_env,
@@ -545,7 +588,7 @@ impl ThemeRenderer {
         let relation = self.relations.get(docname).cloned().unwrap_or_default();
         let titles = &env.titles;
         let base_uri = self.state.current_target_uri();
-        let link_of = |d: &str| relative_uri(&base_uri, &HtmlBuilder::new().get_target_uri(d));
+        let link_of = |d: &str| relative_uri(&base_uri, &target_uri(self.state.path_style, d));
         let title_of = |d: &str| titles.get(d).cloned().unwrap_or_else(|| d.to_string());
         ctx.insert(
             "next".to_string(),
@@ -600,6 +643,10 @@ impl ThemeRenderer {
             String::new()
         };
         ctx.insert("sourcename".into(), sourcename.into());
+        ctx.insert(
+            "content_root".into(),
+            content_root(self.state.path_style, docname).into(),
+        );
 
         // `html-page-context` (H4a): let any connected listener mutate the
         // page before render. Best-effort in the sense that it's a no-op if
@@ -615,6 +662,44 @@ impl ThemeRenderer {
 
         self.env
             .get_template("page.html")
+            .map_err(|e| e.to_string())?
+            .render(to_minijinja_context(ctx))
+            .map_err(|e| e.to_string())
+    }
+
+    /// Render the real theme's synthetic search page with page-relative
+    /// asset links and no source/document-local navigation.
+    pub(crate) fn render_search_page(&self, env: &BuildEnvironment) -> Result<String, String> {
+        *self.state.current_docname.lock().unwrap() = "search".to_string();
+        let mut ctx = self.global_ctx.clone();
+        ctx.insert("pagename".into(), "search".into());
+        ctx.insert("current_page_name".into(), "search".into());
+        ctx.insert("title".into(), "Search".into());
+        ctx.insert("body".into(), "".into());
+        ctx.insert("meta".into(), serde_json::Value::Null);
+        ctx.insert("metatags".into(), "".into());
+        ctx.insert("has_maths_elements".into(), false.into());
+        ctx.insert("next".into(), serde_json::Value::Null);
+        ctx.insert("prev".into(), serde_json::Value::Null);
+        ctx.insert("parents".into(), Vec::<serde_json::Value>::new().into());
+        ctx.insert("toc".into(), "".into());
+        ctx.insert("display_toc".into(), false.into());
+        ctx.insert("sidebars".into(), Vec::<String>::new().into());
+        ctx.insert("sourcename".into(), "".into());
+        ctx.insert(
+            "content_root".into(),
+            content_root(self.state.path_style, "search").into(),
+        );
+
+        if let Some(events) = env.events_handle() {
+            events
+                .borrow_mut()
+                .emit("html-page-context", &[EventArg::Str("search".to_string())])
+                .map_err(|e| e.0)?;
+        }
+
+        self.env
+            .get_template("search.html")
             .map_err(|e| e.to_string())?
             .render(to_minijinja_context(ctx))
             .map_err(|e| e.to_string())
@@ -639,7 +724,7 @@ fn to_minijinja_context(ctx: serde_json::Map<String, serde_json::Value>) -> Hash
     let mut out = HashMap::with_capacity(ctx.len());
     for (key, value) in ctx {
         let converted = match key.as_str() {
-            "body" | "toc" => {
+            "body" | "content_root" | "toc" => {
                 Value::from_safe_string(value.as_str().unwrap_or_default().to_string())
             }
             "next" | "prev" => relation_link_value(&value),
@@ -687,6 +772,7 @@ fn build_global_context(
     outdir: &Path,
     theme_conf_options: &std::collections::BTreeMap<String, String>,
     toc_entries: &[TocEntry],
+    path_style: PathStyle,
 ) -> serde_json::Map<String, serde_json::Value> {
     let config = &env.config;
     let mut ctx = serde_json::Map::new();
@@ -723,11 +809,15 @@ fn build_global_context(
         "sourcelink_suffix".into(),
         config.html_sourcelink_suffix().into(),
     );
-    ctx.insert("file_suffix".into(), ".html".into());
-    ctx.insert("link_suffix".into(), ".html".into());
+    let (builder, file_suffix, link_suffix) = match path_style {
+        PathStyle::Flat => ("html", ".html", ".html"),
+        PathStyle::Dir => ("dirhtml", ".html", "/"),
+    };
+    ctx.insert("file_suffix".into(), file_suffix.into());
+    ctx.insert("link_suffix".into(), link_suffix.into());
     ctx.insert("language".into(), config.language().into());
     ctx.insert("sphinx_version".into(), env!("CARGO_PKG_VERSION").into());
-    ctx.insert("builder".into(), "html".into());
+    ctx.insert("builder".into(), builder.into());
     ctx.insert("html5_doctype".into(), true.into());
     ctx.insert("html_tag".into(), serde_json::Value::Null);
     ctx.insert("pageurl".into(), serde_json::Value::Null);
@@ -1106,7 +1196,7 @@ mod tests {
         });
 
         let outdir = Path::new("/tmp/theme-render-test-assets-outdir-does-not-exist");
-        let ctx = build_global_context(&env, outdir, &Default::default(), &[]);
+        let ctx = build_global_context(&env, outdir, &Default::default(), &[], PathStyle::Flat);
 
         let css_files: Vec<String> = ctx["css_files"]
             .as_array()
@@ -1149,7 +1239,13 @@ mod tests {
             attributes: HashMap::new(),
         });
 
-        let ctx = build_global_context(&env, outdir.path(), &Default::default(), &[]);
+        let ctx = build_global_context(
+            &env,
+            outdir.path(),
+            &Default::default(),
+            &[],
+            PathStyle::Flat,
+        );
         let css_files: Vec<String> = ctx["css_files"]
             .as_array()
             .unwrap()

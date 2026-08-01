@@ -222,6 +222,8 @@ fn docutilsrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(plugins::py_unregister_directive, m)?)?;
     m.add_function(wrap_pyfunction!(plugins::py_registered_directives, m)?)?;
     m.add_function(wrap_pyfunction!(plugins::py_clear_directives, m)?)?;
+    m.add_function(wrap_pyfunction!(plugins::py_register_role, m)?)?;
+    m.add_function(wrap_pyfunction!(plugins::py_unregister_role, m)?)?;
     m.add_function(wrap_pyfunction!(plugins::py_register_transform, m)?)?;
     m.add_function(wrap_pyfunction!(plugins::py_unregister_transform, m)?)?;
     m.add_function(wrap_pyfunction!(plugins::py_registered_transforms, m)?)?;

@@ -1,9 +1,10 @@
 //! Python directive plugin bridge.
 //!
-//! Allows Python callers to register a callable for an unknown directive
-//! name. When the rST parser encounters that directive, it invokes the
-//! callable with the directive's argument string and indented body and
-//! re-parses the returned string as a block of rST.
+//! Allows Python callers to register a callable directive handler. When the
+//! rST parser encounters that directive, it invokes the callable with the
+//! directive's argument string and indented body and re-parses the returned
+//! string as a block of rST. Native handlers use the same registry boundary
+//! and run before built-in directives.
 //!
 //! This is the Phase 3 interop surface: Rust prefers its own directive
 //! implementations, falling back to a Python plugin (if registered)
@@ -15,7 +16,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use pyo3::prelude::*;
-use pyo3::types::PyString;
+use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 
 use crate::doctree::{Doctree, NodeId, NodeKind};
 
@@ -178,6 +179,266 @@ pub fn invoke_plugin(name: &str, args: &str, body: &str) -> Option<String> {
     })?
 }
 
+/// Invoke a registered Python directive. Plain callables use the compact
+/// `(arguments, body) -> replacement RST` contract. Callable classes receive
+/// the standard docutils Directive constructor arguments and may return a
+/// list of docutils nodes; those nodes are lowered into native blocks.
+pub fn invoke_python_directive(
+    name: &str,
+    args: &str,
+    content: &[String],
+) -> Option<Vec<crate::parser::Block>> {
+    Python::try_attach(|py| -> Option<Vec<crate::parser::Block>> {
+        let callable = {
+            let guard = registry().lock().ok()?;
+            guard.get(name)?.clone_ref(py)
+        };
+        let body = content.join("\n");
+        if let Ok(result) = callable.bind(py).call1((args, body.as_str())) {
+            if let Ok(rst) = result.extract::<String>() {
+                return Some(parse_plugin_rst(&rst));
+            }
+        }
+
+        let options = PyDict::new(py);
+        let mut body_lines = Vec::new();
+        let option_spec = callable.bind(py).getattr("option_spec").ok();
+        for line in content {
+            if let Some((key, value)) = line
+                .trim()
+                .strip_prefix(':')
+                .and_then(|s| s.split_once(':'))
+                && !key.trim().is_empty()
+            {
+                let key = key.trim();
+                let value = value.trim();
+                let converted = option_spec
+                    .as_ref()
+                    .and_then(|spec| spec.get_item(key).ok())
+                    .and_then(|converter| converter.call1((value,)).ok())
+                    .unwrap_or_else(|| value.into_pyobject(py).unwrap().into_any());
+                options.set_item(key, converted).ok()?;
+            } else {
+                body_lines.push(line.clone());
+            }
+        }
+        let arguments: Vec<String> = if args.trim().is_empty() {
+            Vec::new()
+        } else {
+            args.split_whitespace().map(str::to_owned).collect()
+        };
+        let content_list = PyList::new(py, &body_lines).ok()?;
+        let state_machine = py
+            .eval(
+                c"type('DocutilsRsStateMachine', (), {'reporter': None})()",
+                None,
+                None,
+            )
+            .ok()?;
+        let instance = callable
+            .bind(py)
+            .call1((
+                name,
+                arguments,
+                options,
+                content_list,
+                0,
+                0,
+                format!(".. {name}:: {args}"),
+                py.None(),
+                state_machine,
+            ))
+            .ok()?;
+        let result = instance.call_method0("run").ok()?;
+        let nodes = result.cast::<PyList>().ok()?;
+        let mut blocks = Vec::new();
+        for node in nodes.iter() {
+            if let Some(block) = python_node_to_block(&node) {
+                blocks.push(block);
+            }
+        }
+        Some(blocks)
+    })?
+}
+
+fn parse_plugin_rst(rst: &str) -> Vec<crate::parser::Block> {
+    let lines: Vec<&str> = rst.lines().collect();
+    crate::parser::parse_plugin_blocks(&lines)
+}
+
+fn python_node_to_block(node: &Bound<'_, PyAny>) -> Option<crate::parser::Block> {
+    let tag = node.getattr("tagname").ok()?.extract::<String>().ok()?;
+    let text = node
+        .call_method0("astext")
+        .ok()
+        .and_then(|v| v.extract::<String>().ok())
+        .unwrap_or_default();
+    let children: Vec<crate::parser::Block> = node
+        .getattr("children")
+        .ok()
+        .and_then(|v| v.cast::<PyList>().ok().cloned())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|child| python_node_to_block(&child))
+                .collect()
+        })
+        .unwrap_or_default();
+    let attrs: std::collections::HashMap<String, String> = node
+        .getattr("attributes")
+        .ok()
+        .and_then(|v| v.cast::<PyDict>().ok().cloned())
+        .map(|dict| {
+            dict.iter()
+                .filter_map(|(key, value)| {
+                    Some((key.extract::<String>().ok()?, value.str().ok()?.to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    match tag.as_str() {
+        "paragraph" | "title" | "term" | "rubric" => {
+            Some(crate::parser::Block::Paragraph { text, line: 0 })
+        }
+        "literal_block" => Some(crate::parser::Block::LiteralBlock {
+            classes: attrs.get("classes").cloned().unwrap_or_default(),
+            text,
+            tokens: None,
+        }),
+        "raw" => Some(crate::parser::Block::Raw {
+            format: attrs.get("format").cloned().unwrap_or_default(),
+            text,
+        }),
+        "bullet_list" => Some(crate::parser::Block::BulletList {
+            bullet: '*',
+            items: children.into_iter().map(|child| vec![child]).collect(),
+        }),
+        _ => Some(crate::parser::Block::Extension {
+            class_name: node
+                .getattr("__class__")
+                .ok()
+                .and_then(|class| class.getattr("__name__").ok())
+                .and_then(|name| name.extract::<String>().ok())
+                .unwrap_or(tag),
+            attrs,
+            children,
+        }),
+    }
+}
+
+/// Register a Python callable as a parse-time directive handler.
+///
+/// The callable receives `(arguments, body)` and returns replacement RST.
+/// This is the native parser's intentionally small extension contract; full
+/// docutils `Directive` class construction remains outside this bridge.
+pub fn register_python_directive(name: &str, callable: Py<PyAny>) {
+    if let Ok(mut guard) = registry().lock() {
+        guard.insert(name.to_string(), callable);
+    }
+}
+
+/// Register a Python callable as a parse-time interpreted-text role handler.
+///
+/// The preferred bridge contract is `(text) -> replacement_text`. For
+/// compatibility with the common docutils role shape, invocation also tries
+/// `(name, rawtext, text, lineno, inliner, options, content)` before the
+/// compact form. A returned string becomes an inline node.
+pub fn register_python_role(name: &str, callable: Py<PyAny>) {
+    if let Ok(mut guard) = role_registry().lock() {
+        guard.insert(name.to_string(), callable);
+    }
+}
+
+pub struct PythonRoleNode {
+    pub kind: NodeKind,
+    pub text: String,
+}
+
+pub struct PythonRoleResult {
+    pub nodes: Vec<PythonRoleNode>,
+    pub messages: Vec<String>,
+}
+
+fn role_registry() -> &'static Mutex<HashMap<String, Py<PyAny>>> {
+    static R: OnceLock<Mutex<HashMap<String, Py<PyAny>>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Invoke a registered Python role and return replacement inline text.
+pub fn invoke_python_role(name: &str, content: &str) -> Option<PythonRoleResult> {
+    Python::try_attach(|py| -> Option<PythonRoleResult> {
+        let callable = {
+            let guard = role_registry().lock().ok()?;
+            guard.get(name)?.clone_ref(py)
+        };
+        let fallback = callable.bind(py).call1((content,));
+        if let Ok(result) = fallback {
+            if let Some(result) = role_result_nodes(&result) {
+                return Some(result);
+            }
+        }
+        let result = callable.bind(py).call(
+            (
+                name,
+                content,
+                content,
+                0,
+                py.None(),
+                None::<Py<PyAny>>,
+                Vec::<String>::new(),
+            ),
+            None,
+        );
+        role_result_nodes(&result.ok()?)
+    })?
+}
+
+fn role_result_nodes(result: &Bound<'_, PyAny>) -> Option<PythonRoleResult> {
+    if let Ok(text) = result.extract::<String>() {
+        return Some(PythonRoleResult {
+            nodes: vec![PythonRoleNode {
+                kind: NodeKind::Inline {
+                    classes: "role".to_string(),
+                },
+                text,
+            }],
+            messages: Vec::new(),
+        });
+    }
+    let tuple = result.cast::<PyTuple>().ok()?;
+    let nodes_item = tuple.get_item(0).ok()?;
+    let nodes = nodes_item.cast::<PyList>().ok()?;
+    let mut output = Vec::new();
+    for node in nodes.iter() {
+        let tag = node.getattr("tagname").ok()?.extract::<String>().ok()?;
+        let text = node.call_method0("astext").ok()?.extract::<String>().ok()?;
+        let kind = match tag.as_str() {
+            "emphasis" => NodeKind::Emphasis,
+            "strong" => NodeKind::Strong,
+            "literal" => NodeKind::Literal,
+            "title_reference" => NodeKind::TitleReference,
+            "inline" => NodeKind::Inline {
+                classes: "role".to_string(),
+            },
+            _ => NodeKind::Inline {
+                classes: format!("role-{tag}"),
+            },
+        };
+        output.push(PythonRoleNode { kind, text });
+    }
+    let messages_item = tuple.get_item(1).ok()?;
+    let messages = messages_item
+        .cast::<PyList>()
+        .ok()?
+        .iter()
+        .filter_map(|message| message.call_method0("astext").ok()?.extract().ok())
+        .collect();
+    Some(PythonRoleResult {
+        nodes: output,
+        messages,
+    })
+}
+
 #[pyfunction(name = "register_directive")]
 pub(crate) fn py_register_directive(name: &str, callable: Py<PyAny>) -> PyResult<()> {
     let mut guard = registry()
@@ -185,6 +446,23 @@ pub(crate) fn py_register_directive(name: &str, callable: Py<PyAny>) -> PyResult
         .map_err(|_| pyo3::exceptions::PyRuntimeError::new_err("plugin registry poisoned"))?;
     guard.insert(name.to_string(), callable);
     Ok(())
+}
+
+#[pyfunction(name = "register_role")]
+pub(crate) fn py_register_role(name: &str, callable: Py<PyAny>) -> PyResult<()> {
+    let mut guard = role_registry()
+        .lock()
+        .map_err(|_| pyo3::exceptions::PyRuntimeError::new_err("role registry poisoned"))?;
+    guard.insert(name.to_string(), callable);
+    Ok(())
+}
+
+#[pyfunction(name = "unregister_role")]
+pub(crate) fn py_unregister_role(name: &str) -> PyResult<bool> {
+    let mut guard = role_registry()
+        .lock()
+        .map_err(|_| pyo3::exceptions::PyRuntimeError::new_err("role registry poisoned"))?;
+    Ok(guard.remove(name).is_some())
 }
 
 #[pyfunction(name = "unregister_directive")]

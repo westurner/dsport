@@ -290,34 +290,57 @@ def setup(app):
     );
 }
 
-/// `app.add_directive`/`app.add_role` (bookkeeping-only, see
-/// `sphinxdocrs::registry::SphinxComponentRegistry::directives`/`roles`'s
-/// doc comments): a typical `setup()` call registering a custom directive
-/// class and a custom role callable must not raise `AttributeError`
-/// anymore, and the name -> class-name mapping must land in the shared
-/// registry `SphinxApp` itself owns.
+/// `app.add_directive`/`app.add_role`: class registration remains visible in
+/// the component registry, while a callable directive enters the docutilsrs
+/// replacement-RST bridge and executes during parsing.
 #[test]
 fn load_extension_add_directive_and_add_role_recorded() {
     let pydir = TempDir::new().unwrap();
     std::fs::write(
         pydir.path().join("h5_directive_role_ext.py"),
         r#"
-from docutils.parsers.rst import Directive
+from docutils import nodes
+from docutils.parsers.rst import Directive, directives
+
+
+class MyNode(nodes.Element):
+    pass
 
 
 class MyDirective(Directive):
     has_content = True
+    option_spec = {"count": directives.nonnegative_int}
 
     def run(self):
-        return []
+        return [
+            nodes.paragraph(text="Class directive: " + self.arguments[0] + " x" + str(self.options["count"])),
+            MyNode(),
+        ]
 
 
 def my_role(name, rawtext, text, lineno, inliner, options=None, content=None):
-    return [], []
+    return [
+        nodes.strong(rawtext, "Custom role: "),
+        nodes.emphasis(rawtext, text),
+    ], []
+
+
+def my_function(arguments, body):
+    return "Custom directive: " + arguments
+
+
+def visit_mynode(attrs):
+    return '<div class="directive-node">'
+
+
+def depart_mynode(attrs):
+    return "</div>"
 
 
 def setup(app):
+    app.add_node(MyNode, html=(visit_mynode, depart_mynode))
     app.add_directive("mydirective", MyDirective)
+    app.add_directive("myfunction", my_function)
     app.add_role("myrole", my_role)
     return {"version": "0.1", "parallel_read_safe": True}
 "#,
@@ -334,7 +357,7 @@ def setup(app):
     let src = TempDir::new().unwrap();
     std::fs::write(
         src.path().join("index.rst"),
-        "Welcome\n=======\n\nHomepage.\n",
+        "Welcome\n=======\n\nHomepage.\n\n.. mydirective:: from class\n   :count: 3\n\n.. myfunction:: from registry\n\n:myrole:`role output`\n",
     )
     .unwrap();
     std::fs::write(
@@ -352,7 +375,17 @@ def setup(app):
 
     let registry = app.registry.borrow();
     assert_eq!(registry.get_directive("mydirective"), Some("MyDirective"));
+    assert_eq!(registry.get_directive("myfunction"), Some("my_function"));
     assert_eq!(registry.get_role("myrole"), Some("my_role"));
+
+    let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+    assert!(
+        html.contains("Class directive: from x3"),
+        "class directive output missing from HTML:\n{html}"
+    );
+    assert!(html.contains("class=\"directive-node\""));
+    assert!(html.contains("Custom directive: from registry"));
+    assert!(html.contains("<strong>Custom role: </strong><em>role output</em>"));
 }
 
 /// **ADR 0006** — `app.add_node(cls, html=(visit, depart))`: the

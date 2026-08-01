@@ -107,7 +107,7 @@ in the notes column of the relevant row.
 | `locale.py` | `locale` | P2 | **done** | `PoCatalog` (incl. `#, fuzzy` handling and header capture), `Translator`, `TranslatorRegistry`, `init`, `init_chain`, `init_console`, `get_translation`, `tr`, `tr_console`, `tr!`/`tr_c!`, `admonition_labels`. **Extension:** `CATALOG_LOOKUP_ORDER = ["sphinxdocrs", "sphinx"]` — `tr`/`tr_console` walk the chain, first hit wins |
 | `util/i18n.py` | `intl` | P2 | **done** | `CatalogInfo` (incl. `write_mo`), `CatalogRepository`, `docname_to_domain`, `DATE_FORMAT_MAPPINGS`, `split_date_format`, `ustrftime_to_babel`, `babel_format_date`, `format_date`, `encode_mo` / `decode_mo`. **Accepted deviations:** CLDR data limited to `en`/`de`/`ja` (others fall back to `en`, as upstream does for unknown locales); MO output is singular-only with an empty hash table; `.po` files are decoded as UTF-8 |
 | `roles.py` | `roles` | P3 | **partial** | pure-algorithm subset: `GENERIC_DOCROLES`, `SPECIFIC_DOCROLES`, `is_builtin_role`, `format_rfc_target`, `parse_emphasized_literal`, `XRefRoleConfig`, `DefaultRoleConfig`. **Gap:** role `run()` execution (→ **H5b**) |
-| `directives/` | — | P3 | **deferred** | no Rust module yet (→ **H5a**) |
+| `directives/` | `docutilsrs::plugins` + parser dispatch | P3 | **partial** | native registry now runs before built-ins; callable `app.add_directive` handlers return replacement RST. Full docutils Directive class/options/node execution remains (→ **H5a**) |
 | `domains/` | — | P3 | **deferred** | only `registry.add_domain` name-registration exists; `env.domaindata` is never populated (→ **H3**) |
 | `environment/` | `environment` | P3 | **mirrored** ✅ | `BuildEnvironment`: `find_files` (**H2a**), doctree store `parse_doc`/`store_doctree`/`get_doctree`/`has_stored_doctree` (**H2b**), `read_all` read phase (**H2c**), `get_and_resolve_doctree` (**H2e**), `check_consistency` (**H2f**). **Gap:** `resolve_references`, `domains` (→ **H3**) |
 | `builders/` | `builders` | P3 | **partial** | `Builder` trait + `HtmlBuilder`, `LatexBuilder`, `ManpageBuilder`, `LinkcheckBuilder`, `JsonBuilder`, `TextBuilder`, `XmlBuilder`, `PseudoxmlBuilder` (**H7a**, done), `DirhtmlBuilder`, `SinglehtmlBuilder` (**H7b**, done), `GettextBuilder` (**H7c**, done), `ChangesBuilder` (**H7d** partial, done), all dispatched by `SphinxApp`. **Gap:** no epub/texinfo (→ **H7d** remainder, see §9.5). `doctest`/`coverage`/`qthelp`/`devhelp`/`htmlhelp`/`applehelp` are **keep-python** (**H7e**, decided) |
@@ -116,7 +116,7 @@ in the notes column of the relevant row.
 | `search/` | `search` | P3 | **done** | `SearchIndex`, `split_words`, `feed`, `to_json`, Snowball stemming for all 15 `sphinx.search` languages (**H1f**, via `stemmer.rs`). **Accepted deviation:** `rust_stemmers`' Dutch algorithm is the legacy `dutch_porter` Snowball revision, not the one `snowballstemmer.stemmer('dutch')` resolves to — patched via built-in `ParityOverrides` for Sphinx's own Dutch stopword vocabulary; broader vocabularies may need project-supplied overrides. `objects`/`objtypes`/`objnames`/`indexentries` now populated from domain data (**H3d**) — see the accepted deviations noted on that row in §3 |
 | `ext/autodoc/` | `autodoc` | P3 | **mirrored** ✅ | `document_module`/`document_module_auto`/`render_function`/`render_class` with a PyO3 runtime-import bridge (`autodoc_runtime.rs`, falling back to `ruff_python_parser` static extraction when import fails), `:members:`/`:undoc-members:`/`:private-members:`/`:special-members:`/`:exclude-members:`/`:member-order:` option handling, type hints, decorators (`@property`/`@staticmethod`/`@classmethod`), `__all__` ordering, `autodoc_mock_imports` (**H9**, done). **Accepted deviations:** `:inherited-members:` parsed but not expanded; overload sets render only the last definition; `autodoc_typehints="description"` treated as `"signature"` — see the Tier H9 writeup in §9 |
 | `ext/intersphinx/` | `intersphinx` | P3 | **partial** | `fetch_inventories`, `InvCache`, `Inventory` / `InventoryItem` / `InventoryError` (v1 + v2 `loads`, `load_file`), `dumps`. **Gap:** xref fallback — the parsed inventories are not consulted during reference resolution (→ **H5c**) |
-| `highlighting.py` | — | P3 | **deferred** | blocked on `pygmentsrs` lexer coverage (→ **H10**) |
+| `highlighting.py` | — | P3 | **partial** | `docutilsrs` code/code-block/sourcecode paths use native `pygmentsrs` with Python fallback; `automodule` output now enters that path. Dedicated `sphinx.highlighting` parity remains (→ **H10**) |
 | `pycode/` | — | P3 | **keep-python** | superseded by `autodoc.rs` + `ruff_python_ast` |
 | `ext/*` (other) | — | P3 | **keep-python** | loaded through the `Extension` registry |
 | *(new, no upstream analogue)* | `scan` | — | **done** | `scan_requirements`, `collect_packages`, stdlib detection — probes `conf.py` extension imports |
@@ -298,13 +298,13 @@ Tagged from `src/sphinx/tests/`.
 | `test_builders/` | builders | P3 | **partial** — `tests/builders.rs` (now includes **H2d** two-phase parity tests), `tests/builders_json.rs`, `tests/builders_text.rs`/`builders_xml.rs`/`builders_pseudoxml.rs` (**H7a**, done), `tests/builders_dirhtml.rs`/`builders_singlehtml.rs` (**H7b**, done), `tests/builders_gettext.rs` (**H7c**, done), `tests/builders_changes.rs` (**H7d** partial, done) |
 | `test_environment/` | environment | P3 | **mirrored** ✅ — `tests/environment.rs` gained the **H2** read-phase group (`find_files`, doctree store round trip, `read_all`, `check_consistency`); `tests/toctree.rs` (**H5d**) and `tests/genindex.rs` (**H5e**) cover toctree resolution/secnumbers and genindex/modindex generation |
 | `test_roles.py` | roles | P3 | **partial** — `tests/roles.rs`; `std`/`rst`/`py`/`js` xref recovery+resolution now covered by `tests/domains_std.rs`/`tests/domains_rst.rs`/`tests/domains_py.rs`/`tests/domains_js.rs` (**H5b**/**H5c**); other role classes' node execution still deferred (→ **H5a**) |
-| `test_directives/` | directives | P3 | **deferred** (→ **H5a**) |
+| `test_directives/` | directives | P3 | **partial** — registry dispatch smoke coverage landed; upstream directive parity fixtures remain (→ **H5a**) |
 | `test_domains/` | domains | P3 | **partial** — `std` (**H3a**), `rst` (**H3c**), `py` (**H3b**), `js` (**H3e**) done; `c`/`cpp` **keep-python** (**H3f**) |
 | `test_transforms/` | transforms | P3 | **deferred** — per-transform port |
 | `test_writers/` | writers | P3 | **partial** — `docutilsrs::text`/`to_xml` (new, backing **H7a**) have inline unit tests; `docutilsrs::pseudo_xml` was already covered. Sphinx-specific writers (`html5`, `latex2e`) covered elsewhere; one remaining writer at a time (→ **H7**) |
 | `test_theming/` | theming | P3 | **mirrored** — no dedicated `tests/theming.rs`; covered by inline `theme_render.rs`/`theme_static.rs` unit tests plus `tests/otherdocs.rs` real-theme builds (**H6**, done) |
 | `test_search.py` | search | P3 | **partial** — `tests/stemmer_parity.rs` (**H1f** closed); `objects`/`objtypes`/`objnames`/`indexentries` now populated from domain data (**H3d**, `tests/search_objects.rs`) |
-| `test_highlighting.py` | highlighting | P3 | **deferred** — blocked on `pygmentsrs` (→ **H10**) |
+| `test_highlighting.py` | highlighting | P3 | **deferred** — dedicated Sphinx highlighting parity gate remains open (→ **H10**) |
 | `test_markup/` | markup | P3 | **deferred** — depends on the docutils converter |
 | `test_pycode/` | pycode | P3 | **keep-python** |
 | `test_ext_autodoc/` | autodoc | P3 | **partial** — inline unit tests in `autodoc.rs`/`autodoc_runtime.rs`/`autogen/generate.rs` cover option handling, type hints, decorators, runtime introspection, and static-path fallback (**H9**, done); a dedicated `tests/ext_autodoc.rs` mirroring upstream's fixture-based cases directly is still pending |
@@ -562,8 +562,8 @@ the merge/dedup logic in isolation. Full
 
 | id | task |
 | --- | --- |
-| **H5a** | Directive execution: port `sphinx/directives/{__init__,code,other,patches}.py` — `toctree`, `code-block`, `literalinclude`, `include`, `only`, `seealso`, `versionadded` / `changed` / `deprecated`, `index`, `tabularcolumns`, `highlight` — registered into the `docutilsrs` directive registry. **Still deferred**: `docutilsrs`'s directive dispatch is a hardcoded match in `parser.rs` with no per-extension registry hook to add to, so real node-producing directive execution didn't move this round; `glossary`/`rst:directive`/`rst:role` bodies are recognized only well enough to *feed domain data* (see H3a/H3c's text-scan), not to render their real doctree nodes |
-| **H5b** | ✅ (partial) Role execution: text-level recovery of `:ref:`/`:doc:`/`:term:`/`:numref:`/`:keyword:` and `:rst:dir:`/`:rst:role:` roles — including the `` `Title <target>` `` phrase form — via `domains::scan::scan_xref_roles`, called from `BuildEnvironment::read_all`/`note_domain_data` and stored per-docname in `env.pending_xrefs`. **Deferred**: a real `pending_xref` doctree node (needs `docutilsrs::doctree::NodeKind` to grow a variant — a cross-cutting change touching every writer, deliberately not attempted here); other domains' roles (`:py:func:`, `:c:...`, custom roles); `PEP`/`RFC`/`CVE`/`CWE`/`GUILabel`/`MenuSelection`/`EmphasizedLiteral`/`Abbreviation` node execution |
+| **H5a** | **Partial**: `docutilsrs::plugins` provides registry-first native dispatch, callable `app.add_directive` replacement-RST execution, and Python `Directive` class construction with arguments/options/content plus `run()` results. `option_spec` converters are applied when present, and returned built-in paragraph/literal/raw/list nodes and registered extension nodes are lowered into the native doctree; `app.add_node` visitors render returned extension nodes. Existing built-in parser coverage remains for `toctree`, `code-block`, `literalinclude`, `include`, `only`, `seealso`, `versionadded` / `changed` / `deprecated`, `index`, `tabularcolumns`, and `highlight`. **Still deferred**: complete docutils state-machine semantics, arbitrary node attribute/child parity, and parity fixtures for each Sphinx directive |
+| **H5b** | ✅ (partial) Role execution: text-level recovery of `:ref:`/`:doc:`/`:term:`/`:numref:`/`:keyword:` and `:rst:dir:`/`:rst:role:` roles — including the `` `Title <target>` `` phrase form — via `domains::scan::scan_xref_roles`, called from `BuildEnvironment::read_all`/`note_domain_data` and stored per-docname in `env.pending_xrefs`. `app.add_role` callable registrations now execute during inline parsing, preserve all returned inline nodes from standard `(nodes, messages)` results, and retain returned message text as warning system messages. **Deferred**: a real `pending_xref` doctree node (needs `docutilsrs::doctree::NodeKind` to grow a variant — a cross-cutting change touching every writer, deliberately not attempted here); arbitrary role-node attribute parity; other domains' roles (`:py:func:`, `:c:...`, custom roles); `PEP`/`RFC`/`CVE`/`CWE`/`GUILabel`/`MenuSelection`/`EmphasizedLiteral`/`Abbreviation` node execution |
 | **H5c** | ✅ (partial) `env.resolve_references(fromdocname)`: resolves every recovered `PendingXref` against `std_domain`/`rst_domain`, returning `XrefResolution::Resolved { target }` or `Unresolved { warning }` (warning text mirrors `StandardDomain.dangling_warnings`: `"undefined label: '...'"`, `"unknown document: '...'"`, `"term not in glossary: '...'"`). `env.resolve_all_references()` runs it over every document with recorded xrefs. **Deferred**: since there's no `pending_xref` node (see H5b), this returns a resolution list rather than rewriting the doctree in place; intersphinx inventory fallback (H1a's `Inventory` isn't consulted yet); the real `missing-reference` event hook |
 | **H5d** | ✅ (partial) Toctree resolution: `src/toctree.rs`'s `resolve`/`get_toc_for`/`get_toctree_for`-equivalent `global_toctree_for_doc`/`secnumbers`, built entirely over data H2c already recovers (`env.toctree_includes`, `env.titles`/`env.longtitles`, `env.numbered_toctrees`). **Accepted deviation:** `TocEntry` is a plain Rust struct standing in for the `bullet_list`/`compact_paragraph` doctree nodes upstream builds (no such node kind exists here either); `secnumbers` assigns one chapter number per whole document, not per-section — `numfig`/multi-section numbering stays deferred; `:glob:` toctree expansion and `:hidden:`/`:includehidden:` filtering aren't implemented |
 | **H5e** | ✅ (partial) Index generation: `src/genindex.rs`'s `build_genindex` (alphabetical buckets from `env.indexentries`, `pair`/`triple` subentry nesting, `see`/`seealso` cross-links) and `build_modindex` (the Python module index, from `env.py_domain.get_objects()`). **Accepted deviation:** anchors are page-level (no in-page id tracking, same as elsewhere in this port); collapsing of near-duplicate keys and `py`/`c`/`cpp`-specific index-entry quirks aren't replicated |
@@ -581,7 +581,8 @@ resolution pair is domain-facing, not a standalone role-node feature yet.
 **Closes:** `roles.py` → **mirrored** for the `std`/`rst`/`py`/`js` xref
 subset (execution of the remaining role classes — `PEP`/`RFC`/`CVE`/
 `CWE`/`GUILabel`/`MenuSelection`/`EmphasizedLiteral`/`Abbreviation` — is
-still **deferred**), `directives/` → still **deferred** (see H5a above),
+still **deferred**), `directives/` → **partial** (registry-first native and
+callable replacement-RST paths landed; see H5a above),
 `environment/` → **done** for label/doc/term/toctree resolution and
 genindex/modindex generation, still missing `numfig`/multi-section
 numbering and real doctree-node rewriting.
@@ -599,15 +600,16 @@ files (`tests/domains_py.rs`, `tests/domains_js.rs`, `tests/toctree.rs`,
 
 Two structural facts (checked directly in `docutilsrs` before writing
 the original sub-plan) shaped every item: `docutilsrs::doctree::NodeKind`
-is a fixed, closed enum, and `docutilsrs::parser::parse_directive`'s
-dispatch is a hardcoded match whose only extension point
-(`docutilsrs::plugins::{has_plugin, invoke_plugin}`) is a
-**Python-callable** bridge with no pure-Rust registration path — this is
-*why* every item here continued the H3a/H3c/H5b/H5c text-scan deviation
+is a fixed, closed enum, and the built-in portion of
+`docutilsrs::parser::parse_directive` remains a hardcoded match. The parser
+now has a registry-first extension point
+(`docutilsrs::plugins::{register_native_directive, register_python_directive}`)
+for native handlers and replacement-RST Python callables. This is why the
+remaining items here continue the H3a/H3c/H5b/H5c text-scan deviation
 rather than reopening the "widen `NodeKind`" option, and *why* **H5a**
 (real directive-node execution: `toctree`, `literalinclude`, `include`,
 `only`, `seealso`, `versionadded`/`changed`/`deprecated`,
-`tabularcolumns`, `highlight` rendering) remains explicitly **deferred**
+`tabularcolumns`, `highlight` rendering) remains explicitly **partial**
 — that class of work needs real doctree output, not just data recovery.
 Two narrowly-scoped data-recovery deviations landed as side effects of
 this round anyway (`.. index::` scanning for H3d/H5e, `py`/`js`
@@ -957,10 +959,125 @@ integration-test binaries) and `cargo clippy -p sphinxdocrs
 
 ### Tier H10 — highlighting
 
-Wire `sphinx.highlighting` to `pygmentsrs` once lexer coverage suffices
-(see the `port-pygments-lexer` skill). Blocked on lexer breadth, not on
-this crate. **Gate:** a `test_highlighting.py` mirror plus byte-parity on
-highlighted `code-block` output for the top ~20 languages.
+The shared `docutilsrs` parser now dispatches `code`/`code-block`/
+`sourcecode` through native `pygmentsrs` first, with the existing Python
+bridge as fallback; Sphinx `automodule` expansion feeds generated
+docstrings through the same path, and Sphinx `highlight` state supplies the
+configured language to unlabeled code blocks. A Sphinx-side matrix now
+exercises representative Python, JavaScript, Rust, JSON, HTML, CSS, Bash,
+SQL, YAML, and Markdown blocks. The current `pygmentsrs` inventory reports
+512 native lexers and zero transpilable lexers remaining, so lexer breadth is
+no longer the blocker. **Remaining gate:** wire any Sphinx-specific
+`highlighting.py` behavior that is still observable beyond docutils' code
+block path and byte-parity-test highlighted `code-block` output for the top
+~20 languages.
+
+### Remaining H5/H10 completion plan
+
+The four remaining limitations should be implemented as one compatibility
+sequence rather than four unrelated patches. `NodeKind::PendingXref` and
+writer support already exist, so the xref task is primarily parser emission
+and in-place environment resolution. The larger model change is arbitrary
+Python node attributes, which currently collapse every value to a string in
+`NodeKind::Extension`.
+
+#### Phase 1 — shared directive execution context
+
+Create a Rust-owned `DirectiveContext`/`PythonDirectiveContext` boundary for
+the parser invocation. It should carry source path, absolute line number,
+block text, content offset, reporter, state, state-machine access, and the
+directive's parsed argument/content lines. Replace the current ad-hoc Python
+object with a PyO3 facade implementing the small state APIs used by real
+docutils directives (`nested_parse`, `inline_text`, `document`, `reporter`,
+and state-machine line access). Keep unsupported mutation methods explicit and
+fail with a structured system message rather than silently returning `None`.
+
+Move option parsing into a reusable `DirectiveOptions` helper:
+
+1. Parse option fields and body with source line numbers preserved.
+2. Apply `option_spec` converters, including flag options and converters that
+   raise `ValueError`.
+3. Enforce `required_arguments`, `optional_arguments`, `final_argument`, and
+   `has_content` before constructing the Python class.
+4. Return docutils-compatible system messages for malformed arguments/options.
+
+Gate: directives covering `nested_parse`, a flag option, a typed option, an
+invalid option, required/optional arguments, and a no-content violation must
+match the upstream doctree or diagnostic output.
+
+#### Phase 2 — lossless Python node model
+
+Replace `HashMap<String, String>` extension attributes with a typed,
+serializable value model, for example `NodeAttribute` with string, boolean,
+integer, float, list, tuple, and nested mapping variants. Preserve the node's
+tag/class name, all attributes, text nodes, child order, and raw Python values
+that cannot be represented natively through a stable opaque fallback.
+
+Implement one recursive lowering path used by both directive and role returns:
+
+- built-in block and inline nodes map to existing `NodeKind` variants;
+- registered extension nodes map to `NodeKind::Extension` with typed attrs;
+- unknown elements retain their original class/tag and children;
+- `Text` nodes remain text children rather than being flattened through
+  `astext()`;
+- list-valued and nested attributes round-trip through doctree persistence.
+
+Update every writer, `python.rs`, `NodeKindData`, and doctree serialization in
+one model change. Add round-trip tests for representative `docutils.nodes`
+elements and an extension node containing non-string attributes.
+
+#### Phase 3 — real pending-xref lifecycle
+
+Emit `NodeKind::PendingXref` directly from recognized domain roles during
+inline parsing, retaining the visible title as children and storing domain,
+role, target, source document, explicit-title, shortening, and warning flags.
+Stop using the source-text-only `pending_xrefs` list as the rendering source;
+retain it only as compatibility metadata until callers migrate.
+
+Change `BuildEnvironment::resolve_xref_nodes` to visit pending-xref nodes and
+replace each resolved node in place with a `Reference` containing the same
+visible children. Preserve unresolved nodes and emit the configured dangling
+warning/missing-reference event. Run this transform after all documents are
+read and before builders render; make it idempotent so rereads do not wrap
+references repeatedly.
+
+Gate: cross-document `ref`, `doc`, `term`, `numref`, `keyword`, `rst:dir`,
+`rst:role`, `py`, and `js` fixtures must assert both serialized doctree shape
+and final HTML/XML output, including explicit titles, `~` shortening, `!`
+disabling, unresolved targets, and nested directive content.
+
+#### Phase 4 — highlighting parity matrix
+
+Build a fixture-driven matrix from the upstream Sphinx highlighting tests and
+the native lexer inventory, rather than only checking that a token class is
+present. For each selected language, compare normalized token spans and final
+HTML markup between Python Sphinx/docutils and Rust:
+
+- select the top languages by upstream test coverage plus the highest-use
+  native lexers, including aliases and `none`/plain-text cases;
+- cover explicit `code-block`, unlabeled blocks after `highlight`,
+  `sourcecode`, `automodule` docstrings, empty input, trailing newlines,
+  unknown languages, and lexer errors;
+- normalize only generator/source-path noise, never token classes or span
+  boundaries;
+- run the matrix behind `test-parity`, with a fast native smoke subset in the
+  default test suite.
+
+Gate: every selected language must either be byte/span identical or have an
+explicit compatibility record naming the accepted deviation and fallback
+path. Add a CI artifact containing the first differing token/span for failed
+cases.
+
+#### Delivery order and risk controls
+
+Land Phase 1 and Phase 2 together only after the current directive/role smoke
+test is split into focused fixtures. Land Phase 3 next because it consumes
+the richer node model but has a bounded writer impact. Land Phase 4 last so
+highlighting failures are measured against the stabilized parser and doctree.
+Keep the Python fallback available throughout, use feature-gated parity tests
+for environments without upstream Sphinx, and do not broaden the public
+`NodeKind` enum without updating serialization and every writer in the same
+change.
 
 ### Tier H11 — parity matrix
 
@@ -984,7 +1101,7 @@ follow-up given the risk to the event-bus/`BuildEnvironment` mutation
 model. A third session (2026-07-28) closed **H9a**/**H9b**/**H9c**/
 **H9d** in full (see the Tier H9 writeup above for what landed and its
 accepted deviations). `epub`/`texinfo` (the rest of **H7d**) and
-**H10**/**H11** are **not implemented** — each is large enough to
+**H10** remains partial and **H11** is not implemented — each is large enough to
 warrant its own session. This section is a concrete starting point for
 picking them back up, based on what these sessions learned about the
 codebase's actual shape (as opposed to `docutilsrs::doctree::NodeKind`
@@ -1023,12 +1140,11 @@ in the abstract):
   for what landed (runtime-import bridge via PyO3, option handling,
   signature fidelity, `autogen::generate` wiring) and its accepted
   deviations.
-- **H10 (highlighting).** Explicitly gated on `pygmentsrs` lexer
-  *breadth*, not on anything in `sphinxdocrs` — see the
-  `port-pygments-lexer` skill for that separate workstream. Nothing to
-  do here until that crate's coverage is further along; re-check
-  `docs/pygments-port-inventory.md` for current lexer coverage before
-  starting.
+- **H10 (highlighting).** The native `docutilsrs` code-block path and the
+  Sphinx `automodule` integration now use `pygmentsrs` (native first,
+  Python fallback). The remaining work is the Sphinx-specific highlighting
+  parity suite and top-language gate described in §9, not lexer breadth;
+  re-check `docs/pygments-port-inventory.md` when selecting that matrix.
 - **H11 (parity matrix).** The most self-contained of the five — it's
   test-infrastructure work over builders that already exist (including
   the ten native builders this session added/completed:

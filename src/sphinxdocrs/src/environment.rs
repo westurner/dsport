@@ -668,7 +668,11 @@ impl BuildEnvironment {
     /// after-the-fact readback of a mutable arg); `source` is always
     /// exactly the file's on-disk content.
     pub fn read_one_with_source(&mut self, docname: &str, source: &str) -> Result<(), BuildError> {
-        let tree = docutilsrs::parse_rst_with_source(source, docname);
+        let expanded_source = self.expand_autodoc(source);
+        let source = expanded_source.as_deref().unwrap_or(source);
+        let highlighted_source = self.apply_highlight_language(source);
+        let parse_source = highlighted_source.as_deref().unwrap_or(source);
+        let tree = docutilsrs::parse_rst_with_source(parse_source, docname);
 
         let title = match &tree.node(tree.root()).kind {
             NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
@@ -681,7 +685,7 @@ impl BuildEnvironment {
         // `.. toctree::`/`.. include::` syntax inside a
         // `.. code-block:: rst` example (as Sphinx's own docs do) must not
         // have that example misread as a real directive.
-        let scan_source = strip_opaque_literal_blocks(source);
+        let scan_source = strip_opaque_literal_blocks(parse_source);
 
         // `.. toctree::` entries are written *relative to the directory
         // containing this document* (e.g. `tutorial/index.rst` listing
@@ -704,12 +708,116 @@ impl BuildEnvironment {
             self.note_dependency(docname.to_string(), include);
         }
 
-        self.note_domain_data(docname, source);
+        self.note_domain_data(docname, parse_source);
 
         self.store_doctree(docname, &tree)?;
         self.record_doc_read(docname.to_string(), now_micros());
 
         Ok(())
+    }
+
+    /// Expand the top-level `automodule` directive before docutils parsing.
+    ///
+    /// The autodoc renderer already owns the static/runtime import fallback;
+    /// this small integration point makes its generated RST participate in
+    /// the normal parser pipeline, including native code-block highlighting.
+    fn expand_autodoc(&self, source: &str) -> Option<String> {
+        let lines: Vec<&str> = source.lines().collect();
+        let mut output: Vec<String> = Vec::with_capacity(lines.len());
+        let mut changed = false;
+        let mut index = 0;
+
+        while index < lines.len() {
+            let line = lines[index];
+            let trimmed = line.trim_start();
+            let indent = line.len() - trimmed.len();
+            if indent == 0 && trimmed.starts_with(".. automodule::") {
+                let module_name = trimmed[15..].trim();
+                if !module_name.is_empty()
+                    && let Some(path) = self.resolve_python_module(module_name)
+                {
+                    let mut pairs = Vec::new();
+                    let mut next = index + 1;
+                    while next < lines.len() {
+                        let option = lines[next].trim();
+                        if let Some(option) = option.strip_prefix(':')
+                            && let Some((name, value)) = option.split_once(':')
+                        {
+                            pairs.push((name.trim().to_string(), value.trim().to_string()));
+                            next += 1;
+                            continue;
+                        }
+                        if option.is_empty() {
+                            next += 1;
+                        }
+                        break;
+                    }
+                    let options = crate::autodoc::AutodocOptions::from_option_pairs(&pairs);
+                    if let Ok(rendered) =
+                        crate::autodoc::document_module_auto(&path, module_name, &options, &[])
+                    {
+                        output.extend(rendered.lines().map(str::to_owned));
+                        output.push(String::new());
+                        index = next;
+                        changed = true;
+                        continue;
+                    }
+                }
+            }
+            output.push(line.to_owned());
+            index += 1;
+        }
+
+        changed.then(|| output.join("\n"))
+    }
+
+    fn resolve_python_module(&self, module_name: &str) -> Option<PathBuf> {
+        let relative = module_name.replace('.', "/");
+        let module = self.srcdir.join(format!("{relative}.py"));
+        if module.is_file() {
+            return Some(module);
+        }
+        let package = self.srcdir.join(relative).join("__init__.py");
+        package.is_file().then_some(package)
+    }
+
+    /// Resolve Sphinx's current `highlight` directive for code directives
+    /// without an explicit language. This keeps language state at the Sphinx
+    /// environment boundary while leaving docutilsrs' parser stateless.
+    fn apply_highlight_language(&self, source: &str) -> Option<String> {
+        let mut language = self.config.highlight_language();
+        let mut output = Vec::new();
+        let mut changed = false;
+
+        for line in source.lines() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with(".. highlight::") {
+                let next = trimmed[14..].trim();
+                if !next.is_empty() {
+                    language = next.to_string();
+                }
+                output.push(String::new());
+                changed = true;
+                continue;
+            }
+
+            let directive = ["code", "code-block", "sourcecode"]
+                .iter()
+                .find(|name| trimmed.starts_with(&format!(".. {name}::")));
+            if let Some(name) = directive {
+                let prefix = format!(".. {name}::");
+                let args = trimmed[prefix.len()..].trim();
+                if args.is_empty() && !language.is_empty() && language != "none" {
+                    let indent = &line[..line.len() - trimmed.len()];
+                    output.push(format!("{indent}{prefix} {language}"));
+                    changed = true;
+                    continue;
+                }
+            }
+            output.push(line.to_string());
+        }
+
+        changed.then(|| output.join("\n"))
     }
 
     /// Populate the `std`/`rst`/`py`/`js` domains, `indexentries`, and
@@ -1863,6 +1971,80 @@ mod tests {
     fn new_env_all_docs_empty() {
         let env = make_env();
         assert!(env.all_docs.is_empty());
+    }
+
+    #[test]
+    fn automodule_docstring_code_block_is_highlighted() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("demo.py"),
+            "\"\"\"Demo.\n\n.. code-block:: python\n\n   def f():\n       return 1\n\"\"\"\n",
+        )
+        .unwrap();
+        let project = EnvProject::new(dir.path(), &[(".rst", "restructuredtext")]);
+        let mut env = BuildEnvironment::new(
+            SphinxConfig::new_defaults(),
+            project,
+            dir.path(),
+            dir.path().join("doctrees"),
+        );
+
+        env.read_one_with_source("index", ".. automodule:: demo\n")
+            .unwrap();
+        let tree = env.get_doctree("index").unwrap();
+        assert!((0..tree.nodes_len()).any(|id| {
+            matches!(
+                &tree.node(id).kind,
+                NodeKind::Inline { classes } if classes == "keyword"
+            )
+        }));
+    }
+
+    #[test]
+    fn highlight_directive_sets_language_for_unlabeled_code_block() {
+        let mut env = make_env();
+        env.read_one_with_source(
+            "index",
+            ".. highlight:: python\n\n.. code-block::\n\n   return 1\n",
+        )
+        .unwrap();
+        let tree = env.get_doctree("index").unwrap();
+        assert!((0..tree.nodes_len()).any(|id| {
+            matches!(
+                &tree.node(id).kind,
+                NodeKind::Inline { classes } if classes == "keyword"
+            )
+        }));
+    }
+
+    #[test]
+    fn highlighting_matrix_produces_token_classes_for_representative_languages() {
+        let cases = [
+            ("python", "def answer():\n    return 42"),
+            ("javascript", "function answer() { return 42; }"),
+            ("rust", "fn answer() -> i32 { 42 }"),
+            ("json", "{\"answer\": 42}"),
+            ("html", "<p>answer</p>"),
+            ("css", "body { color: red; }"),
+            ("bash", "echo answer"),
+            ("sql", "SELECT 42;"),
+            ("yaml", "answer: 42"),
+            ("markdown", "**answer**"),
+        ];
+
+        for (language, code) in cases {
+            let mut env = make_env();
+            let source = format!(".. code-block:: {language}\n\n   {code}\n");
+            env.read_one_with_source(language, &source).unwrap();
+            let tree = env.get_doctree(language).unwrap();
+            assert!(
+                (0..tree.nodes_len()).any(|id| matches!(
+                    &tree.node(id).kind,
+                    NodeKind::Inline { classes } if !classes.is_empty()
+                )),
+                "no token classes produced for {language}"
+            );
+        }
     }
 
     #[test]

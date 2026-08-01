@@ -965,13 +965,9 @@ impl PyAppFacade {
     /// Mirrors `Sphinx.add_directive(name, cls, override=False)`: records
     /// `name` → `cls.__name__` in the shared [`SharedRegistry`]
     /// (`**_kwargs` absorbs `override` and any newer upstream keyword
-    /// without erroring). **Accepted deviation:** bookkeeping only — see
-    /// [`crate::registry::SphinxComponentRegistry::directives`]'s doc
-    /// comment for why a document that actually *uses* this directive
-    /// still won't execute it through this registration (`docutilsrs`'s
-    /// parser has a separate, simpler `(args, body) -> str` callable
-    /// bridge — `docutilsrs::plugins::register_directive` — for real
-    /// parse-time execution, not this name/class-name bookkeeping map).
+    /// without erroring). Callable handlers also enter docutilsrs' parse-time
+    /// `(args, body) -> replacement RST` registry; full docutils
+    /// `Directive` class construction remains an accepted deviation.
     #[pyo3(signature = (name, cls, *_args, **_kwargs))]
     fn add_directive(
         &self,
@@ -980,6 +976,9 @@ impl PyAppFacade {
         _args: &Bound<'_, PyTuple>,
         _kwargs: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<()> {
+        if cls.is_callable() {
+            docutilsrs::plugins::register_python_directive(&name, cls.clone().unbind());
+        }
         let class_name = cls
             .getattr("__name__")
             .and_then(|n| n.extract::<String>())
@@ -989,12 +988,8 @@ impl PyAppFacade {
     }
 
     /// Mirrors `Sphinx.add_role(name, role, override=False)`: records
-    /// `name` → `role.__name__` in the shared [`SharedRegistry`]. Same
-    /// accepted deviation as [`Self::add_directive`] — see
-    /// [`crate::registry::SphinxComponentRegistry::roles`]'s doc comment
-    /// (`docutilsrs::roles` only models canonical role *names*, not
-    /// arbitrary rendering callables, so a registered role still isn't
-    /// invoked at parse time by this registration alone).
+    /// `name` → `role.__name__` in the shared [`SharedRegistry`] and enters
+    /// callable roles into docutilsrs' parse-time inline-role bridge.
     #[pyo3(signature = (name, role, *_args, **_kwargs))]
     fn add_role(
         &self,
@@ -1003,6 +998,9 @@ impl PyAppFacade {
         _args: &Bound<'_, PyTuple>,
         _kwargs: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<()> {
+        if role.is_callable() {
+            docutilsrs::plugins::register_python_role(&name, role.clone().unbind());
+        }
         let class_name = role
             .getattr("__name__")
             .and_then(|n| n.extract::<String>())

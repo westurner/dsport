@@ -1,8 +1,8 @@
 //! rST parser slice covering phase 1 + phase 2.
 //!
 //! See `docs/compat.md` for the supported feature matrix and accepted
-//! deviations. In particular, no syntax highlighting is applied to
-//! `code`/`code-block` content (it is emitted as a plain literal block).
+//! deviations. Code directives use the optional `pygmentsrs` tokenizer when
+//! syntax-highlighting support is enabled, with a plain literal fallback.
 
 #![allow(
     clippy::needless_range_loop,
@@ -227,6 +227,13 @@ pub enum Block {
     /// Spliced result of a Python directive plugin: emitted as if its
     /// children were siblings of the directive site.
     PluginResult(Vec<Block>),
+    /// A node returned by a Python directive that has no built-in block
+    /// equivalent. Its registered Sphinx visitor pair handles rendering.
+    Extension {
+        class_name: String,
+        attrs: std::collections::HashMap<String, String>,
+        children: Vec<Block>,
+    },
     Table(TableData),
 }
 
@@ -599,6 +606,10 @@ fn parse_blocks(lines: &[&str], base_indent: usize, base_line: u32) -> Vec<Block
         }
     }
     merge_pending_classes(blocks)
+}
+
+pub(crate) fn parse_plugin_blocks(lines: &[&str]) -> Vec<Block> {
+    parse_blocks(lines, 0, 0)
 }
 
 /// Merges `Block::PendingClass` markers (from `.. class::`/`.. cssclass::`
@@ -1428,6 +1439,28 @@ fn parse_directive(
     name: String,
     args: &str,
 ) -> Block {
+    // Extension registrations are intentionally checked before the built-in
+    // table so `override=True` and custom replacements can work through the
+    // same registry boundary as upstream docutils.
+    let content_start = *i_ref + 1;
+    let mut content_index = content_start;
+    let content = if let Some(ci) = peek_inner_indent(lines, content_index, base_indent) {
+        consume_indented_lines(lines, &mut content_index, ci)
+    } else {
+        Vec::new()
+    };
+    let content_refs: Vec<&str> = content.iter().map(String::as_str).collect();
+    if let Some(blocks) = crate::plugins::invoke_native_directive(&name, args, &content_refs) {
+        *i_ref = content_index;
+        return Block::PluginResult(blocks);
+    }
+    if crate::plugins::has_plugin(&name)
+        && let Some(blocks) = crate::plugins::invoke_python_directive(&name, args, &content)
+    {
+        *i_ref = content_index;
+        return Block::PluginResult(blocks);
+    }
+
     match name.as_str() {
         "note" | "warning" | "tip" | "hint" | "important" | "attention" | "caution" | "danger"
         | "error" | "seealso" => {
@@ -3250,6 +3283,16 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 emit_block(tree, parent, ctx, b);
             }
         }
+        Block::Extension {
+            class_name,
+            attrs,
+            children,
+        } => {
+            let node = tree.append(parent, NodeKind::Extension { class_name, attrs });
+            for child in children {
+                emit_block(tree, node, ctx, child);
+            }
+        }
     }
 }
 
@@ -4236,6 +4279,27 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
 }
 
 fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str) {
+    if let Some(nodes) = crate::plugins::invoke_python_role(role, content) {
+        for replacement in nodes.nodes {
+            let node = tree.append(parent, replacement.kind);
+            push_text(tree, node, &replacement.text);
+        }
+        for message in nodes.messages {
+            let system = tree.append(
+                parent,
+                NodeKind::SystemMessage {
+                    level: 2,
+                    line: Some(0),
+                    ty: "WARNING",
+                    ids: String::new(),
+                    backrefs: String::new(),
+                },
+            );
+            let paragraph = tree.append(system, NodeKind::Paragraph);
+            push_text(tree, paragraph, &message);
+        }
+        return;
+    }
     // Resolve language-dependent aliases (`:t:` → `title-reference`) through
     // the registry, mirroring `roles.role()`. An unregistered name is kept
     // as-is and rendered as a generic `<inline>`, as before.

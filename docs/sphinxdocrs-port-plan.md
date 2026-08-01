@@ -1079,6 +1079,176 @@ for environments without upstream Sphinx, and do not broaden the public
 `NodeKind` enum without updating serialization and every writer in the same
 change.
 
+### Detailed plans for the remaining model and highlighting work
+
+The two remaining slices have different risk profiles and should stay
+separately reviewable. The arbitrary-node work changes a persisted public
+data model; the highlighting work should initially change only test
+infrastructure and comparison coverage. Do not use the highlighting suite to
+justify lossy node conversion, and do not make the node-model migration wait
+for every lexer to reach native parity.
+
+#### A. Complete arbitrary-node attribute and child fidelity
+
+**Current boundary.** `python_node_to_block` in
+`src/docutilsrs/src/plugins.rs` calls `str()` on every Python attribute,
+flattens text through `astext()`, and lowers unknown elements to
+`NodeKind::Extension`. `NodeKind::Extension.attrs` is therefore a
+`HashMap<String, String>`. The affected persistence and rendering surfaces
+are `doctree.rs`, `python.rs`, `parser.rs`, and the HTML, XML, pseudo-XML,
+LaTeX, text, manpage, ODT, and generic writer implementations.
+
+**A1. Freeze the value contract before editing writers.** Add a public
+`NodeAttributeValue` (or equivalent) with a serde-stable representation:
+
+- `String`, `Bool`, signed/unsigned integer, and finite float;
+- `List(Vec<NodeAttributeValue>)` for Python lists and tuples;
+- `Map(BTreeMap<String, NodeAttributeValue>)` for string-keyed mappings;
+- `None` for Python `None`;
+- `Opaque { type_name, repr }` for values that cannot be represented safely.
+
+Use `BTreeMap` for deterministic serialization and output. Reject non-finite
+floats and non-string mapping keys into `Opaque` rather than silently changing
+their meaning. Keep the opaque representation informational: writers must not
+execute or reinterpret it.
+
+Decide and document the compatibility policy at the boundary:
+
+1. New serialized doctrees carry a schema/version marker or use a bumped
+  doctree-store version.
+2. Old string-valued extension attributes load as `String` values.
+3. Python `Node.attributes` exposes native `str`, `bool`, `int`, `float`,
+  `list`, `dict`, and `None`; opaque values expose a small read-only wrapper
+  with type name and repr.
+4. `set_kind`/visitor APIs continue to accept existing string attributes
+  through an explicit conversion helper, avoiding a source-compatible silent
+  reinterpretation.
+
+**A2. Implement one recursive Python lowering path.** Replace the current
+directive-only lowering logic with a recursive conversion result that retains
+the node's class/tag, typed attributes, and ordered children. The conversion
+must distinguish `Text` from `Element` nodes and must never call `astext()` to
+construct child content. Built-in elements may still lower to specialized
+`NodeKind` variants, but unknown elements must retain their tag/class and all
+children. Roles must call the same converter so directive and role returns
+have identical fidelity.
+
+Preserve the attributes that are most commonly semantically significant:
+`ids`, `names`, `classes`, `dupnames`, `backrefs`, `refuri`, `refid`, `name`,
+`source`, `line`, `rawsource`, `format`, and extension-defined fields. Keep
+attribute order out of semantic equality, but make serialized map order
+deterministic.
+
+**A3. Update persistence, Python exposure, and writers as one migration.**
+Update `NodeKindData`, `NodeKind` conversion, `Doctree::to_bytes`/
+`from_bytes`, `PyNode.attributes`, extension visitor arguments, and every
+writer match arm in the same change. Writer policy should be explicit:
+
+- known attributes continue to drive specialized markup;
+- registered extension visitors receive the complete typed mapping;
+- XML/pseudo-XML emit typed scalar values in deterministic escaped form and
+  serialize lists/maps using the documented representation;
+- HTML-like writers do not blindly emit arbitrary attributes, preventing
+  Python extension data from becoming unsafe markup;
+- unknown extension nodes retain children-only fallback when no visitor is
+  registered.
+
+**A4. Tests and completion gate.** Add focused tests before broad fixtures:
+
+- recursive directive return containing `paragraph -> emphasis -> Text`;
+- custom node with bool, integer, float, `None`, list, nested map, and opaque
+  attributes;
+- role returning multiple nested nodes through the same converter;
+- doctree byte round-trip and deterministic serialization;
+- `PyNode.attributes` round-trip for supported Python types;
+- each writer's registered visitor receives typed attrs, while unregistered
+  writers preserve child content without injecting arbitrary attributes;
+- old string-only serialized extension nodes remain readable.
+
+The phase is complete only when no arbitrary-node path calls `astext()` for
+child construction, no extension attribute is stringified implicitly, and a
+recursive Python fixture has equivalent structure before and after doctree
+persistence.
+
+#### B. Broader highlighting parity fixtures
+
+**B1. Establish a fixture format independent of rendered HTML.** Add a
+feature-gated fixture test module, preferably under
+`src/docutilsrs/tests/highlighting_parity.rs` with a shared helper usable by
+`sphinxdocrs`. Each case should contain a case id, language and aliases,
+source bytes, highlight mode/backend, expected normalized spans, and expected
+final literal-block structure.
+
+The canonical comparison object should be the normalized `Span` stream from
+`docutilsrs::code_block::tokenize`: `(optional class, exact text bytes)`. A
+second assertion should compare the emitted doctree or HTML fragment so span
+parity cannot hide a writer or newline regression.
+
+Generate expected data with the exact upstream Python environment used by the
+repository, including Pygments and docutils versions. Store JSON fixtures in
+`tests/fixtures/highlighting/` with source text encoded losslessly; do not
+embed escaped source literals in Rust where trailing newlines become
+ambiguous.
+
+**B2. Select the matrix deliberately.** Include Python, JavaScript, Rust,
+C/C++, Java, Go, SQL, JSON, YAML, HTML/XML, CSS, Bash, Markdown, RST, and
+plain text; at least one alias per selected lexer; one native-only and one
+Python-fallback lexer; empty, one-line, multiline, Unicode, and final-newline
+sources; `text`, `none`, omitted language with `highlight`, `code-block`, and
+`sourcecode` directives; unknown languages, disabled Pygments, missing native
+lexers, and malformed source that lexers tokenize with error tokens.
+
+Select the initial 20-30 cases from the native lexer inventory and upstream
+Sphinx highlighting tests, then grow the matrix only when a regression or a
+newly ported lexer warrants a fixture. Keep aliases as separate cases because
+alias resolution is part of the behavior under test.
+
+**B3. Compare both backends and classify deviations.** For each case run:
+
+1. Python Pygments directly, recording token names and values.
+2. `pygmentsrs::lex_with_backend(..., Backend::Rust)` when a native lexer is
+  registered.
+3. `docutilsrs::code_block::tokenize`, exercising native-first dispatch,
+  normalization, newline stripping, and fallback behavior.
+4. The Rust and Python document paths for final literal-block output.
+
+Normalize only process/version paths and fixture metadata. Do not normalize
+token class names, span boundaries, token text, Unicode code points, or
+trailing-newline behavior. When native and Python streams differ, record the
+case as `native deviation` only if the Python fallback remains available and
+the difference is documented with the first differing span.
+
+**B4. Make failures actionable and gate them in stages.** The parity helper
+should report case id, backend, first differing span index, expected/actual
+class, and a byte-safe representation of expected/actual text. Add a default
+fast smoke set for native lexers, a `test-parity` full matrix requiring
+upstream Python dependencies, a CI artifact containing normalized
+expected/actual streams for failures, and a fixture update command that
+refuses to overwrite expected data unless explicitly requested.
+
+The phase is complete when all selected fallback cases are exact, all native
+cases are exact or have explicit deviation records, and final `code-block`
+and `sourcecode` output agrees for every case. Token-class presence alone is
+not a passing criterion.
+
+#### Recommended sequencing
+
+1. Land the typed value enum and recursive conversion tests without changing
+  writer output for existing string-only extensions.
+2. Migrate serialization and `PyNode.attributes`, then update visitors and
+  writers with compatibility tests.
+3. Add the highlighting fixture schema and upstream generator using the
+  Python fallback as the oracle.
+4. Run the matrix against native lexers, fixing normalization and alias
+  handling before adding new lexer ports.
+5. Promote stable cases into default smoke tests and retain the full matrix
+  behind `test-parity`.
+
+The two streams can be developed in parallel after the fixture format is
+defined, but their completion gates should remain independent: typed-node
+fidelity is a doctree compatibility milestone, while highlighting parity is a
+lexer and writer compatibility milestone.
+
 ### Tier H11 — parity matrix
 
 Expand `tests/parity.rs` from 2 scenarios to a matrix over

@@ -248,8 +248,8 @@ fn domain_prefixed_role_renders_as_inline_with_full_role_name() {
         &docutilsrs::cli::CommonOptions::default(),
     );
     assert!(
-        html.contains(r#"<span class="rst:dir">toctree</span>"#) || html.contains("rst:dir"),
-        "expected rst:dir role classes in output, got:\n{html}"
+        html.contains(r#"<span class="xref rst rst-dir">toctree</span>"#),
+        "expected full rst:dir role classes in output, got:\n{html}"
     );
     assert!(
         !html.contains(":rst:dir:`toctree`"),

@@ -1590,8 +1590,7 @@ labels use a BOM when present and otherwise retain little-endian behavior;
 declaration scanning recognizes LF, CRLF, and CR within a bounded 2 KiB
 window. Search-index decode skips now emit `WARNING:` diagnostics, and the
 native `rst2*` binaries use automatic BOM/declaration detection unless an
-explicit `--input-encoding` is supplied. The existing `.vscode/settings.json`
-worktree change remains unrelated to this phase.
+explicit `--input-encoding` is supplied.
 
 **Exit:** J1–J6 fixed and regression-tested; no accepted deviations remain
 for this source-encoding hardening phase.

@@ -432,13 +432,21 @@ fn emit_enter(
                 out.push_str("</div>");
             }
         }
-        NodeKind::PendingXref { reftype, .. } => wrap_with_class(
-            node,
-            "span",
-            &format!("xref {}", escape(reftype)),
-            out,
-            tasks,
-        ),
+        NodeKind::PendingXref {
+            reftype, refdomain, ..
+        } => {
+            let role_class = if refdomain.is_empty() {
+                escape(reftype)
+            } else {
+                format!(
+                    "{} {}-{}",
+                    escape(refdomain),
+                    escape(refdomain),
+                    escape(reftype)
+                )
+            };
+            wrap_with_class(node, "span", &format!("xref {role_class}"), out, tasks)
+        }
         NodeKind::ObjectDescription {
             classes,
             ids,

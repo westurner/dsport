@@ -3621,10 +3621,16 @@ pub(crate) fn emit_unresolved_system_messages(tree: &mut Doctree, ctx: &ParseCtx
             },
         );
         let p = tree.append(sm, NodeKind::Paragraph);
-        tree.append(
-            p,
-            NodeKind::Text(format!("Unknown target name: \"{}\".", name.to_lowercase())),
-        );
+        let message = if *line > 0 {
+            format!(
+                "Unknown target name: \"{}\" at line {}.",
+                name.to_lowercase(),
+                line
+            )
+        } else {
+            format!("Unknown target name: \"{}\".", name.to_lowercase())
+        };
+        tree.append(p, NodeKind::Text(message));
     }
 }
 

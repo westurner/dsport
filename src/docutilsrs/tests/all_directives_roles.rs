@@ -102,8 +102,14 @@ Code and docutils links: :code-py:`x = 1`, :dudir:`include`.
     );
     assert!(html.contains("CVE-2021-12345"), "HTML output: {html}");
     assert!(html.contains("CWE-79"), "HTML output: {html}");
-    assert!(html.contains("class=\"xref ref\""), "HTML output: {html}");
-    assert!(html.contains("class=\"xref func\""), "HTML output: {html}");
+    assert!(
+        html.contains("class=\"xref std std-ref\""),
+        "HTML output: {html}"
+    );
+    assert!(
+        html.contains("class=\"xref py py-func\""),
+        "HTML output: {html}"
+    );
     assert!(
         html.contains("class=\"code python\""),
         "HTML output: {html}"

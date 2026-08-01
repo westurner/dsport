@@ -328,6 +328,29 @@ fn resolve_xref_nodes_resolves_doc_pending_xref() {
 }
 
 #[test]
+fn read_all_persists_resolved_pending_xrefs() {
+    let (_src, _dt, mut env) = make_disk_env(&[
+        ("index", "Welcome\n=======\n\nSee :doc:`about`.\n"),
+        ("about", "About Us\n========\n\nInfo.\n"),
+    ]);
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+
+    let tree = env.get_doctree("index").unwrap();
+    assert!(
+        (0..tree.nodes_len()).any(|id| matches!(
+            tree.node(id).kind,
+            docutilsrs::doctree::NodeKind::Reference { .. }
+        )),
+        "read_all should persist resolved references before rendering"
+    );
+    assert!(!(0..tree.nodes_len()).any(|id| matches!(
+        tree.node(id).kind,
+        docutilsrs::doctree::NodeKind::PendingXref { .. }
+    )));
+}
+
+#[test]
 fn read_all_notes_toctree_and_include_dependencies() {
     let (_src, _dt, mut env) = make_disk_env(&[
         (

@@ -187,6 +187,7 @@ pub fn invoke_python_directive(
     name: &str,
     args: &str,
     content: &[String],
+    source_line: usize,
 ) -> Option<Vec<crate::parser::Block>> {
     Python::try_attach(|py| -> Option<Vec<crate::parser::Block>> {
         let callable = {
@@ -230,11 +231,13 @@ pub fn invoke_python_directive(
         let content_list = PyList::new(py, &body_lines).ok()?;
         let state_machine = py
             .eval(
-                c"type('DocutilsRsStateMachine', (), {'reporter': None})()",
+                c"type('DocutilsRsStateMachine', (), {'reporter': None, 'get_source_and_line': lambda self, lineno=None: (self.source, self.line), 'nested_parse': lambda self, content, offset, node: (lambda document: (__import__('docutils.parsers.rst', fromlist=['Parser']).Parser().parse('\\n'.join(content), document), node.extend(document.children))[1])(__import__('docutils.utils', fromlist=['new_document']).new_document(self.source))})()",
                 None,
                 None,
             )
             .ok()?;
+        state_machine.setattr("source", format!("<{name}>")).ok()?;
+        state_machine.setattr("line", source_line).ok()?;
         let instance = callable
             .bind(py)
             .call1((

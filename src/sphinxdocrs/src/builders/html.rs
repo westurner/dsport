@@ -606,10 +606,9 @@ impl Builder for HtmlBuilder {
                     parse_rst_with_source(&source, docname)
                 }
             };
-            // Splice resolved `:ref:`/`:doc:`/... hyperlinks into the
-            // doctree before rendering (see `BuildEnvironment::resolve_xref_nodes`
-            // for why this must happen here, walking the actual tree,
-            // rather than via the text-scanned `pending_xrefs` list).
+            // Keep the resolution call as an idempotent compatibility fallback
+            // for callers that bypass `read_all`; normal builds already have
+            // persisted references from the post-read phase.
             env.resolve_xref_nodes(&mut tree, docname);
             // Expand `.. toctree::` placeholders into their real
             // caption + nested bullet-list-of-links subtree (see

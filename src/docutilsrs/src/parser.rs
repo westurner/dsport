@@ -1455,7 +1455,8 @@ fn parse_directive(
         return Block::PluginResult(blocks);
     }
     if crate::plugins::has_plugin(&name)
-        && let Some(blocks) = crate::plugins::invoke_python_directive(&name, args, &content)
+        && let Some(blocks) =
+            crate::plugins::invoke_python_directive(&name, args, &content, *i_ref + 1)
     {
         *i_ref = content_index;
         return Block::PluginResult(blocks);

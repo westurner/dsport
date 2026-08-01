@@ -630,6 +630,18 @@ impl BuildEnvironment {
             }
         }
 
+        // Domain inventories are complete only after every selected document
+        // has been read. Rewrite pending xrefs once at that boundary so all
+        // builders consume the same persisted doctree instead of each builder
+        // repeating the resolution walk during rendering.
+        let mut stored_docnames: Vec<String> = self.all_docs.keys().cloned().collect();
+        stored_docnames.sort();
+        for docname in stored_docnames {
+            let mut tree = self.get_doctree(&docname)?;
+            self.resolve_xref_nodes(&mut tree, &docname);
+            self.store_doctree(&docname, &tree)?;
+        }
+
         Ok(docnames)
     }
 

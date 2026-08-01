@@ -135,7 +135,10 @@ fn build_json_writes_fjson_pages() {
     let ctx: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&page).unwrap()).unwrap();
     assert_eq!(ctx["current_page_name"], "index");
-    assert_eq!(ctx["sourcename"], "index.rst");
+    // Default `html_copy_source=true` + `html_sourcelink_suffix=".txt"`
+    // (differing from source_suffix ".rst") appends ".txt".
+    assert_eq!(ctx["sourcename"], "index.rst.txt");
+    assert_eq!(ctx["page_source_suffix"], ".rst");
     assert!(ctx["body"].as_str().unwrap().contains("Hello."));
     assert!(outdir.join("globalcontext.json").exists());
 }

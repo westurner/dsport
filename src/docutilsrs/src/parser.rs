@@ -21,6 +21,39 @@ pub fn parse_rst(source: &str) -> Doctree {
 }
 
 pub fn parse_rst_with_source(source: &str, source_path: &str) -> Doctree {
+    parse_rst_with_options(source, source_path, TitlePromotion::Promote)
+}
+
+/// Controls whether a lone top-level section's title is promoted into
+/// `Document.title` (and its children hoisted up a level), for use with
+/// [`parse_rst_with_options`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitlePromotion {
+    /// Promote a lone top-level section into `Document.title`: plain
+    /// docutils' standalone-reader default, and what [`parse_rst_with_source`]
+    /// uses.
+    Promote,
+    /// Never promote. Real Sphinx builds its docutils `document.settings`
+    /// with `doctitle_xform = False` and `sectsubtitle_xform = False`
+    /// (`sphinx/environment/__init__.py`'s `default_settings`), so every
+    /// heading — including a document's sole top-level one — stays a real
+    /// `Section` node with its own `Title` child. Builders that need
+    /// byte-accurate parity with real `sphinx-build` output (text, XML,
+    /// pseudo-XML, LaTeX, manpage, gettext, ...) should use this.
+    Preserve,
+}
+
+/// Like [`parse_rst_with_source`], but with explicit control over title
+/// promotion via [`TitlePromotion`].
+pub fn parse_rst_with_options(
+    source: &str,
+    source_path: &str,
+    title_promotion: TitlePromotion,
+) -> Doctree {
+    parse_rst_impl(source, source_path, title_promotion == TitlePromotion::Promote)
+}
+
+fn parse_rst_impl(source: &str, source_path: &str, promote_title: bool) -> Doctree {
     let mut tree = Doctree::new_document(source_path);
     let document = tree.root();
 
@@ -47,8 +80,10 @@ pub fn parse_rst_with_source(source: &str, source_path: &str) -> Doctree {
     }
 
     resolve_references(&mut tree, &ctx);
-    promote_document_title(&mut tree);
-    promote_docinfo(&mut tree);
+    if promote_title {
+        promote_document_title(&mut tree);
+        promote_docinfo(&mut tree);
+    }
     emit_unresolved_system_messages(&mut tree, &ctx);
     crate::plugins::apply_transforms(&mut tree);
     // Restore the "default" default role after parsing a document, as

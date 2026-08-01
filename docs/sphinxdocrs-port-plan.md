@@ -1384,6 +1384,30 @@ entries; structured inventory and search comparisons pass; same-provenance
 assets are byte-identical; and remaining HTML differences are either zero or
 explicitly documented renderer/theme provenance deviations.
 
+**Progress (partial, verified):**
+
+- Fixed the `LINK_SUFFIX` bug in `theme_render.rs`'s `build_global_context`
+  and `theme_static.rs`'s `build_render_context`: both previously derived
+  `link_suffix` from a `(builder, file_suffix, link_suffix)` match keyed on
+  `PathStyle`, giving dirhtml a distinct (wrong) `link_suffix`. Real
+  `DirectoryHTMLBuilder` (`sphinx/builders/dirhtml.py`) never overrides
+  `link_suffix` — only `get_target_uri`/`get_output_path` differ; `link_suffix`
+  stays equal to `out_suffix` (`.html`) for html, dirhtml, and singlehtml alike
+  (`sphinx/builders/html/__init__.py`'s `init_templates`). Verified against a
+  real `sphinx-build -b dirhtml` run's `documentation_options.js`.
+- Added two regression tests (`build_global_context_link_suffix_is_html_for_dirhtml_too`
+  in `theme_render.rs`, `link_suffix_is_html_for_every_html_family_builder` in
+  `theme_static.rs`) looping over html/dirhtml/singlehtml and asserting
+  `link_suffix == ".html"` for all three.
+- Verified via `cargo test -p sphinxdocrs --lib` (733 passed at the time, 0
+  failed) and byte-identical `documentation_options.js` output for all three
+  html-family builders against real `sphinx-build`, using the exact
+  `PARITY_CONF`-equivalent fixture settings.
+- Remaining H11.2a–d items (build-metadata normalization, non-LINK_SUFFIX
+  theme-asset provenance, inventory row semantics, search-index semantics) are
+  unresolved; only the `LINK_SUFFIX` deviation described above has been fixed
+  and verified this pass.
+
 ##### H11.3 Text, XML, and pseudo-XML writers
 
 Use the `docutilsrs` writers behind `builders/text.rs`, `builders/xml.rs`, and
@@ -1410,6 +1434,40 @@ Add byte-parity fixtures for headings, nested sections, lists, notes, code
 blocks, and source metadata. Keep the existing stack-safety tests unchanged.
 Completion requires writer-specific structural assertions plus byte parity for
 the fixture cases, not merely a refreshed snapshot.
+
+**Progress (partial, verified):**
+
+- Added `docutilsrs::parse_rst_with_options` (plus a `TitlePromotion` enum),
+  used with `TitlePromotion::Preserve` by `builders/text.rs`,
+  `builders/xml.rs`, and `builders/pseudoxml.rs` only; `parse_rst_with_source`
+  keeps its exact prior name/signature/behavior (`TitlePromotion::Promote`)
+  for every other caller. Real Sphinx sets
+  `doctitle_xform = False` / `sectsubtitle_xform = False`, so it never
+  promotes a lone top-level section into `Document.title` the way plain
+  docutils does; the old `parse_rst_with_source` (title promotion on) is
+  still used unchanged by `html.rs`/`environment.rs`/`json.rs`, which key off
+  the promoted `Document.title` field and would need a title-extraction
+  rewrite before they can switch — deferred, not attempted.
+- Fixed `text_writer.rs`: removed duplicate document-title rendering, and
+  corrected `SECTION_UNDERLINES` to Sphinx's real `text_sectionchars` default
+  (`*=-~"+\``, 7 chars, verified against a live `sphinx-build -b text` run)
+  instead of docutils' 4-char default.
+- Fixed `xml_writer.rs`: emits a generator comment so the parity normalizer's
+  `<!-- GENERATED -->` canonicalization applies on both sides.
+- Result: `guide.txt`/`reference.txt` are now byte-identical to Python in the
+  parity matrix (removed from the deviation list entirely). `index.txt` and
+  the `.xml`/`.pseudoxml` outputs still have accepted deviations, but the
+  byte-diff offset moved substantially later (title/underline/comment/ids
+  sections now match); remaining known gaps: `index.txt` toctree/paragraph
+  body-content formatting, and the XML/pseudo-XML `source="..."` attribute
+  (Rust emits the bare docname; Python emits the real source file path) —
+  fixing the latter needs a `Builder::build_doc` signature change to thread
+  a real path through, not attempted here due to the blast radius across all
+  ~12 builder implementations.
+- Verified via `cargo test -p docutilsrs --lib` (51 passed) and
+  `cargo test -p sphinxdocrs --lib`/`--test builders`/`--test application`
+  (all green), plus a regenerated and determinism-reconfirmed
+  `native_builder_fixture_parity_matrix` snapshot.
 
 ##### H11.4 Project-oriented LaTeX and man builders
 
@@ -1496,6 +1554,45 @@ check file presence and exact normalized scalar values. Completion requires
 the expected `searchindex.json`, `search.fjson`, `last_build`, and auxiliary
 artifact set, or a narrowly documented deviation for each artifact that
 cannot be represented by the native environment model.
+
+**Progress (partial, verified):**
+
+- Fixed `sourcename` in `write_page`: now follows the real
+  `StandaloneHTMLBuilder.write_doc` formula exactly — `docname +
+  source_suffix`, plus `html_sourcelink_suffix` (default `".txt"`) appended
+  unless it already equals `source_suffix`, and empty (`""`) when
+  `html_copy_source` is `False` — instead of the previous unconditional
+  `docname + source_suffix`. `write_page` now takes `&SphinxConfig` (not the
+  full `&BuildEnvironment`) so `build_doc`'s standalone single-file API (which
+  has no config) can pass `SphinxConfig::new_defaults()` while `build_all`
+  threads through the real `env.config`.
+- Added `PageContext::page_source_suffix` (the raw suffix, e.g. `".rst"`,
+  independent of `sourcename`/`html_copy_source`), matching a field present in
+  real Sphinx's `.fjson` output that was previously missing entirely.
+- Changed `GlobalContext::last_updated` from `String` (always `current_date_utc()`)
+  to `Option<String>`, sourced from `env.config.html_last_updated_fmt()` —
+  `None` by default, matching upstream's default of not showing a
+  last-updated date. (Matches the same simplified/accepted-deviation handling
+  already used by `theme_render.rs`: no actual strftime-style formatting when
+  a custom format string is configured.)
+- Added `PyCompactFormatter` (a custom `serde_json::ser::Formatter`) and
+  switched both `write_globalcontext` and `write_page` from
+  `serde_json::to_writer_pretty` to a compact, single-line, Python-`json.dump`-style
+  serialization (`", "` between items, `": "` after keys, no indentation) —
+  the previous pretty-printed multi-line output never matched Python's byte
+  format at all.
+- Verified via `cargo test -p sphinxdocrs --lib` (735 passed, single-threaded)
+  plus `--test builders_json`/`--test application` (59 passed), and a new
+  real-Python parity test `json_parity_sourcename_exact_match` (gated behind
+  `test-parity-jsonbuilder`) asserting exact `sourcename` equality against a
+  live `sphinx-build -b json` run — passing. Also confirmed by hand against a
+  `tmp/`-built fixture with `html_copy_source = False`: both sides emit
+  `"sourcename": ""`, `"page_source_suffix": ".rst"`, `"last_updated": null`,
+  with identical compact-JSON separator style.
+- Not attempted: `searchindex.json`, full theme-context field parity (`meta`,
+  `metatags`, `rellinks`, `sidebars`, `alabaster_version`, `theme_*` options,
+  etc.), and `environment.pickle`/`environment.json` — all remain as before,
+  out of scope for this pass.
 
 ##### H11.7 Delivery order and completion gate
 

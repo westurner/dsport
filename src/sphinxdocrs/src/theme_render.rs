@@ -809,9 +809,15 @@ fn build_global_context(
         "sourcelink_suffix".into(),
         config.html_sourcelink_suffix().into(),
     );
+    // Real `DirectoryHTMLBuilder` never overrides `link_suffix` (only
+    // `get_target_uri`/`get_output_path`) — it stays `self.out_suffix`
+    // (`.html`) for html, dirhtml, and singlehtml alike (verified against a
+    // real `sphinx-build -b dirhtml` run; `sphinx/builders/html/__init__.py`
+    // sets `link_suffix = self.out_suffix` in `init_templates`, and
+    // `sphinx/builders/dirhtml.py`'s `DirectoryHTMLBuilder` doesn't touch it).
     let (builder, file_suffix, link_suffix) = match path_style {
         PathStyle::Flat => ("html", ".html", ".html"),
-        PathStyle::Dir => ("dirhtml", ".html", "/"),
+        PathStyle::Dir => ("dirhtml", ".html", ".html"),
     };
     ctx.insert("file_suffix".into(), file_suffix.into());
     ctx.insert("link_suffix".into(), link_suffix.into());
@@ -1219,6 +1225,26 @@ mod tests {
             script_files.contains(&"extra.js".to_string()),
             "{script_files:?}"
         );
+    }
+
+    /// Regression test: real `DirectoryHTMLBuilder` never overrides
+    /// `link_suffix` (only `get_target_uri`/`get_output_path`), so the
+    /// dirhtml page context's `link_suffix` is `.html`, never `/` (verified
+    /// against a real `sphinx-build -b dirhtml` run).
+    #[test]
+    fn build_global_context_link_suffix_is_html_for_dirhtml_too() {
+        let env = make_test_env(
+            "/tmp/theme-render-test-link-suffix-src",
+            "/tmp/theme-render-test-link-suffix-doctrees",
+        );
+        let outdir = Path::new("/tmp/theme-render-test-link-suffix-outdir-does-not-exist");
+        for style in [PathStyle::Flat, PathStyle::Dir] {
+            let ctx = build_global_context(&env, outdir, &Default::default(), &[], style);
+            assert_eq!(
+                ctx["link_suffix"], ".html",
+                "path_style {style:?} should report link_suffix = .html"
+            );
+        }
     }
 
     /// A registered asset whose filename is already present in the

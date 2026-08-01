@@ -29,7 +29,7 @@ pub use html5_writer::html5;
 pub use latex_writer::latex;
 pub use manpage_writer::manpage;
 pub use odt_writer::odt;
-pub use parser::{parse_rst, parse_rst_with_source};
+pub use parser::{TitlePromotion, parse_rst, parse_rst_with_options, parse_rst_with_source};
 pub use text_writer::text;
 pub use writer::pseudo_xml;
 pub use xml_writer::to_xml;

@@ -49,7 +49,10 @@ fn build_all_over_a_multi_document_project_with_subdirectory() {
     assert_eq!(result.written, 2);
 
     let index_txt = std::fs::read_to_string(out.path().join("index.txt")).unwrap();
-    assert!(index_txt.starts_with("Welcome\n=======\n"));
+    // Real Sphinx sets `doctitle_xform = False`, so a lone top-level heading
+    // is a normal level-1 section (not a promoted document title) and uses
+    // the first `text_sectionchars` char (`*`), not docutils' `=` default.
+    assert!(index_txt.starts_with("Welcome\n*******\n"));
     assert!(index_txt.contains("Homepage **content**."));
 
     let intro_txt = std::fs::read_to_string(out.path().join("guide/intro.txt")).unwrap();

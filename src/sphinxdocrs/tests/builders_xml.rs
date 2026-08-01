@@ -14,8 +14,16 @@ use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 
 fn assert_well_formed(xml: &str) {
     let mut stack: Vec<String> = Vec::new();
-    for line in xml.lines().skip(2) {
+    for line in xml.lines() {
         let trimmed = line.trim_start();
+        // Skip the `<?xml ...?>` declaration, `<!DOCTYPE ...>`, and any
+        // `<!-- ... -->` generator comment — none of these are elements.
+        if trimmed.starts_with("<?")
+            || trimmed.starts_with("<!DOCTYPE")
+            || trimmed.starts_with("<!--")
+        {
+            continue;
+        }
         if let Some(rest) = trimmed.strip_prefix("</") {
             let name = rest.trim_end_matches('>').to_string();
             assert_eq!(stack.pop(), Some(name), "mismatched closing tag in: {xml}");

@@ -173,7 +173,8 @@ fn fjson_current_page_name_matches_docname() {
     assert_eq!(ctx.current_page_name, "guide/intro");
 }
 
-/// `sourcename` must be `<docname>.rst`.
+/// `sourcename` must be `<docname><source_suffix><html_sourcelink_suffix>`
+/// (default config: `html_copy_source=true`, `html_sourcelink_suffix=".txt"`).
 #[test]
 fn fjson_sourcename_is_docname_rst() {
     let out = TempDir::new().unwrap();
@@ -181,7 +182,8 @@ fn fjson_sourcename_is_docname_rst() {
         .build_doc("index", "Title\n=====\n\nContent.\n", out.path())
         .unwrap();
     let ctx = parse_page(out.path(), "index");
-    assert_eq!(ctx.sourcename, "index.rst");
+    assert_eq!(ctx.sourcename, "index.rst.txt");
+    assert_eq!(ctx.page_source_suffix, ".rst");
 }
 
 /// `body` must contain HTML markup from the RST input.
@@ -357,9 +359,10 @@ fn globalcontext_titles_contains_all_docs() {
     );
 }
 
-/// `GlobalContext.last_updated` must look like `YYYY-MM-DD`.
+/// `GlobalContext.last_updated` is `None` by default (`html_last_updated_fmt`
+/// unset), matching upstream's default of not showing a last-updated date.
 #[test]
-fn globalcontext_last_updated_is_date() {
+fn globalcontext_last_updated_is_none_by_default() {
     let src = TempDir::new().unwrap();
     let out = TempDir::new().unwrap();
 
@@ -371,19 +374,7 @@ fn globalcontext_last_updated_is_date() {
         .unwrap();
 
     let gc = parse_globalcontext(out.path());
-    // Expect format YYYY-MM-DD (10 chars, digits and hyphens)
-    assert_eq!(
-        gc.last_updated.len(),
-        10,
-        "last_updated should be YYYY-MM-DD"
-    );
-    assert!(
-        gc.last_updated
-            .chars()
-            .all(|c| c.is_ascii_digit() || c == '-'),
-        "last_updated should only contain digits and hyphens; got {:?}",
-        gc.last_updated
-    );
+    assert_eq!(gc.last_updated, None);
 }
 
 // ── serde round-trips ─────────────────────────────────────────────────────────
@@ -400,7 +391,8 @@ fn page_context_serde_round_trip() {
         parents: Vec::new(),
         prev: None,
         next: None,
-        sourcename: "index.rst".into(),
+        sourcename: "index.rst.txt".into(),
+        page_source_suffix: ".rst".into(),
     };
     let json = serde_json::to_string_pretty(&original).unwrap();
     let restored: PageContext = serde_json::from_str(&json).unwrap();
@@ -416,7 +408,7 @@ fn global_context_serde_round_trip() {
         release: "1.2.3".into(),
         version: "1.2".into(),
         builder: "json".into(),
-        last_updated: "2024-06-01".into(),
+        last_updated: Some("2024-06-01".into()),
         titles: HashMap::from([
             ("index".into(), "Index Page".into()),
             ("guide".into(), "User Guide".into()),
@@ -445,6 +437,7 @@ fn page_context_json_has_required_keys() {
         "display_toc",
         "current_page_name",
         "sourcename",
+        "page_source_suffix",
     ] {
         assert!(obj.contains_key(*key), "missing required key: {key}");
     }
@@ -477,7 +470,7 @@ fn build_all_md_only_project() {
     assert!(out.path().join("index.fjson").exists());
 }
 
-/// `sourcename` in `.fjson` must use `.md` for an `.md` source file.
+/// `page_source_suffix` in `.fjson` must be `.md` for an `.md` source file.
 #[test]
 fn fjson_sourcename_reflects_md_extension() {
     let src = TempDir::new().unwrap();
@@ -492,9 +485,10 @@ fn fjson_sourcename_reflects_md_extension() {
         .unwrap();
 
     let ctx = parse_page(out.path(), "index");
+    assert_eq!(ctx.page_source_suffix, ".md");
     assert!(
-        ctx.sourcename.ends_with(".md"),
-        "sourcename should end with .md; got {:?}",
+        ctx.sourcename.ends_with(".md.txt"),
+        "sourcename should end with .md.txt; got {:?}",
         ctx.sourcename
     );
 }
@@ -531,7 +525,7 @@ fn build_all_mixed_rst_and_md() {
     }
 }
 
-/// Each `.fjson` in a mixed project carries the correct `sourcename` extension.
+/// Each `.fjson` in a mixed project carries the correct `page_source_suffix`.
 #[test]
 fn fjson_sourcename_per_extension_in_mixed_project() {
     let src = TempDir::new().unwrap();
@@ -552,16 +546,8 @@ fn fjson_sourcename_per_extension_in_mixed_project() {
     let rst_ctx = parse_page(out.path(), "page_rst");
     let md_ctx = parse_page(out.path(), "page_md");
 
-    assert!(
-        rst_ctx.sourcename.ends_with(".rst"),
-        "RST sourcename should end with .rst; got {:?}",
-        rst_ctx.sourcename
-    );
-    assert!(
-        md_ctx.sourcename.ends_with(".md"),
-        "MD sourcename should end with .md; got {:?}",
-        md_ctx.sourcename
-    );
+    assert_eq!(rst_ctx.page_source_suffix, ".rst");
+    assert_eq!(md_ctx.page_source_suffix, ".md");
 }
 
 /// When both `index.rst` and `index.md` exist, the first configured suffix wins.
@@ -588,10 +574,9 @@ fn build_all_first_suffix_wins_on_docname_conflict() {
 
     // Only one index.fjson should exist; it should come from the .rst source.
     let ctx = parse_page(out.path(), "index");
-    assert!(
-        ctx.sourcename.ends_with(".rst"),
-        "first suffix (.rst) should win; got {:?}",
-        ctx.sourcename
+    assert_eq!(
+        ctx.page_source_suffix, ".rst",
+        "first suffix (.rst) should win"
     );
     assert!(
         ctx.body.contains("From RST") || ctx.title.contains("RST"),

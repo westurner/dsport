@@ -323,11 +323,11 @@ fn build_render_context(
     ctx.insert("release".into(), Value::String(config.release()));
     ctx.insert("version".into(), Value::String(config.version()));
     ctx.insert("language".into(), Value::String(config.language()));
-    let (file_suffix, link_suffix) = if builder == "dirhtml" {
-        (".html", "/")
-    } else {
-        (".html", ".html")
-    };
+    // `link_suffix` always equals `out_suffix` (`.html`) for html, dirhtml,
+    // and singlehtml alike: real `DirectoryHTMLBuilder` never overrides
+    // `link_suffix`, only `get_target_uri`/`get_output_path` (verified
+    // against a real `sphinx-build -b dirhtml` run's `documentation_options.js`).
+    let (file_suffix, link_suffix) = (".html", ".html");
     ctx.insert("builder".into(), Value::String(builder.into()));
     ctx.insert("file_suffix".into(), Value::String(file_suffix.into()));
     ctx.insert("link_suffix".into(), Value::String(link_suffix.into()));
@@ -539,4 +539,23 @@ mod tests {
         // Must not panic or error.
         copy_theme_static_files(&cfg, out.path(), out.path()).unwrap();
     }
+
+    /// Regression test: real `DirectoryHTMLBuilder` never overrides
+    /// `link_suffix` (only `get_target_uri`/`get_output_path`), so
+    /// `documentation_options.js`'s `LINK_SUFFIX` is `.html` for dirhtml too,
+    /// never `/` (verified against a real `sphinx-build -b dirhtml` run).
+    #[test]
+    fn link_suffix_is_html_for_every_html_family_builder() {
+        let cfg = SphinxConfig::new_defaults();
+        for builder in ["html", "dirhtml", "singlehtml"] {
+            let theme = ResolvedTheme::default();
+            let ctx = build_render_context(&cfg, &theme, builder);
+            assert_eq!(
+                ctx.get("link_suffix"),
+                Some(&serde_json::Value::String(".html".into())),
+                "builder `{builder}` should report link_suffix = .html"
+            );
+        }
+    }
 }
+

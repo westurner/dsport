@@ -28,17 +28,14 @@ pub fn text(tree: &Doctree) -> String {
     let mut blocks: Vec<String> = Vec::new();
     // A lone top-level section is promoted into `Document.title` by the
     // parser (`promote_document_title`), which also hoists that section's
-    // children up to be the document's direct children. Render the
-    // promoted title as the top heading first, then walk the (already
-    // flattened) children at depth 0 rather than depth 1.
-    if let NodeKind::Document { title, .. } = &tree.node(tree.root()).kind {
-        if !title.is_empty() {
-            let underline = section_underline_char(0)
-                .to_string()
-                .repeat(display_width(title));
-            blocks.push(format!("{title}\n{underline}"));
-        }
-    }
+    // (and, per real Sphinx's `depart_title`, the root-level title itself
+    // uses the same first `text_sectionchars` entry a genuine depth-0
+    // section would) children up to be the document's direct children,
+    // including the hoisted `Title` node itself. Do NOT render a separate
+    // synthetic heading from `Document.title` here — the loop below
+    // already visits that hoisted `Title` node once (see the `Title` arm
+    // in `render_block_recursive`), so rendering it again here would
+    // duplicate the title.
     for &child in &tree.node(tree.root()).children {
         render_block(tree, child, 0, &mut blocks);
     }
@@ -147,8 +144,17 @@ fn render_block_recursive(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut
             blocks.extend(body_blocks);
         }
         NodeKind::Title => {
-            // Only reached for a stray/unparented Title; render as a plain line.
-            blocks.push(inline_text(tree, id));
+            // Only reached for the root-level `Title` node left behind by
+            // `promote_document_title` (a real `Section`'s `Title` child is
+            // consumed directly by the `Section` arm above, never dispatched
+            // here). Real Sphinx never promotes document titles
+            // (`doctitle_xform`/`sectsubtitle_xform` are both `False`), so
+            // this heading is really still "depth 0" from
+            // `text_sectionchars`' point of view — render it with the same
+            // underline rule as a genuine depth-0 section title.
+            let t = inline_text(tree, id);
+            let underline = section_underline_char(0).to_string().repeat(display_width(&t));
+            blocks.push(format!("{t}\n{underline}"));
         }
         NodeKind::Subtitle { .. } => {
             // Promoted by `promote_document_title` when a document has a
@@ -454,9 +460,11 @@ fn collect_table_rows(tree: &Doctree, id: NodeId, rows: &mut Vec<String>) {
     }
 }
 
-/// `SECTIONING_CHARS`-style rotation, independent of `sphinxdocrs`'s own
-/// constant of the same shape (this crate has no dependency on that one).
-const SECTION_UNDERLINES: [char; 4] = ['=', '-', '~', '"'];
+/// Mirrors Sphinx's own `text_sectionchars` config default
+/// (`sphinx.builders.text`: `app.add_config_value('text_sectionchars',
+/// '*=-~"+\`', ...)`), independent of `sphinxdocrs`'s own constant of a
+/// similar shape (this crate has no dependency on that one).
+const SECTION_UNDERLINES: [char; 7] = ['*', '=', '-', '~', '"', '+', '`'];
 
 fn section_underline_char(depth: usize) -> char {
     SECTION_UNDERLINES[depth.min(SECTION_UNDERLINES.len() - 1)]
@@ -531,18 +539,24 @@ mod tests {
 
     #[test]
     fn renders_a_section_title_with_underline() {
+        // A lone top-level section is promoted into the document title by
+        // the parser; real Sphinx never promotes (`doctitle_xform=False`)
+        // so this heading is effectively still "depth 0" and uses the
+        // first `text_sectionchars` entry ('*'), not a distinct char.
         let tree = parse_rst_with_source("Title\n=====\n\nBody text.\n", "<string>");
         let out = text(&tree);
-        assert!(out.starts_with("Title\n=====\n"));
+        assert!(out.starts_with("Title\n*****\n"));
         assert!(out.contains("Body text."));
+        // The promoted title must be rendered exactly once, not duplicated.
+        assert_eq!(out.matches("Title").count(), 1);
     }
 
     #[test]
     fn nested_sections_use_rotating_underline_chars() {
         let tree = parse_rst_with_source("Top\n===\n\nSub\n---\n\nbody\n", "<string>");
         let out = text(&tree);
-        assert!(out.contains("Top\n===\n"));
-        assert!(out.contains("Sub\n---\n"));
+        assert!(out.contains("Top\n***\n"));
+        assert!(out.contains("Sub\n===\n"));
     }
 
     #[test]

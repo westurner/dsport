@@ -39,6 +39,7 @@
 //! [`source_suffixes`]: JsonBuilder::source_suffixes
 
 use std::collections::HashMap;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use docutilsrs::cli::{CommonOptions, Html5Options};
@@ -47,6 +48,48 @@ use serde::{Deserialize, Serialize};
 
 use super::{BuildError, BuildResult, Builder};
 use crate::environment::BuildEnvironment;
+
+/// A [`serde_json::ser::Formatter`] matching Python's `json.dump(obj)`
+/// default output exactly: a single line, `", "` between array/object
+/// items and `": "` after each key, no indentation. `serde_json`'s built-in
+/// `CompactFormatter` omits those spaces, and `PrettyFormatter` uses
+/// multi-line indentation — neither matches real Sphinx's serializing
+/// builders, which just call `json.dump` with no `indent`/`separators`
+/// argument (verified against a real `sphinx-build -b json` run).
+struct PyCompactFormatter;
+
+impl serde_json::ser::Formatter for PyCompactFormatter {
+    fn begin_array_value<W>(&mut self, writer: &mut W, first: bool) -> io::Result<()>
+    where
+        W: ?Sized + io::Write,
+    {
+        writer.write_all(if first { b"" } else { b", " })
+    }
+
+    fn begin_object_key<W>(&mut self, writer: &mut W, first: bool) -> io::Result<()>
+    where
+        W: ?Sized + io::Write,
+    {
+        writer.write_all(if first { b"" } else { b", " })
+    }
+
+    fn begin_object_value<W>(&mut self, writer: &mut W) -> io::Result<()>
+    where
+        W: ?Sized + io::Write,
+    {
+        writer.write_all(b": ")
+    }
+}
+
+/// Serialize `value` as compact, single-line JSON using Python's default
+/// `", "`/`": "` separators (see [`PyCompactFormatter`]).
+fn to_py_json_writer<W: io::Write, T: Serialize + ?Sized>(
+    writer: W,
+    value: &T,
+) -> serde_json::Result<()> {
+    let mut ser = serde_json::Serializer::with_formatter(writer, PyCompactFormatter);
+    value.serialize(&mut ser)
+}
 
 // ── Output data model ─────────────────────────────────────────────────────────
 
@@ -62,8 +105,16 @@ pub struct PageContext {
     pub parents: Vec<RelatedDoc>,
     pub prev: Option<RelatedDoc>,
     pub next: Option<RelatedDoc>,
-    /// Source file name including extension (e.g. `"index.rst"`, `"guide.md"`).
+    /// The copied-source link name (e.g. `"index.rst.txt"`), or `""` when
+    /// `html_copy_source` is disabled. Mirrors upstream
+    /// `StandaloneHTMLBuilder.write_doc`'s `sourcename` local exactly:
+    /// `docname + source_suffix`, plus `html_sourcelink_suffix` appended
+    /// unless it already equals `source_suffix`; empty when
+    /// `html_copy_source` is `False`.
     pub sourcename: String,
+    /// The document's raw source suffix (e.g. `".rst"`), independent of
+    /// `html_copy_source`/`sourcename`. Mirrors upstream's `page_source_suffix`.
+    pub page_source_suffix: String,
 }
 
 /// A related document link.
@@ -81,7 +132,9 @@ pub struct GlobalContext {
     pub release: String,
     pub version: String,
     pub builder: String,
-    pub last_updated: String,
+    /// `None` unless `html_last_updated_fmt` is configured — matches
+    /// upstream's default of not showing a last-updated date at all.
+    pub last_updated: Option<String>,
     pub titles: HashMap<String, String>,
 }
 
@@ -210,28 +263,42 @@ impl JsonBuilder {
             release: env.config.release(),
             version: env.config.version(),
             builder: "json".into(),
-            last_updated: current_date_utc(),
+            last_updated: env.config.html_last_updated_fmt(),
             titles,
         };
         let path = outdir.join(&self.globalcontext_filename);
         let file = std::fs::File::create(&path).map_err(BuildError::Io)?;
-        serde_json::to_writer_pretty(file, &ctx)
+        to_py_json_writer(file, &ctx)
             .map_err(|e| BuildError::Other(format!("globalcontext serialization failed: {e}")))?;
         Ok(())
     }
 
-    /// Core per-page writer.  `source_suffix` is recorded verbatim in `sourcename`.
+    /// Core per-page writer.  `source_suffix` is recorded verbatim in
+    /// `page_source_suffix`; `sourcename` follows upstream's
+    /// `html_copy_source`-gated formula (see [`PageContext::sourcename`]).
     fn write_page(
         &self,
         docname: &str,
         source: &str,
         outdir: &Path,
         source_suffix: &str,
+        config: &crate::config::SphinxConfig,
     ) -> Result<(), BuildError> {
         let body = self.render_body(docname, source);
         let title = Self::extract_title(docname, source);
         let target_uri = self.get_target_uri(docname);
         let (toc, display_toc) = Self::build_toc(source, &target_uri);
+
+        let sourcename = if config.html_copy_source() {
+            let sourcelink_suffix = config.html_sourcelink_suffix();
+            let mut name = format!("{docname}{source_suffix}");
+            if source_suffix != sourcelink_suffix {
+                name.push_str(&sourcelink_suffix);
+            }
+            name
+        } else {
+            String::new()
+        };
 
         let ctx = PageContext {
             body,
@@ -242,7 +309,8 @@ impl JsonBuilder {
             parents: Vec::new(),
             prev: None,
             next: None,
-            sourcename: format!("{docname}{source_suffix}"),
+            sourcename,
+            page_source_suffix: source_suffix.to_string(),
         };
 
         let rel: PathBuf = docname
@@ -254,7 +322,7 @@ impl JsonBuilder {
             std::fs::create_dir_all(parent)?;
         }
         let file = std::fs::File::create(&out_path).map_err(BuildError::Io)?;
-        serde_json::to_writer_pretty(file, &ctx)
+        to_py_json_writer(file, &ctx)
             .map_err(|e| BuildError::Other(format!("page serialization failed: {e}")))?;
         Ok(())
     }
@@ -316,7 +384,13 @@ impl Builder for JsonBuilder {
             .first()
             .map(String::as_str)
             .unwrap_or(".rst");
-        self.write_page(docname, source, outdir, suffix)
+        self.write_page(
+            docname,
+            source,
+            outdir,
+            suffix,
+            &crate::config::SphinxConfig::new_defaults(),
+        )
     }
 
     /// Build all source documents, honouring all configured `source_suffixes`.
@@ -361,7 +435,7 @@ impl Builder for JsonBuilder {
                     })?;
             let title = Self::extract_title(docname, &source);
             titles.insert(docname.clone(), html_escape(&title));
-            self.write_page(docname, &source, outdir, suffix)?;
+            self.write_page(docname, &source, outdir, suffix, &env.config)?;
             result.written += 1;
         }
 
@@ -425,30 +499,6 @@ fn src_path_for_docname(srcdir: &Path, docname: &str, source_suffix: &str) -> Pa
     // would yield "changes/0.rst" instead of "changes/0.1.rst").
     let ext = source_suffix.trim_start_matches('.');
     srcdir.join(format!("{docname}.{ext}"))
-}
-
-fn current_date_utc() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    epoch_secs_to_date(secs)
-}
-
-fn epoch_secs_to_date(secs: u64) -> String {
-    let days = (secs / 86400) as i64;
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{:04}-{:02}-{:02}", y, m, d)
 }
 
 fn html_escape(s: &str) -> String {
@@ -557,7 +607,11 @@ mod tests {
             .unwrap();
         let raw = std::fs::read_to_string(tmp.path().join("index.fjson")).unwrap();
         let ctx: PageContext = serde_json::from_str(&raw).unwrap();
-        assert_eq!(ctx.sourcename, "index.rst");
+        // Real Sphinx: sourcename = docname + source_suffix, plus
+        // html_sourcelink_suffix (".txt" by default) appended unless it
+        // already equals source_suffix.
+        assert_eq!(ctx.sourcename, "index.rst.txt");
+        assert_eq!(ctx.page_source_suffix, ".rst");
     }
 
     #[test]
@@ -568,7 +622,32 @@ mod tests {
             .unwrap();
         let raw = std::fs::read_to_string(tmp.path().join("readme.fjson")).unwrap();
         let ctx: PageContext = serde_json::from_str(&raw).unwrap();
-        assert_eq!(ctx.sourcename, "readme.md");
+        assert_eq!(ctx.sourcename, "readme.md.txt");
+        assert_eq!(ctx.page_source_suffix, ".md");
+    }
+
+    #[test]
+    fn write_page_sourcename_is_empty_when_html_copy_source_disabled() {
+        let tmp = TempDir::new().unwrap();
+        let mut raw_config = HashMap::new();
+        raw_config.insert(
+            "html_copy_source".to_string(),
+            crate::config::ConfigVal::Bool(false),
+        );
+        let config = crate::config::SphinxConfig::new(raw_config, HashMap::new());
+        JsonBuilder::new()
+            .write_page(
+                "index",
+                "Title\n=====\n\nContent.\n",
+                tmp.path(),
+                ".rst",
+                &config,
+            )
+            .unwrap();
+        let raw = std::fs::read_to_string(tmp.path().join("index.fjson")).unwrap();
+        let ctx: PageContext = serde_json::from_str(&raw).unwrap();
+        assert_eq!(ctx.sourcename, "");
+        assert_eq!(ctx.page_source_suffix, ".rst");
     }
 
     // ── discover_sources ──────────────────────────────────────────────────────
@@ -630,16 +709,6 @@ mod tests {
         );
     }
 
-    // ── epoch_secs_to_date ────────────────────────────────────────────────────
-
-    #[test]
-    fn epoch_unix_zero_is_1970_01_01() {
-        assert_eq!(epoch_secs_to_date(0), "1970-01-01");
-    }
-    #[test]
-    fn epoch_known_date() {
-        assert_eq!(epoch_secs_to_date(1_704_067_200), "2024-01-01");
-    }
 
     // ── serde round-trips ─────────────────────────────────────────────────────
 
@@ -654,7 +723,8 @@ mod tests {
             parents: Vec::new(),
             prev: None,
             next: None,
-            sourcename: "index.rst".into(),
+            sourcename: "index.rst.txt".into(),
+            page_source_suffix: ".rst".into(),
         };
         let back: PageContext =
             serde_json::from_str(&serde_json::to_string(&ctx).unwrap()).unwrap();
@@ -669,12 +739,40 @@ mod tests {
             release: "1.0.0".into(),
             version: "1.0".into(),
             builder: "json".into(),
-            last_updated: "2024-01-01".into(),
+            last_updated: None,
             titles: HashMap::from([("index".into(), "Welcome".into())]),
         };
         let back: GlobalContext =
             serde_json::from_str(&serde_json::to_string(&ctx).unwrap()).unwrap();
         assert_eq!(ctx, back);
+    }
+
+    // ── PyCompactFormatter ────────────────────────────────────────────────────
+
+    #[test]
+    fn to_py_json_writer_matches_python_json_dump_style() {
+        let ctx = PageContext {
+            body: "<p>Hi</p>".into(),
+            title: "Hi".into(),
+            toc: String::new(),
+            display_toc: false,
+            current_page_name: "index".into(),
+            parents: vec![RelatedDoc {
+                link: "../".into(),
+                title: "Up".into(),
+            }],
+            prev: None,
+            next: None,
+            sourcename: "index.rst.txt".into(),
+            page_source_suffix: ".rst".into(),
+        };
+        let mut buf = Vec::new();
+        to_py_json_writer(&mut buf, &ctx).unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        // Single line: no embedded newlines, and Python-style `, `/`: ` separators.
+        assert!(!out.contains('\n'));
+        assert!(out.starts_with("{\"body\": \"<p>Hi</p>\", \"title\": \"Hi\""));
+        assert!(out.contains("\"link\": \"../\", \"title\": \"Up\""));
     }
 
     // ── html_escape ───────────────────────────────────────────────────────────

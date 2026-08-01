@@ -17,7 +17,7 @@
 
 use std::path::{Path, PathBuf};
 
-use docutilsrs::{parse_rst_with_source, pseudo_xml};
+use docutilsrs::{TitlePromotion, parse_rst_with_options, pseudo_xml};
 
 use super::{BuildError, BuildResult, Builder};
 use crate::environment::BuildEnvironment;
@@ -48,7 +48,7 @@ impl Builder for PseudoxmlBuilder {
     }
 
     fn build_doc(&self, docname: &str, source: &str, outdir: &Path) -> Result<(), BuildError> {
-        let tree = parse_rst_with_source(source, docname);
+        let tree = parse_rst_with_options(source, docname, TitlePromotion::Preserve);
         let output = pseudo_xml(&tree);
         let rel: PathBuf = docname.split('/').collect::<PathBuf>();
         let out_path = outdir.join(rel).with_extension("pseudoxml");

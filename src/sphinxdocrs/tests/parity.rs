@@ -767,8 +767,10 @@ fn apidoc_parity_basic() {
 //
 // Accepted deviations:
 //   - Python emits many extra theme/template keys; Rust emits core spec keys only.
-//   - `sourcename`: Python appends `.txt`; Rust emits `<docname>.rst`.
 //   - `body`: Python wraps in full Jinja2 templates; Rust emits a raw fragment.
+//   - `last_updated`: both default to `null`/`None` (no `html_last_updated_fmt`
+//     configured); Rust does not implement actual strftime-style date
+//     formatting when a custom format string is configured (accepted deviation).
 //
 // Note: `cfg(feature = "test-parity-jsonbuilder")` implies `cfg(feature = "test-parity")`
 // because `test-parity-jsonbuilder` depends on `test-parity` in Cargo.toml.
@@ -1008,6 +1010,31 @@ fn json_parity_body_contains_rst_content() {
     assert!(
         rs_body.contains("Another paragraph"),
         "Rust body should contain RST text"
+    );
+}
+
+/// `sourcename` must match exactly between Python and Rust (formula:
+/// `docname + source_suffix`, plus `html_sourcelink_suffix` appended unless
+/// it already equals `source_suffix`, gated on `html_copy_source`).
+#[cfg(feature = "test-parity-jsonbuilder")]
+#[test]
+fn json_parity_sourcename_exact_match() {
+    if !has_python() {
+        return;
+    }
+    let src = TempDir::new().unwrap();
+    let py_out = TempDir::new().unwrap();
+    let rs_out = TempDir::new().unwrap();
+    write_conf_py(src.path(), "ParityTest", "Parity Author", "1.0.0", "1.0");
+    std::fs::write(src.path().join("index.rst"), PARITY_RST).unwrap();
+    if !run_sphinx_json(src.path(), py_out.path()) {
+        return;
+    }
+    build_rust_json(src.path(), rs_out.path());
+    assert_eq!(
+        load_fjson(py_out.path(), "index")["sourcename"],
+        load_fjson(rs_out.path(), "index")["sourcename"],
+        "sourcename must match exactly"
     );
 }
 

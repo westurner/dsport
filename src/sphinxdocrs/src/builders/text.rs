@@ -17,7 +17,7 @@
 
 use std::path::{Path, PathBuf};
 
-use docutilsrs::{parse_rst_with_source, text};
+use docutilsrs::{TitlePromotion, parse_rst_with_options, text};
 
 use super::{BuildError, BuildResult, Builder};
 use crate::environment::BuildEnvironment;
@@ -49,7 +49,7 @@ impl Builder for TextBuilder {
     }
 
     fn build_doc(&self, docname: &str, source: &str, outdir: &Path) -> Result<(), BuildError> {
-        let tree = parse_rst_with_source(source, docname);
+        let tree = parse_rst_with_options(source, docname, TitlePromotion::Preserve);
         let output = text(&tree);
         let rel: PathBuf = docname.split('/').collect::<PathBuf>();
         let out_path = outdir.join(rel).with_extension("txt");
@@ -114,7 +114,10 @@ mod tests {
             .build_doc("index", "Title\n=====\n\nHello *world*.\n", tmp.path())
             .unwrap();
         let out = std::fs::read_to_string(tmp.path().join("index.txt")).unwrap();
-        assert!(out.starts_with("Title\n=====\n"));
+        // Real Sphinx never promotes a document's title (`doctitle_xform =
+        // False`), so the lone top-level heading stays a real depth-0
+        // section and uses the first `text_sectionchars` entry ('*').
+        assert!(out.starts_with("Title\n*****\n"));
         assert!(out.contains("Hello *world*."));
     }
 

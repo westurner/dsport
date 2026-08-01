@@ -189,10 +189,7 @@ fn findall_candidate_ids(
 
     if siblings || ascend {
         let mut node = start;
-        loop {
-            let Some(parent) = tree.node(node).parent else {
-                break;
-            };
+        while let Some(parent) = tree.node(node).parent {
             let idx = tree.node(parent).children.iter().position(|&c| c == node);
             if let Some(idx) = idx {
                 for &sibling in &tree.node(parent).children[idx + 1..] {

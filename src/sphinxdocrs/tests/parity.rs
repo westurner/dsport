@@ -175,7 +175,7 @@ fn python_bin() -> String {
 }
 
 fn has_python() -> bool {
-    Command::new(&python_bin())
+    Command::new(python_bin())
         .arg("--version")
         .output()
         .is_ok()
@@ -2773,7 +2773,7 @@ fn log_apidoc_creating_file_format_parity(log_apidoc_shared: &LogApidocShared) {
         .filter(|l| l.contains("Creating file"))
         .map(|l| {
             // Normalise: keep only the filename after the last '/'
-            if let Some(fname) = l.split('/').last() {
+            if let Some(fname) = l.split('/').next_back() {
                 format!("Creating file <PATH>/{fname}")
             } else {
                 l.to_owned()

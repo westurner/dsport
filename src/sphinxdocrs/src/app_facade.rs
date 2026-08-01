@@ -735,27 +735,13 @@ impl PyAppFacade {
     /// defensively rather than assuming every current and future call site
     /// has it to hand).
     pub fn with_builder(
-        events: SharedEvents,
-        config: SharedConfig,
-        assets: SharedAssets,
-        registry: SharedRegistry,
-        env: crate::environment::SharedEnv,
-        raw_config: SharedRawConfig,
-        env_extra: SharedEnvExtra,
+        mut facade: Self,
         outdir: std::rc::Rc<std::path::PathBuf>,
         buildername: std::rc::Rc<String>,
     ) -> Self {
-        Self {
-            events,
-            config,
-            assets,
-            registry,
-            env,
-            raw_config,
-            env_extra,
-            outdir: Some(outdir),
-            buildername: Some(buildername),
-        }
+        facade.outdir = Some(outdir);
+        facade.buildername = Some(buildername);
+        facade
     }
 }
 

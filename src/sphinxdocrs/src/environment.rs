@@ -809,8 +809,8 @@ impl BuildEnvironment {
 
         for line in source.lines() {
             let trimmed = line.trim_start();
-            if trimmed.starts_with(".. highlight::") {
-                let next = trimmed[14..].trim();
+            if let Some(rest) = trimmed.strip_prefix(".. highlight::") {
+                let next = rest.trim();
                 if !next.is_empty() {
                     language = next.to_string();
                 }

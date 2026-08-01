@@ -291,7 +291,7 @@ fn emit_enter(
         NodeKind::SystemMessage { .. } => {}
         NodeKind::ObjectDescription { sig_text, .. } => {
             out.push_str(sig_text);
-            out.push_str("\n");
+            out.push('\n');
             schedule_children(node, section_depth, tasks);
         }
         NodeKind::Extension { class_name, attrs } => {

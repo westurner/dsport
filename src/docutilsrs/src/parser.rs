@@ -2088,30 +2088,28 @@ fn parse_directive(
                 let inner = consume_indented_lines(lines, i_ref, ci);
                 let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
                 let blocks = parse_blocks(&refs, ci, 0);
-                if let Some(first) = blocks.first() {
-                    if let Block::BulletList { items, .. } = first {
-                        for row_item in items {
-                            let mut row_cells = Vec::new();
-                            for cell_block in row_item {
-                                if let Block::BulletList {
-                                    items: cell_items, ..
-                                } = cell_block
-                                {
-                                    for cell_content in cell_items {
-                                        let mut cell_lines = Vec::new();
-                                        for b in cell_content {
-                                            if let Block::Paragraph { text, .. } = b {
-                                                cell_lines.push(text.clone());
-                                            }
+                if let Some(Block::BulletList { items, .. }) = blocks.first() {
+                    for row_item in items {
+                        let mut row_cells = Vec::new();
+                        for cell_block in row_item {
+                            if let Block::BulletList {
+                                items: cell_items, ..
+                            } = cell_block
+                            {
+                                for cell_content in cell_items {
+                                    let mut cell_lines = Vec::new();
+                                    for b in cell_content {
+                                        if let Block::Paragraph { text, .. } = b {
+                                            cell_lines.push(text.clone());
                                         }
-                                        row_cells.push(cell_lines);
                                     }
-                                } else if let Block::Paragraph { text, .. } = cell_block {
-                                    row_cells.push(vec![text.clone()]);
+                                    row_cells.push(cell_lines);
                                 }
+                            } else if let Block::Paragraph { text, .. } = cell_block {
+                                row_cells.push(vec![text.clone()]);
                             }
-                            raw_rows.push(row_cells);
                         }
+                        raw_rows.push(row_cells);
                     }
                 }
             }
@@ -2167,9 +2165,8 @@ fn parse_directive(
                     }
                     let stripped = &l[ind..];
                     if let Some((k, v)) = field_marker(stripped) {
-                        match k.as_str() {
-                            "header-rows" => header_rows = v.trim().parse().unwrap_or(0),
-                            _ => {}
+                        if k.as_str() == "header-rows" {
+                            header_rows = v.trim().parse().unwrap_or(0);
                         }
                         j += 1;
                     } else {

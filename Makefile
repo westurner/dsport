@@ -4,6 +4,7 @@
 	test-cargo-mathrenderrs test-cargo-myst-md-rs test-cargo-pygmentsrs-coverage \
 	test-coverage-pygmentsrs coverage-pygmentsrs \
 	develop-docutilsrs develop-pygmentsrs develop-sphinxdocrs develop-myst-md-rs \
+	parity \
 	test2 test3 \
 	nextest nextest-coverage install-nextest-deps
 
@@ -132,6 +133,9 @@ test-cargo-myst-md-rs:
 
 test-cargo-sphinxdocrs:
 	cd src/sphinxdocrs && cargo test
+
+parity:
+	cd "$(REPO_ROOT)" && cargo test -p sphinxdocrs --features test-parity --test parity
 
 out_dir=.
 test-python:

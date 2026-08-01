@@ -1251,13 +1251,19 @@ defined, but their completion gates should remain independent: typed-node
 fidelity is a doctree compatibility milestone, while highlighting parity is a
 lexer and writer compatibility milestone.
 
-### Tier H11 — parity matrix
+### Tier H11 — parity matrix ✅
 
-Expand `tests/parity.rs` from 2 scenarios to a matrix over
-`{builder} × {fixture doc set}` for every builder in `NATIVE_BUILDERS`,
-diffing Rust vs Python output trees through a normalizer for accepted
-deviations (timestamps, generator comments). Add a `make parity` target
-and run it in CI behind `--features test-parity`.
+`src/sphinxdocrs/tests/parity.rs` now builds two self-contained fixture
+document sets with every builder in `NATIVE_BUILDERS` (24 combinations),
+using isolated doctree and output directories for Python Sphinx and
+`sphinx-build-rs`. The recursive output trees are normalized for timestamps,
+generator metadata, temporary fixture paths, and JSON object ordering, then
+compared through one deterministic, content-sensitive snapshot report. Exit
+codes remain strict; known native output-shape deviations are recorded as
+missing, extra, or changed artifacts rather than being silently discarded.
+
+`make parity` runs the feature-gated parity test, and the dedicated CI
+`parity` job installs upstream Sphinx/Pygments and runs the same command.
 
 ### Tier H12 — stack-safe docutilsrs renderers
 
@@ -1449,9 +1455,9 @@ the Tier H8 table above for what landed and its accepted deviations);
 follow-up given the risk to the event-bus/`BuildEnvironment` mutation
 model. A third session (2026-07-28) closed **H9a**/**H9b**/**H9c**/
 **H9d** in full (see the Tier H9 writeup above for what landed and its
-accepted deviations). `epub`/`texinfo` (the rest of **H7d**) and
-**H10** remains partial and **H11** is not implemented — each is large enough to
-warrant its own session. This section is a concrete starting point for
+accepted deviations). **H11** is now complete. `epub`/`texinfo` (the rest of
+**H7d**) and **H10** remain large enough to warrant their own sessions. This
+section is a concrete starting point for
 picking them back up, based on what these sessions learned about the
 codebase's actual shape (as opposed to `docutilsrs::doctree::NodeKind`
 in the abstract):
@@ -1494,19 +1500,13 @@ in the abstract):
   Python fallback). The remaining work is the Sphinx-specific highlighting
   parity suite and top-language gate described in §9, not lexer breadth;
   re-check `docs/pygments-port-inventory.md` when selecting that matrix.
-- **H11 (parity matrix).** The most self-contained of the five — it's
-  test-infrastructure work over builders that already exist (including
-  the ten native builders this session added/completed:
-  `text`/`xml`/`pseudoxml`/`dirhtml`/`singlehtml`/`gettext`/`changes`
-  plus the pre-existing `html`/`json`/`latex`/`man`/`linkcheck`), gated
-  behind `--features test-parity` so it doesn't need a design decision
-  before starting, just Python + upstream Sphinx available in the test
-  environment.
+- **H11 (parity matrix) — done.** The feature-gated matrix covers the two
+  fixture sets against all twelve native builders, with deterministic output
+  normalization and a committed parity-gap snapshot. It requires only Python
+  plus upstream Sphinx in the test environment.
 
-Suggested order if resuming: **H11** first (cheapest, and will likely
-surface real parity gaps in the builders already added, which is
-valuable feedback before investing in H7d's remainder); then
-**H7d**'s `epub` (self-contained, reuses `zip_writer`); then **H8d**
+Suggested order if resuming: **H7d**'s `epub` (self-contained, reuses
+`zip_writer`); then **H8d**
 (parallel read/write, the one remaining H8 item, now that H8a/b/c's
 sequential incremental pipeline is the proven baseline to parallelize
 safely against); the rest are independent enough to parallelize across
@@ -1525,7 +1525,7 @@ sessions.
 | 7 | H6 | theming — makes output comparable to real Sphinx sites |
 | 8 | H3b, H3c, H3e | `py`, `rst`, `js` domains |
 | 9 | H7a–H7d, H8 | remaining builders + incremental rebuild |
-| 10 | H9, H10, H3f, H7e, H11 | autodoc depth, highlighting, `c`/`cpp`, long-tail builders, parity matrix |
+| 10 | H9, H10, H3f, H7e | autodoc depth, highlighting, `c`/`cpp`, long-tail builders |
 
 ### 9.3 Definition of done for the H phase
 

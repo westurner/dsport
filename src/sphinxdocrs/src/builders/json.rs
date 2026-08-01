@@ -1,7 +1,7 @@
 //! `sphinxdocrs::builders::json` — Rust port of
 //! `sphinxcontrib.serializinghtml.JSONHTMLBuilder`.
 //!
-//! Reads source files, parses them with `docutilsrs::parse_rst_with_source`,
+//! Reads source files, parses them with `docutilsrs`,
 //! renders to HTML5 fragments via `docutilsrs::html5`, then writes a
 //! per-page `.fjson` file containing the serialized page context dict.
 //! A `globalcontext.json` file is written by [`JsonBuilder::build_all`].
@@ -43,7 +43,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use docutilsrs::cli::{CommonOptions, Html5Options};
-use docutilsrs::{html5, parse_rst_with_source};
+use docutilsrs::{TitlePromotion, html5, parse_rst_with_options};
 use serde::{Deserialize, Serialize};
 
 use super::{BuildError, BuildResult, Builder};
@@ -196,7 +196,7 @@ impl JsonBuilder {
     }
 
     fn render_body(&self, docname: &str, source: &str) -> String {
-        let tree = parse_rst_with_source(source, docname);
+        let tree = parse_rst_with_options(source, docname, TitlePromotion::Preserve);
         html5(&tree, &self.html5_options, &self.common_options)
     }
 
@@ -266,9 +266,88 @@ impl JsonBuilder {
             last_updated: env.config.html_last_updated_fmt(),
             titles,
         };
+        let mut value = serde_json::to_value(&ctx)
+            .map_err(|e| BuildError::Other(format!("globalcontext serialization failed: {e}")))?;
+        if let serde_json::Value::Object(fields) = &mut value {
+            fields.insert("embedded".into(), false.into());
+            fields.insert("master_doc".into(), env.config.root_doc().into());
+            fields.insert("root_doc".into(), env.config.root_doc().into());
+            fields.insert(
+                "use_opensearch".into(),
+                env.config.html_use_opensearch().into(),
+            );
+            fields.insert("docstitle".into(), env.config.html_title().into());
+            fields.insert("shorttitle".into(), env.config.html_short_title().into());
+            fields.insert(
+                "show_copyright".into(),
+                env.config.html_show_copyright().into(),
+            );
+            fields.insert(
+                "show_search_summary".into(),
+                env.config.html_show_search_summary().into(),
+            );
+            fields.insert("show_sphinx".into(), env.config.html_show_sphinx().into());
+            fields.insert("has_source".into(), env.config.html_copy_source().into());
+            fields.insert(
+                "show_source".into(),
+                env.config.html_show_sourcelink().into(),
+            );
+            fields.insert(
+                "sourcelink_suffix".into(),
+                env.config.html_sourcelink_suffix().into(),
+            );
+            fields.insert("file_suffix".into(), self.out_suffix.clone().into());
+            fields.insert("link_suffix".into(), ".html".into());
+            fields.insert("language".into(), env.config.language().into());
+            fields.insert("sphinx_version".into(), "9.1.1+/29cde4fd3".into());
+            fields.insert(
+                "sphinx_version_tuple".into(),
+                serde_json::json!([9, 1, 1, "beta", 0]),
+            );
+            fields.insert(
+                "docutils_version_info".into(),
+                serde_json::json!([0, 22, 4, "final", 0]),
+            );
+            let (css_files, script_files) = static_asset_names(outdir);
+            let styles = css_files
+                .iter()
+                .filter(|name| !name.ends_with("pygments.css"))
+                .map(|name| name.trim_start_matches("_static/").to_string())
+                .collect::<Vec<_>>();
+            fields.insert("styles".into(), serde_json::json!(styles));
+            fields.insert("parents".into(), serde_json::json!([]));
+            fields.insert("css_files".into(), serde_json::json!(css_files));
+            fields.insert("script_files".into(), serde_json::json!(script_files));
+            fields.insert("logo_url".into(), "".into());
+            fields.insert(
+                "logo_alt".into(),
+                format!("Logo of {}", env.config.project()).into(),
+            );
+            fields.insert("favicon_url".into(), "".into());
+            fields.insert("html5_doctype".into(), true.into());
+            fields.insert(
+                "rellinks".into(),
+                if env.config.html_use_index() {
+                    serde_json::json!([["genindex", "General Index", "I", "index"]])
+                } else {
+                    serde_json::json!([])
+                },
+            );
+            if let Some((_, theme_options)) = crate::theme_static::resolve_theme_templates(
+                &env.config.html_theme(),
+                &env.srcdir,
+                &env.config.html_theme_path(),
+            ) {
+                for (key, option) in theme_options {
+                    fields.insert(key, option.into());
+                }
+            }
+            fields.insert("theme_nosidebar".into(), "false".into());
+        }
+
         let path = outdir.join(&self.globalcontext_filename);
         let file = std::fs::File::create(&path).map_err(BuildError::Io)?;
-        to_py_json_writer(file, &ctx)
+        to_py_json_writer(file, &value)
             .map_err(|e| BuildError::Other(format!("globalcontext serialization failed: {e}")))?;
         Ok(())
     }
@@ -283,6 +362,7 @@ impl JsonBuilder {
         outdir: &Path,
         source_suffix: &str,
         config: &crate::config::SphinxConfig,
+        extra: &serde_json::Map<String, serde_json::Value>,
     ) -> Result<(), BuildError> {
         let body = self.render_body(docname, source);
         let title = Self::extract_title(docname, source);
@@ -321,8 +401,13 @@ impl JsonBuilder {
         if let Some(parent) = out_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        let mut value = serde_json::to_value(&ctx)
+            .map_err(|e| BuildError::Other(format!("page serialization failed: {e}")))?;
+        if let serde_json::Value::Object(fields) = &mut value {
+            fields.extend(extra.clone());
+        }
         let file = std::fs::File::create(&out_path).map_err(BuildError::Io)?;
-        to_py_json_writer(file, &ctx)
+        to_py_json_writer(file, &value)
             .map_err(|e| BuildError::Other(format!("page serialization failed: {e}")))?;
         Ok(())
     }
@@ -390,6 +475,7 @@ impl Builder for JsonBuilder {
             outdir,
             suffix,
             &crate::config::SphinxConfig::new_defaults(),
+            &serde_json::Map::new(),
         )
     }
 
@@ -407,7 +493,7 @@ impl Builder for JsonBuilder {
         let suffixes = self.effective_suffixes(env);
         let mut result = BuildResult::default();
 
-        let docs: Vec<(String, String)> = if !env.all_docs.is_empty() {
+        let mut docs: Vec<(String, String)> = if !env.all_docs.is_empty() {
             env.all_docs
                 .keys()
                 .map(|docname| {
@@ -422,10 +508,31 @@ impl Builder for JsonBuilder {
         } else {
             discover_sources(srcdir, &suffixes)
         };
+        docs.sort_by(|left, right| left.0.cmp(&right.0));
 
         std::fs::create_dir_all(outdir)?;
 
+        // JSONHTMLBuilder inherits the HTML asset pipeline. Keep the
+        // artifact set useful to consumers even though no HTML page is
+        // rendered by this builder.
+        super::html::write_static_files(outdir, super::html::PathStyle::Flat, false)?;
+        super::html::copy_html_static_path(srcdir, outdir, &env.config)?;
+        crate::theme_static::copy_theme_static_files_for_builder(
+            &env.config,
+            outdir,
+            srcdir,
+            "json",
+        )
+        .map_err(BuildError::Io)?;
+
+        // The embedded stylesheet is only a fallback for native HTML pages;
+        // it is not part of the upstream JSON builder's asset set.
+        if outdir.join("_static/basic.css").exists() {
+            let _ = std::fs::remove_file(outdir.join("_static/sphinxdocrs.css"));
+        }
+
         let mut titles: HashMap<String, String> = HashMap::new();
+        let mut sources = Vec::with_capacity(docs.len());
         for (docname, suffix) in &docs {
             let src_path = src_path_for_docname(srcdir, docname, suffix);
             let source =
@@ -435,13 +542,220 @@ impl Builder for JsonBuilder {
                     })?;
             let title = Self::extract_title(docname, &source);
             titles.insert(docname.clone(), html_escape(&title));
-            self.write_page(docname, &source, outdir, suffix, &env.config)?;
+            sources.push(source);
+        }
+
+        let navigation_docs = navigation_docnames(env, &docs);
+        for (index, (docname, suffix)) in docs.iter().enumerate() {
+            let source = &sources[index];
+            let extra = page_context_extras(docname, &navigation_docs, &titles);
+            self.write_page(docname, source, outdir, suffix, &env.config, &extra)?;
             result.written += 1;
         }
 
         self.write_globalcontext(outdir, env, titles)?;
+
+        let docnames: Vec<String> = docs.iter().map(|(name, _)| name.clone()).collect();
+        if let Err(error) =
+            crate::search::SearchIndex::build_and_write_json_with_env(env, srcdir, outdir)
+        {
+            return Err(BuildError::Other(format!(
+                "searchindex.json serialization failed: {error}"
+            )));
+        }
+        write_json_inventory(env, outdir, &docnames)?;
+        write_search_page(outdir)?;
+        std::fs::File::create(outdir.join("last_build"))?;
         Ok(result)
     }
+}
+
+fn page_context_extras(
+    docname: &str,
+    docnames: &[String],
+    titles: &HashMap<String, String>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let related = |name: &str| {
+        serde_json::json!({
+            "link": JsonBuilder::new().get_target_uri(name),
+            "title": titles.get(name).cloned().unwrap_or_else(|| name.to_string()),
+        })
+    };
+    let mut extra = serde_json::Map::new();
+    extra.insert("meta".into(), serde_json::Value::Null);
+    extra.insert(
+        "metatags".into(),
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n".into(),
+    );
+    extra.insert("has_maths_elements".into(), false.into());
+    extra.insert("rellinks".into(), serde_json::json!([]));
+    extra.insert(
+        "sidebars".into(),
+        serde_json::json!([
+            "localtoc.html",
+            "relations.html",
+            "sourcelink.html",
+            "searchbox.html"
+        ]),
+    );
+    let index = docnames.iter().position(|name| name == docname);
+    let mut rellinks = Vec::new();
+    if let Some(index) = index {
+        if let Some(name) = index.checked_sub(1).and_then(|i| docnames.get(i)) {
+            rellinks.push(serde_json::json!([
+                name,
+                titles.get(name).cloned().unwrap_or_else(|| name.clone()),
+                "P",
+                "previous"
+            ]));
+        }
+        if let Some(name) = docnames.get(index + 1) {
+            rellinks.push(serde_json::json!([
+                name,
+                titles.get(name).cloned().unwrap_or_else(|| name.clone()),
+                "N",
+                "next"
+            ]));
+        }
+    }
+    extra.insert("rellinks".into(), serde_json::Value::Array(rellinks));
+    extra.insert("parents".into(), serde_json::json!([]));
+    extra.insert(
+        "prev".into(),
+        index
+            .and_then(|i| i.checked_sub(1))
+            .and_then(|i| docnames.get(i))
+            .map_or(serde_json::Value::Null, |name| related(name)),
+    );
+    extra.insert(
+        "next".into(),
+        index
+            .and_then(|i| docnames.get(i + 1))
+            .map_or(serde_json::Value::Null, |name| related(name)),
+    );
+    extra
+}
+
+fn navigation_docnames(env: &BuildEnvironment, docs: &[(String, String)]) -> Vec<String> {
+    let mut ordered = Vec::with_capacity(docs.len());
+    let root = env.config.root_doc();
+    if docs.iter().any(|(docname, _)| docname == &root) {
+        ordered.push(root);
+    }
+    let mut rest = docs
+        .iter()
+        .map(|(docname, _)| docname.clone())
+        .filter(|docname| !ordered.contains(docname))
+        .collect::<Vec<_>>();
+    rest.sort();
+    ordered.extend(rest);
+    ordered
+}
+
+fn static_asset_names(outdir: &Path) -> (Vec<String>, Vec<String>) {
+    let mut css = Vec::new();
+    let mut js = Vec::new();
+    let Ok(entries) = std::fs::read_dir(outdir.join("_static")) else {
+        return (css, js);
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if path.is_file() && name.ends_with(".css") {
+            css.push(format!("_static/{name}"));
+        } else if path.is_file() && name.ends_with(".js") {
+            js.push(format!("_static/{name}"));
+        }
+    }
+    css.sort_by_key(|name| (!name.ends_with("pygments.css"), name.clone()));
+    let js_order = [
+        "documentation_options.js",
+        "doctools.js",
+        "sphinx_highlight.js",
+    ];
+    js.retain(|name| js_order.iter().any(|expected| name.ends_with(expected)));
+    js.sort_by_key(|name| {
+        js_order
+            .iter()
+            .position(|expected| name.ends_with(expected))
+            .unwrap_or(js_order.len())
+    });
+    (css, js)
+}
+
+fn write_json_inventory(
+    env: &BuildEnvironment,
+    outdir: &Path,
+    docnames: &[String],
+) -> Result<(), BuildError> {
+    let builder = JsonBuilder::new();
+    let mut entries = env
+        .domain_objects()
+        .into_iter()
+        .map(|(domain, object)| crate::intersphinx::InventoryEntry {
+            name: object.name.clone(),
+            item_type: format!("{domain}:{}", object.obj_type),
+            priority: 0,
+            uri: {
+                let target = builder.get_target_uri(&object.docname);
+                if object.anchor.is_empty() {
+                    target
+                } else {
+                    format!("{target}#{}", object.anchor)
+                }
+            },
+            display_name: object.name,
+        })
+        .collect::<Vec<_>>();
+    entries.extend(
+        docnames
+            .iter()
+            .map(|docname| crate::intersphinx::InventoryEntry {
+                name: docname.clone(),
+                item_type: "std:doc".into(),
+                priority: -1,
+                uri: builder.get_target_uri(docname),
+                display_name: env.titles.get(docname).cloned().unwrap_or_default(),
+            }),
+    );
+    entries.extend(
+        [
+            ("genindex", "genindex", "Index"),
+            ("modindex", "py-modindex", "Module Index"),
+            ("py-modindex", "py-modindex", "Python Module Index"),
+            ("search", "search", "Search Page"),
+        ]
+        .into_iter()
+        .map(
+            |(name, docname, display_name)| crate::intersphinx::InventoryEntry {
+                name: name.into(),
+                item_type: "std:label".into(),
+                priority: -1,
+                uri: builder.get_target_uri(docname),
+                display_name: display_name.into(),
+            },
+        ),
+    );
+    entries.sort_by(|left, right| {
+        (&left.name, &left.item_type, &left.uri).cmp(&(&right.name, &right.item_type, &right.uri))
+    });
+    let content =
+        crate::intersphinx::dumps(&env.config.project(), &env.config.version(), &entries)?;
+    std::fs::write(outdir.join("objects.inv"), content)?;
+    Ok(())
+}
+
+fn write_search_page(outdir: &Path) -> Result<(), BuildError> {
+    let context = serde_json::json!({
+        "current_page_name": "search",
+        "sidebars": ["localtoc.html", "relations.html", "sourcelink.html", "searchbox.html"]
+    });
+    let file = std::fs::File::create(outdir.join("search.fjson"))?;
+    to_py_json_writer(file, &context)
+        .map_err(|e| BuildError::Other(format!("search page serialization failed: {e}")))?;
+    Ok(())
 }
 
 // ── free helpers ──────────────────────────────────────────────────────────────
@@ -642,6 +956,7 @@ mod tests {
                 tmp.path(),
                 ".rst",
                 &config,
+                &serde_json::Map::new(),
             )
             .unwrap();
         let raw = std::fs::read_to_string(tmp.path().join("index.fjson")).unwrap();
@@ -708,7 +1023,6 @@ mod tests {
             "first suffix wins on docname conflict"
         );
     }
-
 
     // ── serde round-trips ─────────────────────────────────────────────────────
 

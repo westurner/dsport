@@ -341,7 +341,6 @@ expression: paths
 - _static/sphinx.png
 - _static/sphinx13.css
 - _static/sphinx_highlight.js
-- _static/sphinxdocrs.css
 - _static/themes/agogo.png
 - _static/themes/alabaster.png
 - _static/themes/bizstyle.png

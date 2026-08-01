@@ -527,7 +527,22 @@ impl ThemeRenderer {
 
         let all_docs: HashSet<String> = all_docs.into_iter().cloned().collect();
         let toc_entries = toctree::global_toctree_for_doc(env, 0);
-        let relations = collect_relations(&toc_entries);
+        let mut relations = collect_relations(&toc_entries);
+        let root_doc = env.config.root_doc();
+        if !relations.contains_key(&root_doc) {
+            if let Some(first) = toc_entries.first() {
+                relations.insert(
+                    root_doc.clone(),
+                    Relation {
+                        next: Some(first.docname.clone()),
+                        ..Relation::default()
+                    },
+                );
+                if let Some(first_relation) = relations.get_mut(&first.docname) {
+                    first_relation.prev = Some(root_doc);
+                }
+            }
+        }
 
         let state = Arc::new(PageState {
             current_docname: Mutex::new(String::new()),
@@ -582,7 +597,10 @@ impl ThemeRenderer {
         ctx.insert("title".into(), title.into());
         ctx.insert("body".into(), body_html.into());
         ctx.insert("meta".into(), serde_json::Value::Null);
-        ctx.insert("metatags".into(), "".into());
+        ctx.insert(
+            "metatags".into(),
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n".into(),
+        );
         ctx.insert("has_maths_elements".into(), false.into());
 
         let relation = self.relations.get(docname).cloned().unwrap_or_default();
@@ -724,7 +742,7 @@ fn to_minijinja_context(ctx: serde_json::Map<String, serde_json::Value>) -> Hash
     let mut out = HashMap::with_capacity(ctx.len());
     for (key, value) in ctx {
         let converted = match key.as_str() {
-            "body" | "content_root" | "toc" => {
+            "body" | "content_root" | "metatags" | "toc" => {
                 Value::from_safe_string(value.as_str().unwrap_or_default().to_string())
             }
             "next" | "prev" => relation_link_value(&value),
@@ -949,8 +967,19 @@ fn discover_static_assets(outdir: &Path) -> (Vec<String>, Vec<String>) {
             js.push(format!("_static/{name}"));
         }
     }
-    css.sort();
-    js.sort();
+    css.sort_by_key(|name| (!name.ends_with("pygments.css"), name.clone()));
+    let js_order = [
+        "documentation_options.js",
+        "doctools.js",
+        "sphinx_highlight.js",
+    ];
+    js.retain(|name| js_order.iter().any(|expected| name.ends_with(expected)));
+    js.sort_by_key(|name| {
+        js_order
+            .iter()
+            .position(|expected| name.ends_with(expected))
+            .unwrap_or(js_order.len())
+    });
     (css, js)
 }
 

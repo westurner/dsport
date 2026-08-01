@@ -51,6 +51,10 @@ struct ResolvedTheme {
     /// Pygments style name used by the theme (informational).
     #[allow(dead_code)]
     pygments_style: String,
+    /// JSON-encoded stopwords for the active search language.
+    search_language_stop_words: String,
+    /// Minified stemmer code embedded in `language_data.js`.
+    search_language_stemming_code: String,
     /// Theme directories (not `static/` subdirs), child-first — the order
     /// real Jinja2 template loading searches in (H6c/H6b), so a child
     /// theme's own template overrides its base's while unmodified
@@ -151,9 +155,23 @@ def resolve(theme_name, theme_path_dirs):
     # fall through to the base): reverse the now-base-first chain back.
     template_dirs = [c['dir'] for c in reversed(chain)]
 
-    # Stemmer JS dir.
+    # Stemmer JS dir. Sphinx copies the readable versions here while the
+    # minified files are embedded in language_data.js.
     import sphinx
-    search_js = os.path.join(os.path.dirname(sphinx.__file__), 'search', 'minified-js')
+    search_root = os.path.join(os.path.dirname(sphinx.__file__), 'search')
+    search_js = os.path.join(search_root, 'non-minified-js')
+    minified_js = os.path.join(search_root, 'minified-js')
+    try:
+        from sphinx.search.en import SearchEnglish
+        search_language_stop_words = json.dumps(sorted(SearchEnglish.stopwords))
+        search_language_stemming_code = '\n'.join([
+            open(os.path.join(minified_js, 'base-stemmer.js'), encoding='utf-8').read(),
+            open(os.path.join(minified_js, 'english-stemmer.js'), encoding='utf-8').read(),
+            'window.Stemmer = EnglishStemmer;'
+        ])
+    except Exception:
+        search_language_stop_words = '[]'
+        search_language_stemming_code = ''
 
     # Pygments stylesheet — FALLBACK only.  The primary path renders this from
     # the native `pygmentsrs` crate; this Python output is used only if the
@@ -161,7 +179,10 @@ def resolve(theme_name, theme_path_dirs):
     pyg_css = ''
     try:
         from pygments.formatters import HtmlFormatter
+        from sphinx.pygments_styles import NoneStyle
         style = pygments_style or 'default'
+        if style == 'none':
+            style = NoneStyle
         try:
             pyg_css = HtmlFormatter(style=style).get_style_defs('.highlight')
         except Exception:
@@ -176,6 +197,8 @@ def resolve(theme_name, theme_path_dirs):
         'search_js_dir': search_js,
         'pygments_css': pyg_css,
         'pygments_style': pygments_style or 'default',
+        'search_language_stop_words': search_language_stop_words,
+        'search_language_stemming_code': search_language_stemming_code,
     }
 "#;
 
@@ -226,6 +249,16 @@ fn resolve_theme(theme_name: &str, theme_path_dirs: &[String]) -> Option<Resolve
             .map(|v| v.extract())
             .transpose()?
             .unwrap_or_default();
+        let search_language_stop_words: String = dict
+            .get_item("search_language_stop_words")?
+            .map(|v| v.extract())
+            .transpose()?
+            .unwrap_or_else(|| "[]".into());
+        let search_language_stemming_code: String = dict
+            .get_item("search_language_stemming_code")?
+            .map(|v| v.extract())
+            .transpose()?
+            .unwrap_or_default();
 
         Ok(ResolvedTheme {
             layers: static_dirs
@@ -236,6 +269,8 @@ fn resolve_theme(theme_name: &str, theme_path_dirs: &[String]) -> Option<Resolve
             search_js_dir,
             pygments_css,
             pygments_style,
+            search_language_stop_words,
+            search_language_stemming_code,
             template_dirs,
         })
     })
@@ -327,7 +362,8 @@ fn build_render_context(
     // and singlehtml alike: real `DirectoryHTMLBuilder` never overrides
     // `link_suffix`, only `get_target_uri`/`get_output_path` (verified
     // against a real `sphinx-build -b dirhtml` run's `documentation_options.js`).
-    let (file_suffix, link_suffix) = (".html", ".html");
+    let file_suffix = if builder == "json" { ".fjson" } else { ".html" };
+    let link_suffix = ".html";
     ctx.insert("builder".into(), Value::String(builder.into()));
     ctx.insert("file_suffix".into(), Value::String(file_suffix.into()));
     ctx.insert("link_suffix".into(), Value::String(link_suffix.into()));
@@ -337,6 +373,14 @@ fn build_render_context(
     );
     ctx.insert("has_source".into(), Value::Bool(config.html_copy_source()));
     ctx.insert("show_search_summary".into(), Value::Bool(true));
+    ctx.insert(
+        "search_language_stop_words".into(),
+        Value::String(theme.search_language_stop_words.clone()),
+    );
+    ctx.insert(
+        "search_language_stemming_code".into(),
+        Value::String(theme.search_language_stemming_code.clone()),
+    );
     ctx
 }
 
@@ -558,4 +602,3 @@ mod tests {
         }
     }
 }
-

@@ -300,6 +300,39 @@ fn build_all_writes_globalcontext() {
     );
 }
 
+/// `build_all` emits the serializing builder's auxiliary artifacts used by
+/// downstream JSON consumers.
+#[test]
+fn build_all_writes_json_auxiliary_artifacts() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+
+    write_rst(src.path(), "index", "Index\n=====\n\nContent.\n");
+
+    let env = make_env(src.path(), out.path());
+    JsonBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    for artifact in [
+        "last_build",
+        "objects.inv",
+        "search.fjson",
+        "searchindex.json",
+    ] {
+        assert!(
+            out.path().join(artifact).exists(),
+            "JSON builder artifact {artifact:?} should exist"
+        );
+    }
+    let search_index: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(out.path().join("searchindex.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(search_index.get("docnames").is_some());
+    assert!(search_index.get("terms").is_some());
+}
+
 /// `globalcontext.json` must deserialize to [`GlobalContext`].
 #[test]
 fn globalcontext_is_valid_json() {

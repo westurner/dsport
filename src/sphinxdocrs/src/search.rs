@@ -178,7 +178,8 @@ const STOPWORDS: &[&str] = &[
     "yourselves",
 ];
 
-/// Tokenise `text` into lowercase `\w+` words (Unicode word characters).
+/// Tokenise `text` into `\w+` words (Unicode word characters), preserving
+/// source casing for Sphinx's post-stemming fallback behavior.
 ///
 /// Mirrors Sphinx's `_word_re = re.compile(r'\w+')` split, lowercased.
 pub fn split_words(text: &str) -> Vec<String> {
@@ -186,7 +187,7 @@ pub fn split_words(text: &str) -> Vec<String> {
     let mut cur = String::new();
     for ch in text.chars() {
         if ch.is_alphanumeric() || ch == '_' {
-            cur.extend(ch.to_lowercase());
+            cur.push(ch);
         } else if !cur.is_empty() {
             words.push(std::mem::take(&mut cur));
         }
@@ -668,8 +669,35 @@ impl SearchIndex {
         outdir: &Path,
         docnames: &[String],
     ) -> std::io::Result<()> {
+        let idx = Self::build_with_env(env, srcdir, docnames);
+        std::fs::write(outdir.join("searchindex.js"), idx.to_js().as_bytes())
+    }
+
+    /// Build the same index used by `searchindex.js` and serialize its JSON
+    /// payload for serializing builders such as `JSONHTMLBuilder`.
+    pub fn build_and_write_json_with_env(
+        env: &crate::environment::BuildEnvironment,
+        srcdir: &Path,
+        outdir: &Path,
+    ) -> std::io::Result<()> {
+        let docnames: Vec<String> = if env.all_docs.is_empty() {
+            Vec::new()
+        } else {
+            env.all_docs.keys().cloned().collect()
+        };
+        let idx = Self::build_with_env(env, srcdir, &docnames);
+        let bytes = serde_json::to_vec_pretty(&idx.to_json()).map_err(std::io::Error::other)?;
+        std::fs::write(outdir.join("searchindex.json"), bytes)
+    }
+
+    fn build_with_env(
+        env: &crate::environment::BuildEnvironment,
+        srcdir: &Path,
+        docnames: &[String],
+    ) -> Self {
         use docutilsrs::parse_rst_with_source;
-        let mut idx = SearchIndex::new();
+
+        let mut idx = SearchIndex::with_language(&env.config.language());
         for docname in docnames {
             let src_path = srcdir.join(format!("{docname}.rst"));
             let Ok(bytes) = std::fs::read(&src_path) else {
@@ -690,7 +718,7 @@ impl SearchIndex {
         }
         idx.set_objects(env.domain_objects());
         idx.set_index_entries(env.indexentries.clone().into_iter().collect());
-        std::fs::write(outdir.join("searchindex.js"), idx.to_js().as_bytes())
+        idx
     }
 }
 
@@ -701,7 +729,7 @@ mod tests {
 
     #[test]
     fn split_words_basic() {
-        assert_eq!(split_words("Hello, World!"), vec!["hello", "world"]);
+        assert_eq!(split_words("Hello, World!"), vec!["Hello", "World"]);
         assert_eq!(split_words("foo_bar baz123"), vec!["foo_bar", "baz123"]);
         assert!(split_words("   ").is_empty());
     }

@@ -18,4 +18,3 @@ expression: files
 - pygments.css
 - searchtools.js
 - sphinx_highlight.js
-- sphinxdocrs.css

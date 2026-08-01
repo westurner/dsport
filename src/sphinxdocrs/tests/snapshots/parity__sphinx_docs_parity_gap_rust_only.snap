@@ -3,4 +3,3 @@ source: src/sphinxdocrs/tests/parity.rs
 expression: rs_only
 ---
 - ".doctrees/environment.json"
-- _static/sphinxdocrs.css

@@ -1403,10 +1403,24 @@ explicitly documented renderer/theme provenance deviations.
   failed) and byte-identical `documentation_options.js` output for all three
   html-family builders against real `sphinx-build`, using the exact
   `PARITY_CONF`-equivalent fixture settings.
-- Remaining H11.2a–d items (build-metadata normalization, non-LINK_SUFFIX
-  theme-asset provenance, inventory row semantics, search-index semantics) are
-  unresolved; only the `LINK_SUFFIX` deviation described above has been fixed
-  and verified this pass.
+- Added upstream stemmer provenance and language-data rendering: readable
+  stemmers now come from Sphinx's `non-minified-js`, minified stemmer code and
+  stopwords are embedded in `language_data.js`, and the basic theme's
+  `NoneStyle` is used for `pygments.css`. The fallback `sphinxdocrs.css` is
+  removed whenever a real theme is resolved.
+- Added root-toctree relation repair, viewport `metatags`, deterministic
+  theme asset ordering, and JSON-specific `FILE_SUFFIX` handling. The
+  `documentation_options.js` context now reports `.fjson` for the JSON
+  builder and `.html` for html/dirhtml/singlehtml.
+- Added structured `objects.inv` comparison in `parity.rs`. Inventory rows
+  now include virtual standard labels (`genindex`, `modindex`, `py-modindex`,
+  and `search`), standard-document entries, target URIs, priorities, and
+  deterministic name/type ordering. Compression-only differences are no
+  longer mistaken for row-semantic differences.
+- Added environment-backed search-index reuse and case-preserving tokenization
+  so native `terms` retain Sphinx's post-stemming fallback behavior. Remaining
+  H11.2 differences are real-theme page serialization, search-page markup,
+  singlehtml's embedded renderer, and byte-level search-index ordering.
 
 ##### H11.3 Text, XML, and pseudo-XML writers
 
@@ -1589,10 +1603,21 @@ cannot be represented by the native environment model.
   `tmp/`-built fixture with `html_copy_source = False`: both sides emit
   `"sourcename": ""`, `"page_source_suffix": ".rst"`, `"last_updated": null`,
   with identical compact-JSON separator style.
-- Not attempted: `searchindex.json`, full theme-context field parity (`meta`,
-  `metatags`, `rellinks`, `sidebars`, `alabaster_version`, `theme_*` options,
-  etc.), and `environment.pickle`/`environment.json` — all remain as before,
-  out of scope for this pass.
+- Added `searchindex.json`, `objects.inv`, `search.fjson`, and `last_build`
+  generation to `JsonBuilder`, with a direct artifact test and reuse of the
+  environment-backed search index. Page contexts now include viewport
+  metadata, sidebars, rellinks, previous/next links, and math flags; global
+  context includes upstream version tuples, styles, asset lists, and resolved
+  theme options. The established public `GlobalContext.titles` field remains
+  serialized for Rust consumers.
+- Added JSON asset staging and builder-aware `documentation_options.js`
+  metadata, including `.fjson`/`.html` suffixes and Sphinx-compatible script
+  ordering. `environment.pickle` versus `environment.json` remains the
+  explicit H8b deviation.
+- Remaining H11.6 differences are limited to native HTML fragment/TOC
+  rendering, exact theme provenance fields for external themes, and
+  search-index serialized ordering/term representation; the required JSON
+  artifact set is now present and structurally parseable.
 
 ##### H11.7 Delivery order and completion gate
 

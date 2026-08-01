@@ -567,6 +567,19 @@ impl Builder for HtmlBuilder {
             eprintln!("Warning: failed to copy theme static files: {e}");
         }
 
+        // The fallback stylesheet is useful only when the embedded theme is
+        // active. A resolved upstream theme owns the stylesheet list and
+        // must not receive an extra native-only asset.
+        if crate::theme_static::resolve_theme_templates(
+            &env.config.html_theme(),
+            srcdir,
+            &env.config.html_theme_path(),
+        )
+        .is_some()
+        {
+            let _ = std::fs::remove_file(outdir.join("_static/sphinxdocrs.css"));
+        }
+
         // Fetch intersphinx inventory files (no-op when extension is absent).
         crate::intersphinx::fetch_inventories(&env.config, &env.doctreedir);
 
@@ -843,13 +856,27 @@ pub(crate) fn write_objects_inventory(
         entries.push(crate::intersphinx::InventoryEntry {
             name: docname.clone(),
             item_type: "std:doc".to_string(),
-            priority: 0,
+            priority: -1,
             uri: builder.get_target_uri(docname),
             display_name: env.titles.get(docname).cloned().unwrap_or_default(),
         });
     }
+    for (name, docname, display_name) in [
+        ("genindex", "genindex", "Index"),
+        ("modindex", "py-modindex", "Module Index"),
+        ("py-modindex", "py-modindex", "Python Module Index"),
+        ("search", "search", "Search Page"),
+    ] {
+        entries.push(crate::intersphinx::InventoryEntry {
+            name: name.to_string(),
+            item_type: "std:label".to_string(),
+            priority: -1,
+            uri: builder.get_target_uri(docname),
+            display_name: display_name.to_string(),
+        });
+    }
     entries.sort_by(|left, right| {
-        (&left.item_type, &left.name, &left.uri).cmp(&(&right.item_type, &right.name, &right.uri))
+        (&left.name, &left.item_type, &left.uri).cmp(&(&right.name, &right.item_type, &right.uri))
     });
     let content =
         crate::intersphinx::dumps(&env.config.project(), &env.config.version(), &entries)?;
@@ -864,8 +891,9 @@ pub(crate) fn write_objects_inventory(
 /// its **contents** (not the directory itself) are copied into `_static/`,
 /// matching Sphinx.  Missing directories are skipped with a warning.
 ///
-/// Theme-provided assets (alabaster.css, doctools.js, …) are **not** produced
-/// because the Jinja2 theme pipeline is not ported — only user files are copied.
+/// Theme-provided assets (alabaster.css, doctools.js, ...) are copied separately
+/// by [`crate::theme_static::copy_theme_static_files_for_builder`]; this helper
+/// handles only user-provided files.
 pub(crate) fn copy_html_static_path(
     srcdir: &Path,
     outdir: &Path,

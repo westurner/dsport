@@ -2,4 +2,4 @@
 source: src/sphinxdocrs/tests/parity.rs
 expression: rs_only
 ---
-- sphinxdocrs.css
+[]

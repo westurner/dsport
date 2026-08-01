@@ -731,7 +731,10 @@ fn build_global_context(
     ctx.insert("html5_doctype".into(), true.into());
     ctx.insert("html_tag".into(), serde_json::Value::Null);
     ctx.insert("pageurl".into(), serde_json::Value::Null);
-    ctx.insert("content_root".into(), "".into());
+    // Flat HTML pages resolve assets from the output root, matching Sphinx's
+    // `data-content_root="./"` value. DirectoryHTML overrides this per-page
+    // once the renderer receives the builder path style.
+    ctx.insert("content_root".into(), "./".into());
     ctx.insert("encoding".into(), "utf-8".into());
 
     let last_updated = config.html_last_updated_fmt();

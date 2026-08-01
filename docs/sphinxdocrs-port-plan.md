@@ -1308,37 +1308,81 @@ deviation unless a future decision explicitly requires reproducing pickle.
 
 ##### H11.2 HTML, dirhtml, and singlehtml
 
-Status: **implemented** for layout plumbing and artifact generation. The
-remaining snapshot entries in this workstream are deliberate byte-level
-differences in upstream theme markup/assets, `.buildinfo`, inventory
-compression/content, and search-index data; they remain visible as accepted
-deviations until the corresponding lower-level theme and search contracts are
-ported.
+Status: **partial**. The path/layout plumbing is implemented, but the current
+snapshot still reports five residual contracts: build metadata, theme assets,
+themed page/search serialization, inventory rows, and search-index semantics.
+Resolve these in the following order, keeping the current snapshot as the
+regression baseline until each package has a direct assertion.
 
-Apply the shared contract to `builders/html.rs`, `builders/dirhtml.rs`, and
-`builders/singlehtml.rs` in this order:
+**H11.2a: artifact contract and metadata**
 
-1. Match source-copy configuration and `_sources/{docname}` paths.
-2. Match flat and directory page roots, including `data-content_root`,
-   relative stylesheet links, and `guide/index.html` behavior.
-3. Align `search.html` versus `search/index.html` with the selected builder.
-4. Align `genindex.html` versus `genindex/index.html` and domain-index
-   enablement.
-5. Match `.buildinfo` and `objects.inv` metadata and contents where the
-   corresponding Rust subsystem exists.
-6. Compare theme assets byte-for-byte only when they are sourced from the
-   same installed theme. Otherwise record the Rust theme asset set as an
-   explicit H6 deviation rather than silently normalizing it away.
+- Add a shared `HtmlOutputLayout` contract containing builder name, physical
+  page path, target URI, `file_suffix`, `link_suffix`, and content-root depth.
+- Route HTML, dirhtml, and singlehtml through that contract rather than
+  deriving the same values independently in builders, theme rendering, and
+  static assets.
+- Make `.buildinfo` use the same normalized configuration identity and tags as
+  Python Sphinx. If the values are intentionally implementation-specific,
+  normalize only those named fields in `parity.rs` and classify the artifact as
+  metadata-only.
+- Add direct assertions for root, nested, and synthetic pages (`search`,
+  `genindex`, and `py-modindex`) in both flat and directory layouts.
 
-The native builders now thread flat versus directory path style through theme
-URI generation, `content_root`, relations, and toctrees; emit the correct
-search page location; render the real theme search template when available;
-stage theme assets for `singlehtml`; render builder-specific asset metadata;
-and write compressed inventories containing native domain/document objects.
-Focused fixture coverage exercises flat HTML, directory HTML, single HTML,
-source-copy/index configuration, and nested toctrees through the matrix and
-the direct builder tests. Remaining byte-level differences stay classified in
-the snapshot rather than being normalized away.
+**H11.2b: theme assets and page serialization**
+
+- Record Python and Rust theme provenance, including Sphinx, Alabaster,
+  Pygments, and stemmer versions, before comparing bytes. Same-provenance
+  assets must be byte-identical; different-provenance assets remain an H6
+  deviation with the provenance recorded.
+- For `documentation_options.js`, pass the exact builder context used by
+  Python (`BUILDER`, `FILE_SUFFIX`, `LINK_SUFFIX`, `HAS_SOURCE`, and
+  `SOURCELINK_SUFFIX`) and add a fixture assertion for each HTML-family
+  builder.
+- Decide whether native output uses upstream stemmer/language assets or a
+  native implementation. Do not mix the two in one build. The selected policy
+  must cover `base-stemmer.js`, `english-stemmer.js`, and `language_data.js`
+  together.
+- Make Pygments CSS style, selector prefix, and trailing newline explicit.
+  Compare generated CSS after style selection so a version mismatch cannot
+  masquerade as a renderer defect.
+- Remove the unconditional `sphinxdocrs.css` artifact from parity builds when
+  the active upstream theme does not produce an equivalent file; retain it
+  only for the embedded fallback theme and test that fallback separately.
+- Compare normalized DOM structure for `index.html`, `guide.html`,
+  `guide/index.html`, and the search page before attempting byte parity. Align
+  doctype, `<html>` attributes, meta-tag order, whitespace, stylesheet/script
+  attributes, and title suffixes in the real theme renderer.
+- Render `search.html`/`search/index.html` through the same synthetic-page
+  context as Python, including `searchtools.js`, `language_data.js`,
+  `searchindex.js`, `pagename`, `builder`, and empty source metadata.
+
+**H11.2c: inventory semantics**
+
+- Decode both `objects.inv` files in the harness and compare project, version,
+  object type, name, priority, URI, and display name as structured rows.
+- Populate the native inventory from the same domain sources as the search
+  index, including standard document and label objects, with deterministic
+  sorting and duplicate handling.
+- Match target URI and anchor rules for flat, dirhtml, and singlehtml before
+  comparing compressed bytes. Only after row parity is exact should zlib
+  level/header differences be addressed.
+
+**H11.2d: search-index semantics**
+
+- Compare `searchindex.js` as `Search.setIndex()` JSON rather than treating it
+  as opaque JavaScript. Preserve key order only as a final serialization
+  check.
+- Align environment-version keys, document ordering, filenames, title terms,
+  body terms, stemming, stopword filtering, `alltitles`, object entries, and
+  index entries with Sphinx's `IndexBuilder` inputs.
+- Add fixture assertions for repeated terms, title-only terms, nested
+  documents, domain objects, and `.. index::` entries. Keep the accepted
+  deviation limited to features not represented by the native doctree.
+
+Completion gate for H11.2: no unexpected path or missing/extra artifact
+entries; structured inventory and search comparisons pass; same-provenance
+assets are byte-identical; and remaining HTML differences are either zero or
+explicitly documented renderer/theme provenance deviations.
 
 ##### H11.3 Text, XML, and pseudo-XML writers
 
@@ -1351,16 +1395,29 @@ Use the `docutilsrs` writers behind `builders/text.rs`, `builders/xml.rs`, and
 - Python `source` root attributes versus Rust `ids`/`names` in pseudo-XML;
 - possible differences in prolog, doctype, escaping, and whitespace.
 
-Preserve source path, line, rawsource, ids, and names consistently during
-parser/doctree lowering, then make each writer consume the same metadata.
+Resolve in this order:
+
+1. Preserve source path, line, rawsource, ids, and names consistently during
+  parser/doctree lowering.
+2. Make the text writer choose the same section underline width/style as
+  Python and emit the document title exactly once.
+3. Match XML prolog, generated comment, doctype, root attributes, source
+  metadata, and escaping before comparing descendant nodes.
+4. Match pseudo-XML root attributes (`source` versus `ids`/`names`) and then
+  whitespace/attribute ordering.
+
 Add byte-parity fixtures for headings, nested sections, lists, notes, code
 blocks, and source metadata. Keep the existing stack-safety tests unchanged.
+Completion requires writer-specific structural assertions plus byte parity for
+the fixture cases, not merely a refreshed snapshot.
 
 ##### H11.4 Project-oriented LaTeX and man builders
 
 `builders/latex.rs` and `builders/manpage.rs` currently write one output per
 RST docname, while upstream uses project-level configuration and output
 names.
+
+Implement project configuration parsing first, then output generation.
 
 For LaTeX:
 
@@ -1369,7 +1426,10 @@ For LaTeX:
 - generate the expected support files (`.sty`, `.xdy`, `Makefile`,
   `make.bat`, and latexmk configuration) through reusable assets;
 - preserve document ordering and master-document includes;
-- add fixtures with explicit `latex_documents` and upstream defaults.
+- add fixtures with explicit `latex_documents`, multiple documents, custom
+  author/title fields, and upstream defaults;
+- compare the master file's document ordering and include graph structurally
+  before comparing support-file bytes.
 
 For manpages:
 
@@ -1378,25 +1438,29 @@ For manpages:
   `paritymatrix.1`;
 - stop treating every source document as an independent manpage unless it is
   configured as one;
-- add multiple-manpage and default-project fixtures.
+- add multiple-manpage and default-project fixtures, including duplicate
+  section/name validation and configured output paths.
 
 These changes should be implemented behind the existing `Builder` contract,
 with project-level output tested through `SphinxApp::build()` rather than only
-through direct `build_doc()` calls.
+through direct `build_doc()` calls. Completion requires no Rust-only per-source
+LaTeX/man files when project configuration selects a master or command output.
 
 ##### H11.5 Gettext and changes builders
 
 Complete the currently documented H7c/H7d deviations in
 `builders/gettext.rs` and `builders/changes.rs`.
 
-For gettext:
+For gettext, separate extraction from catalog serialization:
 
 - emit per-document `.pot` files by default, matching upstream;
 - honor `gettext_compact` and related output naming options;
 - extract list items, definition lists, fields, table cells, and image alt
   text;
 - preserve source locations after doctree nodes carry line information;
-- test duplicate messages, per-document locations, and compact output.
+- test duplicate messages, per-document locations, source-line stability, and
+  compact output. Compare parsed POT messages and references before checking
+  formatting.
 
 For changes:
 
@@ -1407,6 +1471,10 @@ For changes:
   and `deprecated` entries;
 - remove the current flat `index.html` accepted deviation when parity is
   achieved.
+
+Completion requires the expected per-document `.pot` tree and the expected
+`changes.html` plus per-source rendered pages, with no combined `sphinx.pot`
+or flat report left over unless explicitly selected by configuration.
 
 ##### H11.6 JSON builder compatibility
 
@@ -1424,7 +1492,10 @@ Then expand toward Python `JSONHTMLBuilder` parity:
 
 Add JSON-specific structural comparisons that parse both sides rather than
 only comparing serialized bytes. The final tree comparison should still
-check file presence and exact normalized scalar values.
+check file presence and exact normalized scalar values. Completion requires
+the expected `searchindex.json`, `search.fjson`, `last_build`, and auxiliary
+artifact set, or a narrowly documented deviation for each artifact that
+cannot be represented by the native environment model.
 
 ##### H11.7 Delivery order and completion gate
 
@@ -1432,13 +1503,26 @@ Implement the remediation in this order:
 
 1. Shared output contract, normalizer classification, and direct artifact
    assertions.
-2. HTML/dirhtml/singlehtml path and index behavior.
+2. HTML/dirhtml/singlehtml residual metadata, theme, inventory, and search
+  contracts.
 3. Text/XML/pseudo-XML metadata and writer parity.
 4. LaTeX and manpage project-level output.
 5. Gettext and changes output models.
 6. JSON page/global context and search artifacts.
-7. Theme assets, inventory contents, and remaining explicitly accepted
-   deviations.
+7. Re-run the full matrix, delete obsolete accepted-deviation branches, and
+   retain only deviations backed by a documented capability boundary.
+
+For every work package:
+
+- add or update a focused direct test before changing the snapshot;
+- compare structured data before serialized bytes where a format has a
+  parser (HTML DOM, JSON, POT, or inventory);
+- update the accepted-deviation classifier only after the implementation and
+  focused test pass;
+- refresh the matrix once, then rerun it without `INSTA_UPDATE` to prove
+  determinism;
+- run `make parity`, both strict clippy gates, formatting, and `git diff
+  --check` before marking the package complete.
 
 After each slice, run the narrow builder tests and:
 

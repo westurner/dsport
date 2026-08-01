@@ -100,7 +100,7 @@ impl Builder for SinglehtmlBuilder {
         let docnames: Vec<String> = if !env.all_docs.is_empty() {
             env.all_docs.keys().cloned().collect()
         } else {
-            super::html::discover_rst_docnames_pub(srcdir)
+            super::html::discover_docnames_pub(srcdir, &env.config)
         };
         let docnames = toctree_order(env, docnames);
 
@@ -132,7 +132,11 @@ impl Builder for SinglehtmlBuilder {
             let tree = match env.get_and_resolve_doctree(docname) {
                 Ok(tree) => tree,
                 Err(_) => {
-                    let src_path = srcdir.join(format!("{docname}.rst"));
+                    let src_path = super::html::src_path_for_docname_with_suffixes(
+                        srcdir,
+                        docname,
+                        &env.config,
+                    )?;
                     let source = crate::environment::read_source_file(
                         &src_path,
                         &env.config.source_encoding(),

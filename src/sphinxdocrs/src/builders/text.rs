@@ -17,7 +17,7 @@
 
 use std::path::{Path, PathBuf};
 
-use docutilsrs::{TitlePromotion, parse_rst_with_options, text};
+use docutilsrs::{parse_rst_with_options, text, TitlePromotion};
 
 use super::{BuildError, BuildResult, Builder};
 use crate::environment::BuildEnvironment;
@@ -70,11 +70,12 @@ impl Builder for TextBuilder {
         let docnames: Vec<String> = if !env.all_docs.is_empty() {
             env.all_docs.keys().cloned().collect()
         } else {
-            super::html::discover_rst_docnames_pub(srcdir)
+            super::html::discover_docnames_pub(srcdir, &env.config)
         };
         std::fs::create_dir_all(outdir)?;
         for docname in &docnames {
-            let src_path = srcdir.join(format!("{docname}.rst"));
+            let src_path =
+                super::html::src_path_for_docname_with_suffixes(srcdir, docname, &env.config)?;
             let source =
                 crate::environment::read_source_file(&src_path, &env.config.source_encoding())
                     .map_err(|e| {

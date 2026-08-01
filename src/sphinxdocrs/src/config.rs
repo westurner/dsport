@@ -810,6 +810,12 @@ impl SphinxConfig {
             Html,
             "Copyright string",
         );
+        add(
+            "source_suffix",
+            Map(vec![(".rst".into(), Str("restructuredtext".into()))]),
+            Env,
+            "Source file suffix to parser mapping",
+        );
         add("version", Str(String::new()), Env, "Version string");
         add("release", Str(String::new()), Env, "Release string");
         add("today", Str(String::new()), Env, "Date override");

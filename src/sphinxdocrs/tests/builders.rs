@@ -8,9 +8,9 @@
 use std::path::Path;
 use tempfile::TempDir;
 
-use sphinxdocrs::builders::Builder;
 use sphinxdocrs::builders::html::HtmlBuilder;
-use sphinxdocrs::config::SphinxConfig;
+use sphinxdocrs::builders::Builder;
+use sphinxdocrs::config::{ConfigVal, SphinxConfig};
 use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 
 // ── helper ────────────────────────────────────────────────────────────────────
@@ -309,6 +309,39 @@ fn build_all_uses_env_all_docs_when_populated() {
     assert!(out.path().join("index.html").exists());
     assert!(out.path().join("about.html").exists());
     assert!(!out.path().join("skip.html").exists());
+}
+
+#[test]
+fn build_all_honors_configured_source_suffix_and_unicode_docname() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    let unicode_docname = "日本語";
+    std::fs::write(
+        src.path().join("index.txt"),
+        "Welcome\n=======\n\nHomepage.\n\n.. toctree::\n\n   日本語\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join(format!("{unicode_docname}.txt")),
+        "Non-ASCII page\n================\n",
+    )
+    .unwrap();
+
+    let mut config = SphinxConfig::new_defaults();
+    config.set(
+        "source_suffix",
+        ConfigVal::List(vec![ConfigVal::Str(".txt".into())]),
+    );
+    let project = EnvProject::new(src.path(), &[(".txt", "restructuredtext")]);
+    let env = BuildEnvironment::new(config, project, src.path(), out.path());
+
+    let result = HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    assert_eq!(result.written, 2);
+    assert!(out.path().join("index.html").exists());
+    assert!(out.path().join(format!("{unicode_docname}.html")).exists());
 }
 
 // ── build_all — two-phase (H2d) parity ───────────────────────────────────────

@@ -13,9 +13,9 @@ use std::collections::HashMap;
 use tempfile::TempDir;
 
 use sphinxdocrs::application::SphinxApp;
-use sphinxdocrs::builders::Builder;
 use sphinxdocrs::builders::dirhtml::DirhtmlBuilder;
 use sphinxdocrs::builders::html::HtmlBuilder;
+use sphinxdocrs::builders::Builder;
 use sphinxdocrs::config::SphinxConfig;
 use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 
@@ -53,8 +53,18 @@ fn dirhtml_build_all_reuses_the_full_html_pipeline() {
 
     assert_eq!(result_flat.written, result_dir.written);
 
-    // Same static pipeline output (search index / CSS) in both layouts.
-    assert!(out_dir.path().join("_static/sphinxdocrs.css").exists());
+    // Same static pipeline output (search index / CSS) in both layouts. A
+    // resolved real theme supplies its own stylesheet and removes the native
+    // fallback, so assert the CSS contract rather than one implementation's
+    // filename.
+    let static_dir = out_dir.path().join("_static");
+    assert!(
+        std::fs::read_dir(&static_dir)
+            .unwrap()
+            .flatten()
+            .any(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("css")),
+        "dirhtml build should emit a CSS asset"
+    );
     assert!(out_dir.path().join("searchindex.js").exists());
 
     // Different physical layout for the non-index document.

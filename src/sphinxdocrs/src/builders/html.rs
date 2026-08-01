@@ -528,7 +528,7 @@ impl Builder for HtmlBuilder {
     /// Build all RST documents in `srcdir` into `outdir`.
     ///
     /// Documents are taken from `env.all_docs` if populated, otherwise
-    /// discovered by walking `srcdir` for `*.rst` files.
+    /// discovered by walking `srcdir` for configured source suffixes.
     fn build_all(
         &self,
         srcdir: &Path,
@@ -541,7 +541,7 @@ impl Builder for HtmlBuilder {
         let docnames: Vec<String> = if !env.all_docs.is_empty() {
             env.all_docs.keys().cloned().collect()
         } else {
-            discover_rst_docnames(srcdir)
+            discover_docnames(srcdir, &env.config)
         };
 
         std::fs::create_dir_all(outdir)?;
@@ -976,22 +976,32 @@ fn copy_source_file(src_path: &Path, docname: &str, outdir: &Path) -> Result<(),
     Ok(())
 }
 
-/// Walk `srcdir` and return all `.rst` docnames (relative, no extension,
-/// `/`-separated). Public for use by other builders.
-pub fn discover_rst_docnames_pub(srcdir: &Path) -> Vec<String> {
-    discover_rst_docnames(srcdir)
+/// Walk `srcdir` and return all configured-source docnames (relative, no
+/// extension), `/`-separated. Public for use by other builders.
+pub fn discover_docnames_pub(srcdir: &Path, config: &SphinxConfig) -> Vec<String> {
+    discover_docnames(srcdir, config)
 }
 
-/// Walk `srcdir` and return all `.rst` docnames (relative, no extension,
-/// `/`-separated).
-fn discover_rst_docnames(srcdir: &Path) -> Vec<String> {
+/// Walk `srcdir` and return all `.rst` docnames (relative, no extension),
+/// `/`-separated. Public for callers that intentionally use the default
+/// source suffix.
+pub fn discover_rst_docnames_pub(srcdir: &Path) -> Vec<String> {
     let mut docnames = Vec::new();
-    collect_rst(srcdir, srcdir, &mut docnames);
+    collect_docnames(srcdir, srcdir, &[".rst".to_string()], &mut docnames);
     docnames.sort();
     docnames
 }
 
-fn collect_rst(root: &Path, dir: &Path, out: &mut Vec<String>) {
+fn discover_docnames(srcdir: &Path, config: &SphinxConfig) -> Vec<String> {
+    let mut suffixes: Vec<String> = config.source_suffix().into_keys().collect();
+    suffixes.sort_by_key(|suffix| (std::cmp::Reverse(suffix.len()), suffix.clone()));
+    let mut docnames = Vec::new();
+    collect_docnames(srcdir, srcdir, &suffixes, &mut docnames);
+    docnames.sort();
+    docnames
+}
+
+fn collect_docnames(root: &Path, dir: &Path, suffixes: &[String], out: &mut Vec<String>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -999,14 +1009,14 @@ fn collect_rst(root: &Path, dir: &Path, out: &mut Vec<String>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            collect_rst(root, &path, out);
-        } else if path.extension().and_then(|s| s.to_str()) == Some("rst") {
+            collect_docnames(root, &path, suffixes, out);
+        } else if path.is_file() {
             if let Ok(rel) = path.strip_prefix(root) {
-                // Strip only the trailing ".rst" — avoid Path::with_extension("")
-                // which would strip ANY trailing extension (breaking "0.1.rst" → "0").
                 let s = rel.to_string_lossy();
-                let docname = s.strip_suffix(".rst").unwrap_or(&s).replace('\\', "/");
-                out.push(docname);
+                if let Some(suffix) = suffixes.iter().find(|suffix| s.ends_with(suffix.as_str())) {
+                    let docname = s.strip_suffix(suffix).unwrap_or(&s).replace('\\', "/");
+                    out.push(docname);
+                }
             }
         }
     }
@@ -1050,7 +1060,7 @@ fn collect_rst(root: &Path, dir: &Path, out: &mut Vec<String>) {
 ///
 /// # Panics
 /// Callers must have already validated `docname` with [`sanitize_docname`].
-fn src_path_for_docname_with_suffixes(
+pub(crate) fn src_path_for_docname_with_suffixes(
     srcdir: &Path,
     docname: &str,
     config: &SphinxConfig,
@@ -1401,7 +1411,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         std::fs::write(tmp.path().join("a.rst"), "").unwrap();
         std::fs::write(tmp.path().join("b.txt"), "").unwrap(); // not rst
-        let docs = discover_rst_docnames(tmp.path());
+        let docs = discover_rst_docnames_pub(tmp.path());
         assert_eq!(docs, vec!["a"]);
     }
 

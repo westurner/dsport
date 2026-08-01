@@ -98,7 +98,7 @@ impl Builder for ChangesBuilder {
         let mut docnames: Vec<String> = if !env.all_docs.is_empty() {
             env.all_docs.keys().cloned().collect()
         } else {
-            super::html::discover_rst_docnames_pub(srcdir)
+            super::html::discover_docnames_pub(srcdir, &env.config)
         };
         docnames.sort();
 
@@ -106,7 +106,8 @@ impl Builder for ChangesBuilder {
 
         let mut by_version: BTreeMap<String, Vec<(String, VersionChange)>> = BTreeMap::new();
         for docname in &docnames {
-            let src_path = srcdir.join(format!("{docname}.rst"));
+            let src_path =
+                super::html::src_path_for_docname_with_suffixes(srcdir, docname, &env.config)?;
             let source =
                 crate::environment::read_source_file(&src_path, &env.config.source_encoding())
                     .map_err(|e| {

@@ -471,7 +471,7 @@ impl Builder for LinkcheckBuilder {
             v.sort();
             v
         } else {
-            super::html::discover_rst_docnames_pub(srcdir)
+            super::html::discover_docnames_pub(srcdir, &env.config)
         };
 
         // Collect (docname, uri) pairs, de-duplicating identical URIs while
@@ -480,7 +480,8 @@ impl Builder for LinkcheckBuilder {
         let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         let mut checks: Vec<(String, String)> = Vec::new();
         for docname in &docnames {
-            let src_path = srcdir.join(format!("{docname}.rst"));
+            let src_path =
+                super::html::src_path_for_docname_with_suffixes(srcdir, docname, &env.config)?;
             let source = match crate::environment::read_source_file(
                 &src_path,
                 &env.config.source_encoding(),

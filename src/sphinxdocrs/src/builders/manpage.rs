@@ -59,13 +59,14 @@ impl Builder for ManpageBuilder {
         let docnames: Vec<String> = if !env.all_docs.is_empty() {
             env.all_docs.keys().cloned().collect()
         } else {
-            super::html::discover_rst_docnames_pub(srcdir)
+            super::html::discover_docnames_pub(srcdir, &env.config)
         };
         std::fs::create_dir_all(outdir)?;
         for docname in &docnames {
             // Use string append, not with_extension — the latter strips any
             // existing dot in the final component (e.g. "0.1" → "0.rst").
-            let src_path = srcdir.join(format!("{docname}.rst"));
+            let src_path =
+                super::html::src_path_for_docname_with_suffixes(srcdir, docname, &env.config)?;
             let source =
                 crate::environment::read_source_file(&src_path, &env.config.source_encoding())
                     .map_err(|e| {

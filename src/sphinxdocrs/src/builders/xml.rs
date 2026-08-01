@@ -78,9 +78,11 @@ impl Builder for XmlBuilder {
         std::fs::create_dir_all(outdir)?;
         for docname in &docnames {
             let src_path = srcdir.join(format!("{docname}.rst"));
-            let source = std::fs::read_to_string(&src_path).map_err(|e| {
-                BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
-            })?;
+            let source =
+                crate::environment::read_source_file(&src_path, &env.config.source_encoding())
+                    .map_err(|e| {
+                        BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
+                    })?;
             self.build_doc(docname, &source, outdir)?;
             result.written += 1;
         }

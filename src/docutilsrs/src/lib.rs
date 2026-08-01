@@ -8,6 +8,7 @@ use pyo3::types::PyBytes;
 
 pub mod code_block;
 pub mod doctree;
+pub mod encoding;
 pub mod html5_writer;
 pub mod latex_writer;
 pub mod manpage_writer;
@@ -23,6 +24,7 @@ pub mod xml_writer;
 pub mod zip_writer;
 
 pub use doctree::{Doctree, NodeAttributeValue, NodeKind};
+pub use encoding::{SourceDecodeError, decode_source, decode_source_auto};
 pub use html5_writer::html5;
 pub use latex_writer::latex;
 pub use manpage_writer::manpage;

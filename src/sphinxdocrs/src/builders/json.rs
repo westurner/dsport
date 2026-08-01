@@ -354,9 +354,11 @@ impl Builder for JsonBuilder {
         let mut titles: HashMap<String, String> = HashMap::new();
         for (docname, suffix) in &docs {
             let src_path = src_path_for_docname(srcdir, docname, suffix);
-            let source = std::fs::read_to_string(&src_path).map_err(|e| {
-                BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
-            })?;
+            let source =
+                crate::environment::read_source_file(&src_path, &env.config.source_encoding())
+                    .map_err(|e| {
+                        BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
+                    })?;
             let title = Self::extract_title(docname, &source);
             titles.insert(docname.clone(), html_escape(&title));
             self.write_page(docname, &source, outdir, suffix)?;

@@ -627,8 +627,17 @@ impl SearchIndex {
         let mut idx = SearchIndex::new();
         for docname in docnames {
             let src_path = srcdir.join(format!("{docname}.rst"));
-            let Ok(source) = std::fs::read_to_string(&src_path) else {
+            let Ok(bytes) = std::fs::read(&src_path) else {
                 continue;
+            };
+            let source = match docutilsrs::decode_source_auto(&bytes) {
+                Ok(source) => source,
+                Err(error) => {
+                    eprintln!(
+                        "WARNING: search index skipped {docname:?}: unable to decode source: {error}"
+                    );
+                    continue;
+                }
             };
             let tree = parse_rst_with_source(&source, docname);
             idx.feed(docname, &tree);
@@ -650,8 +659,18 @@ impl SearchIndex {
         let mut idx = SearchIndex::new();
         for docname in docnames {
             let src_path = srcdir.join(format!("{docname}.rst"));
-            let Ok(source) = std::fs::read_to_string(&src_path) else {
+            let Ok(bytes) = std::fs::read(&src_path) else {
                 continue;
+            };
+            let source_encoding = env.config.source_encoding();
+            let source = match docutilsrs::decode_source(&bytes, &source_encoding) {
+                Ok(source) => source,
+                Err(error) => {
+                    eprintln!(
+                        "WARNING: search index skipped {docname:?}: unable to decode source: {error}"
+                    );
+                    continue;
+                }
             };
             let tree = parse_rst_with_source(&source, docname);
             idx.feed(docname, &tree);

@@ -600,7 +600,11 @@ impl Builder for HtmlBuilder {
             let mut tree = match env.get_and_resolve_doctree(docname) {
                 Ok(tree) => tree,
                 Err(_) => {
-                    let source = std::fs::read_to_string(&src_path).map_err(|e| {
+                    let source = crate::environment::read_source_file(
+                        &src_path,
+                        &env.config.source_encoding(),
+                    )
+                    .map_err(|e| {
                         BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
                     })?;
                     parse_rst_with_source(&source, docname)

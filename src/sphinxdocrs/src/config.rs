@@ -1261,6 +1261,14 @@ impl SphinxConfig {
         Some(default)
     }
 
+    /// Encoding used to decode source documents, matching Sphinx's
+    /// `source_encoding` setting and its `utf-8-sig` default.
+    pub fn source_encoding(&self) -> String {
+        self.get("source_encoding")
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_else(|| "utf-8-sig".to_string())
+    }
+
     /// Set a config value (mirrors `cfg[name] = value`).
     pub fn set(&mut self, name: impl Into<String>, value: ConfigVal) {
         let name = name.into();

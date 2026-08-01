@@ -66,9 +66,11 @@ impl Builder for ManpageBuilder {
             // Use string append, not with_extension — the latter strips any
             // existing dot in the final component (e.g. "0.1" → "0.rst").
             let src_path = srcdir.join(format!("{docname}.rst"));
-            let source = std::fs::read_to_string(&src_path).map_err(|e| {
-                BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
-            })?;
+            let source =
+                crate::environment::read_source_file(&src_path, &env.config.source_encoding())
+                    .map_err(|e| {
+                        BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
+                    })?;
             self.build_doc(docname, &source, outdir)?;
             result.written += 1;
         }

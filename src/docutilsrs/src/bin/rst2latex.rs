@@ -88,7 +88,16 @@ fn main() {
         .destination
         .unwrap_or_else(|| panic!("<destination> is currently required in this early drop-in"));
 
-    let source = fs::read_to_string(&source_path).expect("Failed to read input file");
+    let bytes = fs::read(&source_path).expect("Failed to read input file");
+    let source = cli
+        .common
+        .input_encoding
+        .as_deref()
+        .map_or_else(
+            || docutilsrs::decode_source_auto(&bytes),
+            |encoding| docutilsrs::decode_source(&bytes, encoding),
+        )
+        .unwrap_or_else(|err| panic!("Failed to decode input file: {err}"));
     let tree = parse_rst_with_source(&source, &source_path);
     let output = latex(&tree, &cli.specific, &cli.common);
 

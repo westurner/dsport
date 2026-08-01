@@ -17,6 +17,7 @@ Contents:
 8. [Completed milestones](#8-completed-milestones-c--g--p-phases)
 9. [**H-phase: plan to close the remaining deferred work**](#9-h-phase--plan-to-close-the-remaining-deferred-work)
 10. [**H12: stack-safe docutilsrs renderers**](#h12-stack-safe-docutilsrs-renderers)
+11. [**J-phase: source-encoding hardening follow-ups**](#10-j-phase--source-encoding-hardening-follow-ups)
 
 ---
 
@@ -1551,3 +1552,46 @@ For each H-item:
 5. Tag each ported function *exact parity* / *accepted deviation* /
    *pending*.
 6. Flip the affected row(s) in §3 and §6, and note the change here.
+
+---
+
+## 10. J-phase — source-encoding hardening follow-ups
+
+Origin: a 2026-08-01 security-analyst review of the `--input-encoding` /
+`source_encoding` patch set (`src/docutilsrs/src/encoding.rs`,
+`src/sphinxdocrs/src/{environment,search,config}.rs`, the `rst2*` CLI
+binaries). That patch's stated goal — strict decoding, never silently
+reinterpreting malformed UTF-8 as Latin-1 — was achieved and is covered
+by `encoding::tests` (six regressions: UTF-8 BOM, Latin-1, invalid
+UTF-8, `windows-1252`, UTF-16 BOM, coding declarations) plus the full
+`sphinxdocrs` suite (732 passed). The review found the strictness goal
+is undermined one layer down by alias-spelling handling, plus a few
+smaller parity/observability gaps. None are structural blockers; all
+are independent leaves like Tier H1.
+
+| id | task | files | severity | notes |
+| --- | --- | --- | --- | --- |
+| **J1** | Normalize encoding labels (strip non-alphanumerics, compare against a canonical alias table) *before* falling through to `encoding_rs::Encoding::for_label`. Today only the literal strings `"latin-1"`/`"iso-8859-1"` get true byte→codepoint Latin-1 decoding; other common aliases for the same encoding — `latin1`, `l1`, `cp819`, `ibm819`, `csisolatin1`, `iso8859-1` (no hyphen after `iso`) — fall through to `encoding_rs`, which per the WHATWG Encoding Standard resolves *all* of those labels to **`windows-1252`**, not real ISO-8859-1. Bytes `0x80–0x9F` therefore decode differently (C1 controls vs. €/curly-quotes/dashes) purely based on which spelling of "Latin-1" was used in `--input-encoding` or a `.. coding:` declaration, with no error. This is the same silent-misinterpretation failure mode the patch set was written to eliminate, just resurfacing via alias spelling. | `src/docutilsrs/src/encoding.rs` | **high** | no regression test yet; add one per alias spelling once fixed |
+| **J2** | `SearchIndex::build_and_write` / `build_and_write_with_env` silently `continue` past any document that fails to decode, with no warning logged. Before this patch, a malformed-encoding document was still indexed (garbled, but present); now it is strictly excluded from `searchindex.js` with zero diagnostic, so a doc can silently vanish from site search. Add a build warning (matching the `tracing`/log conventions used elsewhere in the crate) when a document is skipped for a decode error. | `src/sphinxdocrs/src/search.rs` | **medium** | trades "wrong content" for "invisible content" |
+| **J3** | Generic `utf-16`/`utf-32` labels (without an explicit `-le`/`-be` suffix) bypass the hardcoded BOM-stripping branches and fall to `encoding_rs::decode_without_bom_handling_and_without_replacement`, which — as the name says — never strips a BOM and always assumes little-endian for bare `"utf-16"`/`"utf-32"` labels. A real BOM in the source is left as a literal U+FEFF in the decoded text, and endianness is silently wrong for `--input-encoding utf-16` against a big-endian file. | `src/docutilsrs/src/encoding.rs` | **medium** | either special-case bare `utf-16`/`utf-32` like the `-le`/`-be` branches do, or reject the bare label and require an explicit endianness |
+| **J4** | `rst2*` CLI binaries default to a strict `"utf-8"` decode when `--input-encoding` isn't passed (`bin/rst2html5.rs` and siblings), rather than `decode_source_auto` (BOM + `coding:` sniffing) the way `SphinxConfig::source_encoding()` defaults to `"utf-8-sig"`. A UTF-8-BOM'd standalone `.rst` file keeps a leading U+FEFF in the parsed source instead of having it stripped. Pre-existing gap (old code used `fs::read_to_string` too), but now inconsistent with the auto-detection infra that exists everywhere else. | `src/docutilsrs/src/bin/rst2*.rs` | **low** | align default with `decode_source_auto` or `"utf-8-sig"` |
+| **J5** | `detect_encoding`'s `coding:`-declaration scanner splits only on `b'\n'`. Upstream Docutils (`docutils/io.py`, `Input.determine_encoding_from_data`) uses `data.splitlines()[:2]`, whose universal-newline splitting also recognizes bare `\r`. A classic CR-only first line would hide the declaration from the scan. Rare (legacy Mac line endings) but a genuine parity gap against the `coding_slug = re.compile(br'coding[:=]\s*([-\w.]+)')` pattern being ported. | `src/docutilsrs/src/encoding.rs` | **low** | match `[u8]::split` on `\n`/`\r\n`/`\r`, or a small manual line-boundary scan |
+| **J6** | No bound on the declaration-scan window: a file whose first "line" has no `\n` at all (e.g. one huge minified/data line) still gets `.to_ascii_lowercase()` over the *entire* buffer just to look for `coding:`, doubling memory for that document. Cap the scan to the first ~1–2 KB. | `src/docutilsrs/src/encoding.rs` | **low** | defensive hardening against pathological inputs, not an exploitable vuln on its own |
+
+**Process note (not a code item):** the commit that introduced this
+encoding work also staged an unrelated `.vscode/settings.json` change
+(`chat.tools.terminal.autoApprove` for `cargo fmt`/`test`/`check`).
+Recommend splitting that into its own commit — auto-approving command
+execution shouldn't silently ride along with a decoding-strictness fix.
+
+**Status (2026-08-01):** J1–J6 are implemented and regression-tested.
+Latin-1 aliases are canonicalized before codec fallback; bare UTF-16/32
+labels use a BOM when present and otherwise retain little-endian behavior;
+declaration scanning recognizes LF, CRLF, and CR within a bounded 2 KiB
+window. Search-index decode skips now emit `WARNING:` diagnostics, and the
+native `rst2*` binaries use automatic BOM/declaration detection unless an
+explicit `--input-encoding` is supplied. The existing `.vscode/settings.json`
+worktree change remains unrelated to this phase.
+
+**Exit:** J1–J6 fixed and regression-tested; no accepted deviations remain
+for this source-encoding hardening phase.

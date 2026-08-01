@@ -34,18 +34,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-fn decode_source(bytes: &[u8]) -> String {
-    match std::str::from_utf8(bytes) {
-        Ok(source) => source
-            .strip_prefix('\u{feff}')
-            .unwrap_or(source)
-            .to_string(),
-        Err(_) => bytes.iter().map(|&byte| char::from(byte)).collect(),
-    }
-}
-
-pub(crate) fn read_source_file(path: &Path) -> Result<String, std::io::Error> {
-    Ok(decode_source(&std::fs::read(path)?))
+pub(crate) fn read_source_file(path: &Path, encoding: &str) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|err| err.to_string())?;
+    docutilsrs::decode_source(&bytes, encoding).map_err(|err| err.to_string())
 }
 use std::path::{Path, PathBuf};
 
@@ -291,7 +282,8 @@ impl BuildEnvironment {
         srcdir: impl Into<PathBuf>,
         doctreedir: impl Into<PathBuf>,
     ) -> Self {
-        let settings = default_settings();
+        let mut settings = default_settings();
+        settings.insert("input_encoding".to_string(), config.source_encoding());
         // upstream injects `self` into settings['env'] — we skip that here.
 
         Self {
@@ -503,7 +495,7 @@ impl BuildEnvironment {
     pub fn parse_doc(&self, docname: &str) -> Result<Doctree, BuildError> {
         sanitize_docname(docname)?;
         let path = self.doc2path(docname);
-        let source = read_source_file(&path)
+        let source = read_source_file(&path, &self.config.source_encoding())
             .map_err(|e| BuildError::Other(format!("failed to read {}: {e}", path.display())))?;
         Ok(docutilsrs::parse_rst_with_source(&source, docname))
     }
@@ -611,7 +603,7 @@ impl BuildEnvironment {
 
         for docname in &docnames {
             let path = self.doc2path(docname);
-            let source = read_source_file(&path).map_err(|e| {
+            let source = read_source_file(&path, &self.config.source_encoding()).map_err(|e| {
                 BuildError::Other(format!("failed to read {}: {e}", path.display()))
             })?;
 
@@ -669,7 +661,7 @@ impl BuildEnvironment {
     /// instead.
     pub fn read_one(&mut self, docname: &str) -> Result<(), BuildError> {
         let path = self.doc2path(docname);
-        let source = read_source_file(&path)
+        let source = read_source_file(&path, &self.config.source_encoding())
             .map_err(|e| BuildError::Other(format!("failed to read {}: {e}", path.display())))?;
         self.read_one_with_source(docname, &source)
     }
@@ -2147,8 +2139,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("index.rst"), b"Caf\xFC\n====\n").unwrap();
         let project = EnvProject::new(dir.path(), &[(".rst", "restructuredtext")]);
+        let mut raw_config = HashMap::new();
+        raw_config.insert(
+            "source_encoding".to_string(),
+            crate::config::ConfigVal::Str("latin-1".to_string()),
+        );
         let env = BuildEnvironment::new(
-            SphinxConfig::new_defaults(),
+            SphinxConfig::new(raw_config, HashMap::new()),
             project,
             dir.path(),
             dir.path().join("doctrees"),

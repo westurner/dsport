@@ -653,6 +653,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
+ "encoding_rs",
  "insta",
  "mathrenderrs",
  "mockall",

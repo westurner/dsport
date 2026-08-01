@@ -481,7 +481,10 @@ impl Builder for LinkcheckBuilder {
         let mut checks: Vec<(String, String)> = Vec::new();
         for docname in &docnames {
             let src_path = srcdir.join(format!("{docname}.rst"));
-            let source = match std::fs::read_to_string(&src_path) {
+            let source = match crate::environment::read_source_file(
+                &src_path,
+                &env.config.source_encoding(),
+            ) {
                 Ok(s) => s,
                 Err(_) => continue,
             };

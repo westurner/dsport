@@ -341,30 +341,91 @@ fn first_difference(left: &[u8], right: &[u8]) -> String {
     )
 }
 
+/// Current, intentionally bounded parity deviations. These labels keep the
+/// aggregate matrix useful while each builder family is brought to parity;
+/// the raw path and byte diff remain in the report so regressions still change
+/// the snapshot.
+fn accepted_deviation(builder: &str, path: &str) -> Option<&'static str> {
+    if builder == "linkcheck" {
+        return None;
+    }
+    if builder == "json" && path == "environment.pickle" {
+        return Some("H8b: Rust persists environment.json instead of Python pickle");
+    }
+    match builder {
+        "html" | "dirhtml" | "singlehtml" => {
+            Some("H11.2: HTML-family paths, assets, and page templates pending")
+        }
+        "json" => Some("H11.6: JSONHTMLBuilder context and artifacts pending"),
+        "latex" | "man" => Some("H11.4: project-oriented output pending"),
+        "text" | "xml" | "pseudoxml" => Some("H11.3: writer metadata and formatting pending"),
+        "gettext" => Some("H11.5: per-document gettext catalogs pending"),
+        "changes" => Some("H11.5: changes report layout and output naming pending"),
+        _ => None,
+    }
+}
+
 /// Produce a compact, content-sensitive tree diff for one builder/fixture.
 fn diff_parity_trees(
+    builder: &str,
     python: &BTreeMap<String, Vec<u8>>,
     rust: &BTreeMap<String, Vec<u8>>,
 ) -> Vec<String> {
     let mut diff = Vec::new();
     let paths: std::collections::BTreeSet<_> = python.keys().chain(rust.keys()).collect();
     for path in paths {
+        let deviation = accepted_deviation(builder, path);
+        let record = |detail: String| {
+            deviation
+                .map(|reason| format!("accepted_deviation: {reason}: {detail}"))
+                .unwrap_or(detail)
+        };
         match (python.get(path), rust.get(path)) {
-            (Some(_), None) => diff.push(format!("missing_in_rust: {path}")),
-            (None, Some(_)) => diff.push(format!("rust_only: {path}")),
+            (Some(_), None) => diff.push(record(format!("missing_in_rust: {path}"))),
+            (None, Some(_)) => diff.push(record(format!("rust_only: {path}"))),
             (Some(python_bytes), Some(rust_bytes)) if python_bytes != rust_bytes => {
-                diff.push(format!(
+                diff.push(record(format!(
                     "changed: {path} python={} rust={} {}",
                     stable_digest(python_bytes),
                     stable_digest(rust_bytes),
                     first_difference(python_bytes, rust_bytes),
-                ))
+                )))
             }
             (Some(_), Some(_)) => {}
             (None, None) => unreachable!(),
         }
     }
     diff
+}
+
+fn assert_builder_entry_point(
+    builder: &str,
+    fixture: &BuilderParityFixture,
+    tree: &BTreeMap<String, Vec<u8>>,
+    side: &str,
+) {
+    let has_changes = fixture.files.iter().any(|(_, contents)| {
+        contents.contains(".. versionadded::")
+            || contents.contains(".. versionchanged::")
+            || contents.contains(".. deprecated::")
+    });
+    let present = match builder {
+        "html" | "dirhtml" | "singlehtml" => tree.contains_key("index.html"),
+        "json" => tree.contains_key("index.fjson") && tree.contains_key("globalcontext.json"),
+        "latex" => tree.keys().any(|path| path.ends_with(".tex")),
+        "man" => tree.keys().any(|path| path.ends_with(".1")),
+        "linkcheck" => true,
+        "text" => tree.contains_key("index.txt"),
+        "xml" => tree.contains_key("index.xml"),
+        "pseudoxml" => tree.contains_key("index.pseudoxml"),
+        "gettext" => tree.keys().any(|path| path.ends_with(".pot")),
+        "changes" => !has_changes || tree.keys().any(|path| path.ends_with(".html")),
+        _ => false,
+    };
+    assert!(
+        present,
+        "{side} `{builder}` output is missing its entry point"
+    );
 }
 
 /// Build every self-contained fixture with every native builder and snapshot
@@ -458,9 +519,11 @@ fn native_builder_fixture_parity_matrix() {
                     )
                 })
                 .collect();
+            assert_builder_entry_point(builder, fixture, &python_tree, "Python");
+            assert_builder_entry_point(builder, fixture, &rust_tree, "Rust");
             matrix.insert(
                 format!("{}::{builder}", fixture.name),
-                diff_parity_trees(&python_tree, &rust_tree),
+                diff_parity_trees(builder, &python_tree, &rust_tree),
             );
         }
     }

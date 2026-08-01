@@ -628,8 +628,11 @@ impl Builder for HtmlBuilder {
                     self.build_doc_themed_from_tree(docname, &tree, outdir, &meta)?;
                 }
             }
-            // Copy source to _sources/{docname}.rst.txt (mirrors StandaloneHTMLBuilder).
-            copy_source_file(&src_path, docname, outdir)?;
+            // Copy source to _sources/{docname}.rst.txt when enabled, matching
+            // StandaloneHTMLBuilder's html_copy_source setting.
+            if env.config.html_copy_source() {
+                copy_source_file(&src_path, docname, outdir)?;
+            }
             result.written += 1;
         }
 
@@ -637,19 +640,23 @@ impl Builder for HtmlBuilder {
         // `env.indexentries`/`env.py_domain` via `crate::genindex`, rather
         // than the placeholder stub `write_static_files` used to write
         // unconditionally.
-        let genindex_buckets = crate::genindex::build_genindex(env);
-        self.write_page(
-            "genindex",
-            &self.render_genindex_page(&genindex_buckets, &meta),
-            outdir,
-        )?;
-        let modindex_buckets = crate::genindex::build_modindex(env);
-        if !modindex_buckets.is_empty() {
+        if env.config.html_use_index() {
+            let genindex_buckets = crate::genindex::build_genindex(env);
             self.write_page(
-                "py-modindex",
-                &self.render_modindex_page(&modindex_buckets, &meta),
+                "genindex",
+                &self.render_genindex_page(&genindex_buckets, &meta),
                 outdir,
             )?;
+        }
+        if env.config.html_domain_indices() {
+            let modindex_buckets = crate::genindex::build_modindex(env);
+            if !modindex_buckets.is_empty() {
+                self.write_page(
+                    "py-modindex",
+                    &self.render_modindex_page(&modindex_buckets, &meta),
+                    outdir,
+                )?;
+            }
         }
 
         // Generate the JS search index (searchindex.js) over all built docs,
@@ -1168,6 +1175,32 @@ mod tests {
         assert_eq!(result.written, 2);
         assert!(out.path().join("index.html").exists());
         assert!(out.path().join("guide").join("intro.html").exists());
+    }
+
+    #[test]
+    fn build_all_respects_html_copy_source() {
+        use crate::config::{ConfigVal, SphinxConfig};
+
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        std::fs::write(src.path().join("index.rst"), "Home\n====\n\nText.\n").unwrap();
+
+        let mut raw = std::collections::HashMap::new();
+        raw.insert("html_copy_source".into(), ConfigVal::Bool(false));
+        raw.insert("html_use_index".into(), ConfigVal::Bool(false));
+        raw.insert("html_domain_indices".into(), ConfigVal::List(vec![]));
+        let config = SphinxConfig::new(raw, std::collections::HashMap::new());
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+
+        builder().build_all(src.path(), out.path(), &env).unwrap();
+
+        assert!(out.path().join("index.html").exists());
+        assert!(!out.path().join("_sources").exists());
+        assert!(!out.path().join("genindex.html").exists());
+        assert!(!out.path().join("py-modindex.html").exists());
     }
 
     #[test]

@@ -1827,9 +1827,13 @@ impl SphinxConfig {
 
     /// `html_domain_indices`.
     pub fn html_domain_indices(&self) -> bool {
-        self.get("html_domain_indices")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true)
+        match self.get("html_domain_indices") {
+            Some(v) => v
+                .as_bool()
+                .or_else(|| v.as_list().map(|items| !items.is_empty()))
+                .unwrap_or(true),
+            None => true,
+        }
     }
 
     /// `html_use_index` — whether to generate `genindex`.

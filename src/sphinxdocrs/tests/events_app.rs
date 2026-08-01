@@ -458,7 +458,7 @@ def setup(app):
         root,
         docutilsrs::NodeKind::Extension {
             class_name: "TodoNode".to_string(),
-            attrs: HashMap::new(),
+            attrs: std::collections::BTreeMap::new(),
         },
     );
     tree.append(

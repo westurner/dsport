@@ -1265,6 +1265,182 @@ missing, extra, or changed artifacts rather than being silently discarded.
 `make parity` runs the feature-gated parity test, and the dedicated CI
 `parity` job installs upstream Sphinx/Pygments and runs the same command.
 
+#### H11 parity-gap remediation plan
+
+The H11 snapshot is a deterministic gap report, not a claim that every
+native builder is byte-identical to Python Sphinx. The current report has
+four useful categories:
+
+1. `linkcheck` is already exact for both fixtures and should remain the
+   control case.
+2. Metadata-only differences include timestamps, generator comments,
+   temporary source paths, JSON key ordering, and builder cache formats.
+3. Artifact-shape differences include `_sources`, theme assets, search and
+   index pages, per-document catalogs, and project-level LaTeX/manpage files.
+4. Content differences include HTML-family layouts, text heading rules,
+   XML/pseudo-XML node metadata, JSON page context, and changes reports.
+
+Do not update the snapshot wholesale to make the test green. First classify
+each difference as exact, fixed, or an explicitly recorded accepted
+deviation. The target is a small deviation record containing only deliberate
+compatibility limits, with unexpected path or content changes failing the
+matrix.
+
+##### H11.1 Shared output contract and normalizer
+
+Before changing individual builders, centralize the output contract used by
+`tests/parity.rs` and the builder implementations:
+
+- define the expected behavior for `index`, `guide`, `guide/index`, and
+  nested document names;
+- test `html_copy_source`, `html_use_index`, `html_domain_indices`, and
+  `html_extra_path` explicitly in fixture configuration;
+- centralize source-copy paths, directory-layout paths, search/index target
+  URIs, and generated metadata handling;
+- keep JSON canonicalization, timestamp replacement, generator replacement,
+  and temporary-root replacement field-aware and limited to known metadata;
+- report `accepted_deviation`, `missing_in_rust`, `rust_only`, and `changed`
+  separately instead of representing every difference as an opaque digest.
+
+The normalizer must never hide HTML, XML, text, token, or asset differences.
+Python pickle versus Rust JSON environment persistence remains an accepted H8b
+deviation unless a future decision explicitly requires reproducing pickle.
+
+##### H11.2 HTML, dirhtml, and singlehtml
+
+Apply the shared contract to `builders/html.rs`, `builders/dirhtml.rs`, and
+`builders/singlehtml.rs` in this order:
+
+1. Match source-copy configuration and `_sources/{docname}` paths.
+2. Match flat and directory page roots, including `data-content_root`,
+   relative stylesheet links, and `guide/index.html` behavior.
+3. Align `search.html` versus `search/index.html` with the selected builder.
+4. Align `genindex.html` versus `genindex/index.html` and domain-index
+   enablement.
+5. Match `.buildinfo` and `objects.inv` metadata and contents where the
+   corresponding Rust subsystem exists.
+6. Compare theme assets byte-for-byte only when they are sourced from the
+   same installed theme. Otherwise record the Rust theme asset set as an
+   explicit H6 deviation rather than silently normalizing it away.
+
+Add focused fixture cases for flat HTML, directory HTML, single HTML, source
+copy enabled/disabled, search enabled/disabled, and an index page with a
+nested toctree. Promote each fixed artifact from the gap report into a direct
+assertion before regenerating the full matrix snapshot.
+
+##### H11.3 Text, XML, and pseudo-XML writers
+
+Use the `docutilsrs` writers behind `builders/text.rs`, `builders/xml.rs`, and
+`builders/pseudoxml.rs` as a separate parity slice. The current gaps show:
+
+- different section underline selection and duplicated document titles in
+  text output;
+- Python source metadata and generated comments in XML output;
+- Python `source` root attributes versus Rust `ids`/`names` in pseudo-XML;
+- possible differences in prolog, doctype, escaping, and whitespace.
+
+Preserve source path, line, rawsource, ids, and names consistently during
+parser/doctree lowering, then make each writer consume the same metadata.
+Add byte-parity fixtures for headings, nested sections, lists, notes, code
+blocks, and source metadata. Keep the existing stack-safety tests unchanged.
+
+##### H11.4 Project-oriented LaTeX and man builders
+
+`builders/latex.rs` and `builders/manpage.rs` currently write one output per
+RST docname, while upstream uses project-level configuration and output
+names.
+
+For LaTeX:
+
+- read and honor `latex_documents`;
+- generate the configured master file, such as `paritymatrix.tex`;
+- generate the expected support files (`.sty`, `.xdy`, `Makefile`,
+  `make.bat`, and latexmk configuration) through reusable assets;
+- preserve document ordering and master-document includes;
+- add fixtures with explicit `latex_documents` and upstream defaults.
+
+For manpages:
+
+- read and honor `man_pages`;
+- generate configured command names and sections, such as
+  `paritymatrix.1`;
+- stop treating every source document as an independent manpage unless it is
+  configured as one;
+- add multiple-manpage and default-project fixtures.
+
+These changes should be implemented behind the existing `Builder` contract,
+with project-level output tested through `SphinxApp::build()` rather than only
+through direct `build_doc()` calls.
+
+##### H11.5 Gettext and changes builders
+
+Complete the currently documented H7c/H7d deviations in
+`builders/gettext.rs` and `builders/changes.rs`.
+
+For gettext:
+
+- emit per-document `.pot` files by default, matching upstream;
+- honor `gettext_compact` and related output naming options;
+- extract list items, definition lists, fields, table cells, and image alt
+  text;
+- preserve source locations after doctree nodes carry line information;
+- test duplicate messages, per-document locations, and compact output.
+
+For changes:
+
+- match the upstream `changes.html` output name and layout;
+- group entries by version while preserving document and source metadata;
+- match the HTML structure and module/document grouping;
+- add multi-document fixtures containing `versionadded`, `versionchanged`,
+  and `deprecated` entries;
+- remove the current flat `index.html` accepted deviation when parity is
+  achieved.
+
+##### H11.6 JSON builder compatibility
+
+Stabilize `builders/json.rs` in two steps. First make the native contract
+deterministic: canonical JSON field ordering, deterministic `last_updated`,
+consistent `sourcename`, and explicit handling of absent search/index fields.
+Then expand toward Python `JSONHTMLBuilder` parity:
+
+- match `globalcontext.json` fields and value types;
+- populate page parents, previous/next links, and complete page context;
+- generate `searchindex.json` and the expected auxiliary JSON pages;
+- match title, body, TOC, and target URI semantics for nested documents;
+- keep `environment.pickle` as an explicit accepted deviation while Rust
+  persists `environment.json` in the doctree directory.
+
+Add JSON-specific structural comparisons that parse both sides rather than
+only comparing serialized bytes. The final tree comparison should still
+check file presence and exact normalized scalar values.
+
+##### H11.7 Delivery order and completion gate
+
+Implement the remediation in this order:
+
+1. Shared output contract, normalizer classification, and direct artifact
+   assertions.
+2. HTML/dirhtml/singlehtml path and index behavior.
+3. Text/XML/pseudo-XML metadata and writer parity.
+4. LaTeX and manpage project-level output.
+5. Gettext and changes output models.
+6. JSON page/global context and search artifacts.
+7. Theme assets, inventory contents, and remaining explicitly accepted
+   deviations.
+
+After each slice, run the narrow builder tests and:
+
+```text
+cargo test -p sphinxdocrs --features test-parity --test parity native_builder_fixture_parity_matrix
+cargo clippy -p sphinxdocrs --all-targets -- -D warnings
+cargo test -p docutilsrs --all-targets
+```
+
+H11 remediation is complete when `make parity` remains green, the matrix
+contains no unexpected differences, every remaining deviation is named by
+builder/path with a rationale, and each native builder has at least one
+fixture assertion beyond the aggregate snapshot.
+
 ### Tier H12 — stack-safe docutilsrs renderers
 
 The parser, Python node lowering, block emission, inline emission, pseudo-XML

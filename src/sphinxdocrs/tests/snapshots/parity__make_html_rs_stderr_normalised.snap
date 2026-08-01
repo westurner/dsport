@@ -4,3 +4,4 @@ expression: normalised
 ---
 - "sphinxdocrs: make mode: running SphinxApp (builder=html)"
 - "Build succeeded: <N> file(s) written."
+- "WARNING: guide: document isn't included in any toctree"

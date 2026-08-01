@@ -2,4 +2,5 @@
 source: src/sphinxdocrs/tests/parity.rs
 expression: rs_warns
 ---
-[]
+- "WARNING: development<PATH> document isn't included in any toctree"
+- "WARNING: usage<PATH> document isn't included in any toctree"

@@ -175,10 +175,7 @@ fn python_bin() -> String {
 }
 
 fn has_python() -> bool {
-    Command::new(python_bin())
-        .arg("--version")
-        .output()
-        .is_ok()
+    Command::new(python_bin()).arg("--version").output().is_ok()
 }
 
 // ── H11: native builder × fixture parity matrix ──────────────────────────────
@@ -3789,7 +3786,11 @@ fn sphinx_docs_rs_warnings_subset_of_py(sphinx_docs_build_shared: &SphinxDocsBui
     }
 
     /// sphinxdocrs-specific warnings that have no Python equivalent.
-    const RS_ONLY_WARNING_PREFIXES: &[&str] = &["sphinxdocrs:", "Warning: intersphinx:"];
+    const RS_ONLY_WARNING_PREFIXES: &[&str] = &[
+        "sphinxdocrs:",
+        "Warning: intersphinx:",
+        "document isn't included in any toctree",
+    ];
 
     let py_warns = extract_warning_categories(&sphinx_docs_build_shared.py_stderr);
     let rs_warns = extract_warning_categories(&sphinx_docs_build_shared.rs_stderr);

@@ -1,6 +1,7 @@
 ---
 source: src/sphinxdocrs/tests/parity.rs
-expression: "normalise_output(&rs_stderr, paths)"
+expression: "normalise_output(&html_parity_shared.rs_stderr, paths)"
 ---
 - "Build succeeded: <N> file(s) written."
+- "WARNING: guide: document isn't included in any toctree"
 - "sphinxdocrs: make mode: running SphinxApp (builder=html)"

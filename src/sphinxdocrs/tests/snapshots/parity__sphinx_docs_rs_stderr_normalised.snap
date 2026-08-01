@@ -3,7 +3,7 @@ source: src/sphinxdocrs/tests/parity.rs
 expression: normalised
 ---
 - "sphinxdocrs: running SphinxApp::new"
-- "sphinxdocrs: intersphinx: fetching https://docs.python.org/3/objects.inv"
-- "sphinxdocrs: intersphinx: fetching https://docs.readthedocs.io/en/stable/objects.inv"
-- "sphinxdocrs: intersphinx: fetching https://requests.readthedocs.io/en/latest/objects.inv"
 - "Build succeeded: <N> file(s) written."
+- "WARNING: development/tutorials/examples/README: document isn't included in any toctree"
+- "WARNING: usage/extensions/example_google: document isn't included in any toctree"
+- "WARNING: usage/extensions/example_numpy: document isn't included in any toctree"

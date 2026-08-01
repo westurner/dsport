@@ -99,6 +99,12 @@ pub enum Block {
         text: String,
         line: u32,
     },
+    /// A paragraph returned by a Python extension with its inline doctree
+    /// preserved instead of flattened through `astext()`.
+    RichParagraph {
+        children: Vec<InlineBlock>,
+        line: u32,
+    },
     BulletList {
         bullet: char,
         items: Vec<Vec<Block>>,
@@ -235,6 +241,18 @@ pub enum Block {
         children: Vec<Block>,
     },
     Table(TableData),
+}
+
+pub enum InlineBlock {
+    Text(String),
+    Emphasis(Vec<InlineBlock>),
+    Strong(Vec<InlineBlock>),
+    Literal(Vec<InlineBlock>),
+    TitleReference(Vec<InlineBlock>),
+    Inline {
+        classes: String,
+        children: Vec<InlineBlock>,
+    },
 }
 
 pub struct DefItem {
@@ -2833,6 +2851,66 @@ fn collect_substitutions(lines: &[&str], out: &mut HashMap<String, String>) {
 // Emit
 // ────────────────────────────────────────────────────────────────────────────
 
+fn emit_inline_block(tree: &mut Doctree, parent: NodeId, block: InlineBlock) {
+    let (kind, children) = match block {
+        InlineBlock::Text(text) => {
+            tree.append(parent, NodeKind::Text(text));
+            return;
+        }
+        InlineBlock::Emphasis(children) => (NodeKind::Emphasis, children),
+        InlineBlock::Strong(children) => (NodeKind::Strong, children),
+        InlineBlock::Literal(children) => (NodeKind::Literal, children),
+        InlineBlock::TitleReference(children) => (NodeKind::TitleReference, children),
+        InlineBlock::Inline { classes, children } => (NodeKind::Inline { classes }, children),
+    };
+    let node = tree.append(parent, kind);
+    for child in children {
+        emit_inline_block(tree, node, child);
+    }
+}
+
+#[cfg(test)]
+mod rich_paragraph_tests {
+    use super::*;
+
+    #[test]
+    fn rich_paragraph_emits_nested_inline_nodes() {
+        let mut tree = Doctree::new_document("<test>");
+        let root = tree.root();
+        let mut ctx = ParseCtx {
+            subs: HashMap::new(),
+            anon_target_count: 0,
+            anon_target_uris: Vec::new(),
+            footnote_count: 0,
+            citation_count: 0,
+            footnote_ref_count: 0,
+            citation_ref_count: 0,
+            current_line: 0,
+            inline_ref_sites: Vec::new(),
+        };
+        emit_block(
+            &mut tree,
+            root,
+            &mut ctx,
+            Block::RichParagraph {
+                line: 0,
+                children: vec![
+                    InlineBlock::Text("before ".to_string()),
+                    InlineBlock::Emphasis(vec![InlineBlock::Text("inside".to_string())]),
+                ],
+            },
+        );
+        let paragraph = tree.node(root).children[0];
+        assert!(matches!(tree.node(paragraph).kind, NodeKind::Paragraph));
+        assert!(matches!(tree.node(tree.node(paragraph).children[0]).kind,
+            NodeKind::Text(ref text) if text == "before "));
+        let emphasis = tree.node(paragraph).children[1];
+        assert!(matches!(tree.node(emphasis).kind, NodeKind::Emphasis));
+        assert!(matches!(tree.node(tree.node(emphasis).children[0]).kind,
+            NodeKind::Text(ref text) if text == "inside"));
+    }
+}
+
 fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Block) {
     match block {
         Block::Paragraph { text, line } => {
@@ -2840,6 +2918,15 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             ctx.current_line = line;
             let p = tree.append(parent, NodeKind::Paragraph);
             parse_inline(tree, p, ctx, &text);
+            ctx.current_line = prev_line;
+        }
+        Block::RichParagraph { children, line } => {
+            let prev_line = ctx.current_line;
+            ctx.current_line = line;
+            let p = tree.append(parent, NodeKind::Paragraph);
+            for child in children {
+                emit_inline_block(tree, p, child);
+            }
             ctx.current_line = prev_line;
         }
         Block::BulletList { bullet, items } => {

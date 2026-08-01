@@ -353,6 +353,40 @@ fn attribute_text(attrs: &BTreeMap<String, NodeAttributeValue>, name: &str) -> S
     }
 }
 
+fn python_node_to_inline(node: &Bound<'_, PyAny>) -> Option<crate::parser::InlineBlock> {
+    let tag = node.getattr("tagname").ok()?.extract::<String>().ok()?;
+    if tag == "#text" {
+        return Some(crate::parser::InlineBlock::Text(
+            node.call_method0("astext").ok()?.extract::<String>().ok()?,
+        ));
+    }
+    let children = node
+        .getattr("children")
+        .ok()
+        .and_then(|value| value.cast::<PyList>().ok().cloned())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|child| python_node_to_inline(&child))
+                .collect()
+        })
+        .unwrap_or_default();
+    match tag.as_str() {
+        "emphasis" => Some(crate::parser::InlineBlock::Emphasis(children)),
+        "strong" => Some(crate::parser::InlineBlock::Strong(children)),
+        "literal" => Some(crate::parser::InlineBlock::Literal(children)),
+        "title_reference" => Some(crate::parser::InlineBlock::TitleReference(children)),
+        "inline" => Some(crate::parser::InlineBlock::Inline {
+            classes: attribute_text(&python_node_attributes(node), "classes"),
+            children,
+        }),
+        _ => Some(crate::parser::InlineBlock::Inline {
+            classes: format!("role-{tag}"),
+            children,
+        }),
+    }
+}
+
 fn python_node_to_block(node: &Bound<'_, PyAny>) -> Option<crate::parser::Block> {
     let tag = node.getattr("tagname").ok()?.extract::<String>().ok()?;
     let text = node
@@ -374,7 +408,25 @@ fn python_node_to_block(node: &Bound<'_, PyAny>) -> Option<crate::parser::Block>
     let attrs = python_node_attributes(node);
     match tag.as_str() {
         "paragraph" | "title" | "term" | "rubric" => {
-            Some(crate::parser::Block::Paragraph { text, line: 0 })
+            let inline_children: Vec<crate::parser::InlineBlock> = node
+                .getattr("children")
+                .ok()
+                .and_then(|value| value.cast::<PyList>().ok().cloned())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|child| python_node_to_inline(&child))
+                        .collect()
+                })
+                .unwrap_or_default();
+            if inline_children.is_empty() && !text.is_empty() {
+                Some(crate::parser::Block::Paragraph { text, line: 0 })
+            } else {
+                Some(crate::parser::Block::RichParagraph {
+                    children: inline_children,
+                    line: 0,
+                })
+            }
         }
         "literal_block" => Some(crate::parser::Block::LiteralBlock {
             classes: attribute_text(&attrs, "classes"),
@@ -741,5 +793,40 @@ pub(crate) fn node_attribute_to_py<'py>(
             }
             dict.into_any()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::{Block, InlineBlock};
+
+    #[test]
+    fn python_paragraph_conversion_preserves_inline_children() {
+        Python::attach(|py| {
+            let globals = PyDict::new(py);
+            py.run(
+                c"from docutils import nodes
+p = nodes.paragraph(text='before ')
+p += nodes.emphasis(text='inside')
+",
+                None,
+                Some(&globals),
+            )
+            .unwrap();
+            let paragraph = globals.get_item("p").unwrap().unwrap();
+
+            let block = python_node_to_block(&paragraph).expect("paragraph conversion");
+            match block {
+                Block::RichParagraph { children, .. } => {
+                    assert!(
+                        matches!(children[0], InlineBlock::Text(ref text) if text == "before ")
+                    );
+                    assert!(matches!(children[1], InlineBlock::Emphasis(ref nested)
+                        if matches!(nested.as_slice(), [InlineBlock::Text(text)] if text == "inside")));
+                }
+                _ => panic!("expected rich paragraph"),
+            }
+        });
     }
 }

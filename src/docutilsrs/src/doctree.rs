@@ -444,6 +444,64 @@ pub struct Doctree {
     root: NodeId,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VisitEvent {
+    Enter { id: NodeId, depth: usize },
+    Exit { id: NodeId, depth: usize },
+}
+
+#[derive(Debug, Clone, Copy)]
+struct VisitFrame {
+    id: NodeId,
+    depth: usize,
+    next_child: usize,
+}
+
+pub(crate) struct DepthFirst<'a> {
+    tree: &'a Doctree,
+    stack: Vec<VisitFrame>,
+    enter_pending: bool,
+}
+
+impl<'a> Iterator for DepthFirst<'a> {
+    type Item = VisitEvent;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.enter_pending {
+            self.enter_pending = false;
+            let frame = self.stack.last()?;
+            return Some(VisitEvent::Enter {
+                id: frame.id,
+                depth: frame.depth,
+            });
+        }
+        if self.stack.is_empty() {
+            return None;
+        }
+        let parent_index = self.stack.len() - 1;
+        let (parent_id, parent_depth, child_index) = {
+            let frame = &mut self.stack[parent_index];
+            let child_index = frame.next_child;
+            frame.next_child += 1;
+            (frame.id, frame.depth, child_index)
+        };
+        if let Some(&child) = self.tree.node(parent_id).children.get(child_index) {
+            self.stack.push(VisitFrame {
+                id: child,
+                depth: parent_depth + 1,
+                next_child: 0,
+            });
+            self.enter_pending = true;
+            return self.next();
+        }
+        let frame = self.stack.pop()?;
+        Some(VisitEvent::Exit {
+            id: frame.id,
+            depth: frame.depth,
+        })
+    }
+}
+
 impl Doctree {
     /// Create an empty document with the given `source` attribute.
     pub fn new_document(source: impl Into<String>) -> Self {
@@ -466,6 +524,18 @@ impl Doctree {
     /// Identifier of the root `<document>` node.
     pub fn root(&self) -> NodeId {
         self.root
+    }
+
+    pub(crate) fn depth_first(&self, root: NodeId) -> DepthFirst<'_> {
+        DepthFirst {
+            tree: self,
+            stack: vec![VisitFrame {
+                id: root,
+                depth: 0,
+                next_child: 0,
+            }],
+            enter_pending: true,
+        }
     }
 
     /// Borrow a node by id. Panics on unknown id (ids are arena-local; never
@@ -1294,5 +1364,34 @@ mod doctree_serde_tests {
         let bytes = tree.to_bytes();
         let restored = Doctree::from_bytes(&bytes).unwrap();
         assert_eq!(restored.nodes_len(), tree.nodes_len());
+    }
+
+    #[test]
+    fn depth_first_traversal_is_stack_safe_and_ordered() {
+        let mut tree = Doctree::new_document("deep.rst");
+        let mut parent = tree.root();
+        for _ in 0..10_000 {
+            parent = tree.append(
+                parent,
+                NodeKind::Container {
+                    classes: String::new(),
+                },
+            );
+        }
+
+        let events: Vec<_> = tree.depth_first(tree.root()).collect();
+        assert_eq!(events.len(), 20_002);
+        assert!(matches!(
+            events.first(),
+            Some(VisitEvent::Enter { depth: 0, .. })
+        ));
+        assert!(matches!(
+            events.last(),
+            Some(VisitEvent::Exit { depth: 0, .. })
+        ));
+        assert!(events.iter().enumerate().all(|(index, event)| match event {
+            VisitEvent::Enter { depth, .. } => *depth == index,
+            VisitEvent::Exit { depth, .. } => *depth == 20_001 - index,
+        }));
     }
 }

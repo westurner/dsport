@@ -353,105 +353,201 @@ fn attribute_text(attrs: &BTreeMap<String, NodeAttributeValue>, name: &str) -> S
     }
 }
 
-fn python_node_to_inline(node: &Bound<'_, PyAny>) -> Option<crate::parser::InlineBlock> {
-    let tag = node.getattr("tagname").ok()?.extract::<String>().ok()?;
-    if tag == "#text" {
-        return Some(crate::parser::InlineBlock::Text(
-            node.call_method0("astext").ok()?.extract::<String>().ok()?,
-        ));
-    }
-    let children = node
-        .getattr("children")
+fn python_children(node: &Bound<'_, PyAny>) -> Vec<Py<PyAny>> {
+    node.getattr("children")
         .ok()
         .and_then(|value| value.cast::<PyList>().ok().cloned())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|child| python_node_to_inline(&child))
-                .collect()
-        })
-        .unwrap_or_default();
-    match tag.as_str() {
-        "emphasis" => Some(crate::parser::InlineBlock::Emphasis(children)),
-        "strong" => Some(crate::parser::InlineBlock::Strong(children)),
-        "literal" => Some(crate::parser::InlineBlock::Literal(children)),
-        "title_reference" => Some(crate::parser::InlineBlock::TitleReference(children)),
-        "inline" => Some(crate::parser::InlineBlock::Inline {
-            classes: attribute_text(&python_node_attributes(node), "classes"),
-            children,
-        }),
-        _ => Some(crate::parser::InlineBlock::Inline {
-            classes: format!("role-{tag}"),
-            children,
-        }),
+        .map(|items| items.iter().map(|child| child.unbind()).collect())
+        .unwrap_or_default()
+}
+
+fn python_node_to_inline(node: &Bound<'_, PyAny>) -> Option<crate::parser::InlineBlock> {
+    enum Task {
+        Enter(Py<PyAny>),
+        Build {
+            tag: String,
+            classes: String,
+            child_count: usize,
+        },
     }
+
+    let py = node.py();
+    let mut tasks = vec![Task::Enter(node.clone().unbind())];
+    let mut values: Vec<Option<crate::parser::InlineBlock>> = Vec::new();
+    while let Some(task) = tasks.pop() {
+        match task {
+            Task::Enter(node) => {
+                let node = node.bind(py);
+                // A node that can't yield a `tagname` string (or, for a
+                // `#text` node, an `astext()` string) is simply
+                // unconvertible. Push `None` and move on rather than
+                // aborting the whole conversion: the enclosing `Build`
+                // task's `values.drain(..).flatten()` already treats a
+                // `None` entry as "omit this child", matching the original
+                // recursive implementation's `filter_map` behavior of
+                // skipping one bad node instead of dropping every sibling
+                // and ancestor still queued on the stack.
+                let Some(tag) = node
+                    .getattr("tagname")
+                    .ok()
+                    .and_then(|t| t.extract::<String>().ok())
+                else {
+                    values.push(None);
+                    continue;
+                };
+                if tag == "#text" {
+                    let Some(text) = node
+                        .call_method0("astext")
+                        .ok()
+                        .and_then(|t| t.extract::<String>().ok())
+                    else {
+                        values.push(None);
+                        continue;
+                    };
+                    values.push(Some(crate::parser::InlineBlock::Text(text)));
+                    continue;
+                }
+                let children = python_children(node);
+                let classes = attribute_text(&python_node_attributes(node), "classes");
+                let child_count = children.len();
+                tasks.push(Task::Build {
+                    tag,
+                    classes,
+                    child_count,
+                });
+                for child in children.into_iter().rev() {
+                    tasks.push(Task::Enter(child));
+                }
+            }
+            Task::Build {
+                tag,
+                classes,
+                child_count,
+            } => {
+                let start = values.len().saturating_sub(child_count);
+                let children = values.drain(start..).flatten().collect();
+                let value = match tag.as_str() {
+                    "emphasis" => crate::parser::InlineBlock::Emphasis(children),
+                    "strong" => crate::parser::InlineBlock::Strong(children),
+                    "literal" => crate::parser::InlineBlock::Literal(children),
+                    "title_reference" => crate::parser::InlineBlock::TitleReference(children),
+                    "inline" => crate::parser::InlineBlock::Inline { classes, children },
+                    _ => crate::parser::InlineBlock::Inline {
+                        classes: format!("role-{tag}"),
+                        children,
+                    },
+                };
+                values.push(Some(value));
+            }
+        }
+    }
+    values.pop().flatten()
 }
 
 fn python_node_to_block(node: &Bound<'_, PyAny>) -> Option<crate::parser::Block> {
-    let tag = node.getattr("tagname").ok()?.extract::<String>().ok()?;
-    let text = node
-        .call_method0("astext")
-        .ok()
-        .and_then(|v| v.extract::<String>().ok())
-        .unwrap_or_default();
-    let children: Vec<crate::parser::Block> = node
-        .getattr("children")
-        .ok()
-        .and_then(|v| v.cast::<PyList>().ok().cloned())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|child| python_node_to_block(&child))
-                .collect()
-        })
-        .unwrap_or_default();
-    let attrs = python_node_attributes(node);
-    match tag.as_str() {
-        "paragraph" | "title" | "term" | "rubric" => {
-            let inline_children: Vec<crate::parser::InlineBlock> = node
-                .getattr("children")
-                .ok()
-                .and_then(|value| value.cast::<PyList>().ok().cloned())
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(|child| python_node_to_inline(&child))
-                        .collect()
-                })
-                .unwrap_or_default();
-            if inline_children.is_empty() && !text.is_empty() {
-                Some(crate::parser::Block::Paragraph { text, line: 0 })
-            } else {
-                Some(crate::parser::Block::RichParagraph {
-                    children: inline_children,
-                    line: 0,
-                })
-            }
-        }
-        "literal_block" => Some(crate::parser::Block::LiteralBlock {
-            classes: attribute_text(&attrs, "classes"),
-            text,
-            tokens: None,
-        }),
-        "raw" => Some(crate::parser::Block::Raw {
-            format: attribute_text(&attrs, "format"),
-            text,
-        }),
-        "bullet_list" => Some(crate::parser::Block::BulletList {
-            bullet: '*',
-            items: children.into_iter().map(|child| vec![child]).collect(),
-        }),
-        _ => Some(crate::parser::Block::Extension {
-            class_name: node
-                .getattr("__class__")
-                .ok()
-                .and_then(|class| class.getattr("__name__").ok())
-                .and_then(|name| name.extract::<String>().ok())
-                .unwrap_or(tag),
-            attrs,
-            children,
-        }),
+    enum Task {
+        Enter(Py<PyAny>),
+        Build {
+            node: Py<PyAny>,
+            tag: String,
+            text: String,
+            attrs: BTreeMap<String, NodeAttributeValue>,
+            child_count: usize,
+        },
     }
+
+    let py = node.py();
+    let mut tasks = vec![Task::Enter(node.clone().unbind())];
+    let mut values: Vec<Option<crate::parser::Block>> = Vec::new();
+    while let Some(task) = tasks.pop() {
+        let (node, tag, text, attrs, child_count) = match task {
+            Task::Enter(node) => {
+                let bound = node.bind(py);
+                // See the matching comment in `python_node_to_inline`: skip
+                // a single unconvertible node instead of aborting the
+                // whole (stack-based) conversion.
+                let Some(tag) = bound
+                    .getattr("tagname")
+                    .ok()
+                    .and_then(|t| t.extract::<String>().ok())
+                else {
+                    values.push(None);
+                    continue;
+                };
+                let text = bound
+                    .call_method0("astext")
+                    .ok()
+                    .and_then(|value| value.extract::<String>().ok())
+                    .unwrap_or_default();
+                let attrs = python_node_attributes(bound);
+                let children = python_children(bound);
+                let child_count = children.len();
+                tasks.push(Task::Build {
+                    node,
+                    tag,
+                    text,
+                    attrs,
+                    child_count,
+                });
+                for child in children.into_iter().rev() {
+                    tasks.push(Task::Enter(child));
+                }
+                continue;
+            }
+            Task::Build {
+                node,
+                tag,
+                text,
+                attrs,
+                child_count,
+            } => (node, tag, text, attrs, child_count),
+        };
+        let start = values.len().saturating_sub(child_count);
+        let children: Vec<crate::parser::Block> = values.drain(start..).flatten().collect();
+        let value = match tag.as_str() {
+            "paragraph" | "title" | "term" | "rubric" => {
+                let bound = node.bind(py);
+                let inline_children: Vec<crate::parser::InlineBlock> = python_children(bound)
+                    .into_iter()
+                    .filter_map(|child| python_node_to_inline(child.bind(py)))
+                    .collect();
+                if inline_children.is_empty() && !text.is_empty() {
+                    crate::parser::Block::Paragraph { text, line: 0 }
+                } else {
+                    crate::parser::Block::RichParagraph {
+                        children: inline_children,
+                        line: 0,
+                    }
+                }
+            }
+            "literal_block" => crate::parser::Block::LiteralBlock {
+                classes: attribute_text(&attrs, "classes"),
+                text,
+                tokens: None,
+            },
+            "raw" => crate::parser::Block::Raw {
+                format: attribute_text(&attrs, "format"),
+                text,
+            },
+            "bullet_list" => crate::parser::Block::BulletList {
+                bullet: '*',
+                items: children.into_iter().map(|child| vec![child]).collect(),
+            },
+            _ => crate::parser::Block::Extension {
+                class_name: node
+                    .bind(py)
+                    .getattr("__class__")
+                    .ok()
+                    .and_then(|class| class.getattr("__name__").ok())
+                    .and_then(|name| name.extract::<String>().ok())
+                    .unwrap_or(tag),
+                attrs,
+                children,
+            },
+        };
+        values.push(Some(value));
+    }
+    values.pop().flatten()
 }
 
 /// Register a Python callable as a parse-time directive handler.
@@ -826,6 +922,88 @@ p += nodes.emphasis(text='inside')
                         if matches!(nested.as_slice(), [InlineBlock::Text(text)] if text == "inside")));
                 }
                 _ => panic!("expected rich paragraph"),
+            }
+        });
+    }
+
+    #[test]
+    fn python_block_conversion_skips_unconvertible_child_instead_of_aborting() {
+        // Regression test: `python_node_to_block`'s stack-based rewrite
+        // used `?` to bail out of the whole conversion the moment any
+        // single node (anywhere in the subtree) lacked a usable
+        // `tagname`. The original recursive implementation instead used
+        // `filter_map`, which drops only the unconvertible node and keeps
+        // its siblings/ancestors. A single malformed child (e.g. from a
+        // buggy extension) should not silently delete the rest of the
+        // document.
+        Python::attach(|py| {
+            let globals = PyDict::new(py);
+            py.run(
+                c"from docutils import nodes
+class Bogus:
+    pass
+p = nodes.paragraph()
+p += nodes.Text('good text')
+p.children.append(Bogus())
+",
+                None,
+                Some(&globals),
+            )
+            .unwrap();
+            let paragraph = globals.get_item("p").unwrap().unwrap();
+
+            let block = python_node_to_block(&paragraph);
+            assert!(
+                block.is_some(),
+                "a single unconvertible child must not abort the whole conversion"
+            );
+            match block.unwrap() {
+                Block::RichParagraph { children, .. } => {
+                    assert!(
+                        children
+                            .iter()
+                            .any(|c| matches!(c, InlineBlock::Text(t) if t == "good text")),
+                        "the convertible sibling should still be present"
+                    );
+                }
+                _ => panic!("expected rich paragraph"),
+            }
+        });
+    }
+
+    #[test]
+    fn python_inline_conversion_skips_unconvertible_child_instead_of_aborting() {
+        Python::attach(|py| {
+            let globals = PyDict::new(py);
+            py.run(
+                c"from docutils import nodes
+class Bogus:
+    pass
+e = nodes.emphasis()
+e += nodes.Text('good text')
+e.children.append(Bogus())
+",
+                None,
+                Some(&globals),
+            )
+            .unwrap();
+            let emphasis = globals.get_item("e").unwrap().unwrap();
+
+            let inline = python_node_to_inline(&emphasis);
+            assert!(
+                inline.is_some(),
+                "a single unconvertible child must not abort the whole conversion"
+            );
+            match inline.unwrap() {
+                InlineBlock::Emphasis(children) => {
+                    assert!(
+                        children
+                            .iter()
+                            .any(|c| matches!(c, InlineBlock::Text(t) if t == "good text")),
+                        "the convertible sibling should still be present"
+                    );
+                }
+                _ => panic!("expected emphasis"),
             }
         });
     }

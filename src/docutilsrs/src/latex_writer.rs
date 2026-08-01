@@ -375,19 +375,17 @@ fn wrap_cmd(
 }
 
 fn first_row_len(tree: &Doctree, table_id: NodeId) -> usize {
-    fn walk(tree: &Doctree, id: NodeId) -> Option<usize> {
-        let n = tree.node(id);
-        if let NodeKind::Row = &n.kind {
-            return Some(n.children.len());
+    let mut stack = vec![table_id];
+    while let Some(id) = stack.pop() {
+        let node = tree.node(id);
+        if let NodeKind::Row = &node.kind {
+            return node.children.len();
         }
-        for &c in &n.children {
-            if let Some(x) = walk(tree, c) {
-                return Some(x);
-            }
+        for &child in node.children.iter().rev() {
+            stack.push(child);
         }
-        None
     }
-    walk(tree, table_id).unwrap_or(0)
+    0
 }
 
 fn escape(s: &str) -> String {

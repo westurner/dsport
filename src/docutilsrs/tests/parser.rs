@@ -262,3 +262,23 @@ fn plain_role_without_domain_prefix_still_works() {
     let src = ":emphasis:`text`";
     insta::assert_snapshot!("plain_role_no_domain", pseudo_xml(&parse_rst(src)));
 }
+
+#[test]
+fn anonymous_target_does_not_drop_trailing_siblings() {
+    // Regression test: `emit_block`'s stack-based rewrite (see H12 in
+    // docs/sphinxdocrs-port-plan.md) used `return` inside the anonymous
+    // `Block::Target` arm to mean "skip the named-target code below and
+    // move on to the next queued block" -- which was correct when
+    // `emit_block` recursed per-block, but became "abandon every other
+    // block still queued on the shared stack" once the function switched
+    // to an explicit `Vec` stack. Any block that followed an anonymous
+    // target anywhere in a nested block list (list items, block quotes,
+    // sections, admonitions, ...) was silently dropped from the doctree.
+    let src = "* Intro.\n\n  __ http://example.com/\n\n  After the anonymous target.\n";
+    let xml = pseudo_xml(&parse_rst(src));
+    assert!(xml.contains("Intro"), "got:\n{xml}");
+    assert!(
+        xml.contains("After the anonymous target"),
+        "sibling block after an anonymous target was dropped:\n{xml}"
+    );
+}

@@ -16,6 +16,7 @@ Contents:
 7. [Rust-side test suites](#7-rust-side-test-suites)
 8. [Completed milestones](#8-completed-milestones-c--g--p-phases)
 9. [**H-phase: plan to close the remaining deferred work**](#9-h-phase--plan-to-close-the-remaining-deferred-work)
+10. [**H12: stack-safe docutilsrs renderers**](#h12-stack-safe-docutilsrs-renderers)
 
 ---
 
@@ -1256,6 +1257,183 @@ Expand `tests/parity.rs` from 2 scenarios to a matrix over
 diffing Rust vs Python output trees through a normalizer for accepted
 deviations (timestamps, generator comments). Add a `make parity` target
 and run it in CI behind `--features test-parity`.
+
+### Tier H12 — stack-safe docutilsrs renderers
+
+The parser, Python node lowering, block emission, inline emission, pseudo-XML
+writer, text collector, and LaTeX table search now use explicit stacks. The
+HTML, XML, manpage, ODT, and text renderers still contain renderer-local
+recursive child traversal. H12 removes that remaining call-stack dependency
+without changing output order, visitor callback order, or builder contracts.
+
+#### H12.1 — shared enter/exit traversal
+
+Add an internal depth-first traversal primitive near `Doctree`, backed by an
+explicit frame containing `NodeId`, depth, and the next child index. It should
+emit `Enter` and `Exit` events in document order, preserve arena child order,
+and make no recursion assumption. The primitive should remain internal unless
+another crate needs the same traversal contract.
+
+The traversal must guarantee:
+
+- `Enter(node)` precedes every descendant;
+- `Exit(node)` follows every descendant;
+- children are visited in their stored order;
+- depth is stable for each event;
+- a 10,000-level tree does not overflow the Rust call stack.
+
+#### H12.2 — XML and HTML5 renderers
+
+Start with `xml_writer.rs`, where `Enter` writes an opening tag, `Exit` writes
+the matching closing tag, and text/math payloads are handled as leaves. Keep
+attribute ordering, escaping, XML prolog, DTD, extension visitors, and
+literal-block whitespace unchanged.
+
+Apply the same event model to `html5_writer.rs`:
+
+- opening section/list/table/container elements occur on `Enter`;
+- closing elements occur on `Exit`;
+- text and leaf nodes emit on `Enter`;
+- registered extension `visit` callbacks run on `Enter`;
+- registered extension `depart` callbacks run on `Exit`;
+- renderer options and generator/date footer behavior remain outside the
+  traversal loop.
+
+#### H12.3 — manpage and ODT renderers
+
+Convert `manpage_writer.rs` and `odt_writer.rs` to the same explicit event
+loop. Preserve renderer-specific state in the event frame or a renderer
+context rather than relying on recursive local scope:
+
+- section depth changes at section enter/exit;
+- `.IP`/`.PP`/`.RS`/`.RE` ordering remains unchanged for manpage output;
+- ODT content XML remains balanced and valid;
+- extension visitors retain enter/depart ordering;
+- inline command wrappers close at the matching exit event.
+
+Keep ODT ZIP/package generation separate from content traversal. Compare
+extracted content XML and package entries rather than archive metadata when
+checking compatibility.
+
+#### H12.4 — text renderer postorder aggregation
+
+Treat `text_writer.rs` separately because it combines child results into
+parent block strings rather than streaming open/close markup. Replace
+`render_block` recursion with explicit postorder frames containing the node,
+depth, next child index, and accumulated child block results.
+
+Preserve section underline selection, list-item aggregation, definition-list
+indentation, block quotes, literal-block indentation, blank-line behavior,
+and inline text collection. Convert any remaining recursive inline text walk
+to the same explicit-stack collector.
+
+#### H12.5 — tests and parity gates
+
+Add shared deep-tree fixtures containing nested inline nodes, sections,
+containers, extension nodes, and mixed siblings. Add renderer-specific tests:
+
+- HTML output has balanced tags and retains deepest text;
+- XML output parses and has balanced tags;
+- manpage output completes and preserves control-command ordering;
+- ODT content XML is valid and retains deepest text;
+- text output preserves nesting, indentation, and deepest content.
+
+Run existing snapshots and coverage tests unchanged before and after each
+renderer migration. Use byte-for-byte comparisons for deterministic text,
+HTML, XML, and manpage output. For ODT compare extracted XML and structural
+package entries.
+
+Required gates for each slice:
+
+```text
+cargo test -p docutilsrs --lib
+cargo test -p docutilsrs --test html5_coverage
+cargo test -p docutilsrs --test manpage_coverage
+cargo test -p docutilsrs --test odt_coverage
+cargo test -p docutilsrs --test extension_node
+cargo check -p sphinxdocrs
+cargo fmt --all -- --check
+git diff --check
+```
+
+#### H12 delivery order
+
+1. Add the internal enter/exit traversal and deep-tree tests.
+2. Migrate XML and retain its existing well-formedness tests as the first
+  parity gate.
+3. Migrate HTML5, then manpage and ODT.
+4. Implement text-renderer postorder aggregation.
+5. Run the full docutilsrs and sphinxdocrs suites and record any accepted
+  deviations in this section.
+
+Do not replace recursion with a wrapper that calls the recursive renderer
+again: the renderer must consume explicit frames so nested depth is held on
+the heap. Do not change `NodeKind`, visitor APIs, builder names, or serialized
+doctree formats as part of H12.
+
+#### H12 status
+
+H12.1 through H12.5 are complete:
+
+- `doctree.rs` provides the shared `VisitEvent`/`DepthFirst` traversal
+  primitive with a stack-safety test at 10,000 levels of nesting.
+- `xml_writer.rs` uses `Doctree::depth_first` directly.
+- `html5_writer.rs`, `manpage_writer.rs`, and `odt_writer.rs` each use a
+  local `Task` enum (`Enter`/`Append`, plus writer-specific variants such as
+  manpage's `EnterListItemChild` and ODT's `EnterFlattenParagraph`) driven by
+  a `Vec<Task>` LIFO stack, preserving output order, control-command
+  ordering, and extension visit/depart ordering exactly.
+- `text_writer.rs` uses a depth-threshold fallback for `render_block`
+  (explicit postorder stack only past depth 512, since the recursive path is
+  otherwise faster for typical documents) and a fully explicit stack for
+  `inline_text`. This is an accepted deviation from the pure Enter/Exit model
+  used elsewhere, chosen because block aggregation needs child results
+  rather than streamed markup.
+- Each renderer has a `#[cfg(test)]` deep-tree test (10,000-level nesting)
+  confirming no call-stack overflow.
+- All required gates pass: `cargo test -p docutilsrs --lib` (38 passed),
+  `--test html5_coverage`, `--test manpage_coverage`, `--test odt_coverage`,
+  `--test extension_node`, `cargo check -p sphinxdocrs`,
+  `cargo test -p sphinxdocrs`, `cargo fmt --all -- --check`, and
+  `git diff --check`.
+
+#### H12 pitfall: `return`/`?` inside the driver loop is not the same as recursion
+
+`emit_block` (`parser.rs`) and `python_node_to_block`/`python_node_to_inline`
+(`plugins.rs`, the Python node lowering path) were converted to stack-based
+traversal in an earlier commit than the renderer migrations above. That
+conversion introduced two real bugs, both from the same root cause: code that
+relied on early-`return`/`?` to mean "stop processing *this one* recursive
+call" silently changed meaning to "abandon every other frame still queued on
+the shared stack" once the function stopped recursing.
+
+- `emit_block`'s anonymous `Block::Target` arm called `return;` to skip the
+  named-target code below it. Under recursion this only ended that one call;
+  under the stack-based rewrite it exited the whole function, discarding
+  every other block still on `tasks` — so any sibling content after an
+  anonymous target anywhere in a nested block list (list items, block
+  quotes, sections, admonitions, ...) was dropped from the doctree. Fixed by
+  replacing `return` with `continue`. Regression test:
+  `anonymous_target_does_not_drop_trailing_siblings` in
+  `src/docutilsrs/tests/parser.rs`.
+- `python_node_to_block`/`python_node_to_inline` used `?` to extract a Python
+  node's `tagname` (and, for `#text` nodes, `astext()`). Under recursion,
+  callers used `filter_map` over children, so one unconvertible node was
+  simply dropped from its parent's children. Under the stack-based rewrite,
+  `?` aborted the entire conversion (returning `None` for the whole
+  subtree) the moment any single descendant lacked a usable `tagname`.
+  Fixed by pushing `None` onto the `values` accumulator and continuing
+  instead of using `?`, which composes correctly with the existing
+  `values.drain(..).flatten()` step in the `Build` task. Regression tests:
+  `python_block_conversion_skips_unconvertible_child_instead_of_aborting` and
+  `python_inline_conversion_skips_unconvertible_child_instead_of_aborting` in
+  `src/docutilsrs/src/plugins.rs`.
+
+When converting a recursive function to an explicit stack, audit every
+early-return (`return`, `?`, `break` out of an outer scope) inside the loop
+body: anything that isn't a plain `continue` most likely changes semantics
+once the call stack becomes a heap-allocated queue instead of independent
+function-call frames.
 
 ### 9.5 Remaining work not completed this session
 

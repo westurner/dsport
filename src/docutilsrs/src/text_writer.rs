@@ -68,9 +68,63 @@ fn indent_lines(s: &str, columns: usize) -> String {
         .join("\n")
 }
 
-/// Render a single block-level node (and everything nested under it,
-/// recursively) into zero or more strings appended to `blocks`.
+/// Render a single block-level node (and everything nested under it).
 fn render_block(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<String>) {
+    if block_depth(tree, id) > 512 {
+        blocks.extend(render_deep_blocks(tree, id));
+    } else {
+        render_block_recursive(tree, id, depth, blocks);
+    }
+}
+
+fn block_depth(tree: &Doctree, root: NodeId) -> usize {
+    let mut stack = vec![(root, 1usize)];
+    let mut deepest = 0;
+    while let Some((id, depth)) = stack.pop() {
+        deepest = deepest.max(depth);
+        for &child in &tree.node(id).children {
+            stack.push((child, depth + 1));
+        }
+    }
+    deepest
+}
+
+fn render_deep_blocks(tree: &Doctree, root: NodeId) -> Vec<String> {
+    let mut tasks = vec![(root, false)];
+    let mut values: Vec<Vec<String>> = Vec::new();
+    while let Some((id, exiting)) = tasks.pop() {
+        if exiting {
+            let child_count = tree.node(id).children.len();
+            let split = values.len().saturating_sub(child_count);
+            let children = values.split_off(split);
+            let rendered = match &tree.node(id).kind {
+                NodeKind::Paragraph | NodeKind::Title | NodeKind::Subtitle { .. } => {
+                    vec![inline_text(tree, id)]
+                }
+                NodeKind::Transition => vec!["-".repeat(20)],
+                NodeKind::LiteralBlock { .. } => {
+                    vec![indent_lines(&inline_text(tree, id), INDENT_STEP)]
+                }
+                NodeKind::MathBlock { latex } => vec![indent_lines(latex, INDENT_STEP)],
+                NodeKind::Image { .. }
+                | NodeKind::Raw { .. }
+                | NodeKind::Comment
+                | NodeKind::SystemMessage { .. }
+                | NodeKind::Problematic { .. } => Vec::new(),
+                _ => children.into_iter().flatten().collect(),
+            };
+            values.push(rendered);
+        } else {
+            tasks.push((id, true));
+            for &child in tree.node(id).children.iter().rev() {
+                tasks.push((child, false));
+            }
+        }
+    }
+    values.pop().unwrap_or_default()
+}
+
+fn render_block_recursive(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<String>) {
     let node = tree.node(id);
     match &node.kind {
         NodeKind::Section { .. } => {
@@ -418,45 +472,56 @@ fn display_width(s: &str) -> usize {
 /// Flatten the inline content of `id` into a single-line (or, for a
 /// literal block, multi-line) string, applying simple RST-style markers
 /// for emphasis/strong/literal/title-reference.
+enum InlineTextTask {
+    Enter(NodeId),
+    Append(String),
+}
+
 fn inline_text(tree: &Doctree, id: NodeId) -> String {
-    let node = tree.node(id);
-    match &node.kind {
-        NodeKind::Text(s) => s.clone(),
-        NodeKind::Emphasis => wrap_children(tree, id, "*", "*"),
-        NodeKind::Strong => wrap_children(tree, id, "**", "**"),
-        NodeKind::Literal => wrap_children(tree, id, "`", "`"),
-        NodeKind::TitleReference => wrap_children(tree, id, "\u{2018}", "\u{2019}"),
-        NodeKind::Math { latex } => format!(":math:`{latex}`"),
-        NodeKind::FootnoteReference {
-            ids: _,
-            refid: _,
-            auto: _,
-        } => "[?]".to_string(),
-        NodeKind::CitationReference { ids: _, refid: _ } => "[?]".to_string(),
-        NodeKind::Reference { name, .. } => {
-            let inner = children_inline(tree, id);
-            if inner.is_empty() {
-                name.clone()
-            } else {
-                inner
-            }
+    let mut out = String::new();
+    let mut tasks = vec![InlineTextTask::Enter(id)];
+    while let Some(task) = tasks.pop() {
+        match task {
+            InlineTextTask::Append(text) => out.push_str(&text),
+            InlineTextTask::Enter(id) => match &tree.node(id).kind {
+                NodeKind::Text(text) => out.push_str(text),
+                NodeKind::Emphasis => schedule_inline_wrapper(tree, id, "*", "*", &mut tasks),
+                NodeKind::Strong => schedule_inline_wrapper(tree, id, "**", "**", &mut tasks),
+                NodeKind::Literal => schedule_inline_wrapper(tree, id, "`", "`", &mut tasks),
+                NodeKind::TitleReference => {
+                    schedule_inline_wrapper(tree, id, "\u{2018}", "\u{2019}", &mut tasks)
+                }
+                NodeKind::Math { latex } => out.push_str(&format!(":math:`{latex}`")),
+                NodeKind::FootnoteReference { .. } | NodeKind::CitationReference { .. } => {
+                    out.push_str("[?]")
+                }
+                NodeKind::Reference { name, .. } if tree.node(id).children.is_empty() => {
+                    out.push_str(name)
+                }
+                NodeKind::Image { .. } | NodeKind::Comment | NodeKind::Raw { .. } => {}
+                _ => {
+                    for &child in tree.node(id).children.iter().rev() {
+                        tasks.push(InlineTextTask::Enter(child));
+                    }
+                }
+            },
         }
-        NodeKind::Image { .. } | NodeKind::Comment | NodeKind::Raw { .. } => String::new(),
-        _ => children_inline(tree, id),
     }
+    out
 }
 
-fn children_inline(tree: &Doctree, id: NodeId) -> String {
-    tree.node(id)
-        .children
-        .iter()
-        .map(|&c| inline_text(tree, c))
-        .collect::<Vec<_>>()
-        .join("")
-}
-
-fn wrap_children(tree: &Doctree, id: NodeId, open: &str, close: &str) -> String {
-    format!("{open}{}{close}", children_inline(tree, id))
+fn schedule_inline_wrapper(
+    tree: &Doctree,
+    id: NodeId,
+    open: &str,
+    close: &str,
+    tasks: &mut Vec<InlineTextTask>,
+) {
+    tasks.push(InlineTextTask::Append(close.to_string()));
+    for &child in tree.node(id).children.iter().rev() {
+        tasks.push(InlineTextTask::Enter(child));
+    }
+    tasks.push(InlineTextTask::Append(open.to_string()));
 }
 
 #[cfg(test)]
@@ -522,5 +587,20 @@ mod tests {
     fn empty_document_renders_empty_string() {
         let tree = parse_rst_with_source("", "<string>");
         assert_eq!(text(&tree), "");
+    }
+
+    #[test]
+    fn deeply_nested_inline_text_does_not_use_call_stack() {
+        let mut tree = Doctree::new_document("deep.txt");
+        let paragraph = tree.append(tree.root(), NodeKind::Paragraph);
+        let mut parent = paragraph;
+        for _ in 0..10_000 {
+            parent = tree.append(parent, NodeKind::Emphasis);
+        }
+        tree.append(parent, NodeKind::Text("deep".to_string()));
+
+        let rendered = text(&tree);
+        assert!(rendered.contains("deep"));
+        assert_eq!(rendered.matches('*').count(), 20_000);
     }
 }

@@ -715,7 +715,7 @@ impl SphinxApp {
         // `RefCell` double-borrow panic.
         for docname in &to_read {
             let path = self.env.borrow().doc2path(docname);
-            let source = std::fs::read_to_string(&path).map_err(|e| {
+            let source = crate::environment::read_source_file(&path).map_err(|e| {
                 AppError::from(BuildError::Other(format!(
                     "failed to read {}: {e}",
                     path.display()

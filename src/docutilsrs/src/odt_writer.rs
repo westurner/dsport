@@ -7,9 +7,45 @@
 //! `docutils.writers.odf_odt` — see `docs/compat.md` for the
 //! accepted-deviation note and the list of supported node kinds.
 
-use crate::doctree::{Doctree, NodeId, NodeKind};
+use crate::doctree::{Doctree, Node, NodeId, NodeKind};
 use crate::zip_writer::ZipBuilder;
 use std::fmt::Write as _;
+
+/// A deferred unit of output work, driven by an explicit stack instead of
+/// renderer-local recursion (see `docs/sphinxdocrs-port-plan.md`'s H12
+/// tier). `Enter` dispatches on the node's kind at the given section
+/// depth; `EnterFlattenParagraph` mirrors the old inline "unwrap a
+/// paragraph child's own `<text:p>` wrapper" special case (used by
+/// `BlockQuote`/`FieldBody`); `Append` is a plain string applied
+/// verbatim.
+enum Task {
+    Enter(NodeId, usize),
+    EnterFlattenParagraph(NodeId, usize),
+    Append(String),
+}
+
+/// Push `sub` (already in document order) onto `tasks` such that popping
+/// `tasks` yields `sub` in the same order.
+fn push_all(tasks: &mut Vec<Task>, sub: Vec<Task>) {
+    for t in sub.into_iter().rev() {
+        tasks.push(t);
+    }
+}
+
+/// Schedule `node`'s children (at `depth`) followed by `close`.
+fn schedule(node: &Node, depth: usize, close: impl Into<String>, tasks: &mut Vec<Task>) {
+    tasks.push(Task::Append(close.into()));
+    for &c in node.children.iter().rev() {
+        tasks.push(Task::Enter(c, depth));
+    }
+}
+
+/// Schedule `node`'s children (at `depth`) with no closing text.
+fn schedule_children(node: &Node, depth: usize, tasks: &mut Vec<Task>) {
+    for &c in node.children.iter().rev() {
+        tasks.push(Task::Enter(c, depth));
+    }
+}
 
 /// Render `tree` as a binary ODT (`.odt`) document.
 pub fn odt(
@@ -130,81 +166,74 @@ fn build_content_xml(tree: &Doctree) -> String {
             );
         }
     }
-    for &c in &tree.node(root).children {
-        emit(tree, c, 0, &mut out);
+    let mut tasks: Vec<Task> = Vec::new();
+    for &c in tree.node(root).children.iter().rev() {
+        tasks.push(Task::Enter(c, 0));
+    }
+    while let Some(task) = tasks.pop() {
+        match task {
+            Task::Append(s) => out.push_str(&s),
+            Task::Enter(id, depth) => emit_enter(tree, id, depth, &mut out, &mut tasks),
+            Task::EnterFlattenParagraph(id, depth) => {
+                if let NodeKind::Paragraph = &tree.node(id).kind {
+                    let node = tree.node(id);
+                    for &c in node.children.iter().rev() {
+                        tasks.push(Task::Enter(c, depth));
+                    }
+                } else {
+                    emit_enter(tree, id, depth, &mut out, &mut tasks);
+                }
+            }
+        }
     }
     out.push_str(content_footer());
     out
 }
 
-fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
+fn emit_enter(
+    tree: &Doctree,
+    id: NodeId,
+    section_depth: usize,
+    out: &mut String,
+    tasks: &mut Vec<Task>,
+) {
     let node = tree.node(id);
     match &node.kind {
         NodeKind::Text(s) => out.push_str(&escape(s)),
-        NodeKind::Document { .. } => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
-        NodeKind::Section { .. } => {
-            for &c in &node.children {
-                emit(tree, c, section_depth + 1, out);
-            }
-        }
+        NodeKind::Document { .. } => schedule_children(node, section_depth, tasks),
+        NodeKind::Section { .. } => schedule_children(node, section_depth + 1, tasks),
         NodeKind::Title => {
             let level = section_depth.clamp(1, 5);
             let _ = write!(
                 out,
                 "<text:h text:style-name=\"Heading_20_{level}\" text:outline-level=\"{level}\">"
             );
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:h>\n");
+            schedule(node, section_depth, "</text:h>\n", tasks);
         }
         NodeKind::Subtitle { .. } => {
             out.push_str("<text:p text:style-name=\"Subtitle\">");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:p>\n");
+            schedule(node, section_depth, "</text:p>\n", tasks);
         }
         NodeKind::Paragraph => {
             out.push_str("<text:p text:style-name=\"Standard\">");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:p>\n");
+            schedule(node, section_depth, "</text:p>\n", tasks);
         }
         NodeKind::Transition => {
             out.push_str("<text:p text:style-name=\"Standard\">* * *</text:p>\n");
         }
         NodeKind::Emphasis | NodeKind::TitleReference => {
             out.push_str("<text:span text:style-name=\"Emphasis\">");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:span>");
+            schedule(node, section_depth, "</text:span>", tasks);
         }
         NodeKind::Strong => {
             out.push_str("<text:span text:style-name=\"Strong_20_Emphasis\">");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:span>");
+            schedule(node, section_depth, "</text:span>", tasks);
         }
         NodeKind::Literal => {
             out.push_str("<text:span text:style-name=\"Source_20_Text\">");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:span>");
+            schedule(node, section_depth, "</text:span>", tasks);
         }
-        NodeKind::Inline { .. } => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        NodeKind::Inline { .. } => schedule_children(node, section_depth, tasks),
         NodeKind::Math { latex } => {
             // ODT has no native math container in this minimal writer;
             // emit the LaTeX source inside a styled span so the
@@ -242,112 +271,58 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
         NodeKind::BlockQuote => {
             out.push_str("<text:p text:style-name=\"Quotations\">");
             // Flatten block-quote children into nested paragraphs.
-            let mut first = true;
-            for &c in &node.children {
-                if !first {
-                    out.push_str("<text:line-break/>");
+            let mut sub = Vec::new();
+            for (i, &c) in node.children.iter().enumerate() {
+                if i > 0 {
+                    sub.push(Task::Append("<text:line-break/>".to_string()));
                 }
-                first = false;
-                let cn = tree.node(c);
-                if matches!(cn.kind, NodeKind::Paragraph) {
-                    for &cc in &cn.children {
-                        emit(tree, cc, section_depth, out);
-                    }
-                } else {
-                    emit(tree, c, section_depth, out);
-                }
+                sub.push(Task::EnterFlattenParagraph(c, section_depth));
             }
-            out.push_str("</text:p>\n");
+            sub.push(Task::Append("</text:p>\n".to_string()));
+            push_all(tasks, sub);
         }
-        NodeKind::BulletList { .. } => {
+        NodeKind::BulletList { .. } | NodeKind::EnumeratedList { .. } => {
             out.push_str("<text:list>\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:list>\n");
-        }
-        NodeKind::EnumeratedList { .. } => {
-            out.push_str("<text:list>\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:list>\n");
+            schedule(node, section_depth, "</text:list>\n", tasks);
         }
         NodeKind::ListItem => {
             out.push_str("<text:list-item>\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:list-item>\n");
+            schedule(node, section_depth, "</text:list-item>\n", tasks);
         }
-        NodeKind::DefinitionList => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
-        NodeKind::DefinitionListItem => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
+        NodeKind::DefinitionList | NodeKind::DefinitionListItem => {
+            schedule_children(node, section_depth, tasks)
         }
         NodeKind::Term => {
             out.push_str("<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:span></text:p>\n");
+            schedule(node, section_depth, "</text:span></text:p>\n", tasks);
         }
-        NodeKind::Definition => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        NodeKind::Definition => schedule_children(node, section_depth, tasks),
         NodeKind::Classifier => {
             out.push_str(" : ");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
+            schedule_children(node, section_depth, tasks);
         }
-        NodeKind::FieldList | NodeKind::Docinfo => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        NodeKind::FieldList | NodeKind::Docinfo => schedule_children(node, section_depth, tasks),
         NodeKind::Field => {
             out.push_str("<text:p text:style-name=\"Standard\">");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:p>\n");
+            schedule(node, section_depth, "</text:p>\n", tasks);
         }
         NodeKind::FieldName => {
             out.push_str("<text:span text:style-name=\"Strong_20_Emphasis\">");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str(":</text:span> ");
+            schedule(node, section_depth, ":</text:span> ", tasks);
         }
         NodeKind::FieldBody => {
+            let mut sub = Vec::new();
             for &c in &node.children {
-                let cn = tree.node(c);
-                if matches!(cn.kind, NodeKind::Paragraph) {
-                    for &cc in &cn.children {
-                        emit(tree, cc, section_depth, out);
-                    }
-                } else {
-                    emit(tree, c, section_depth, out);
-                }
+                sub.push(Task::EnterFlattenParagraph(c, section_depth));
             }
+            push_all(tasks, sub);
         }
         NodeKind::Bibliographic { tag } => {
             let _ = write!(
                 out,
                 "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">{tag}:</text:span> "
             );
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:p>\n");
+            schedule(node, section_depth, "</text:p>\n", tasks);
         }
         NodeKind::Admonition { kind } => {
             let _ = writeln!(
@@ -355,30 +330,18 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">{}:</text:span></text:p>",
                 kind.to_uppercase()
             );
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
+            schedule_children(node, section_depth, tasks);
         }
-        NodeKind::Container { .. } => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        NodeKind::Container { .. } => schedule_children(node, section_depth, tasks),
         NodeKind::GenericAdmonition { title, .. } => {
             let _ = writeln!(
                 out,
                 "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">{}:</text:span></text:p>",
                 escape(title)
             );
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
+            schedule_children(node, section_depth, tasks);
         }
-        NodeKind::Epigraph { .. } => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        NodeKind::Epigraph { .. } => schedule_children(node, section_depth, tasks),
         NodeKind::Toctree { .. } => {}
         NodeKind::Image { uri, alt, .. } => {
             let _ = write!(
@@ -395,31 +358,17 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
             }
             out.push_str("</draw:frame></text:p>\n");
         }
-        NodeKind::Figure => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        NodeKind::Figure => schedule_children(node, section_depth, tasks),
         NodeKind::Caption => {
             out.push_str(
                 "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Emphasis\">",
             );
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:span></text:p>\n");
+            schedule(node, section_depth, "</text:span></text:p>\n", tasks);
         }
-        NodeKind::Legend => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        NodeKind::Legend => schedule_children(node, section_depth, tasks),
         NodeKind::Attribution => {
             out.push_str("<text:p text:style-name=\"Standard\"><text:tab/>\u{2014} ");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:p>\n");
+            schedule(node, section_depth, "</text:p>\n", tasks);
         }
         NodeKind::Reference { refuri, .. } => {
             let _ = write!(
@@ -427,10 +376,7 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 "<text:a xlink:type=\"simple\" xlink:href=\"{}\" text:style-name=\"Internet_20_link\">",
                 escape_attr(refuri)
             );
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</text:a>");
+            schedule(node, section_depth, "</text:a>", tasks);
         }
         NodeKind::Target { .. } | NodeKind::SubstitutionDefinition { .. } => {}
         NodeKind::SubstitutionReference { refname } => {
@@ -448,30 +394,16 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
         }
         NodeKind::Table => {
             out.push_str("<table:table>\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</table:table>\n");
+            schedule(node, section_depth, "</table:table>\n", tasks);
         }
-        NodeKind::Tgroup { .. } => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        NodeKind::Tgroup { .. } => schedule_children(node, section_depth, tasks),
         NodeKind::Colspec { .. } => {
             out.push_str("<table:table-column/>\n");
         }
-        NodeKind::Thead | NodeKind::Tbody => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        NodeKind::Thead | NodeKind::Tbody => schedule_children(node, section_depth, tasks),
         NodeKind::Row => {
             out.push_str("<table:table-row>\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</table:table-row>\n");
+            schedule(node, section_depth, "</table:table-row>\n", tasks);
         }
         NodeKind::Entry { morecols, morerows } => {
             out.push_str("<table:table-cell");
@@ -482,10 +414,7 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 let _ = write!(out, " table:number-rows-spanned=\"{}\"", morerows + 1);
             }
             out.push_str(">\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("</table:table-cell>\n");
+            schedule(node, section_depth, "</table:table-cell>\n", tasks);
         }
         NodeKind::SystemMessage { .. }
         | NodeKind::Problematic { .. }
@@ -493,32 +422,24 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
         | NodeKind::FootnoteReference { .. }
         | NodeKind::Citation { .. }
         | NodeKind::CitationReference { .. }
-        | NodeKind::Label => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        | NodeKind::Label => schedule_children(node, section_depth, tasks),
         NodeKind::Extension { class_name, attrs } => {
             let visit = crate::plugins::invoke_node_visit(class_name, "odt", attrs);
             if let Some(open) = &visit {
                 out.push_str(open);
             }
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            if visit.is_some() {
-                if let Some(close) = crate::plugins::invoke_node_depart(class_name, "odt", attrs) {
-                    out.push_str(&close);
-                }
-            }
+            let close = if visit.is_some() {
+                crate::plugins::invoke_node_depart(class_name, "odt", attrs)
+            } else {
+                None
+            };
+            schedule(node, section_depth, close.unwrap_or_default(), tasks);
         }
         NodeKind::ObjectDescription { sig_text, .. } => {
             out.push_str("<text:p>");
             out.push_str(sig_text);
             out.push_str("</text:p>\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
+            schedule_children(node, section_depth, tasks);
         }
         NodeKind::Abbreviation { .. }
         | NodeKind::Subscript
@@ -526,11 +447,7 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
         | NodeKind::Keyboard
         | NodeKind::Rubric
         | NodeKind::VersionModified { .. }
-        | NodeKind::PendingXref { .. } => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        | NodeKind::PendingXref { .. } => schedule_children(node, section_depth, tasks),
     }
 }
 
@@ -580,5 +497,27 @@ mod tests {
         // ZIP signatures present.
         assert!(bytes.windows(4).any(|w| w == 0x04034b50u32.to_le_bytes()));
         assert!(bytes.windows(4).any(|w| w == 0x06054b50u32.to_le_bytes()));
+    }
+
+    #[test]
+    fn deeply_nested_odt_does_not_use_call_stack() {
+        let mut tree = Doctree::new_document("deep.odt");
+        let mut parent = tree.root();
+        for _ in 0..10_000 {
+            parent = tree.append(
+                parent,
+                NodeKind::Container {
+                    classes: String::new(),
+                },
+            );
+        }
+        tree.append(parent, NodeKind::Text("deep".to_string()));
+
+        let bytes = odt(
+            &tree,
+            &crate::cli::OdtOptions::default(),
+            &crate::cli::CommonOptions::default(),
+        );
+        assert!(bytes.windows(4).any(|w| w == 0x04034b50u32.to_le_bytes()));
     }
 }

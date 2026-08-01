@@ -18,7 +18,7 @@
 //! only positional checks, since this crate doesn't otherwise depend on an
 //! XML crate).
 
-use crate::doctree::{Doctree, NodeId, NodeKind};
+use crate::doctree::{Doctree, NodeId, NodeKind, VisitEvent};
 use std::fmt::Write as _;
 
 /// XML declaration + Docutils generic DTD, matching
@@ -49,12 +49,10 @@ fn escape_attr(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// Open tag `name` with alphabetically-ordered `(attr, value)` pairs
-/// (values are XML-escaped), write it at `indent`, recurse into `children`,
-/// then write the matching closing tag.
+/// Open tag `name` with alphabetically-ordered `(attr, value)` pairs.
 fn emit(
-    tree: &Doctree,
-    node_id: NodeId,
+    _tree: &Doctree,
+    _node_id: NodeId,
     depth: usize,
     name: &str,
     attrs: &[(&str, &str)],
@@ -68,10 +66,6 @@ fn emit(
     s.push('>');
     s.push('\n');
     out.push_str(&s);
-    for &child in &tree.node(node_id).children {
-        write_node(tree, child, depth + 1, out);
-    }
-    let _ = writeln!(out, "{indent}</{name}>");
 }
 
 /// Leaf element whose textual payload comes from a struct field (not a
@@ -98,7 +92,20 @@ fn emit_with_inline_text(
     let _ = writeln!(out, "{indent}</{name}>");
 }
 
-fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
+fn write_node(tree: &Doctree, id: NodeId, _depth: usize, out: &mut String) {
+    for event in tree.depth_first(id) {
+        match event {
+            VisitEvent::Enter { id, depth } => write_node_enter(tree, id, depth, out),
+            VisitEvent::Exit { id, depth } => {
+                if let Some(name) = xml_name(&tree.node(id).kind) {
+                    let _ = writeln!(out, "{}</{name}>", "    ".repeat(depth));
+                }
+            }
+        }
+    }
+}
+
+fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
     let node = tree.node(id);
     let indent = "    ".repeat(depth);
     match &node.kind {
@@ -505,6 +512,78 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
     }
 }
 
+fn xml_name(kind: &NodeKind) -> Option<String> {
+    Some(match kind {
+        NodeKind::Text(_) | NodeKind::Math { .. } | NodeKind::MathBlock { .. } => return None,
+        NodeKind::Document { .. } => "document".to_string(),
+        NodeKind::Section { .. } => "section".to_string(),
+        NodeKind::Title => "title".to_string(),
+        NodeKind::Subtitle { .. } => "subtitle".to_string(),
+        NodeKind::Transition => "transition".to_string(),
+        NodeKind::Paragraph => "paragraph".to_string(),
+        NodeKind::Emphasis => "emphasis".to_string(),
+        NodeKind::Strong => "strong".to_string(),
+        NodeKind::Literal => "literal".to_string(),
+        NodeKind::TitleReference => "title_reference".to_string(),
+        NodeKind::Inline { .. } => "inline".to_string(),
+        NodeKind::LiteralBlock { .. } => "literal_block".to_string(),
+        NodeKind::BulletList { .. } => "bullet_list".to_string(),
+        NodeKind::EnumeratedList { .. } => "enumerated_list".to_string(),
+        NodeKind::ListItem => "list_item".to_string(),
+        NodeKind::DefinitionList => "definition_list".to_string(),
+        NodeKind::DefinitionListItem => "definition_list_item".to_string(),
+        NodeKind::Term => "term".to_string(),
+        NodeKind::Classifier => "classifier".to_string(),
+        NodeKind::Definition => "definition".to_string(),
+        NodeKind::FieldList => "field_list".to_string(),
+        NodeKind::Field => "field".to_string(),
+        NodeKind::FieldName => "field_name".to_string(),
+        NodeKind::FieldBody => "field_body".to_string(),
+        NodeKind::Docinfo => "docinfo".to_string(),
+        NodeKind::Bibliographic { tag } => (*tag).to_string(),
+        NodeKind::BlockQuote => "block_quote".to_string(),
+        NodeKind::Admonition { kind } => (*kind).to_string(),
+        NodeKind::Container { .. } => "container".to_string(),
+        NodeKind::GenericAdmonition { .. } => "admonition".to_string(),
+        NodeKind::Epigraph { .. } => "block_quote".to_string(),
+        NodeKind::Toctree { .. } => "toctree".to_string(),
+        NodeKind::Image { .. } => "image".to_string(),
+        NodeKind::Raw { .. } => "raw".to_string(),
+        NodeKind::Comment => "comment".to_string(),
+        NodeKind::Reference { .. } => "reference".to_string(),
+        NodeKind::Target { .. } => "target".to_string(),
+        NodeKind::SubstitutionDefinition { .. } => "substitution_definition".to_string(),
+        NodeKind::SubstitutionReference { .. } => "substitution_reference".to_string(),
+        NodeKind::Table => "table".to_string(),
+        NodeKind::Tgroup { .. } => "tgroup".to_string(),
+        NodeKind::Colspec { .. } => "colspec".to_string(),
+        NodeKind::Thead => "thead".to_string(),
+        NodeKind::Tbody => "tbody".to_string(),
+        NodeKind::Row => "row".to_string(),
+        NodeKind::Entry { .. } => "entry".to_string(),
+        NodeKind::Attribution => "attribution".to_string(),
+        NodeKind::Figure => "figure".to_string(),
+        NodeKind::Caption => "caption".to_string(),
+        NodeKind::Legend => "legend".to_string(),
+        NodeKind::Label => "label".to_string(),
+        NodeKind::Footnote { .. } => "footnote".to_string(),
+        NodeKind::FootnoteReference { .. } => "footnote_reference".to_string(),
+        NodeKind::Citation { .. } => "citation".to_string(),
+        NodeKind::CitationReference { .. } => "citation_reference".to_string(),
+        NodeKind::Problematic { .. } => "problematic".to_string(),
+        NodeKind::SystemMessage { .. } => "system_message".to_string(),
+        NodeKind::Extension { class_name, .. } => class_name.clone(),
+        NodeKind::Abbreviation { .. } => "abbreviation".to_string(),
+        NodeKind::Subscript => "subscript".to_string(),
+        NodeKind::Superscript => "superscript".to_string(),
+        NodeKind::Keyboard => "keyboard".to_string(),
+        NodeKind::Rubric => "rubric".to_string(),
+        NodeKind::VersionModified { .. } => "versionmodified".to_string(),
+        NodeKind::PendingXref { .. } => "pending_xref".to_string(),
+        NodeKind::ObjectDescription { .. } => "object_description".to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -575,5 +654,25 @@ mod tests {
         let tree = parse_rst_with_source("", "<string>");
         let xml = to_xml(&tree);
         assert!(xml.trim_end().ends_with("</document>"));
+    }
+
+    #[test]
+    fn deeply_nested_xml_does_not_use_call_stack() {
+        let mut tree = Doctree::new_document("deep.xml");
+        let mut parent = tree.root();
+        for _ in 0..10_000 {
+            parent = tree.append(
+                parent,
+                NodeKind::Container {
+                    classes: String::new(),
+                },
+            );
+        }
+        tree.append(parent, NodeKind::Text("deep".to_string()));
+
+        let xml = to_xml(&tree);
+        assert_eq!(xml.matches("<container ").count(), 10_000);
+        assert_eq!(xml.matches("</container>").count(), 10_000);
+        assert!(xml.contains("deep"));
     }
 }

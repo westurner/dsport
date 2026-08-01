@@ -22,6 +22,16 @@ pub fn pseudo_xml(tree: &Doctree) -> String {
 }
 
 fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
+    let mut tasks = vec![(id, depth)];
+    while let Some((id, depth)) = tasks.pop() {
+        write_node_once(tree, id, depth, out);
+        for &child in tree.node(id).children.iter().rev() {
+            tasks.push((child, depth + 1));
+        }
+    }
+}
+
+fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
     let node = tree.node(id);
     let indent = "    ".repeat(depth);
     match &node.kind {
@@ -469,8 +479,5 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             s.push('\n');
             out.push_str(&s);
         }
-    }
-    for &child in &node.children {
-        write_node(tree, child, depth + 1, out);
     }
 }

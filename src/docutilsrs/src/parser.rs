@@ -670,7 +670,7 @@ fn at_indent(line: &str, indent: usize) -> bool {
     if line.trim().is_empty() {
         return true;
     }
-    line.len() >= indent && line[..indent].chars().all(|c| c == ' ')
+    line.chars().take(indent).count() == indent && line.chars().take(indent).all(|c| c == ' ')
 }
 
 fn leading_spaces(line: &str) -> Option<usize> {
@@ -2852,20 +2852,27 @@ fn collect_substitutions(lines: &[&str], out: &mut HashMap<String, String>) {
 // ────────────────────────────────────────────────────────────────────────────
 
 fn emit_inline_block(tree: &mut Doctree, parent: NodeId, block: InlineBlock) {
-    let (kind, children) = match block {
-        InlineBlock::Text(text) => {
-            tree.append(parent, NodeKind::Text(text));
-            return;
+    enum Task {
+        Enter(NodeId, InlineBlock),
+    }
+
+    let mut tasks = vec![Task::Enter(parent, block)];
+    while let Some(Task::Enter(parent, block)) = tasks.pop() {
+        let (kind, children) = match block {
+            InlineBlock::Text(text) => {
+                tree.append(parent, NodeKind::Text(text));
+                continue;
+            }
+            InlineBlock::Emphasis(children) => (NodeKind::Emphasis, children),
+            InlineBlock::Strong(children) => (NodeKind::Strong, children),
+            InlineBlock::Literal(children) => (NodeKind::Literal, children),
+            InlineBlock::TitleReference(children) => (NodeKind::TitleReference, children),
+            InlineBlock::Inline { classes, children } => (NodeKind::Inline { classes }, children),
+        };
+        let node = tree.append(parent, kind);
+        for child in children.into_iter().rev() {
+            tasks.push(Task::Enter(node, child));
         }
-        InlineBlock::Emphasis(children) => (NodeKind::Emphasis, children),
-        InlineBlock::Strong(children) => (NodeKind::Strong, children),
-        InlineBlock::Literal(children) => (NodeKind::Literal, children),
-        InlineBlock::TitleReference(children) => (NodeKind::TitleReference, children),
-        InlineBlock::Inline { classes, children } => (NodeKind::Inline { classes }, children),
-    };
-    let node = tree.append(parent, kind);
-    for child in children {
-        emit_inline_block(tree, node, child);
     }
 }
 
@@ -2909,403 +2916,464 @@ mod rich_paragraph_tests {
         assert!(matches!(tree.node(tree.node(emphasis).children[0]).kind,
             NodeKind::Text(ref text) if text == "inside"));
     }
+
+    #[test]
+    fn rich_paragraph_emits_deep_inline_tree_without_recursion() {
+        let mut children = vec![InlineBlock::Text("deep".to_string())];
+        for _ in 0..10_000 {
+            children = vec![InlineBlock::Emphasis(children)];
+        }
+
+        let mut tree = Doctree::new_document("<test>");
+        let root = tree.root();
+        let mut ctx = ParseCtx {
+            subs: HashMap::new(),
+            anon_target_count: 0,
+            anon_target_uris: Vec::new(),
+            footnote_count: 0,
+            citation_count: 0,
+            footnote_ref_count: 0,
+            citation_ref_count: 0,
+            current_line: 0,
+            inline_ref_sites: Vec::new(),
+        };
+        emit_block(
+            &mut tree,
+            root,
+            &mut ctx,
+            Block::RichParagraph { children, line: 0 },
+        );
+
+        let paragraph = tree.node(root).children[0];
+        let mut node = tree.node(paragraph).children[0];
+        for _ in 0..10_000 {
+            assert!(matches!(tree.node(node).kind, NodeKind::Emphasis));
+            node = tree.node(node).children[0];
+        }
+        assert!(matches!(tree.node(node).kind, NodeKind::Text(ref text) if text == "deep"));
+    }
 }
 
 fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Block) {
-    match block {
-        Block::Paragraph { text, line } => {
-            let prev_line = ctx.current_line;
-            ctx.current_line = line;
-            let p = tree.append(parent, NodeKind::Paragraph);
-            parse_inline(tree, p, ctx, &text);
-            ctx.current_line = prev_line;
-        }
-        Block::RichParagraph { children, line } => {
-            let prev_line = ctx.current_line;
-            ctx.current_line = line;
-            let p = tree.append(parent, NodeKind::Paragraph);
-            for child in children {
-                emit_inline_block(tree, p, child);
+    let mut tasks = vec![(parent, block)];
+    while let Some((parent, block)) = tasks.pop() {
+        match block {
+            Block::Paragraph { text, line } => {
+                let prev_line = ctx.current_line;
+                ctx.current_line = line;
+                let p = tree.append(parent, NodeKind::Paragraph);
+                parse_inline(tree, p, ctx, &text);
+                ctx.current_line = prev_line;
             }
-            ctx.current_line = prev_line;
-        }
-        Block::BulletList { bullet, items } => {
-            let list = tree.append(parent, NodeKind::BulletList { bullet });
-            for item in items {
-                let li = tree.append(list, NodeKind::ListItem);
-                for b in item {
-                    emit_block(tree, li, ctx, b);
+            Block::RichParagraph { children, line } => {
+                let prev_line = ctx.current_line;
+                ctx.current_line = line;
+                let p = tree.append(parent, NodeKind::Paragraph);
+                for child in children {
+                    emit_inline_block(tree, p, child);
                 }
+                ctx.current_line = prev_line;
             }
-        }
-        Block::EnumeratedList {
-            enumtype,
-            prefix,
-            suffix,
-            start,
-            items,
-        } => {
-            let list = tree.append(
-                parent,
-                NodeKind::EnumeratedList {
-                    enumtype,
-                    prefix,
-                    suffix,
-                    start,
-                },
-            );
-            for item in items {
-                let li = tree.append(list, NodeKind::ListItem);
-                for b in item {
-                    emit_block(tree, li, ctx, b);
-                }
-            }
-        }
-        Block::DefinitionList { items } => {
-            let dl = tree.append(parent, NodeKind::DefinitionList);
-            for it in items {
-                let dli = tree.append(dl, NodeKind::DefinitionListItem);
-                let term = tree.append(dli, NodeKind::Term);
-                parse_inline(tree, term, ctx, &it.term);
-                if let Some(c) = it.classifier {
-                    let cl = tree.append(dli, NodeKind::Classifier);
-                    parse_inline(tree, cl, ctx, &c);
-                }
-                let d = tree.append(dli, NodeKind::Definition);
-                for b in it.definition {
-                    emit_block(tree, d, ctx, b);
-                }
-            }
-        }
-        Block::FieldList { items } => {
-            // Promote to docinfo if all field names are recognized
-            // bibliographic fields and parent is document with no prior
-            // children other than potentially a title/subtitle.
-            let is_doc = matches!(&tree.node(parent).kind, NodeKind::Document { .. });
-            let bibliographic = is_doc
-                && tree.node(parent).children.iter().all(|&c| {
-                    matches!(
-                        &tree.node(c).kind,
-                        NodeKind::Title | NodeKind::Subtitle { .. }
-                    )
-                })
-                && items
-                    .iter()
-                    .all(|it| recognized_bibliographic(&it.name).is_some());
-            if bibliographic {
-                let docinfo = tree.append(parent, NodeKind::Docinfo);
-                for it in items {
-                    let tag = recognized_bibliographic(&it.name).unwrap();
-                    let bib = tree.append(docinfo, NodeKind::Bibliographic { tag });
-                    // Body is the raw field value text; inline-parse it.
-                    if !it.body_text.is_empty() {
-                        parse_inline(tree, bib, ctx, &it.body_text);
-                    }
-                }
-            } else {
-                let fl = tree.append(parent, NodeKind::FieldList);
-                for it in items {
-                    let f = tree.append(fl, NodeKind::Field);
-                    let n = tree.append(f, NodeKind::FieldName);
-                    parse_inline(tree, n, ctx, &it.name);
-                    let b = tree.append(f, NodeKind::FieldBody);
-                    for blk in it.body {
-                        emit_block(tree, b, ctx, blk);
+            Block::BulletList { bullet, items } => {
+                let list = tree.append(parent, NodeKind::BulletList { bullet });
+                for item in items {
+                    let li = tree.append(list, NodeKind::ListItem);
+                    for b in item.into_iter().rev() {
+                        tasks.push((li, b));
                     }
                 }
             }
-        }
-        Block::BlockQuote(mut children) => {
-            // Attribution: if the last child is a single Paragraph whose
-            // text begins with `-- ` or `--- `, split it off as
-            // <attribution>. Indentation/whitespace are stripped.
-            let attribution_text = match children.last() {
-                Some(Block::Paragraph { text, .. }) => {
-                    let t = text.trim_start();
-                    t.strip_prefix("--- ")
-                        .or_else(|| t.strip_prefix("-- "))
-                        .map(|rest| rest.to_string())
+            Block::EnumeratedList {
+                enumtype,
+                prefix,
+                suffix,
+                start,
+                items,
+            } => {
+                let list = tree.append(
+                    parent,
+                    NodeKind::EnumeratedList {
+                        enumtype,
+                        prefix,
+                        suffix,
+                        start,
+                    },
+                );
+                for item in items {
+                    let li = tree.append(list, NodeKind::ListItem);
+                    for b in item.into_iter().rev() {
+                        tasks.push((li, b));
+                    }
                 }
-                _ => None,
-            };
-            let attr = attribution_text.inspect(|_t| {
-                children.pop();
-            });
-            let q = tree.append(parent, NodeKind::BlockQuote);
-            for b in children {
-                emit_block(tree, q, ctx, b);
             }
-            if let Some(text) = attr {
-                let a = tree.append(q, NodeKind::Attribution);
-                parse_inline(tree, a, ctx, &text);
+            Block::DefinitionList { items } => {
+                let dl = tree.append(parent, NodeKind::DefinitionList);
+                for it in items {
+                    let dli = tree.append(dl, NodeKind::DefinitionListItem);
+                    let term = tree.append(dli, NodeKind::Term);
+                    parse_inline(tree, term, ctx, &it.term);
+                    if let Some(c) = it.classifier {
+                        let cl = tree.append(dli, NodeKind::Classifier);
+                        parse_inline(tree, cl, ctx, &c);
+                    }
+                    let d = tree.append(dli, NodeKind::Definition);
+                    for b in it.definition.into_iter().rev() {
+                        tasks.push((d, b));
+                    }
+                }
             }
-        }
-        Block::LiteralBlock {
-            text,
-            classes,
-            tokens,
-        } => {
-            let lb = tree.append(parent, NodeKind::LiteralBlock { classes });
-            match tokens {
-                Some(spans) => {
-                    for (class, value) in spans {
-                        match class {
-                            Some(cls) => {
-                                let inl = tree.append(lb, NodeKind::Inline { classes: cls });
-                                tree.append(inl, NodeKind::Text(value));
-                            }
-                            None => {
-                                tree.append(lb, NodeKind::Text(value));
-                            }
+            Block::FieldList { items } => {
+                // Promote to docinfo if all field names are recognized
+                // bibliographic fields and parent is document with no prior
+                // children other than potentially a title/subtitle.
+                let is_doc = matches!(&tree.node(parent).kind, NodeKind::Document { .. });
+                let bibliographic = is_doc
+                    && tree.node(parent).children.iter().all(|&c| {
+                        matches!(
+                            &tree.node(c).kind,
+                            NodeKind::Title | NodeKind::Subtitle { .. }
+                        )
+                    })
+                    && items
+                        .iter()
+                        .all(|it| recognized_bibliographic(&it.name).is_some());
+                if bibliographic {
+                    let docinfo = tree.append(parent, NodeKind::Docinfo);
+                    for it in items {
+                        let tag = recognized_bibliographic(&it.name).unwrap();
+                        let bib = tree.append(docinfo, NodeKind::Bibliographic { tag });
+                        // Body is the raw field value text; inline-parse it.
+                        if !it.body_text.is_empty() {
+                            parse_inline(tree, bib, ctx, &it.body_text);
+                        }
+                    }
+                } else {
+                    let fl = tree.append(parent, NodeKind::FieldList);
+                    for it in items {
+                        let f = tree.append(fl, NodeKind::Field);
+                        let n = tree.append(f, NodeKind::FieldName);
+                        parse_inline(tree, n, ctx, &it.name);
+                        let b = tree.append(f, NodeKind::FieldBody);
+                        for blk in it.body.into_iter().rev() {
+                            tasks.push((b, blk));
                         }
                     }
                 }
-                None => {
-                    tree.append(lb, NodeKind::Text(text));
+            }
+            Block::BlockQuote(mut children) => {
+                // Attribution: if the last child is a single Paragraph whose
+                // text begins with `-- ` or `--- `, split it off as
+                // <attribution>. Indentation/whitespace are stripped.
+                let attribution_text = match children.last() {
+                    Some(Block::Paragraph { text, .. }) => {
+                        let t = text.trim_start();
+                        t.strip_prefix("--- ")
+                            .or_else(|| t.strip_prefix("-- "))
+                            .map(|rest| rest.to_string())
+                    }
+                    _ => None,
+                };
+                let attr = attribution_text.inspect(|_t| {
+                    children.pop();
+                });
+                let q = tree.append(parent, NodeKind::BlockQuote);
+                for b in children.into_iter().rev() {
+                    tasks.push((q, b));
+                }
+                if let Some(text) = attr {
+                    let a = tree.append(q, NodeKind::Attribution);
+                    parse_inline(tree, a, ctx, &text);
                 }
             }
-        }
-        Block::Section {
-            title,
-            level: _,
-            children,
-        } => {
-            let ids = normalize_id(&title);
-            let sec = tree.append(
-                parent,
-                NodeKind::Section {
-                    ids: ids.clone(),
-                    names: title.to_ascii_lowercase(),
-                    classes: String::new(),
-                },
-            );
-            let t = tree.append(sec, NodeKind::Title);
-            parse_inline(tree, t, ctx, &title);
-            for b in children {
-                emit_block(tree, sec, ctx, b);
+            Block::LiteralBlock {
+                text,
+                classes,
+                tokens,
+            } => {
+                let lb = tree.append(parent, NodeKind::LiteralBlock { classes });
+                match tokens {
+                    Some(spans) => {
+                        for (class, value) in spans {
+                            match class {
+                                Some(cls) => {
+                                    let inl = tree.append(lb, NodeKind::Inline { classes: cls });
+                                    tree.append(inl, NodeKind::Text(value));
+                                }
+                                None => {
+                                    tree.append(lb, NodeKind::Text(value));
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        tree.append(lb, NodeKind::Text(text));
+                    }
+                }
             }
-        }
-        Block::Transition => {
-            tree.append(parent, NodeKind::Transition);
-        }
-        Block::Rubric(title) => {
-            let r = tree.append(parent, NodeKind::Rubric);
-            parse_inline(tree, r, ctx, &title);
-        }
-        Block::VersionModified {
-            kind,
-            version,
-            children,
-        } => {
-            let vm = tree.append(parent, NodeKind::VersionModified { kind, version });
-            for b in children {
-                emit_block(tree, vm, ctx, b);
+            Block::Section {
+                title,
+                level: _,
+                children,
+            } => {
+                let ids = normalize_id(&title);
+                let sec = tree.append(
+                    parent,
+                    NodeKind::Section {
+                        ids: ids.clone(),
+                        names: title.to_ascii_lowercase(),
+                        classes: String::new(),
+                    },
+                );
+                let t = tree.append(sec, NodeKind::Title);
+                parse_inline(tree, t, ctx, &title);
+                for b in children.into_iter().rev() {
+                    tasks.push((sec, b));
+                }
             }
-        }
-        Block::Target {
-            name,
-            refuri,
-            anonymous,
-        } => {
-            if anonymous {
-                let n = ctx.next_anon_target();
-                let ids = format!("target-{n}");
+            Block::Transition => {
+                tree.append(parent, NodeKind::Transition);
+            }
+            Block::Rubric(title) => {
+                let r = tree.append(parent, NodeKind::Rubric);
+                parse_inline(tree, r, ctx, &title);
+            }
+            Block::VersionModified {
+                kind,
+                version,
+                children,
+            } => {
+                let vm = tree.append(parent, NodeKind::VersionModified { kind, version });
+                for b in children.into_iter().rev() {
+                    tasks.push((vm, b));
+                }
+            }
+            Block::Target {
+                name,
+                refuri,
+                anonymous,
+            } => {
+                if anonymous {
+                    let n = ctx.next_anon_target();
+                    let ids = format!("target-{n}");
+                    tree.append(
+                        parent,
+                        NodeKind::Target {
+                            ids,
+                            names: String::new(),
+                            refuri: refuri.clone(),
+                            anonymous: true,
+                        },
+                    );
+                    ctx.anon_target_uris.push(refuri);
+                    // Skip the named-target code below and move on to the
+                    // next queued block. This used to be `return`, which
+                    // was correct when `emit_block` recursed per-block, but
+                    // silently abandoned every other block still queued on
+                    // the shared `tasks` stack once the function became
+                    // stack-based (see docs/sphinxdocrs-port-plan.md, H12).
+                    continue;
+                }
+                let ids = normalize_id(&name);
+                let names = if name.contains(' ') {
+                    name.split(' ')
+                        .map(|w| w.to_ascii_lowercase())
+                        .collect::<Vec<_>>()
+                        .join("\\ ")
+                } else {
+                    name.to_ascii_lowercase()
+                };
                 tree.append(
                     parent,
                     NodeKind::Target {
                         ids,
-                        names: String::new(),
-                        refuri: refuri.clone(),
-                        anonymous: true,
+                        names,
+                        refuri,
+                        anonymous: false,
                     },
                 );
-                ctx.anon_target_uris.push(refuri);
-                return;
             }
-            let ids = normalize_id(&name);
-            let names = if name.contains(' ') {
-                name.split(' ')
-                    .map(|w| w.to_ascii_lowercase())
-                    .collect::<Vec<_>>()
-                    .join("\\ ")
-            } else {
-                name.to_ascii_lowercase()
-            };
-            tree.append(
-                parent,
-                NodeKind::Target {
-                    ids,
-                    names,
-                    refuri,
-                    anonymous: false,
-                },
-            );
-        }
-        Block::SubstitutionDefinition { name, text } => {
-            let sd = tree.append(parent, NodeKind::SubstitutionDefinition { names: name });
-            parse_inline(tree, sd, ctx, &text);
-        }
-        Block::Comment(text) => {
-            let c = tree.append(parent, NodeKind::Comment);
-            tree.append(c, NodeKind::Text(text));
-        }
-        Block::DefaultRole(name) => {
-            // Mirrors `docutils.parsers.rst.directives.misc.DefaultRole`: an
-            // unknown role leaves the previous default in place and reports
-            // an error.
-            if let Err(err) = crate::roles::set_default_role(name.as_deref()) {
-                let sm = tree.append(
-                    parent,
-                    NodeKind::SystemMessage {
-                        level: 3,
-                        ty: "ERROR",
-                        line: Some(ctx.current_line),
-                        backrefs: String::new(),
-                        ids: String::new(),
-                    },
-                );
-                let p = tree.append(sm, NodeKind::Paragraph);
-                tree.append(p, NodeKind::Text(err.to_string()));
+            Block::SubstitutionDefinition { name, text } => {
+                let sd = tree.append(parent, NodeKind::SubstitutionDefinition { names: name });
+                parse_inline(tree, sd, ctx, &text);
             }
-        }
-        Block::Admonition { kind, children } => {
-            let a = tree.append(parent, NodeKind::Admonition { kind });
-            for b in children {
-                emit_block(tree, a, ctx, b);
+            Block::Comment(text) => {
+                let c = tree.append(parent, NodeKind::Comment);
+                tree.append(c, NodeKind::Text(text));
             }
-        }
-        Block::Container { classes, children } => {
-            let c = tree.append(parent, NodeKind::Container { classes });
-            for b in children {
-                emit_block(tree, c, ctx, b);
-            }
-        }
-        Block::GenericAdmonition {
-            title,
-            classes,
-            children,
-        } => {
-            let a = tree.append(parent, NodeKind::GenericAdmonition { title, classes });
-            for b in children {
-                emit_block(tree, a, ctx, b);
-            }
-        }
-        Block::Epigraph { classes, children } => {
-            let e = tree.append(parent, NodeKind::Epigraph { classes });
-            for b in children {
-                emit_block(tree, e, ctx, b);
-            }
-        }
-        Block::Toctree {
-            caption,
-            maxdepth,
-            hidden,
-            entries,
-        } => {
-            tree.append(
-                parent,
-                NodeKind::Toctree {
-                    caption,
-                    maxdepth,
-                    hidden,
-                    entries,
-                },
-            );
-        }
-        Block::PendingClass(_) => {
-            // Not attached to a following sibling (e.g. trailing in its
-            // block list) \u2014 nothing to render.
-        }
-        Block::ObjectDescription {
-            classes,
-            ids,
-            sig_text,
-            children,
-        } => {
-            let d = tree.append(
-                parent,
-                NodeKind::ObjectDescription {
-                    classes,
-                    ids,
-                    sig_text,
-                },
-            );
-            for b in children {
-                emit_block(tree, d, ctx, b);
-            }
-        }
-        Block::Image {
-            uri,
-            alt,
-            width,
-            height,
-        } => {
-            tree.append(
-                parent,
-                NodeKind::Image {
-                    uri,
-                    alt,
-                    width,
-                    height,
-                },
-            );
-        }
-        Block::Figure {
-            uri,
-            alt,
-            width,
-            height,
-            caption,
-            legend,
-        } => {
-            let fig = tree.append(parent, NodeKind::Figure);
-            tree.append(
-                fig,
-                NodeKind::Image {
-                    uri,
-                    alt,
-                    width,
-                    height,
-                },
-            );
-            if let Some(text) = caption {
-                let cap = tree.append(fig, NodeKind::Caption);
-                parse_inline(tree, cap, ctx, &text);
-            }
-            if !legend.is_empty() {
-                let leg = tree.append(fig, NodeKind::Legend);
-                for b in legend {
-                    emit_block(tree, leg, ctx, b);
+            Block::DefaultRole(name) => {
+                // Mirrors `docutils.parsers.rst.directives.misc.DefaultRole`: an
+                // unknown role leaves the previous default in place and reports
+                // an error.
+                if let Err(err) = crate::roles::set_default_role(name.as_deref()) {
+                    let sm = tree.append(
+                        parent,
+                        NodeKind::SystemMessage {
+                            level: 3,
+                            ty: "ERROR",
+                            line: Some(ctx.current_line),
+                            backrefs: String::new(),
+                            ids: String::new(),
+                        },
+                    );
+                    let p = tree.append(sm, NodeKind::Paragraph);
+                    tree.append(p, NodeKind::Text(err.to_string()));
                 }
             }
-        }
-        Block::Raw { format, text } => {
-            let r = tree.append(parent, NodeKind::Raw { format });
-            tree.append(r, NodeKind::Text(text));
-        }
-        Block::MathBlock { latex } => {
-            tree.append(parent, NodeKind::MathBlock { latex });
-        }
-        Block::Table(td) => {
-            emit_table(tree, parent, ctx, td);
-        }
-        Block::Footnote { label, body } => {
-            // Classify autonumber / autosymbol vs manual. Auto footnotes
-            // get an `auto` marker plus placeholder ids/names that the
-            // post-pass in resolve_footnotes rewrites once the document
-            // order is known.
-            let (ids, names, auto, label_text) = if label == "#" {
-                ctx.footnote_count += 1;
-                (
-                    format!("footnote-{}", ctx.footnote_count),
-                    String::new(),
-                    Some("1"),
-                    "#".to_string(),
-                )
-            } else if let Some(name) = label.strip_prefix('#') {
-                if !name.is_empty() {
-                    let n = name.to_ascii_lowercase();
-                    (n.clone(), n, Some("1"), label.clone())
+            Block::Admonition { kind, children } => {
+                let a = tree.append(parent, NodeKind::Admonition { kind });
+                for b in children.into_iter().rev() {
+                    tasks.push((a, b));
+                }
+            }
+            Block::Container { classes, children } => {
+                let c = tree.append(parent, NodeKind::Container { classes });
+                for b in children.into_iter().rev() {
+                    tasks.push((c, b));
+                }
+            }
+            Block::GenericAdmonition {
+                title,
+                classes,
+                children,
+            } => {
+                let a = tree.append(parent, NodeKind::GenericAdmonition { title, classes });
+                for b in children.into_iter().rev() {
+                    tasks.push((a, b));
+                }
+            }
+            Block::Epigraph { classes, children } => {
+                let e = tree.append(parent, NodeKind::Epigraph { classes });
+                for b in children.into_iter().rev() {
+                    tasks.push((e, b));
+                }
+            }
+            Block::Toctree {
+                caption,
+                maxdepth,
+                hidden,
+                entries,
+            } => {
+                tree.append(
+                    parent,
+                    NodeKind::Toctree {
+                        caption,
+                        maxdepth,
+                        hidden,
+                        entries,
+                    },
+                );
+            }
+            Block::PendingClass(_) => {
+                // Not attached to a following sibling (e.g. trailing in its
+                // block list) \u2014 nothing to render.
+            }
+            Block::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                children,
+            } => {
+                let d = tree.append(
+                    parent,
+                    NodeKind::ObjectDescription {
+                        classes,
+                        ids,
+                        sig_text,
+                    },
+                );
+                for b in children.into_iter().rev() {
+                    tasks.push((d, b));
+                }
+            }
+            Block::Image {
+                uri,
+                alt,
+                width,
+                height,
+            } => {
+                tree.append(
+                    parent,
+                    NodeKind::Image {
+                        uri,
+                        alt,
+                        width,
+                        height,
+                    },
+                );
+            }
+            Block::Figure {
+                uri,
+                alt,
+                width,
+                height,
+                caption,
+                legend,
+            } => {
+                let fig = tree.append(parent, NodeKind::Figure);
+                tree.append(
+                    fig,
+                    NodeKind::Image {
+                        uri,
+                        alt,
+                        width,
+                        height,
+                    },
+                );
+                if let Some(text) = caption {
+                    let cap = tree.append(fig, NodeKind::Caption);
+                    parse_inline(tree, cap, ctx, &text);
+                }
+                if !legend.is_empty() {
+                    let leg = tree.append(fig, NodeKind::Legend);
+                    for b in legend.into_iter().rev() {
+                        tasks.push((leg, b));
+                    }
+                }
+            }
+            Block::Raw { format, text } => {
+                let r = tree.append(parent, NodeKind::Raw { format });
+                tree.append(r, NodeKind::Text(text));
+            }
+            Block::MathBlock { latex } => {
+                tree.append(parent, NodeKind::MathBlock { latex });
+            }
+            Block::Table(td) => {
+                emit_table(tree, parent, ctx, td);
+            }
+            Block::Footnote { label, body } => {
+                // Classify autonumber / autosymbol vs manual. Auto footnotes
+                // get an `auto` marker plus placeholder ids/names that the
+                // post-pass in resolve_footnotes rewrites once the document
+                // order is known.
+                let (ids, names, auto, label_text) = if label == "#" {
+                    ctx.footnote_count += 1;
+                    (
+                        format!("footnote-{}", ctx.footnote_count),
+                        String::new(),
+                        Some("1"),
+                        "#".to_string(),
+                    )
+                } else if let Some(name) = label.strip_prefix('#') {
+                    if !name.is_empty() {
+                        let n = name.to_ascii_lowercase();
+                        (n.clone(), n, Some("1"), label.clone())
+                    } else {
+                        ctx.footnote_count += 1;
+                        (
+                            format!("footnote-{}", ctx.footnote_count),
+                            label.to_ascii_lowercase(),
+                            None,
+                            label.clone(),
+                        )
+                    }
+                } else if label == "*" {
+                    ctx.footnote_count += 1;
+                    (
+                        format!("footnote-{}", ctx.footnote_count),
+                        String::new(),
+                        Some("*"),
+                        "*".to_string(),
+                    )
                 } else {
                     ctx.footnote_count += 1;
                     (
@@ -3314,71 +3382,55 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                         None,
                         label.clone(),
                     )
+                };
+                let f = tree.append(
+                    parent,
+                    NodeKind::Footnote {
+                        ids,
+                        names,
+                        backrefs: String::new(),
+                        auto,
+                    },
+                );
+                let lbl = tree.append(f, NodeKind::Label);
+                tree.append(lbl, NodeKind::Text(label_text));
+                let _ = label;
+                for b in body.into_iter().rev() {
+                    tasks.push((f, b));
                 }
-            } else if label == "*" {
-                ctx.footnote_count += 1;
-                (
-                    format!("footnote-{}", ctx.footnote_count),
-                    String::new(),
-                    Some("*"),
-                    "*".to_string(),
-                )
-            } else {
-                ctx.footnote_count += 1;
-                (
-                    format!("footnote-{}", ctx.footnote_count),
-                    label.to_ascii_lowercase(),
-                    None,
-                    label.clone(),
-                )
-            };
-            let f = tree.append(
-                parent,
-                NodeKind::Footnote {
-                    ids,
-                    names,
-                    backrefs: String::new(),
-                    auto,
-                },
-            );
-            let lbl = tree.append(f, NodeKind::Label);
-            tree.append(lbl, NodeKind::Text(label_text));
-            let _ = label;
-            for b in body {
-                emit_block(tree, f, ctx, b);
             }
-        }
-        Block::Citation { label, body } => {
-            ctx.citation_count += 1;
-            let ids = label.to_ascii_lowercase();
-            let names = ids.clone();
-            let c = tree.append(
-                parent,
-                NodeKind::Citation {
-                    ids,
-                    names,
-                    backrefs: String::new(),
-                },
-            );
-            let lbl = tree.append(c, NodeKind::Label);
-            tree.append(lbl, NodeKind::Text(label));
-            for b in body {
-                emit_block(tree, c, ctx, b);
+            Block::Citation { label, body } => {
+                ctx.citation_count += 1;
+                let ids = label.to_ascii_lowercase();
+                let names = ids.clone();
+                let c = tree.append(
+                    parent,
+                    NodeKind::Citation {
+                        ids,
+                        names,
+                        backrefs: String::new(),
+                    },
+                );
+                let lbl = tree.append(c, NodeKind::Label);
+                tree.append(lbl, NodeKind::Text(label));
+                for b in body.into_iter().rev() {
+                    tasks.push((c, b));
+                }
             }
-        }
-        Block::PluginResult(blocks) => {
-            for b in blocks {
-                emit_block(tree, parent, ctx, b);
+            Block::PluginResult(blocks) => {
+                for b in blocks.into_iter().rev() {
+                    tasks.push((parent, b));
+                }
             }
-        }
-        Block::Extension {
-            class_name,
-            attrs,
-            children,
-        } => {
-            let node = tree.append(parent, NodeKind::Extension { class_name, attrs });
-            for child in children {
-                emit_block(tree, node, ctx, child);
+            Block::Extension {
+                class_name,
+                attrs,
+                children,
+            } => {
+                let node = tree.append(parent, NodeKind::Extension { class_name, attrs });
+                for child in children.into_iter().rev() {
+                    tasks.push((node, child));
+                }
             }
         }
     }
@@ -4055,11 +4107,14 @@ fn collect_text(tree: &Doctree, id: NodeId) -> String {
 }
 
 fn walk_text(tree: &Doctree, id: NodeId, out: &mut String) {
-    if let NodeKind::Text(s) = &tree.node(id).kind {
-        out.push_str(s);
-    }
-    for &c in &tree.node(id).children {
-        walk_text(tree, c, out);
+    let mut stack = vec![id];
+    while let Some(id) = stack.pop() {
+        if let NodeKind::Text(s) = &tree.node(id).kind {
+            out.push_str(s);
+        }
+        for &child in tree.node(id).children.iter().rev() {
+            stack.push(child);
+        }
     }
 }
 

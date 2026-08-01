@@ -33,6 +33,20 @@
 //! full `setup()` hook, `get_doctree`, `resolve_references`, search index.
 
 use std::collections::{HashMap, HashSet};
+
+fn decode_source(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(source) => source
+            .strip_prefix('\u{feff}')
+            .unwrap_or(source)
+            .to_string(),
+        Err(_) => bytes.iter().map(|&byte| char::from(byte)).collect(),
+    }
+}
+
+pub(crate) fn read_source_file(path: &Path) -> Result<String, std::io::Error> {
+    Ok(decode_source(&std::fs::read(path)?))
+}
 use std::path::{Path, PathBuf};
 
 use docutilsrs::doctree::{Doctree, NodeId, NodeKind};
@@ -489,7 +503,7 @@ impl BuildEnvironment {
     pub fn parse_doc(&self, docname: &str) -> Result<Doctree, BuildError> {
         sanitize_docname(docname)?;
         let path = self.doc2path(docname);
-        let source = std::fs::read_to_string(&path)
+        let source = read_source_file(&path)
             .map_err(|e| BuildError::Other(format!("failed to read {}: {e}", path.display())))?;
         Ok(docutilsrs::parse_rst_with_source(&source, docname))
     }
@@ -597,7 +611,7 @@ impl BuildEnvironment {
 
         for docname in &docnames {
             let path = self.doc2path(docname);
-            let source = std::fs::read_to_string(&path).map_err(|e| {
+            let source = read_source_file(&path).map_err(|e| {
                 BuildError::Other(format!("failed to read {}: {e}", path.display()))
             })?;
 
@@ -655,7 +669,7 @@ impl BuildEnvironment {
     /// instead.
     pub fn read_one(&mut self, docname: &str) -> Result<(), BuildError> {
         let path = self.doc2path(docname);
-        let source = std::fs::read_to_string(&path)
+        let source = read_source_file(&path)
             .map_err(|e| BuildError::Other(format!("failed to read {}: {e}", path.display())))?;
         self.read_one_with_source(docname, &source)
     }
@@ -2125,6 +2139,27 @@ mod tests {
         assert_eq!(
             settings.get("input_encoding").map(String::as_str),
             Some("utf-8-sig")
+        );
+    }
+
+    #[test]
+    fn parse_doc_accepts_latin1_source() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("index.rst"), b"Caf\xFC\n====\n").unwrap();
+        let project = EnvProject::new(dir.path(), &[(".rst", "restructuredtext")]);
+        let env = BuildEnvironment::new(
+            SphinxConfig::new_defaults(),
+            project,
+            dir.path(),
+            dir.path().join("doctrees"),
+        );
+
+        let tree = env.parse_doc("index").unwrap();
+        assert!(
+            tree.node(tree.root())
+                .children
+                .iter()
+                .any(|&id| matches!(tree.node(id).kind, NodeKind::Title))
         );
     }
 

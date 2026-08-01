@@ -438,9 +438,13 @@ fn write_node(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             emit(tree, id, depth, "system_message", &attrs, out);
         }
         NodeKind::Extension { class_name, attrs } => {
+            let values: Vec<(String, String)> = attrs
+                .iter()
+                .map(|(key, value)| (key.clone(), value.to_string()))
+                .collect();
             let mut xml_attrs: Vec<(&str, &str)> = vec![("classes", class_name.as_str())];
-            for (k, v) in attrs {
-                xml_attrs.push((k.as_str(), v.as_str()));
+            for (key, value) in &values {
+                xml_attrs.push((key.as_str(), value.as_str()));
             }
             emit(tree, id, depth, class_name, &xml_attrs, out);
         }

@@ -22,7 +22,7 @@ pub mod writer;
 pub mod xml_writer;
 pub mod zip_writer;
 
-pub use doctree::{Doctree, NodeKind};
+pub use doctree::{Doctree, NodeAttributeValue, NodeKind};
 pub use html5_writer::html5;
 pub use latex_writer::latex;
 pub use manpage_writer::manpage;

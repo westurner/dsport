@@ -11,9 +11,9 @@
 //! children only (for every other format/writer) — matching upstream's
 //! base-class/`unknown_visit` fallback behavior.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-use docutilsrs::doctree::{Doctree, NodeKind};
+use docutilsrs::doctree::{Doctree, NodeAttributeValue, NodeKind};
 use docutilsrs::plugins::register_node_visitor;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -26,7 +26,7 @@ fn tree_with_extension(class_name: &str) -> Doctree {
         root,
         NodeKind::Extension {
             class_name: class_name.to_string(),
-            attrs: HashMap::new(),
+            attrs: BTreeMap::new(),
         },
     );
     tree.append(ext, NodeKind::Text("body".to_string()));
@@ -143,8 +143,11 @@ fn xml_writer_renders_generic_closed_tag_regardless_of_registry() {
 
 #[test]
 fn doctree_serialization_round_trips_extension_node() {
-    let mut attrs = HashMap::new();
-    attrs.insert("foo".to_string(), "bar".to_string());
+    let mut attrs = BTreeMap::new();
+    attrs.insert(
+        "foo".to_string(),
+        NodeAttributeValue::String("bar".to_string()),
+    );
     let mut tree = Doctree::new_document("<test>");
     let root = tree.root();
     tree.append(
@@ -167,4 +170,89 @@ fn doctree_serialization_round_trips_extension_node() {
         }
         other => panic!("expected Extension node, got {other:?}"),
     }
+}
+
+#[test]
+fn doctree_reads_legacy_string_extension_attributes() {
+    let mut tree = Doctree::new_document("<test>");
+    tree.append(
+        tree.root(),
+        NodeKind::Extension {
+            class_name: "Legacy".to_string(),
+            attrs: BTreeMap::new(),
+        },
+    );
+    let mut value: serde_json::Value = serde_json::from_slice(&tree.to_bytes()).unwrap();
+    let nodes = value
+        .get_mut("nodes")
+        .and_then(serde_json::Value::as_array_mut)
+        .unwrap();
+    let extension = nodes
+        .iter_mut()
+        .find(|node| {
+            node.get("kind")
+                .and_then(|kind| kind.get("Extension"))
+                .is_some()
+        })
+        .unwrap();
+    extension["kind"]["Extension"]["attrs"] = serde_json::json!({"legacy": "value"});
+    let restored = Doctree::from_bytes(&serde_json::to_vec(&value).unwrap()).unwrap();
+    let extension_id = (0..restored.nodes_len())
+        .find(|&id| matches!(restored.node(id).kind, NodeKind::Extension { .. }))
+        .unwrap();
+    match &restored.node(extension_id).kind {
+        NodeKind::Extension { attrs, .. } => assert_eq!(
+            attrs.get("legacy"),
+            Some(&NodeAttributeValue::String("value".to_string()))
+        ),
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn extension_nodes_preserve_nested_children_and_typed_visitor_attributes() {
+    let mut attrs = BTreeMap::new();
+    attrs.insert("flag".to_string(), NodeAttributeValue::Bool(true));
+    attrs.insert("count".to_string(), NodeAttributeValue::Signed(3));
+    attrs.insert("missing".to_string(), NodeAttributeValue::None);
+    attrs.insert(
+        "items".to_string(),
+        NodeAttributeValue::List(vec![
+            NodeAttributeValue::String("a".to_string()),
+            NodeAttributeValue::Signed(2),
+        ]),
+    );
+    let mut tree = Doctree::new_document("<test>");
+    let root = tree.root();
+    let outer = tree.append(
+        root,
+        NodeKind::Extension {
+            class_name: "ExtTyped".to_string(),
+            attrs,
+        },
+    );
+    let inner = tree.append(
+        outer,
+        NodeKind::Extension {
+            class_name: "ExtInner".to_string(),
+            attrs: BTreeMap::new(),
+        },
+    );
+    tree.append(inner, NodeKind::Text("payload".to_string()));
+
+    Python::attach(|py| {
+        let globals = PyDict::new(py);
+        globals.set_item("_RET", "ok").unwrap();
+        let visitor = py
+            .eval(c"lambda attrs: 'ok' if attrs['flag'] is True and attrs['count'] == 3 and attrs['missing'] is None and attrs['items'][1] == 2 else 'bad'", Some(&globals), None)
+            .unwrap()
+            .unbind();
+        register_node_visitor("ExtTyped".to_string(), "html".to_string(), visitor, None);
+    });
+    let html = docutilsrs::html5(
+        &tree,
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
+    assert_eq!(html, "okpayload");
 }

@@ -231,7 +231,7 @@ pub enum Block {
     /// equivalent. Its registered Sphinx visitor pair handles rendering.
     Extension {
         class_name: String,
-        attrs: std::collections::HashMap<String, String>,
+        attrs: std::collections::BTreeMap<String, crate::doctree::NodeAttributeValue>,
         children: Vec<Block>,
     },
     Table(TableData),

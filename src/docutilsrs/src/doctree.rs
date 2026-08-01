@@ -6,9 +6,152 @@
 //! pointers are `NodeId`s, never references, so the tree is cheap to mutate
 //! and trivial to traverse without lifetime gymnastics.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
+use std::fmt;
 
 pub type NodeId = usize;
+
+/// A non-executable representation of Python node attributes.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub enum NodeAttributeValue {
+    String(String),
+    Bool(bool),
+    Signed(i64),
+    Unsigned(u64),
+    Float(f64),
+    List(Vec<NodeAttributeValue>),
+    Map(BTreeMap<String, NodeAttributeValue>),
+    None,
+    Opaque { type_name: String, repr: String },
+}
+
+impl<'de> serde::Deserialize<'de> for NodeAttributeValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        fn convert(value: serde_json::Value) -> Result<NodeAttributeValue, String> {
+            match value {
+                serde_json::Value::Null => Ok(NodeAttributeValue::None),
+                serde_json::Value::Bool(value) => Ok(NodeAttributeValue::Bool(value)),
+                serde_json::Value::String(value) => Ok(NodeAttributeValue::String(value)),
+                serde_json::Value::Number(value) => {
+                    if let Some(value) = value.as_i64() {
+                        Ok(NodeAttributeValue::Signed(value))
+                    } else if let Some(value) = value.as_u64() {
+                        Ok(NodeAttributeValue::Unsigned(value))
+                    } else if let Some(value) = value.as_f64()
+                        && value.is_finite()
+                    {
+                        Ok(NodeAttributeValue::Float(value))
+                    } else {
+                        Err("non-finite numeric attribute".to_string())
+                    }
+                }
+                serde_json::Value::Array(values) => values
+                    .into_iter()
+                    .map(convert)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(NodeAttributeValue::List),
+                serde_json::Value::Object(mut values) => {
+                    if values.len() == 1 {
+                        if let Some(value) = values.remove("String") {
+                            return Ok(NodeAttributeValue::String(
+                                value
+                                    .as_str()
+                                    .ok_or_else(|| "String attribute is not a string".to_string())?
+                                    .to_string(),
+                            ));
+                        }
+                        if let Some(value) = values.remove("Bool") {
+                            return Ok(NodeAttributeValue::Bool(
+                                value
+                                    .as_bool()
+                                    .ok_or_else(|| "Bool attribute is not a bool".to_string())?,
+                            ));
+                        }
+                        if let Some(value) = values.remove("Signed") {
+                            return Ok(NodeAttributeValue::Signed(value.as_i64().ok_or_else(
+                                || "Signed attribute is not an integer".to_string(),
+                            )?));
+                        }
+                        if let Some(value) = values.remove("Unsigned") {
+                            return Ok(NodeAttributeValue::Unsigned(value.as_u64().ok_or_else(
+                                || "Unsigned attribute is not an integer".to_string(),
+                            )?));
+                        }
+                        if let Some(value) = values.remove("Float") {
+                            let value = value
+                                .as_f64()
+                                .ok_or_else(|| "Float attribute is not a number".to_string())?;
+                            return if value.is_finite() {
+                                Ok(NodeAttributeValue::Float(value))
+                            } else {
+                                Err("non-finite numeric attribute".to_string())
+                            };
+                        }
+                        if let Some(value) = values.remove("List") {
+                            return convert(serde_json::Value::Array(
+                                value
+                                    .as_array()
+                                    .ok_or_else(|| "List attribute is not an array".to_string())?
+                                    .clone(),
+                            ));
+                        }
+                        if let Some(value) = values.remove("Map") {
+                            return convert(value);
+                        }
+                        if values.contains_key("None") {
+                            return Ok(NodeAttributeValue::None);
+                        }
+                        if let Some(value) = values.remove("Opaque") {
+                            let object = value
+                                .as_object()
+                                .ok_or_else(|| "Opaque attribute is not an object".to_string())?;
+                            return Ok(NodeAttributeValue::Opaque {
+                                type_name: object
+                                    .get("type_name")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                repr: object
+                                    .get("repr")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                            });
+                        }
+                    }
+                    values
+                        .into_iter()
+                        .map(|(key, value)| convert(value).map(|value| (key, value)))
+                        .collect::<Result<BTreeMap<_, _>, _>>()
+                        .map(NodeAttributeValue::Map)
+                }
+            }
+        }
+        convert(value).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Eq for NodeAttributeValue {}
+
+impl fmt::Display for NodeAttributeValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::String(value) => f.write_str(value),
+            Self::Bool(value) => write!(f, "{value}"),
+            Self::Signed(value) => write!(f, "{value}"),
+            Self::Unsigned(value) => write!(f, "{value}"),
+            Self::Float(value) => write!(f, "{value}"),
+            Self::List(values) => write!(f, "{values:?}"),
+            Self::Map(values) => write!(f, "{values:?}"),
+            Self::None => f.write_str("None"),
+            Self::Opaque { repr, .. } => f.write_str(repr),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {
@@ -235,16 +378,16 @@ pub enum NodeKind {
     /// (see `docs/adr/0006-extension-nodes.md`). `class_name` is the
     /// registering Python class's `__name__`, used to key the per-
     /// `(class_name, builder_format)` visit/depart callable registry in
-    /// [`crate::plugins`]. `attrs` is a **string-valued-only**
-    /// simplification of the node's real `docutils.nodes.Element`
-    /// attribute dict — the same accepted deviation already used for
-    /// `domaindata`/`temp_data`/`ref_context` elsewhere in this port.
+    /// [`crate::plugins`]. `attrs` is a deterministic typed representation of
+    /// the node's real `docutils.nodes.Element` attribute dict. Unsupported
+    /// Python values are retained as informational `Opaque` values and are
+    /// never executed.
     /// Every writer falls back to rendering children only (no wrapper
     /// markup) when no visit/depart pair is registered for its own
     /// builder format, mirroring upstream's `unknown_visit` fallback.
     Extension {
         class_name: String,
-        attrs: HashMap<String, String>,
+        attrs: BTreeMap<String, NodeAttributeValue>,
     },
     /// `<abbreviation explanation="...">` element produced by `:abbr:` / `:abbreviation:`.
     Abbreviation {
@@ -582,7 +725,7 @@ enum NodeKindData {
     },
     Extension {
         class_name: String,
-        attrs: HashMap<String, String>,
+        attrs: BTreeMap<String, NodeAttributeValue>,
     },
     Abbreviation {
         explanation: String,

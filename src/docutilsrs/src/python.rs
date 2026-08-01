@@ -539,7 +539,7 @@ impl PyNode {
             }
             NodeKind::Extension { attrs, .. } => {
                 for (k, v) in attrs {
-                    dict.set_item(k, v)?;
+                    dict.set_item(k, crate::plugins::node_attribute_to_py(py, v))?;
                 }
             }
             NodeKind::ObjectDescription {

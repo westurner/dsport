@@ -12,13 +12,13 @@
 
 #![allow(clippy::type_complexity)]
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, OnceLock};
 
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 
-use crate::doctree::{Doctree, NodeId, NodeKind};
+use crate::doctree::{Doctree, NodeAttributeValue, NodeId, NodeKind};
 
 fn registry() -> &'static Mutex<HashMap<String, Py<PyAny>>> {
     static R: OnceLock<Mutex<HashMap<String, Py<PyAny>>>> = OnceLock::new();
@@ -269,6 +269,90 @@ fn parse_plugin_rst(rst: &str) -> Vec<crate::parser::Block> {
     crate::parser::parse_plugin_blocks(&lines)
 }
 
+fn python_node_attributes(node: &Bound<'_, PyAny>) -> BTreeMap<String, NodeAttributeValue> {
+    node.getattr("attributes")
+        .ok()
+        .and_then(|value| value.cast::<PyDict>().ok().cloned())
+        .map(|dict| {
+            dict.iter()
+                .filter_map(|(key, value)| {
+                    Some((
+                        key.extract::<String>().ok()?,
+                        python_attribute_value(&value),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn python_attribute_value(value: &Bound<'_, PyAny>) -> NodeAttributeValue {
+    if value.is_none() {
+        return NodeAttributeValue::None;
+    }
+    if let Ok(value) = value.extract::<bool>() {
+        return NodeAttributeValue::Bool(value);
+    }
+    if let Ok(value) = value.extract::<i64>() {
+        return NodeAttributeValue::Signed(value);
+    }
+    if let Ok(value) = value.extract::<u64>() {
+        return NodeAttributeValue::Unsigned(value);
+    }
+    if let Ok(value) = value.extract::<f64>() {
+        return if value.is_finite() {
+            NodeAttributeValue::Float(value)
+        } else {
+            NodeAttributeValue::Opaque {
+                type_name: "float".to_string(),
+                repr: value.to_string(),
+            }
+        };
+    }
+    if let Ok(items) = value.cast::<PyList>() {
+        return NodeAttributeValue::List(
+            items
+                .iter()
+                .map(|item| python_attribute_value(&item))
+                .collect(),
+        );
+    }
+    if let Ok(dict) = value.cast::<PyDict>() {
+        let mut values = BTreeMap::new();
+        for (key, item) in dict.iter() {
+            if let Ok(key) = key.extract::<String>() {
+                values.insert(key, python_attribute_value(&item));
+            } else {
+                return NodeAttributeValue::Opaque {
+                    type_name: value
+                        .get_type()
+                        .name()
+                        .map(|name| name.to_string())
+                        .unwrap_or_default(),
+                    repr: value.str().map(|v| v.to_string()).unwrap_or_default(),
+                };
+            }
+        }
+        return NodeAttributeValue::Map(values);
+    }
+    NodeAttributeValue::Opaque {
+        type_name: value
+            .get_type()
+            .name()
+            .map(|name| name.to_string())
+            .unwrap_or_default(),
+        repr: value.str().map(|v| v.to_string()).unwrap_or_default(),
+    }
+}
+
+fn attribute_text(attrs: &BTreeMap<String, NodeAttributeValue>, name: &str) -> String {
+    match attrs.get(name) {
+        Some(NodeAttributeValue::String(value)) => value.clone(),
+        Some(value) => value.to_string(),
+        None => String::new(),
+    }
+}
+
 fn python_node_to_block(node: &Bound<'_, PyAny>) -> Option<crate::parser::Block> {
     let tag = node.getattr("tagname").ok()?.extract::<String>().ok()?;
     let text = node
@@ -287,29 +371,18 @@ fn python_node_to_block(node: &Bound<'_, PyAny>) -> Option<crate::parser::Block>
                 .collect()
         })
         .unwrap_or_default();
-    let attrs: std::collections::HashMap<String, String> = node
-        .getattr("attributes")
-        .ok()
-        .and_then(|v| v.cast::<PyDict>().ok().cloned())
-        .map(|dict| {
-            dict.iter()
-                .filter_map(|(key, value)| {
-                    Some((key.extract::<String>().ok()?, value.str().ok()?.to_string()))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let attrs = python_node_attributes(node);
     match tag.as_str() {
         "paragraph" | "title" | "term" | "rubric" => {
             Some(crate::parser::Block::Paragraph { text, line: 0 })
         }
         "literal_block" => Some(crate::parser::Block::LiteralBlock {
-            classes: attrs.get("classes").cloned().unwrap_or_default(),
+            classes: attribute_text(&attrs, "classes"),
             text,
             tokens: None,
         }),
         "raw" => Some(crate::parser::Block::Raw {
-            format: attrs.get("format").cloned().unwrap_or_default(),
+            format: attribute_text(&attrs, "format"),
             text,
         }),
         "bullet_list" => Some(crate::parser::Block::BulletList {
@@ -598,7 +671,7 @@ pub fn has_node_visitor(class_name: &str, format: &str) -> bool {
 pub fn invoke_node_visit(
     class_name: &str,
     format: &str,
-    attrs: &HashMap<String, String>,
+    attrs: &BTreeMap<String, NodeAttributeValue>,
 ) -> Option<String> {
     invoke_node_hook(class_name, format, attrs, true)
 }
@@ -610,7 +683,7 @@ pub fn invoke_node_visit(
 pub fn invoke_node_depart(
     class_name: &str,
     format: &str,
-    attrs: &HashMap<String, String>,
+    attrs: &BTreeMap<String, NodeAttributeValue>,
 ) -> Option<String> {
     invoke_node_hook(class_name, format, attrs, false)
 }
@@ -618,7 +691,7 @@ pub fn invoke_node_depart(
 fn invoke_node_hook(
     class_name: &str,
     format: &str,
-    attrs: &HashMap<String, String>,
+    attrs: &BTreeMap<String, NodeAttributeValue>,
     is_visit: bool,
 ) -> Option<String> {
     Python::try_attach(|py| -> Option<String> {
@@ -633,9 +706,40 @@ fn invoke_node_hook(
         };
         let dict = pyo3::types::PyDict::new(py);
         for (k, v) in attrs {
-            dict.set_item(k, v).ok()?;
+            dict.set_item(k, node_attribute_to_py(py, v)).ok()?;
         }
         let result = cb.bind(py).call1((dict,)).ok()?;
         result.extract::<String>().ok()
     })?
+}
+
+pub(crate) fn node_attribute_to_py<'py>(
+    py: Python<'py>,
+    value: &NodeAttributeValue,
+) -> Bound<'py, PyAny> {
+    match value {
+        NodeAttributeValue::String(value) => value.into_pyobject(py).unwrap().into_any(),
+        NodeAttributeValue::Bool(value) => {
+            pyo3::types::PyBool::new(py, *value).to_owned().into_any()
+        }
+        NodeAttributeValue::Signed(value) => value.into_pyobject(py).unwrap().into_any(),
+        NodeAttributeValue::Unsigned(value) => value.into_pyobject(py).unwrap().into_any(),
+        NodeAttributeValue::Float(value) => value.into_pyobject(py).unwrap().into_any(),
+        NodeAttributeValue::None => py.None().into_bound(py),
+        NodeAttributeValue::Opaque { repr, .. } => repr.into_pyobject(py).unwrap().into_any(),
+        NodeAttributeValue::List(values) => {
+            let list = PyList::empty(py);
+            for item in values {
+                list.append(node_attribute_to_py(py, item)).unwrap();
+            }
+            list.into_any()
+        }
+        NodeAttributeValue::Map(values) => {
+            let dict = PyDict::new(py);
+            for (key, item) in values {
+                dict.set_item(key, node_attribute_to_py(py, item)).unwrap();
+            }
+            dict.into_any()
+        }
+    }
 }

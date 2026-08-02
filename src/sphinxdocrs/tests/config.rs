@@ -6,7 +6,7 @@
 
 use std::io::Write;
 
-use sphinxdocrs::config::{Config, MathRenderer, DEFAULT_MATHJAX_PATH};
+use sphinxdocrs::config::{Config, DEFAULT_MATHJAX_PATH, MathRenderer};
 
 fn write_conf(name: &str, body: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join("sphinxdocrs-config-tests");
@@ -124,7 +124,7 @@ fn syntax_error_in_conf_is_config_error() {
 use rstest::*;
 use std::collections::HashMap;
 
-use sphinxdocrs::config::{raw_config_from_conf_py, ConfigVal, RebuildKind, SphinxConfig};
+use sphinxdocrs::config::{ConfigVal, RebuildKind, SphinxConfig, raw_config_from_conf_py};
 use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 
 // ── defaults ──────────────────────────────────────────────────────────────────

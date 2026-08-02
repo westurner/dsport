@@ -8,8 +8,8 @@
 use std::path::Path;
 use tempfile::TempDir;
 
-use sphinxdocrs::builders::html::HtmlBuilder;
 use sphinxdocrs::builders::Builder;
+use sphinxdocrs::builders::html::HtmlBuilder;
 use sphinxdocrs::config::{ConfigVal, SphinxConfig};
 use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 

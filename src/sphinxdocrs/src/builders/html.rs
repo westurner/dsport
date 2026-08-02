@@ -643,7 +643,7 @@ impl Builder for HtmlBuilder {
                     .map_err(|e| {
                         BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
                     })?;
-                    parse_rst_with_source(&source, docname)
+                    env.parse_source(docname, &source)?
                 }
             };
             // Keep the resolution call as an idempotent compatibility fallback

@@ -10,5 +10,7 @@ expression: "myst_md_rs::features()"
     "myst:roles_inline",
     "myst:dollarmath_inline",
     "myst:dollarmath_block",
+    "myst:definition_lists",
+    "render:doctree",
     "render:html",
 ]

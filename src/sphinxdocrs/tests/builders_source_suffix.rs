@@ -3,11 +3,11 @@
 
 use tempfile::TempDir;
 
+use sphinxdocrs::builders::Builder;
 use sphinxdocrs::builders::html::HtmlBuilder;
 use sphinxdocrs::builders::pseudoxml::PseudoxmlBuilder;
 use sphinxdocrs::builders::text::TextBuilder;
 use sphinxdocrs::builders::xml::XmlBuilder;
-use sphinxdocrs::builders::Builder;
 use sphinxdocrs::config::{ConfigVal, SphinxConfig};
 use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 

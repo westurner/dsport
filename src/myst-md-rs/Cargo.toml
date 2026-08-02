@@ -33,6 +33,7 @@ pulldown-cmark-escape = "0.11"
 serde_yaml = "0.9"
 serde = { version = "1", features = ["derive"] }
 mathrenderrs = { path = "../mathrenderrs" }
+docutilsrs = { path = "../docutilsrs" }
 
 [dev-dependencies]
 insta = { workspace = true }

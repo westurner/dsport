@@ -19,12 +19,13 @@
 //! * Inline roles `` {name}`content` `` → `<span class="myst-role">`.
 //! * Inline math `$…$` and block math `$$…$$`.
 //!
-//! Larger features (substitutions, attrs, field lists, deflists, doctree
-//! bridge) are tracked in `README.md`.
+//! Larger features (substitutions, field lists, include/eval-rst, and full
+//! directive option parity) are tracked in `README.md` and the port plans.
 
 use pyo3::prelude::*;
 
 pub mod directives;
+pub mod doctree;
 pub mod frontmatter;
 pub mod options;
 pub mod preprocess;
@@ -51,6 +52,8 @@ pub fn features() -> &'static [&'static str] {
         "myst:roles_inline",
         "myst:dollarmath_inline",
         "myst:dollarmath_block",
+        "myst:definition_lists",
+        "render:doctree",
         "render:html",
     ]
 }
@@ -107,6 +110,8 @@ pub fn render_html_with(source: &str, math_backend: MathBackend) -> String {
 /// Re-exported from [`mathrenderrs`] so downstream callers don't need to
 /// depend on it directly to pick a math rendering backend.
 pub use mathrenderrs::MathBackend;
+
+pub use doctree::{DoctreeOptions, parse_to_doctree};
 
 /// Extract the front matter (if any), returning it as a YAML string.
 pub fn parse_front_matter(source: &str) -> Option<String> {

@@ -21,7 +21,7 @@
 
 use std::path::{Path, PathBuf};
 
-use docutilsrs::{parse_rst_with_options, to_xml, TitlePromotion};
+use docutilsrs::{TitlePromotion, parse_rst_with_options, to_xml};
 
 use super::{BuildError, BuildResult, Builder};
 use crate::environment::BuildEnvironment;

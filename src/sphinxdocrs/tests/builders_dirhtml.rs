@@ -13,9 +13,9 @@ use std::collections::HashMap;
 use tempfile::TempDir;
 
 use sphinxdocrs::application::SphinxApp;
+use sphinxdocrs::builders::Builder;
 use sphinxdocrs::builders::dirhtml::DirhtmlBuilder;
 use sphinxdocrs::builders::html::HtmlBuilder;
-use sphinxdocrs::builders::Builder;
 use sphinxdocrs::config::SphinxConfig;
 use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 

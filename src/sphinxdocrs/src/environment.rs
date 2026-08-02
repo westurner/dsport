@@ -497,7 +497,44 @@ impl BuildEnvironment {
         let path = self.doc2path(docname);
         let source = read_source_file(&path, &self.config.source_encoding())
             .map_err(|e| BuildError::Other(format!("failed to read {}: {e}", path.display())))?;
-        Ok(docutilsrs::parse_rst_with_source(&source, docname))
+        self.parse_source(docname, &source)
+    }
+
+    /// Return the parser identity configured for a source path.
+    ///
+    /// Suffixes are matched longest-first, matching `find_files()`. A path
+    /// with no configured match keeps the historical RST default so direct
+    /// callers that provide an unregistered path remain compatible.
+    pub fn parser_for_path(&self, path: &Path) -> String {
+        let mut suffixes: Vec<(String, String)> = self.config.source_suffix().into_iter().collect();
+        suffixes.sort_by_key(|(suffix, _)| std::cmp::Reverse(suffix.len()));
+        let path = path.to_string_lossy();
+        suffixes
+            .into_iter()
+            .find(|(suffix, _)| path.ends_with(suffix))
+            .map(|(_, parser)| parser)
+            .unwrap_or_else(|| "restructuredtext".into())
+    }
+
+    /// Parse source using the parser selected by `source_suffix`.
+    ///
+    /// The native MyST path produces a `docutilsrs::Doctree` directly. It
+    /// deliberately does not call the standalone HTML renderer, preserving
+    /// the Sphinx read-phase contract for transforms, persistence, and
+    /// writers.
+    pub fn parse_source(&self, docname: &str, source: &str) -> Result<Doctree, BuildError> {
+        let path = self.doc2path(docname);
+        match self.parser_for_path(&path).as_str() {
+            "restructuredtext" => Ok(docutilsrs::parse_rst_with_source(source, docname)),
+            "myst" => Ok(myst_md_rs::parse_to_doctree(
+                source,
+                path.to_string_lossy().into_owned(),
+                &myst_md_rs::DoctreeOptions::default(),
+            )),
+            parser => Err(BuildError::Other(format!(
+                "unknown source parser {parser:?} configured for {docname:?}"
+            ))),
+        }
     }
 
     /// Persist `tree` to `doctreedir/<docname>.doctree`.
@@ -690,7 +727,7 @@ impl BuildEnvironment {
         let source = expanded_source.as_deref().unwrap_or(source);
         let highlighted_source = self.apply_highlight_language(source);
         let parse_source = highlighted_source.as_deref().unwrap_or(source);
-        let tree = docutilsrs::parse_rst_with_source(parse_source, docname);
+        let tree = self.parse_source(docname, parse_source)?;
 
         let title = match &tree.node(tree.root()).kind {
             NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),

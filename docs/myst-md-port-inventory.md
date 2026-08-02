@@ -30,8 +30,8 @@ docutils/sphinx prematurely.
 | W3 | options + directive text parser | `test_renderers/fixtures/option_parsing*.yaml`, `directive_parsing.txt` | 72 |
 | W4 | HTML tokenizer + AST | `test_html/html_ast.md`, `html_round_trip.md`, `test_html_to_nodes.py` (html→nodes deferred) | ~30 |
 | W5 | front matter / anchors / CLI surface | `test_anchors.py`, `test_inventory.py` (data only), `myst-config.txt` (string slice only) | small |
-| W6 (P2) | MyST Markdown → `docutilsrs::Doctree` bridge | `docutil_*`, `containers.md`, `tables.md`, `dollarmath.md`, `amsmath.md`, `definition_lists.md`, `attributes.md`, `mock_include*`, `reporter_warnings.md`, `eval_rst.md`, `directive_options.md` | ~250 |
-| W7 (P3) | `source_suffix` parser selection + Sphinx read/write integration | `sphinx_*`, `test_sphinx/`, `test_myst_refs/`, `test_include_directive.py` (Sphinx half) | very large; split native Rust acceptance from K-PY compatibility coverage |
+| W6 (P2, partial) | MyST Markdown → `docutilsrs::Doctree` bridge | `docutil_*`, `containers.md`, `tables.md`, `dollarmath.md`, `amsmath.md`, `definition_lists.md`, `attributes.md`, `mock_include*`, `reporter_warnings.md`, `eval_rst.md`, `directive_options.md` | ~250; core bridge slice landed, fixture parity remains |
+| W7 (P3, partial) | `source_suffix` parser selection + Sphinx read/write integration | `sphinx_*`, `test_sphinx/`, `test_myst_refs/`, `test_include_directive.py` (Sphinx half) | native mixed-source gate landed; upstream compatibility coverage remains |
 
 ## Wave details
 
@@ -146,6 +146,16 @@ Port mechanics:
 
 ### W6 — doctree bridge (depends on `docutilsrs`)
 
+**Current state:** the initial bridge is implemented in
+`myst-md-rs::parse_to_doctree`. It lowers headings, paragraphs, inline
+emphasis/strong/literal, links, images, code blocks, roles, colon-fence
+admonitions/containers, inline/display math, and source metadata into the
+existing `docutilsrs::NodeKind` model. Focused tests also verify doctree
+serialization round trips and native HTML output after reload. The larger
+fixture matrix below remains open for table spans/alignment classes,
+include/eval-rst, directive option coercion, substitutions, and reporter
+parity.
+
 All fixtures whose expected output is `<document source=...>` belong
 here:
 
@@ -196,6 +206,14 @@ math nodes, and source metadata. The doctree survives
 `Doctree::to_bytes`/`from_bytes` without changing the rendered result.
 
 ### W7 — sphinx bridge (depends on `sphinxdocrs`)
+
+**Current state:** configured parser dispatch is implemented in
+`BuildEnvironment`; `.md` mapped to `myst` uses the doctree bridge, while
+string-form `source_suffix = '.md'` retains Sphinx's reStructuredText
+semantics. The native `myst_bridge.rs` gate covers mixed discovery, parser
+identity, persisted doctree content, unknown-parser errors, and exact
+single-phase/two-phase HTML agreement. The upstream Sphinx/MyST fixture
+matrix is still pending.
 
 The first W7 gate is a native end-to-end project, independent of the full
 upstream fixture volume:
@@ -266,8 +284,7 @@ path is an owned Rust compatibility gate. Record remaining feature deltas in
    `myst_md_rs::options` against them.
 3. Stand up the `parity` aggregator harness and add a section in
    `docs/compat.md`.
-4. Design and implement the W6 parser-to-`docutilsrs::Doctree` contract;
-  start with headings, paragraphs, inline emphasis, links, and source
-  metadata.
-5. Add the W7 native acceptance project: `.md` discovery, MyST parser
-  selection, persisted doctree, and native HTML output.
+4. Expand W6 from the landed core bridge into tables, definition lists,
+   directive options, attributes, include/eval-rst, and reporter parity.
+5. Port representative W7 MyST/Sphinx fixtures and record native-path
+   deviations in `docs/compat.md`.

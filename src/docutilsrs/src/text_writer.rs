@@ -153,7 +153,9 @@ fn render_block_recursive(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut
             // `text_sectionchars`' point of view — render it with the same
             // underline rule as a genuine depth-0 section title.
             let t = inline_text(tree, id);
-            let underline = section_underline_char(0).to_string().repeat(display_width(&t));
+            let underline = section_underline_char(0)
+                .to_string()
+                .repeat(display_width(&t));
             blocks.push(format!("{t}\n{underline}"));
         }
         NodeKind::Subtitle { .. } => {

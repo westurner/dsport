@@ -50,7 +50,11 @@ pub fn parse_rst_with_options(
     source_path: &str,
     title_promotion: TitlePromotion,
 ) -> Doctree {
-    parse_rst_impl(source, source_path, title_promotion == TitlePromotion::Promote)
+    parse_rst_impl(
+        source,
+        source_path,
+        title_promotion == TitlePromotion::Promote,
+    )
 }
 
 fn parse_rst_impl(source: &str, source_path: &str, promote_title: bool) -> Doctree {

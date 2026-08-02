@@ -31,7 +31,8 @@ fn build_doc_output_matches_docutilsrs_pseudo_xml_directly() {
         .unwrap();
     let written = std::fs::read_to_string(tmp.path().join("index.pseudoxml")).unwrap();
 
-    let tree = docutilsrs::parse_rst_with_options(source, "index", docutilsrs::TitlePromotion::Preserve);
+    let tree =
+        docutilsrs::parse_rst_with_options(source, "index", docutilsrs::TitlePromotion::Preserve);
     let expected = docutilsrs::pseudo_xml(&tree);
     assert_eq!(written, expected);
 }

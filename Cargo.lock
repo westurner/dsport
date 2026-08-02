@@ -1699,6 +1699,7 @@ dependencies = [
 name = "myst-md-rs"
 version = "0.0.1"
 dependencies = [
+ "docutilsrs",
  "insta",
  "mathrenderrs",
  "mockall",

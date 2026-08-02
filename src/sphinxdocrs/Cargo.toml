@@ -66,6 +66,7 @@ clap = { workspace = true }
 jinja2rs = { path = "../jinja2rs" }
 markupsafers = { path = "../markupsafers", features = ["minijinja"] }
 docutilsrs = { path = "../docutilsrs" }
+myst-md-rs = { path = "../myst-md-rs" }
 pygmentsrs = { path = "../pygmentsrs" }
 minijinja = { path = "../minijinja/minijinja" }
 unicode-width = "0.2"
@@ -103,6 +104,7 @@ mockall = { workspace = true }
 wiremock = { workspace = true }
 rvcr = { workspace = true }
 tempfile = "3"
+myst-md-rs = { path = "../myst-md-rs" }
 criterion = { version = "0.8", features = ["html_reports"] }
 # Async runtime required only to drive `wiremock::MockServer` in
 # `tests/linkcheck_wiremock.rs`; the code under test remains synchronous.

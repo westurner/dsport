@@ -6,7 +6,7 @@
 
 use std::io::Write;
 
-use sphinxdocrs::config::{Config, DEFAULT_MATHJAX_PATH, MathRenderer};
+use sphinxdocrs::config::{Config, MathRenderer, DEFAULT_MATHJAX_PATH};
 
 fn write_conf(name: &str, body: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join("sphinxdocrs-config-tests");
@@ -124,7 +124,8 @@ fn syntax_error_in_conf_is_config_error() {
 use rstest::*;
 use std::collections::HashMap;
 
-use sphinxdocrs::config::{ConfigVal, RebuildKind, SphinxConfig};
+use sphinxdocrs::config::{raw_config_from_conf_py, ConfigVal, RebuildKind, SphinxConfig};
+use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 
 // ── defaults ──────────────────────────────────────────────────────────────────
 
@@ -236,6 +237,60 @@ fn sphinx_config_set_syncs_alias() {
     let mut cfg = SphinxConfig::new_defaults();
     cfg.set("master_doc", ConfigVal::Str("contents".into()));
     assert_eq!(cfg.root_doc(), "contents");
+}
+
+#[test]
+fn source_suffix_string_md_discovers_markdown_as_restructuredtext() {
+    let conf = write_conf(
+        "source_suffix_md_string",
+        "source_suffix = '.md'\nproject = 'Markdown string'\n",
+    );
+    let config = SphinxConfig::new(raw_config_from_conf_py(&conf).unwrap(), HashMap::new());
+    assert_eq!(
+        config.source_suffix().get(".md").map(String::as_str),
+        Some("restructuredtext")
+    );
+
+    let src = tempfile::TempDir::new().unwrap();
+    std::fs::write(src.path().join("index.md"), "Title\n=====\n\nBody.\n").unwrap();
+    let project = EnvProject::new(src.path(), &[(".md", "restructuredtext")]);
+    let mut env = BuildEnvironment::new(config, project, src.path(), src.path().join(".doctrees"));
+    env.find_files().unwrap();
+
+    assert!(env.found_docs().contains("index"));
+    assert_eq!(env.doc2path("index"), src.path().join("index.md"));
+}
+
+#[test]
+fn source_suffix_dict_md_selects_myst_and_renders_with_myst_md_rs() {
+    let conf = write_conf(
+        "source_suffix_md_dict",
+        "source_suffix = {'.rst': 'restructuredtext', '.md': 'myst'}\n",
+    );
+    let config = SphinxConfig::new(raw_config_from_conf_py(&conf).unwrap(), HashMap::new());
+    let suffixes = config.source_suffix();
+    assert_eq!(
+        suffixes.get(".rst").map(String::as_str),
+        Some("restructuredtext")
+    );
+    assert_eq!(suffixes.get(".md").map(String::as_str), Some("myst"));
+
+    let source = "# MyST title\n\nA **bold** paragraph.\n\n:::note\nA note.\n:::\n";
+    let rendered = myst_md_rs::render_html(source);
+    assert!(rendered.contains("<h1>MyST title</h1>"));
+    assert!(rendered.contains("<strong>bold</strong>"));
+    assert!(rendered.contains(r#"class="myst-directive""#));
+
+    let src = tempfile::TempDir::new().unwrap();
+    std::fs::write(src.path().join("index.rst"), "Index\n=====\n").unwrap();
+    std::fs::write(src.path().join("guide.md"), source).unwrap();
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext"), (".md", "myst")]);
+    let mut env = BuildEnvironment::new(config, project, src.path(), src.path().join(".doctrees"));
+    env.find_files().unwrap();
+
+    assert!(env.found_docs().contains("index"));
+    assert!(env.found_docs().contains("guide"));
+    assert_eq!(env.doc2path("guide"), src.path().join("guide.md"));
 }
 
 // ── filter ────────────────────────────────────────────────────────────────────

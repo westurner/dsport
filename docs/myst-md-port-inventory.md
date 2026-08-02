@@ -30,8 +30,8 @@ docutils/sphinx prematurely.
 | W3 | options + directive text parser | `test_renderers/fixtures/option_parsing*.yaml`, `directive_parsing.txt` | 72 |
 | W4 | HTML tokenizer + AST | `test_html/html_ast.md`, `html_round_trip.md`, `test_html_to_nodes.py` (html→nodes deferred) | ~30 |
 | W5 | front matter / anchors / CLI surface | `test_anchors.py`, `test_inventory.py` (data only), `myst-config.txt` (string slice only) | small |
-| W6 (P2) | doctree bridge → docutilsrs | `docutil_*`, `containers.md`, `tables.md`, `dollarmath.md`, `amsmath.md`, `definition_lists.md`, `attributes.md`, `mock_include*`, `reporter_warnings.md`, `eval_rst.md`, `directive_options.md` | ~250 |
-| W7 (P3) | sphinx bridge → sphinxdocrs | `sphinx_*`, `test_sphinx/`, `test_myst_refs/`, `test_include_directive.py` (Sphinx half) | very large; keep mostly K-PY |
+| W6 (P2) | MyST Markdown → `docutilsrs::Doctree` bridge | `docutil_*`, `containers.md`, `tables.md`, `dollarmath.md`, `amsmath.md`, `definition_lists.md`, `attributes.md`, `mock_include*`, `reporter_warnings.md`, `eval_rst.md`, `directive_options.md` | ~250 |
+| W7 (P3) | `source_suffix` parser selection + Sphinx read/write integration | `sphinx_*`, `test_sphinx/`, `test_myst_refs/`, `test_include_directive.py` (Sphinx half) | very large; split native Rust acceptance from K-PY compatibility coverage |
 
 ## Wave details
 
@@ -171,20 +171,58 @@ here:
 
 Mechanics:
 
+* Add a parser-facing API such as
+  `myst_md_rs::parse_to_doctree(source, source_path, options) ->
+  docutilsrs::doctree::Doctree`. Keep `parse_to_html` as a standalone
+  Phase 0/HTML API, but do not use HTML as the intermediate representation
+  for the Sphinx path.
+* Lower CommonMark/MyST headings, paragraphs, emphasis, strong/literal,
+  links, code, images, math, colon-fence directives, roles, front matter,
+  and source locations into the existing `docutilsrs::NodeKind` model.
+  Where a feature has no native node kind yet, add a documented node or
+  attribute-model extension rather than silently flattening it to HTML.
 * Reuse the W2 `param_file` helper but assert against pretty-printed
-  doctree from `docutilsrs::doctree`.
+  doctree from `docutilsrs::doctree`; add serialization round trips so the
+  result can survive the Sphinx read phase.
+* Keep parser configuration explicit: the bridge receives MyST options and
+  the source path, and does not infer Sphinx application state from a global
+  HTML renderer.
 * Many fixtures embed `<src>/index.md` as the document source string —
   expose that as a parser knob so we don't have to rewrite fixtures.
 
+Acceptance: representative W6 fixtures produce the expected
+`docutilsrs::Doctree`, including child order, inline nodes, attributes,
+math nodes, and source metadata. The doctree survives
+`Doctree::to_bytes`/`from_bytes` without changing the rendered result.
+
 ### W7 — sphinx bridge (depends on `sphinxdocrs`)
 
+The first W7 gate is a native end-to-end project, independent of the full
+upstream fixture volume:
+
+1. `conf.py` sets
+  `source_suffix = {'.rst': 'restructuredtext', '.md': 'myst'}` and
+  `master_doc = 'index'`.
+2. `BuildEnvironment::find_files` records both suffix and parser identity;
+  the read phase selects the MyST parser for `guide.md`.
+3. The MyST parser produces and persists a `docutilsrs::Doctree` for
+  `guide.md`; the build does not call `parse_to_html` as a shortcut.
+4. The native `HtmlBuilder` consumes that stored doctree and emits
+  `guide.html`, with headings, emphasis, links, directives, and source
+  metadata asserted in the output.
+
+Rust coverage belongs in `sphinxdocrs/tests/myst_bridge.rs` plus focused
+`myst-md-rs` doctree tests. The existing `.md` `source_suffix` tests in
+`sphinxdocrs/tests/config.rs` remain configuration/discovery smoke tests
+until this gate lands.
+
+After the native gate passes, port or selectively retain
 `sphinx_syntax_elements.md` (58), `sphinx_directives.md` (51),
-`sphinx_link_resolution.md` (13), `sphinx_roles.md` (85),
-`test_sphinx/test_sphinx_builds.py` (15 builders, each with multiple
-output files) — all gated on Sphinx environment availability. Realistic
-plan: keep **K-PY** indefinitely; after `myst_md_rs` is wired into
-`myst_parser` as a backend, run upstream's existing tests against the
-Rust parser via the Python module surface and record any deltas in
+`sphinx_link_resolution.md` (13), `sphinx_roles.md` (85), and
+`test_sphinx/test_sphinx_builds.py` (15 builders, each with multiple output
+files). Keep fixtures that specifically assert Python extension behavior as
+**K-PY**, but do not mark the core `.md` to doctree to HTML path K-PY: that
+path is an owned Rust compatibility gate. Record remaining feature deltas in
 `docs/compat.md`.
 
 ## Cross-cutting infrastructure
@@ -228,3 +266,8 @@ Rust parser via the Python module surface and record any deltas in
    `myst_md_rs::options` against them.
 3. Stand up the `parity` aggregator harness and add a section in
    `docs/compat.md`.
+4. Design and implement the W6 parser-to-`docutilsrs::Doctree` contract;
+  start with headings, paragraphs, inline emphasis, links, and source
+  metadata.
+5. Add the W7 native acceptance project: `.md` discovery, MyST parser
+  selection, persisted doctree, and native HTML output.

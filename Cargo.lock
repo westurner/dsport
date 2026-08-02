@@ -3042,6 +3042,7 @@ dependencies = [
  "markupsafers",
  "minijinja",
  "mockall",
+ "myst-md-rs",
  "num_cpus",
  "pygmentsrs",
  "pyo3",

@@ -17,7 +17,8 @@ Contents:
 8. [Completed milestones](#8-completed-milestones-c--g--p-phases)
 9. [**H-phase: plan to close the remaining deferred work**](#9-h-phase--plan-to-close-the-remaining-deferred-work)
 10. [**H12: stack-safe docutilsrs renderers**](#h12-stack-safe-docutilsrs-renderers)
-11. [**J-phase: source-encoding hardening follow-ups**](#10-j-phase--source-encoding-hardening-follow-ups)
+11. [**H13: MyST Markdown to doctree and native HTML**](#tier-h13--myst-markdown-to-doctree-and-native-html)
+12. [**J-phase: source-encoding hardening follow-ups**](#10-j-phase--source-encoding-hardening-follow-ups)
 
 ---
 
@@ -417,6 +418,9 @@ graph TD
     H3 --> H10[H10: highlighting via pygmentsrs]
     H7 --> H11[H11: parity matrix over -b]
     H5 --> H11
+    H2 --> H13[H13: MyST Markdown -> doctree -> native HTML]
+    H5 --> H13
+    H11 --> H13
 ```
 
 ### Tier H1 — independent leaves (start immediately, parallelizable)
@@ -1836,6 +1840,106 @@ body: anything that isn't a plain `continue` most likely changes semantics
 once the call stack becomes a heap-allocated queue instead of independent
 function-call frames.
 
+### Tier H13 — MyST Markdown to doctree and native HTML
+
+**Status: planned.** The current `source_suffix` coverage proves that
+`.md` can be discovered and that a dictionary value such as
+`{'.md': 'myst'}` is preserved, and `myst-md-rs` can render Markdown/MyST
+directly to HTML. That is not yet a Sphinx build: `BuildEnvironment`
+currently parses every source through the reStructuredText parser, and
+`myst-md-rs` has no parser-to-`docutilsrs::Doctree` API. H13 closes that
+boundary without using HTML as a substitute for a doctree.
+
+#### H13.1 — Define the parser contract
+
+Add a parser-neutral entry point in `myst-md-rs`, for example:
+
+```text
+parse_to_doctree(source, source_path, options) -> docutilsrs::Doctree
+```
+
+The contract must preserve document source metadata, block and inline child
+order, heading levels, links/targets, code blocks, images, math, directives,
+roles, front matter, and source locations needed by Sphinx warnings. Keep
+`render_html`/`parse_to_html` as a standalone renderer API, but the Sphinx
+integration must consume the doctree result. Unsupported constructs must be
+explicitly represented or reported; they must not silently become an HTML
+blob that bypasses transforms, domains, or writers.
+
+#### H13.2 — Lower MyST syntax into `docutilsrs`
+
+Implement the first bridge slice in dependency order:
+
+1. headings, paragraphs, emphasis/strong/literal, links, images, and code;
+2. front matter and source metadata;
+3. colon-fence directives and inline roles;
+4. math and common MyST extensions;
+5. attributes, substitutions, include/eval-rst, tables, definition lists,
+   and directive option parsing.
+
+Use the existing `docutilsrs::NodeKind` model where it is faithful. If the
+bridge needs richer attributes or unknown-node preservation, finish the
+lossless node-model work described in H5 before adding feature-specific
+workarounds. Every slice needs doctree snapshots and a
+`Doctree::to_bytes`/`from_bytes` round-trip test.
+
+#### H13.3 — Select the parser from `source_suffix`
+
+Replace the current RST-only parse call in the environment read path with a
+parser dispatch keyed by the configured suffix mapping:
+
+* `'.rst': 'restructuredtext'` continues to use `docutilsrs` RST parsing;
+* `'.md': 'myst'` uses `myst-md-rs::parse_to_doctree`;
+* string `source_suffix = '.md'` retains Sphinx's default filetype
+  `restructuredtext` semantics and therefore does not implicitly select
+  MyST;
+* unknown parser names produce a clear configuration/build error or follow
+  the documented Python fallback policy, rather than silently parsing as
+  RST.
+
+Thread the selected parser and actual source suffix through `read_all`,
+`read_one`, doctree persistence, `source-read`/`doctree-read`, dependency
+scanning, and source-copy metadata. A prior `find_files` call must not be
+required for the single-phase builder compatibility path to select the
+correct parser.
+
+#### H13.4 — End-to-end native HTML acceptance gate
+
+Add `sphinxdocrs/tests/myst_bridge.rs` with a temporary project containing
+both `index.rst` and `guide.md` and a `conf.py` mapping `.md` to `myst`.
+The test must:
+
+1. run the normal `SphinxApp` read/build lifecycle;
+2. assert that `guide.md` was parsed by the MyST bridge, not the RST parser;
+3. assert that the persisted doctree contains native nodes for the fixture;
+4. assert that the native `HtmlBuilder` renders `guide.html` from that
+   doctree, including heading, emphasis, link, and directive output; and
+5. compare the single-phase and two-phase outputs to prove the parser choice
+   survives doctree persistence.
+
+This is the definition of a complete Sphinx `.md` to doctree HTML build.
+The test is not complete if it only checks `myst-md-rs::render_html`, writes
+HTML directly from the Markdown parser, or merely checks that `guide.html`
+exists.
+
+#### H13.5 — Upstream parity and completion gate
+
+After H13.4 passes, port representative MyST Sphinx fixtures and run the
+existing `test_sphinx` builder matrix against the native path. Keep tests
+that require Python-only extensions or Python object identity on the Python
+bridge, but record every native-path deviation in `docs/compat.md`.
+
+H13 is complete when:
+
+* `.md` configured as `myst` follows the same read -> persisted doctree ->
+  write lifecycle as `.rst`;
+* the native HTML builder renders at least one mixed `.rst`/`.md` project;
+* single-phase and two-phase outputs agree for the same project;
+* representative MyST doctree snapshots and serialization round trips pass;
+* unknown parser names fail clearly or use the documented fallback; and
+* the focused native gate plus the full `sphinxdocrs` and `myst-md-rs` suites
+  pass.
+
 ### 9.5 Remaining work not completed this session
 
 A 2026-07-28 session closed **H6** (theming — it was already
@@ -1898,13 +2002,18 @@ in the abstract):
   fixture sets against all twelve native builders, with deterministic output
   normalization and a committed parity-gap snapshot. It requires only Python
   plus upstream Sphinx in the test environment.
+- **H13 (MyST Markdown bridge) — planned.** The current `.md`
+  `source_suffix` tests cover configuration and discovery only. The missing
+  work is a parser-to-`docutilsrs::Doctree` API, parser dispatch from the
+  `'.md': 'myst'` mapping, and the native `.md` to doctree to HTML acceptance
+  gate described in Tier H13.
 
 Suggested order if resuming: **H7d**'s `epub` (self-contained, reuses
 `zip_writer`); then **H8d**
 (parallel read/write, the one remaining H8 item, now that H8a/b/c's
 sequential incremental pipeline is the proven baseline to parallelize
-safely against); the rest are independent enough to parallelize across
-sessions.
+safely against); then **H13** for the native Markdown bridge; the rest are
+independent enough to parallelize across sessions.
 
 ### 9.2 Suggested execution order
 
@@ -1920,6 +2029,7 @@ sessions.
 | 8 | H3b, H3c, H3e | `py`, `rst`, `js` domains |
 | 9 | H7a–H7d, H8 | remaining builders + incremental rebuild |
 | 10 | H9, H10, H3f, H7e | autodoc depth, highlighting, `c`/`cpp`, long-tail builders |
+| 11 | **H13** | MyST parser-to-doctree bridge and complete native `.md` HTML build |
 
 ### 9.3 Definition of done for the H phase
 
@@ -1932,6 +2042,9 @@ sessions.
   matrix passes for every native builder.
 - `sphinx-build-rs` builds this repository's own `docs/` tree natively,
   with output equivalent to Python Sphinx modulo recorded deviations.
+- A representative mixed `.rst`/`.md` project completes the native
+  `source_suffix` -> parser selection -> doctree persistence -> HTML write
+  lifecycle, with the MyST path covered by an end-to-end test.
 - Every accepted deviation appears in the §3 notes with a rationale.
 
 ### 9.4 Per-item working checklist

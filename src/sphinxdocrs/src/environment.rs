@@ -846,6 +846,17 @@ impl BuildEnvironment {
 
         for line in source.lines() {
             let trimmed = line.trim_start();
+            let indent = line.len() - trimmed.len();
+            if indent > 0
+                && (trimmed.starts_with(".. highlight::")
+                    || ["code", "code-block", "sourcecode"]
+                        .iter()
+                        .any(|name| trimmed.starts_with(&format!(".. {name}::")))
+                    )
+            {
+                output.push(line.to_string());
+                continue;
+            }
             if let Some(rest) = trimmed.strip_prefix(".. highlight::") {
                 let next = rest.trim();
                 if !next.is_empty() {
@@ -863,8 +874,8 @@ impl BuildEnvironment {
                 let prefix = format!(".. {name}::");
                 let args = trimmed[prefix.len()..].trim();
                 if args.is_empty() && !language.is_empty() && language != "none" {
-                    let indent = &line[..line.len() - trimmed.len()];
-                    output.push(format!("{indent}{prefix} {language}"));
+                    let prefix_indent = &line[..line.len() - trimmed.len()];
+                    output.push(format!("{prefix_indent}{prefix} {language}"));
                     changed = true;
                     continue;
                 }
@@ -872,7 +883,14 @@ impl BuildEnvironment {
             output.push(line.to_string());
         }
 
-        changed.then(|| output.join("\n"))
+        if !changed {
+            return None;
+        }
+        let mut rewritten = output.join("\n");
+        if source.ends_with('\n') {
+            rewritten.push('\n');
+        }
+        Some(rewritten)
     }
 
     /// Populate the `std`/`rst`/`py`/`js` domains, `indexentries`, and
@@ -2100,6 +2118,30 @@ mod tests {
                 "no token classes produced for {language}"
             );
         }
+    }
+
+    #[test]
+    fn highlight_state_applies_until_replaced_and_preserves_trailing_newline() {
+        let env = make_env();
+        let rewritten = env
+            .apply_highlight_language(
+                ".. highlight:: python\n\n.. code-block::\n\n   return 1\n\n.. highlight:: rust\n\n.. code-block::\n\n   fn main() {}\n",
+            )
+            .unwrap();
+        assert!(rewritten.contains(".. code-block:: python"));
+        assert!(rewritten.contains(".. code-block:: rust"));
+        assert!(rewritten.ends_with('\n'));
+    }
+
+    #[test]
+    fn highlight_state_ignores_nested_directive_examples() {
+        let env = make_env();
+        let rewritten = env
+            .apply_highlight_language(
+                ".. highlight:: python\n\n.. code-block:: rst\n\n   .. code-block::\n\n      return 1\n",
+            )
+            .unwrap();
+        assert!(rewritten.contains("   .. code-block::\n"));
     }
 
     #[test]

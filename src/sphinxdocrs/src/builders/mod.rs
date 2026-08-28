@@ -14,6 +14,7 @@
 
 pub mod changes;
 pub mod dirhtml;
+pub mod epub;
 pub mod gettext;
 pub mod html;
 pub mod json;
@@ -23,6 +24,7 @@ pub mod manpage;
 pub mod pseudoxml;
 pub mod singlehtml;
 pub mod text;
+pub mod texinfo;
 pub mod xml;
 
 use std::io;

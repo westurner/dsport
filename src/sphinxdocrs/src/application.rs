@@ -28,6 +28,7 @@ use crate::app_events::{AppEventManager, EventArg, EventError, SharedEvents};
 use crate::app_facade::{PyAppFacade, SharedAssets, SharedConfig, seed_shared_config};
 use crate::builders::changes::ChangesBuilder;
 use crate::builders::dirhtml::DirhtmlBuilder;
+use crate::builders::epub::EpubBuilder;
 use crate::builders::gettext::GettextBuilder;
 use crate::builders::html::HtmlBuilder;
 use crate::builders::json::JsonBuilder;
@@ -37,6 +38,7 @@ use crate::builders::manpage::ManpageBuilder;
 use crate::builders::pseudoxml::PseudoxmlBuilder;
 use crate::builders::singlehtml::SinglehtmlBuilder;
 use crate::builders::text::TextBuilder;
+use crate::builders::texinfo::TexinfoBuilder;
 use crate::builders::xml::XmlBuilder;
 use crate::builders::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
@@ -131,6 +133,8 @@ pub const NATIVE_BUILDER_CLASSES: &[(&str, &str)] = &[
     ),
     ("gettext", "sphinxdocrs::builders::gettext::GettextBuilder"),
     ("changes", "sphinxdocrs::builders::changes::ChangesBuilder"),
+    ("epub", "sphinxdocrs::builders::epub::EpubBuilder"),
+    ("texinfo", "sphinxdocrs::builders::texinfo::TexinfoBuilder"),
 ];
 
 /// Builder names that have a native Rust implementation.
@@ -147,6 +151,8 @@ pub const NATIVE_BUILDERS: &[&str] = &[
     "singlehtml",
     "gettext",
     "changes",
+    "epub",
+    "texinfo",
 ];
 
 /// Return `true` if `builder_name` has a native Rust implementation.
@@ -878,6 +884,18 @@ impl SphinxApp {
             }
             "changes" => {
                 let builder = ChangesBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
+                    .map_err(AppError::from)
+            }
+            "epub" => {
+                let builder = EpubBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
+                    .map_err(AppError::from)
+            }
+            "texinfo" => {
+                let builder = TexinfoBuilder::new();
                 builder
                     .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)

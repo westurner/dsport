@@ -46,8 +46,13 @@ fn is_native_builder_latex_false() {
 }
 
 #[test]
-fn is_native_builder_epub_false() {
-    assert!(!is_native_builder("epub"));
+fn is_native_builder_epub_true() {
+    assert!(is_native_builder("epub"));
+}
+
+#[test]
+fn is_native_builder_texinfo_true() {
+    assert!(is_native_builder("texinfo"));
 }
 
 #[test]

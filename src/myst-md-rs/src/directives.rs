@@ -256,7 +256,7 @@ mod tests {
     fn note() -> DirectiveSpec {
         DirectiveSpec {
             required_arguments: 0,
-            optional_arguments: 1,
+            optional_arguments: 0,
             has_content: true,
             final_argument_whitespace: true,
             option_spec: BTreeMap::new(),
@@ -264,10 +264,10 @@ mod tests {
     }
 
     #[test]
-    fn note_argument_only() {
+    fn note_content_on_first_line() {
         let r = parse_directive_text(&note(), "a", &[]).unwrap();
-        assert_eq!(r.arguments, vec!["a".to_string()]);
-        assert!(r.body.is_empty());
+        assert!(r.arguments.is_empty());
+        assert_eq!(r.body, vec!["a".to_string()]);
         assert!(r.options.is_empty());
     }
 

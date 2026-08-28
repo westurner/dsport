@@ -329,13 +329,20 @@ fn emit_enter(
         NodeKind::Thead => wrap(node, "thead", out, tasks),
         NodeKind::Tbody => wrap(node, "tbody", out, tasks),
         NodeKind::Row => wrap(node, "tr", out, tasks),
-        NodeKind::Entry { morecols, morerows } => {
+        NodeKind::Entry {
+            morecols,
+            morerows,
+            classes,
+        } => {
             let mut tag = String::from("<td");
             if *morecols > 0 {
                 let _ = write!(tag, " colspan=\"{}\"", morecols + 1);
             }
             if *morerows > 0 {
                 let _ = write!(tag, " rowspan=\"{}\"", morerows + 1);
+            }
+            if !classes.is_empty() {
+                let _ = write!(tag, " class=\"{}\"", escape(classes));
             }
             tag.push('>');
             out.push_str(&tag);

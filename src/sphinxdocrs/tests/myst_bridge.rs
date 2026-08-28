@@ -12,7 +12,7 @@ fn write_mixed_project() -> TempDir {
     let project = TempDir::new().expect("temporary project");
     std::fs::write(
         project.path().join("conf.py"),
-        "project = 'MyST bridge'\nsource_suffix = {'.rst': 'restructuredtext', '.md': 'myst'}\nmaster_doc = 'index'\n",
+        "project = 'MyST bridge'\nsource_suffix = {'.rst': 'restructuredtext', '.md': 'myst'}\nmaster_doc = 'index'\nexclude_patterns = ['included.md']\n",
     )
     .unwrap();
     std::fs::write(
@@ -22,7 +22,12 @@ fn write_mixed_project() -> TempDir {
     .unwrap();
     std::fs::write(
         project.path().join("guide.md"),
-        "# Markdown guide {#guide-title .guide}\n\nThis is **native** MyST with a [link](https://example.com).\n\n:::note\nRead the guide.\n:::\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nTerm\n: Definition\n",
+        "# Markdown guide {#guide-title .guide}\n\nThis is **native** MyST with a [link](https://example.com).\n\n:::note\nRead the guide.\n:::\n\n:::include included.md\n:::\n\n```{eval-rst}\n**eval bold**\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nTerm\n: Definition\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("included.md"),
+        "Included **Markdown**.\n",
     )
     .unwrap();
     project
@@ -58,6 +63,8 @@ fn mixed_rst_and_myst_build_uses_persisted_doctree() {
     assert!(xml.contains("<strong>"));
     assert!(xml.contains("<reference"));
     assert!(xml.contains("<note>"));
+    assert!(xml.contains("Included"));
+    assert!(xml.contains("eval bold"));
     assert!(xml.contains("<table>"));
     assert!(xml.contains("<definition_list>"));
     drop(env);
@@ -85,6 +92,8 @@ fn mixed_rst_and_myst_build_uses_persisted_doctree() {
     assert!(html.contains("id=\"guide-title\""));
     assert!(html.contains("native"));
     assert!(html.contains("Read the guide."));
+    assert!(html.contains("Included"));
+    assert!(html.contains("eval bold"));
     assert!(html.contains("<table>"));
     assert!(html.contains("Definition"));
 }

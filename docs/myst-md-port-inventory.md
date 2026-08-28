@@ -152,9 +152,23 @@ emphasis/strong/literal, links, images, code blocks, roles, colon-fence
 admonitions/containers, inline/display math, and source metadata into the
 existing `docutilsrs::NodeKind` model. Focused tests also verify doctree
 serialization round trips and native HTML output after reload. The larger
-fixture matrix below remains open for table spans/alignment classes,
-include/eval-rst, directive option coercion, substitutions, and reporter
-parity.
+fixture matrix below remains open for full directive registry validation,
+include options/errors, recursive substitution diagnostics, and reporter
+warning parity. Table span geometry is now available through the opt-in
+pulldown-cmark extension and is covered by bridge tests.
+
+Remaining parity plan:
+
+* **Include options/errors:** add a source-root context to `DoctreeOptions`,
+  parse `literal`, `code`, `start-line`, and `end-line`, and emit
+  source-located `SystemMessage` nodes for missing files, invalid ranges, and
+  recursive includes. Add the `mock_include.md` and
+  `mock_include_errors.md` cases to the native fixture gate.
+* **Recursive substitutions:** replace bounded string replacement with a
+  dependency-aware expansion pass that records the substitution stack,
+  detects cycles, reports undefined names with source lines, and preserves
+  literal braces for unconfigured names. Add the substitution cases from
+  `myst-config.txt` and `reporter_warnings.md` to native parity coverage.
 
 All fixtures whose expected output is `<document source=...>` belong
 here:
@@ -284,7 +298,9 @@ path is an owned Rust compatibility gate. Record remaining feature deltas in
    `myst_md_rs::options` against them.
 3. Stand up the `parity` aggregator harness and add a section in
    `docs/compat.md`.
-4. Expand W6 from the landed core bridge into tables, definition lists,
-   directive options, attributes, include/eval-rst, and reporter parity.
+4. Expand W6 from the landed core bridge into full directive registry
+  validation, include options/errors, recursive substitution diagnostics,
+  and reporter parity; keep the table-span pulldown extension covered by
+  the upstream fixture matrix.
 5. Port representative W7 MyST/Sphinx fixtures and record native-path
-   deviations in `docs/compat.md`.
+  deviations in `docs/compat.md`.

@@ -1842,13 +1842,24 @@ function-call frames.
 
 ### Tier H13 — MyST Markdown to doctree and native HTML
 
-**Status: in progress.** H13.1 through H13.4 are implemented: the native
+**Status: in progress.** H13.1 through H13.4 are implemented, with the first
+W6 parity slices now covered: the native
 MyST parser now produces a `docutilsrs::Doctree`, `BuildEnvironment` selects
 it from `{'.md': 'myst'}`, and `tests/myst_bridge.rs` proves mixed discovery,
 doctree persistence, unknown-parser errors, and exact single-/two-phase HTML
 agreement. H13.5 remains open for the broader upstream fixture and parity
 matrix. The bridge deliberately does not use HTML as a substitute for a
 doctree.
+
+H13.5 follow-up plan:
+
+* Implement include option/error parity with a source-root-aware parser
+  context, `literal`/`code`/line-range options, recursion detection, and
+  source-located `SystemMessage` nodes.
+* Replace bounded substitution replacement with dependency-aware expansion,
+  undefined-name diagnostics, and cycle-path reporting. Gate both features
+  against the upstream `mock_include*`, `myst-config.txt`, and
+  `reporter_warnings.md` fixtures.
 
 #### H13.1 — Define the parser contract
 
@@ -1858,7 +1869,8 @@ Implemented as the parser-neutral entry point in `myst-md-rs`:
 parse_to_doctree(source, source_path, options) -> docutilsrs::Doctree
 ```
 
-The current contract preserves document source metadata, block and inline child
+The current contract preserves document source metadata and source lines,
+block and inline child
 order, heading levels, links/targets, code blocks, images, math, directives,
 roles, front matter, and source locations needed by Sphinx warnings. Keep
 `render_html`/`parse_to_html` as a standalone renderer API, but the Sphinx
@@ -1874,8 +1886,10 @@ The first bridge slice is implemented in dependency order:
 2. front matter and source metadata;
 3. colon-fence directives and inline roles;
 4. math and common MyST extensions;
-5. attributes, substitutions, include/eval-rst, tables, definition lists,
-   and directive option parsing.
+5. full directive registry validation, include options/errors, recursive
+  substitution diagnostics, and reporter warning nodes. Table spans are
+  supplied by the opt-in pulldown-cmark extension and must remain covered
+  by the native bridge/parity gate.
 
 Use the existing `docutilsrs::NodeKind` model where it is faithful. If the
 bridge needs richer attributes or unknown-node preservation, finish the

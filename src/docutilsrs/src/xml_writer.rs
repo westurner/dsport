@@ -353,7 +353,11 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
         NodeKind::Thead => emit(tree, id, depth, "thead", &[], out),
         NodeKind::Tbody => emit(tree, id, depth, "tbody", &[], out),
         NodeKind::Row => emit(tree, id, depth, "row", &[], out),
-        NodeKind::Entry { morecols, morerows } => {
+        NodeKind::Entry {
+            morecols,
+            morerows,
+            classes,
+        } => {
             let mc = morecols.to_string();
             let mr = morerows.to_string();
             let mut attrs = Vec::new();
@@ -362,6 +366,9 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             }
             if *morerows > 0 {
                 attrs.push(("morerows", mr.as_str()));
+            }
+            if !classes.is_empty() {
+                attrs.push(("classes", classes.as_str()));
             }
             emit(tree, id, depth, "entry", &attrs, out);
         }

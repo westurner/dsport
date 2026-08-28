@@ -25,14 +25,17 @@ Implemented:
   `{name}` and rendered as `<div class="myst-directive" data-name="…">…</div>`.
 - Native `parse_to_doctree(source, source_path, options)` lowering for sections,
   inline markup, links, images, lists, tables, definition lists, directives,
-  roles, math, and source metadata.
+  roles, math, simple substitutions, relative includes, eval-rst, source
+  metadata, and source-line tracking.
+- YAML-backed directive option parsing with quoted/multiline scalars, block
+  scalars, comments, and typed option coercion.
 - Sphinx integration through `source_suffix = {'.md': 'myst'}` with persisted
   doctree output and native HTML writing.
 
-Pending (later phases): full directive option/argument parsing, substitutions,
-field lists, substitutions, include/eval-rst, table spans/alignment classes,
-dollarmath label support, upstream doctree XML parity, and Python plugin
-fallback.
+Pending (later phases): full directive registry/argument validation, field
+lists, recursive substitution diagnostics, include options/errors, table
+spans, dollarmath label support, reporter warning nodes, full upstream
+doctree XML parity, and Python plugin fallback.
 
 ## Layout
 

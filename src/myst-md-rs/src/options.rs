@@ -1,13 +1,8 @@
 //! MyST directive option-list parser.
 //!
-//! Stub surface — matches the public signature of
-//! `myst_parser.parsers.options.options_to_items` so test fixtures from
-//! `tests/data/option_parsing*.yaml` can be wired in immediately. The
-//! actual YAML-subset tokenizer is a port-in-progress; today this
-//! implementation only handles a narrow happy path (plain block
-//! mapping with optional continuation lines) and surfaces every other
-//! input as `Err(OptionsError::Unimplemented)`. Failing fixtures are
-//! tracked in `tests/parity.rs` and `docs/compat.md`.
+//! Implements the YAML-subset tokenizer used by
+//! `myst_parser.parsers.options.options_to_items`, including quoted and
+//! multiline scalars, block/folded values, comments, and ordered output.
 
 use std::fmt;
 
@@ -21,10 +16,10 @@ pub struct ParseState {
 
 #[derive(Debug, Clone)]
 pub enum OptionsError {
-    /// Triggered when the input uses a YAML feature this stub does not
-    /// yet implement (quoted scalars, block scalars, flow style, etc.).
+    /// Triggered when a structured value cannot be represented as a scalar
+    /// option pair.
     Unimplemented(String),
-    /// Triggered on syntax errors the stub does recognise.
+    /// Triggered on syntax errors recognized by the option tokenizer.
     Syntax {
         message: String,
         line: usize,
@@ -51,80 +46,163 @@ impl std::error::Error for OptionsError {}
 /// `(key, value)` pairs plus a `ParseState` recording whether any
 /// `#` comments were stripped.
 pub fn options_to_items(input: &str) -> Result<(Vec<OptionItem>, ParseState), OptionsError> {
-    let mut state = ParseState::default();
-    let mut items: Vec<OptionItem> = Vec::new();
-
-    for (idx, raw) in input.lines().enumerate() {
-        let line = raw;
-        let trimmed = line.trim_start();
-        // Comment / blank.
-        if trimmed.is_empty() {
-            continue;
+    let state = ParseState {
+        has_comments: contains_comment(input),
+    };
+    validate_top_level(input)?;
+    let normalized = normalize_multiline_quotes(input);
+    let mapping: serde_yaml::Mapping = serde_yaml::from_str(&normalized).map_err(|error| {
+        let (line, column) = error
+            .location()
+            .map(|location| {
+                (
+                    location.line().saturating_sub(1),
+                    location.column().saturating_sub(1),
+                )
+            })
+            .unwrap_or((0, 0));
+        OptionsError::Syntax {
+            message: error
+                .to_string()
+                .lines()
+                .next()
+                .unwrap_or("invalid YAML")
+                .to_string(),
+            line,
+            column,
         }
-        if trimmed.starts_with('#') {
-            state.has_comments = true;
-            continue;
-        }
+    })?;
 
-        let leading = line.len() - trimmed.len();
-        if leading > 0 {
-            // Continuation line for the previous key.
-            let Some(last) = items.last_mut() else {
-                return Err(OptionsError::Syntax {
-                    message: "expected key to start at column 0".to_string(),
-                    line: idx,
-                    column: leading,
-                });
-            };
-            if last.1.is_empty() {
-                last.1 = trimmed.trim().to_string();
-            } else {
-                last.1.push(' ');
-                last.1.push_str(trimmed.trim());
-            }
-            continue;
-        }
-
-        // Refuse anything that looks like quoted / flow / block-scalar
-        // YAML so we don't silently mis-parse it. Future work.
-        if matches!(trimmed.as_bytes().first(), Some(b'"' | b'\'' | b'{' | b'[')) {
-            return Err(OptionsError::Unimplemented(
-                "quoted scalars / flow style".into(),
-            ));
-        }
-
-        let Some(colon) = find_top_level_colon(trimmed) else {
-            return Err(OptionsError::Syntax {
-                message: "expected ':' after key".to_string(),
-                line: idx,
-                column: line.len(),
-            });
+    let mut items = Vec::with_capacity(mapping.len());
+    for (key, value) in mapping {
+        let Some(key) = yaml_scalar_to_string(&key) else {
+            return Err(OptionsError::Unimplemented("non-scalar option key".into()));
         };
-        let key = trimmed[..colon].trim().to_string();
-        let rest = trimmed[colon + 1..].trim();
-        if rest == "|" || rest == ">" || rest.starts_with("| ") || rest.starts_with("> ") {
-            return Err(OptionsError::Unimplemented("block scalars".into()));
-        }
-        items.push((key, rest.to_string()));
+        let value = yaml_value_to_string(&value);
+        items.push((key, value));
     }
-
     Ok((items, state))
 }
 
-fn find_top_level_colon(s: &str) -> Option<usize> {
-    // Only colons followed by space or end-of-line count as separators
-    // (so `http://x` stays as a value).
-    let bytes = s.as_bytes();
-    for (i, b) in bytes.iter().enumerate() {
-        if *b == b':' && (i + 1 == bytes.len() || bytes[i + 1] == b' ' || bytes[i + 1] == b'\t') {
-            return Some(i);
+fn normalize_multiline_quotes(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    for character in input.chars() {
+        if character == '\n' && quote.is_some() {
+            output.push(' ');
+            escaped = false;
+            continue;
+        }
+        output.push(character);
+        if quote == Some(b'"') && escaped {
+            escaped = false;
+            continue;
+        }
+        match (quote, character) {
+            (None, '\'' | '"') => quote = Some(character as u8),
+            (Some(b'"'), '\\') => escaped = true,
+            (Some(b'"'), '"') => quote = None,
+            (Some(b'\''), '\'') => quote = None,
+            _ => {}
         }
     }
-    // Allow `key:` with no value at end of line.
-    if bytes.last() == Some(&b':') {
-        return Some(bytes.len() - 1);
+    output
+}
+
+fn validate_top_level(input: &str) -> Result<(), OptionsError> {
+    let mut saw_key = false;
+    let mut block_scalar_indent: Option<usize> = None;
+    for (line, raw) in input.lines().enumerate() {
+        let trimmed = raw.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = raw.len() - trimmed.len();
+        if let Some(required) = block_scalar_indent {
+            if indent >= required {
+                continue;
+            }
+            block_scalar_indent = None;
+        }
+        if indent > 0 && !saw_key && block_scalar_indent.is_none() {
+            return Err(OptionsError::Syntax {
+                message: "expected key to start at column 0".into(),
+                line,
+                column: indent,
+            });
+        }
+        if indent > 0 {
+            continue;
+        }
+        saw_key = true;
+        let value = trimmed
+            .split_once(':')
+            .map(|(_, value)| value.trim())
+            .unwrap_or_default();
+        if value.starts_with('|') || value.starts_with('>') {
+            block_scalar_indent = Some(indent + 1);
+        }
     }
-    None
+    Ok(())
+}
+
+fn contains_comment(input: &str) -> bool {
+    input.lines().any(|line| {
+        let mut quote = None;
+        for (index, byte) in line.as_bytes().iter().enumerate() {
+            match (quote, *byte) {
+                (None, b'\'' | b'"') => quote = Some(*byte),
+                (Some(q), byte) if byte == q => quote = None,
+                (None, b'#') if index == 0 || line.as_bytes()[index - 1].is_ascii_whitespace() => {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    })
+}
+
+fn yaml_scalar_to_string(value: &serde_yaml::Value) -> Option<String> {
+    match value {
+        serde_yaml::Value::Null => Some(String::new()),
+        serde_yaml::Value::Bool(value) => Some(value.to_string()),
+        serde_yaml::Value::Number(value) => Some(value.to_string()),
+        serde_yaml::Value::String(value) => Some(value.clone()),
+        serde_yaml::Value::Sequence(_) | serde_yaml::Value::Mapping(_) => None,
+        serde_yaml::Value::Tagged(value) => yaml_scalar_to_string(&value.value),
+    }
+}
+
+fn yaml_value_to_string(value: &serde_yaml::Value) -> String {
+    if let Some(value) = yaml_scalar_to_string(value) {
+        return value;
+    }
+    match value {
+        serde_yaml::Value::Sequence(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(yaml_value_to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        serde_yaml::Value::Mapping(values) => format!(
+            "{{{}}}",
+            values
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    yaml_value_to_string(key),
+                    yaml_value_to_string(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        serde_yaml::Value::Tagged(value) => yaml_value_to_string(&value.value),
+        _ => String::new(),
+    }
 }
 
 #[cfg(test)]

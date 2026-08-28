@@ -125,6 +125,13 @@ fn local_registry() -> &'static Mutex<HashMap<String, String>> {
     ROLES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Serialize operations that can observe or mutate the process-global role
+/// registries across a complete parse/test operation.
+pub(crate) fn lock_global() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+}
+
 /// Resolve a role name to its canonical name.
 ///
 /// Mirrors `roles.role()`: consult `_roles` first, fall back to the English
@@ -250,10 +257,8 @@ pub(crate) fn restore_default_role() {
 pub(crate) mod tests {
     use super::*;
 
-    static TEST_MUTEX: Mutex<()> = Mutex::new(());
-
     pub fn lock_roles() -> std::sync::MutexGuard<'static, ()> {
-        TEST_MUTEX.lock().unwrap()
+        super::lock_global()
     }
 
     /// The registries are process-global, so every assertion that mutates them

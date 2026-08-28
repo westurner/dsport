@@ -7,7 +7,9 @@
 
 use docutilsrs::doctree::NodeId;
 use docutilsrs::{Doctree, NodeKind};
-use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use crate::{frontmatter, preprocess, role};
 
@@ -21,6 +23,8 @@ pub struct DoctreeOptions {
     pub enable_heading_attributes: bool,
     pub enable_gfm: bool,
     pub enable_definition_lists: bool,
+    pub enable_table_spans: bool,
+    pub substitutions: BTreeMap<String, String>,
 }
 
 impl Default for DoctreeOptions {
@@ -33,6 +37,8 @@ impl Default for DoctreeOptions {
             enable_heading_attributes: true,
             enable_gfm: true,
             enable_definition_lists: true,
+            enable_table_spans: true,
+            substitutions: BTreeMap::new(),
         }
     }
 }
@@ -48,12 +54,15 @@ enum Frame {
     },
     Code {
         id: NodeId,
+        parent: NodeId,
         kind: CodeKind,
         body: String,
     },
     Image(NodeId),
     Table {
         tgroup: NodeId,
+        alignments: Vec<Alignment>,
+        next_cell: usize,
     },
     DefinitionList {
         id: NodeId,
@@ -63,7 +72,7 @@ enum Frame {
 
 enum CodeKind {
     Literal(String),
-    Directive(String),
+    Directive { name: String, argument: String },
     Math,
 }
 
@@ -73,7 +82,7 @@ impl Frame {
             Self::Container(id) | Self::Image(id) => *id,
             Self::Heading { title, .. } => *title,
             Self::Code { id, .. } => *id,
-            Self::Table { tgroup } => *tgroup,
+            Self::Table { tgroup, .. } => *tgroup,
             Self::DefinitionList { id, .. } => *id,
         }
     }
@@ -90,7 +99,9 @@ pub fn parse_to_doctree(
     options: &DoctreeOptions,
 ) -> Doctree {
     let split = frontmatter::split(source);
-    let body = preprocess::preprocess(split.body);
+    let substitutions = collect_substitutions(split.front_matter.as_ref(), &options.substitutions);
+    let substituted = apply_substitutions(split.body, &substitutions);
+    let body = preprocess::preprocess(&substituted);
     let mut parser_options = Options::empty();
     if options.enable_tables {
         parser_options.insert(Options::ENABLE_TABLES);
@@ -113,31 +124,32 @@ pub fn parse_to_doctree(
     if options.enable_definition_lists {
         parser_options.insert(Options::ENABLE_DEFINITION_LIST);
     }
+    if options.enable_table_spans {
+        parser_options.insert(Options::ENABLE_TABLE_SPANS);
+    }
 
     let mut tree = Doctree::new_document(source_path);
     let root = tree.root();
     let mut frames = Vec::new();
     let mut sections: Vec<(usize, NodeId)> = Vec::new();
-    let mut first_h1_title = None;
-
-    for event in Parser::new_ext(&body, parser_options) {
+    for (event, offset) in Parser::new_ext(&body, parser_options).into_offset_iter() {
+        let node_start = tree.nodes_len();
+        let line = body[..offset.start]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count() as u32
+            + 1;
         match event {
             Event::Start(tag) => start_tag(&mut tree, &mut frames, &mut sections, root, tag),
-            Event::End(end) => end_tag(
-                &mut tree,
-                &mut frames,
-                &mut sections,
-                end,
-                &mut first_h1_title,
-            ),
+            Event::End(end) => end_tag(&mut tree, &mut frames, &mut sections, end),
             Event::Text(text) => append_text(&mut tree, &mut frames, &sections, root, &text),
             Event::Code(text) => {
-                let parent = current_parent(&frames, &sections, root);
+                let parent = content_parent(&mut tree, &frames, &sections, root);
                 let id = tree.append(parent, NodeKind::Literal);
                 tree.append(id, NodeKind::Text(text.into_string()));
             }
             Event::InlineMath(math) => {
-                let parent = current_parent(&frames, &sections, root);
+                let parent = content_parent(&mut tree, &frames, &sections, root);
                 tree.append(
                     parent,
                     NodeKind::Math {
@@ -146,7 +158,7 @@ pub fn parse_to_doctree(
                 );
             }
             Event::DisplayMath(math) => {
-                let parent = current_parent(&frames, &sections, root);
+                let parent = content_parent(&mut tree, &frames, &sections, root);
                 tree.append(
                     parent,
                     NodeKind::MathBlock {
@@ -168,37 +180,42 @@ pub fn parse_to_doctree(
                 tree.append(raw, NodeKind::Text(html.into_string()));
             }
             Event::Rule => {
-                let parent = current_parent(&frames, &sections, root);
+                let parent = content_parent(&mut tree, &frames, &sections, root);
                 tree.append(parent, NodeKind::Transition);
             }
             Event::TaskListMarker(checked) => {
-                let parent = current_parent(&frames, &sections, root);
+                let parent = content_parent(&mut tree, &frames, &sections, root);
                 tree.append(
                     parent,
                     NodeKind::Text(if checked { "[x] " } else { "[ ] " }.into()),
                 );
             }
             Event::FootnoteReference(label) => {
-                let parent = current_parent(&frames, &sections, root);
+                let parent = content_parent(&mut tree, &frames, &sections, root);
                 tree.append(parent, NodeKind::Text(format!("[^{label}]")));
             }
         }
-    }
-
-    if let Some(title) = first_h1_title {
-        if let NodeKind::Document {
-            source, ids, names, ..
-        } = tree.node(root).kind.clone()
-        {
-            tree.set_kind(
-                root,
-                NodeKind::Document {
-                    source,
-                    ids,
-                    names,
-                    title,
-                },
-            );
+        for id in node_start..tree.nodes_len() {
+            tree.set_line(id, line);
+            if let NodeKind::SystemMessage {
+                level,
+                ty,
+                ids,
+                backrefs,
+                ..
+            } = tree.node(id).kind.clone()
+            {
+                tree.set_kind(
+                    id,
+                    NodeKind::SystemMessage {
+                        level,
+                        line: Some(line),
+                        ty,
+                        ids,
+                        backrefs,
+                    },
+                );
+            }
         }
     }
 
@@ -260,6 +277,15 @@ fn start_tag(
         Tag::Superscript => push_container(tree, frames, sections, root, NodeKind::Superscript),
         Tag::Subscript => push_container(tree, frames, sections, root, NodeKind::Subscript),
         Tag::BlockQuote(_) => push_container(tree, frames, sections, root, NodeKind::BlockQuote),
+        Tag::ContainerBlock(_, name) => push_container(
+            tree,
+            frames,
+            sections,
+            root,
+            NodeKind::Container {
+                classes: format!("myst-container {name}"),
+            },
+        ),
         Tag::List(start) => {
             let kind = match start {
                 Some(start) => NodeKind::EnumeratedList {
@@ -280,7 +306,7 @@ fn start_tag(
             } else {
                 "reference external"
             };
-            let parent = current_parent(frames, sections, root);
+            let parent = content_parent(tree, frames, sections, root);
             let id = tree.append(
                 parent,
                 NodeKind::Reference {
@@ -293,7 +319,7 @@ fn start_tag(
             frames.push(Frame::Container(id));
         }
         Tag::Image { dest_url, .. } => {
-            let parent = current_parent(frames, sections, root);
+            let parent = content_parent(tree, frames, sections, root);
             let id = tree.append(
                 parent,
                 NodeKind::Image {
@@ -311,8 +337,8 @@ fn start_tag(
                     let info = info.into_string();
                     if info == "math" {
                         CodeKind::Math
-                    } else if let Some(name) = directive_name(&info) {
-                        CodeKind::Directive(name.to_string())
+                    } else if let Some((name, argument)) = directive_info(&info) {
+                        CodeKind::Directive { name, argument }
                     } else {
                         CodeKind::Literal(info)
                     }
@@ -323,11 +349,18 @@ fn start_tag(
                 CodeKind::Math => NodeKind::MathBlock {
                     latex: String::new(),
                 },
-                CodeKind::Directive(name) if is_admonition(name) => NodeKind::Admonition {
+                CodeKind::Directive { name, .. } if is_admonition(name) => NodeKind::Admonition {
                     kind: admonition_kind(name),
                 },
-                CodeKind::Directive(name) => NodeKind::Container {
+                CodeKind::Directive { name, .. } if known_directive(name) => NodeKind::Container {
                     classes: format!("myst-directive {name}"),
+                },
+                CodeKind::Directive { .. } => NodeKind::SystemMessage {
+                    level: 2,
+                    line: None,
+                    ty: "WARNING",
+                    ids: String::new(),
+                    backrefs: String::new(),
                 },
                 CodeKind::Literal(info) => NodeKind::LiteralBlock {
                     classes: if info.is_empty() {
@@ -341,6 +374,7 @@ fn start_tag(
             let id = tree.append(parent, node_kind);
             frames.push(Frame::Code {
                 id,
+                parent,
                 kind: code_kind,
                 body: String::new(),
             });
@@ -359,12 +393,17 @@ fn start_tag(
             } else {
                 100 / alignments.len() as u32
             };
-            for _ in alignments {
+            for _ in &alignments {
                 tree.append(tgroup, NodeKind::Colspec { colwidth: width });
             }
-            frames.push(Frame::Table { tgroup });
+            frames.push(Frame::Table {
+                tgroup,
+                alignments,
+                next_cell: 0,
+            });
         }
         Tag::TableHead => {
+            reset_table_cell_index(frames);
             let parent = current_parent(frames, sections, root);
             let head = tree.append(parent, NodeKind::Thead);
             frames.push(Frame::Container(head));
@@ -372,17 +411,20 @@ fn start_tag(
             frames.push(Frame::Container(row));
         }
         Tag::TableRow => {
+            reset_table_cell_index(frames);
             let parent = current_parent(frames, sections, root);
             let row = tree.append(parent, NodeKind::Row);
             frames.push(Frame::Container(row));
         }
-        Tag::TableCell => {
+        Tag::TableCell { colspan, rowspan } => {
             let parent = current_parent(frames, sections, root);
+            let classes = table_cell_class(frames);
             let entry = tree.append(
                 parent,
                 NodeKind::Entry {
-                    morecols: 0,
-                    morerows: 0,
+                    morecols: colspan.saturating_sub(1) as u32,
+                    morerows: rowspan.saturating_sub(1) as u32,
+                    classes,
                 },
             );
             let paragraph = tree.append(entry, NodeKind::Paragraph);
@@ -434,7 +476,6 @@ fn end_tag(
     frames: &mut Vec<Frame>,
     sections: &mut Vec<(usize, NodeId)>,
     end: TagEnd,
-    first_h1_title: &mut Option<String>,
 ) {
     match end {
         TagEnd::Heading(level) => {
@@ -458,19 +499,40 @@ fn end_tag(
                     classes,
                 },
             );
-            if heading_level == 1 && first_h1_title.is_none() {
-                *first_h1_title = Some(heading_text);
-            }
+            let _ = heading_level;
             let _ = level;
         }
         TagEnd::CodeBlock => {
-            let Some(Frame::Code { id, kind, body }) = frames.pop() else {
+            let Some(Frame::Code {
+                id,
+                parent,
+                kind,
+                body,
+            }) = frames.pop()
+            else {
                 return;
             };
             let body = body.strip_suffix('\n').unwrap_or(&body).to_string();
             match kind {
                 CodeKind::Math => tree.set_kind(id, NodeKind::MathBlock { latex: body }),
-                CodeKind::Directive(_) => {
+                CodeKind::Directive { name, argument } if name == "include" => {
+                    tree.detach(id);
+                    let path = include_path(&argument, tree, id);
+                    if let Ok(included) = std::fs::read_to_string(&path) {
+                        let included = parse_to_doctree(
+                            &included,
+                            path.to_string_lossy().into_owned(),
+                            &DoctreeOptions::default(),
+                        );
+                        clone_children(&included, included.root(), tree, parent);
+                    }
+                }
+                CodeKind::Directive { name, .. } if name == "eval-rst" => {
+                    tree.detach(id);
+                    let included = docutilsrs::parse_rst_with_source(&body, "<eval-rst>");
+                    clone_children(&included, included.root(), tree, parent);
+                }
+                CodeKind::Directive { .. } => {
                     let paragraph = tree.append(id, NodeKind::Paragraph);
                     if !body.is_empty() {
                         tree.append(paragraph, NodeKind::Text(body));
@@ -495,7 +557,7 @@ fn end_tag(
             let _ = frames.pop();
             let _ = frames.pop();
             let Some(tgroup) = frames.iter().rev().find_map(|frame| {
-                if let Frame::Table { tgroup } = frame {
+                if let Frame::Table { tgroup, .. } = frame {
                     Some(*tgroup)
                 } else {
                     None
@@ -530,6 +592,9 @@ fn end_tag(
         | TagEnd::Link => {
             let _ = frames.pop();
         }
+        TagEnd::ContainerBlock(_) => {
+            let _ = frames.pop();
+        }
         TagEnd::HtmlBlock | TagEnd::FootnoteDefinition | TagEnd::MetadataBlock(_) => {}
     }
     let _ = sections;
@@ -554,7 +619,7 @@ fn append_text(
         }
         return;
     }
-    let parent = current_parent(frames, sections, root);
+    let parent = content_parent(tree, frames, sections, root);
     for piece in role::split_text(text) {
         match piece {
             role::Piece::Text(value) => {
@@ -590,7 +655,19 @@ fn push_container(
     root: NodeId,
     kind: NodeKind,
 ) {
-    let parent = current_parent(frames, sections, root);
+    let parent = if matches!(
+        kind,
+        NodeKind::Emphasis
+            | NodeKind::Strong
+            | NodeKind::Literal
+            | NodeKind::Inline { .. }
+            | NodeKind::Reference { .. }
+            | NodeKind::Math { .. }
+    ) {
+        content_parent(tree, frames, sections, root)
+    } else {
+        current_parent(frames, sections, root)
+    };
     let id = tree.append(parent, kind);
     frames.push(Frame::Container(id));
 }
@@ -601,6 +678,62 @@ fn current_parent(frames: &[Frame], sections: &[(usize, NodeId)], root: NodeId) 
         .map(Frame::id)
         .or_else(|| sections.last().map(|(_, id)| *id))
         .unwrap_or(root)
+}
+
+fn content_parent(
+    tree: &mut Doctree,
+    frames: &[Frame],
+    sections: &[(usize, NodeId)],
+    root: NodeId,
+) -> NodeId {
+    let parent = current_parent(frames, sections, root);
+    if matches!(tree.node(parent).kind, NodeKind::ListItem)
+        && !tree
+            .node(parent)
+            .children
+            .iter()
+            .any(|child| matches!(tree.node(*child).kind, NodeKind::Paragraph))
+    {
+        tree.append(parent, NodeKind::Paragraph)
+    } else {
+        parent
+    }
+}
+
+fn reset_table_cell_index(frames: &mut [Frame]) {
+    if let Some(Frame::Table { next_cell, .. }) = frames
+        .iter_mut()
+        .rev()
+        .find(|frame| matches!(frame, Frame::Table { .. }))
+    {
+        *next_cell = 0;
+    }
+}
+
+fn table_cell_class(frames: &mut [Frame]) -> String {
+    let Some(Frame::Table {
+        alignments,
+        next_cell,
+        ..
+    }) = frames
+        .iter_mut()
+        .rev()
+        .find(|frame| matches!(frame, Frame::Table { .. }))
+    else {
+        return String::new();
+    };
+    let alignment = alignments
+        .get(*next_cell)
+        .copied()
+        .unwrap_or(Alignment::None);
+    *next_cell += 1;
+    match alignment {
+        Alignment::Left => "text-left",
+        Alignment::Center => "text-center",
+        Alignment::Right => "text-right",
+        Alignment::None => "",
+    }
+    .to_string()
 }
 
 fn heading_level(level: HeadingLevel) -> usize {
@@ -643,6 +776,85 @@ fn directive_name(info: &str) -> Option<&str> {
     (!inner.is_empty()).then_some(inner)
 }
 
+fn directive_info(info: &str) -> Option<(String, String)> {
+    let name = directive_name(info)?.to_string();
+    let first = info.split_whitespace().next().unwrap_or("");
+    let argument = info[first.len()..].trim().to_string();
+    Some((name, argument))
+}
+
+fn include_path(argument: &str, tree: &Doctree, id: NodeId) -> PathBuf {
+    let source = match &tree.node(tree.root()).kind {
+        NodeKind::Document { source, .. } => PathBuf::from(source),
+        _ => PathBuf::new(),
+    };
+    let _ = id;
+    source
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(argument)
+}
+
+fn clone_children(
+    source: &Doctree,
+    source_parent: NodeId,
+    destination: &mut Doctree,
+    parent: NodeId,
+) {
+    for child in source.node(source_parent).children.clone() {
+        clone_node(source, child, destination, parent);
+    }
+}
+
+fn clone_node(source: &Doctree, source_id: NodeId, destination: &mut Doctree, parent: NodeId) {
+    let source_node = source.node(source_id);
+    let id = destination.append(parent, source_node.kind.clone());
+    for child in source_node.children.clone() {
+        clone_node(source, child, destination, id);
+    }
+}
+
+fn collect_substitutions(
+    front_matter: Option<&serde_yaml::Value>,
+    configured: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let mut substitutions = configured.clone();
+    if let Some(serde_yaml::Value::Mapping(mapping)) = front_matter {
+        if let Some(serde_yaml::Value::Mapping(values)) =
+            mapping.get(serde_yaml::Value::String("myst".into()))
+        {
+            if let Some(serde_yaml::Value::Mapping(values)) =
+                values.get(serde_yaml::Value::String("substitutions".into()))
+            {
+                for (key, value) in values {
+                    if let (Some(key), Some(value)) = (key.as_str(), value.as_str()) {
+                        substitutions.insert(key.to_string(), value.to_string());
+                    }
+                }
+            }
+        }
+    }
+    substitutions
+}
+
+fn apply_substitutions(source: &str, substitutions: &BTreeMap<String, String>) -> String {
+    let mut output = source.to_string();
+    for _ in 0..8 {
+        let mut changed = false;
+        for (key, value) in substitutions {
+            let marker = format!("{{{{ {key} }}}}");
+            let compact = format!("{{{{{key}}}}}");
+            let next = output.replace(&marker, value).replace(&compact, value);
+            changed |= next != output;
+            output = next;
+        }
+        if !changed {
+            break;
+        }
+    }
+    output
+}
+
 fn is_admonition(name: &str) -> bool {
     matches!(
         name,
@@ -657,6 +869,13 @@ fn is_admonition(name: &str) -> bool {
             | "tip"
             | "warning"
     )
+}
+
+fn known_directive(name: &str) -> bool {
+    matches!(
+        name,
+        "container" | "code-block" | "raw" | "math" | "include" | "eval-rst"
+    ) || is_admonition(name)
 }
 
 fn admonition_kind(name: &str) -> &'static str {
@@ -697,7 +916,7 @@ mod tests {
         assert!(matches!(
             tree.node(tree.root()).kind,
             NodeKind::Document { ref source, ref title, .. }
-                if source == "docs/guide.md" && title == "Guide"
+                if source == "docs/guide.md" && title.is_empty()
         ));
         let section = tree.node(tree.root()).children[0];
         assert!(matches!(
@@ -709,6 +928,7 @@ mod tests {
         assert!(matches!(tree.node(title).kind, NodeKind::Title));
         let paragraph = tree.node(section).children[1];
         assert!(matches!(tree.node(paragraph).kind, NodeKind::Paragraph));
+        assert_eq!(tree.node(paragraph).line, Some(3));
         let kinds = child_kinds(&tree, paragraph);
         assert!(kinds.iter().any(|kind| matches!(kind, NodeKind::Strong)));
         assert!(kinds.iter().any(|kind| matches!(kind, NodeKind::Emphasis)));
@@ -744,6 +964,10 @@ mod tests {
         );
         let restored = Doctree::from_bytes(&tree.to_bytes()).expect("doctree should deserialize");
         assert_eq!(
+            tree.node(tree.root()).line,
+            restored.node(restored.root()).line
+        );
+        assert_eq!(
             docutilsrs::html5(&tree, &Default::default(), &Default::default()),
             docutilsrs::html5(&restored, &Default::default(), &Default::default())
         );
@@ -751,22 +975,80 @@ mod tests {
 
     #[test]
     fn lowers_tables_definition_lists_and_heading_attributes() {
-        let source =
-            "# Title {#custom .lead}\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nTerm\n: Definition\n";
+        let source = "# Title {#custom .lead}\n\na | b | c\n:- | :-: | -:\n1 | 2 | 3\n\nTerm\n: Definition\n";
         let tree = parse_to_doctree(source, "index.md", &DoctreeOptions::default());
         let xml = docutilsrs::to_xml(&tree);
 
         assert!(xml.contains("<section classes=\"lead\" ids=\"custom\" names=\"Title\">"));
         assert!(xml.contains("<table>"));
-        assert!(xml.contains("<tgroup cols=\"2\">"));
+        assert!(xml.contains("<tgroup cols=\"3\">"));
         assert!(xml.contains("<thead>"));
         assert!(xml.contains("<tbody>"));
-        assert!(xml.contains("<entry>"));
+        assert!(xml.contains("<entry"));
+        assert!(xml.contains("classes=\"text-left\""));
+        assert!(xml.contains("classes=\"text-center\""));
+        assert!(xml.contains("classes=\"text-right\""));
         assert!(xml.contains("<definition_list>"));
         assert!(xml.contains("<definition_list_item>"));
         assert!(xml.contains("<term>"));
         assert!(xml.contains("<definition>"));
         let definition = xml.find("<definition>").expect("definition node");
         assert!(xml[definition..].contains("<paragraph>"));
+    }
+
+    #[test]
+    fn expands_front_matter_substitutions() {
+        let tree = parse_to_doctree(
+            "---\nmyst:\n  substitutions:\n    product: Rust\n---\n\n# {{ product }}\n\nWelcome to {{product}}.\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        let xml = docutilsrs::to_xml(&tree);
+        assert!(xml.contains("names=\"Rust\""));
+        assert!(xml.contains("Welcome to Rust."));
+    }
+
+    #[test]
+    fn lowers_eval_rst_into_native_nodes() {
+        let tree = parse_to_doctree(
+            "```{eval-rst}\n**bold**\n```\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        let xml = docutilsrs::to_xml(&tree);
+        assert!(xml.contains("<strong>"));
+        assert!(!xml.contains("eval-rst"));
+    }
+
+    #[test]
+    fn reports_unknown_directive_with_source_line() {
+        let tree = parse_to_doctree(
+            "before\n\n```{unknown}\nbody\n```\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        let message = tree
+            .node(tree.root())
+            .children
+            .iter()
+            .find(|id| matches!(tree.node(**id).kind, NodeKind::SystemMessage { .. }))
+            .copied()
+            .expect("diagnostic node");
+        assert!(matches!(
+            tree.node(message).kind,
+            NodeKind::SystemMessage { line: Some(3), .. }
+        ));
+    }
+
+    #[test]
+    fn lowers_table_spans_into_docutils_entry_spans() {
+        let tree = parse_to_doctree(
+            "| a {colspan=2 rowspan=2} | b |\n|---|---|\n| c | d |\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        let xml = docutilsrs::to_xml(&tree);
+        assert!(xml.contains("morecols=\"1\""));
+        assert!(xml.contains("morerows=\"1\""));
     }
 }

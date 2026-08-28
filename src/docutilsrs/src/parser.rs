@@ -58,6 +58,7 @@ pub fn parse_rst_with_options(
 }
 
 fn parse_rst_impl(source: &str, source_path: &str, promote_title: bool) -> Doctree {
+    let _role_lock = crate::roles::lock_global();
     let mut tree = Doctree::new_document(source_path);
     let document = tree.root();
 
@@ -3499,6 +3500,7 @@ fn emit_table(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, td: TableD
                     NodeKind::Entry {
                         morecols: cell.morecols,
                         morerows: cell.morerows,
+                        classes: String::new(),
                     },
                 );
                 emit_cell_content(tree, e, ctx, &cell.lines);
@@ -3515,6 +3517,7 @@ fn emit_table(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, td: TableD
                 NodeKind::Entry {
                     morecols: cell.morecols,
                     morerows: cell.morerows,
+                    classes: String::new(),
                 },
             );
             emit_cell_content(tree, e, ctx, &cell.lines);

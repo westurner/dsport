@@ -317,6 +317,8 @@ pub enum NodeKind {
     Entry {
         morecols: u32,
         morerows: u32,
+        /// Space-separated table-cell classes such as `text-center`.
+        classes: String,
     },
     // ── phase 2 deferrals ───────────────────────────────────────────────
     /// Attribution line within a block_quote (`-- Author`).
@@ -436,6 +438,8 @@ pub struct Node {
     pub kind: NodeKind,
     pub parent: Option<NodeId>,
     pub children: Vec<NodeId>,
+    /// 1-based source line when the parser can provide one.
+    pub line: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -549,6 +553,11 @@ impl Doctree {
         &mut self.nodes[id]
     }
 
+    /// Set the 1-based source line for a node.
+    pub fn set_line(&mut self, id: NodeId, line: u32) {
+        self.nodes[id].line = Some(line);
+    }
+
     /// Total number of nodes in the arena (max valid id + 1).
     pub fn nodes_len(&self) -> usize {
         self.nodes.len()
@@ -580,6 +589,7 @@ impl Doctree {
             kind,
             parent,
             children: Vec::new(),
+            line: None,
         });
         id
     }
@@ -632,6 +642,8 @@ struct NodeData {
     kind: NodeKindData,
     parent: Option<NodeId>,
     children: Vec<NodeId>,
+    #[serde(default)]
+    line: Option<u32>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -756,6 +768,8 @@ enum NodeKindData {
     Entry {
         morecols: u32,
         morerows: u32,
+        #[serde(default)]
+        classes: String,
     },
     Attribution,
     Figure,
@@ -847,6 +861,7 @@ impl From<&Node> for NodeData {
             kind: NodeKindData::from(&node.kind),
             parent: node.parent,
             children: node.children.clone(),
+            line: node.line,
         }
     }
 }
@@ -857,6 +872,7 @@ impl From<NodeData> for Node {
             kind: data.kind.into(),
             parent: data.parent,
             children: data.children,
+            line: data.line,
         }
     }
 }
@@ -990,7 +1006,15 @@ impl From<&NodeKind> for NodeKindData {
             NodeKind::Thead => NodeKindData::Thead,
             NodeKind::Tbody => NodeKindData::Tbody,
             NodeKind::Row => NodeKindData::Row,
-            NodeKind::Entry { morecols, morerows } => NodeKindData::Entry { morecols, morerows },
+            NodeKind::Entry {
+                morecols,
+                morerows,
+                classes,
+            } => NodeKindData::Entry {
+                morecols,
+                morerows,
+                classes,
+            },
             NodeKind::Attribution => NodeKindData::Attribution,
             NodeKind::Figure => NodeKindData::Figure,
             NodeKind::Caption => NodeKindData::Caption,
@@ -1203,7 +1227,15 @@ impl From<NodeKindData> for NodeKind {
             NodeKindData::Thead => NodeKind::Thead,
             NodeKindData::Tbody => NodeKind::Tbody,
             NodeKindData::Row => NodeKind::Row,
-            NodeKindData::Entry { morecols, morerows } => NodeKind::Entry { morecols, morerows },
+            NodeKindData::Entry {
+                morecols,
+                morerows,
+                classes,
+            } => NodeKind::Entry {
+                morecols,
+                morerows,
+                classes,
+            },
             NodeKindData::Attribution => NodeKind::Attribution,
             NodeKindData::Figure => NodeKind::Figure,
             NodeKindData::Caption => NodeKind::Caption,

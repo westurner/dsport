@@ -405,7 +405,9 @@ fn emit_enter(
             out.push_str("<table:table-row>\n");
             schedule(node, section_depth, "</table:table-row>\n", tasks);
         }
-        NodeKind::Entry { morecols, morerows } => {
+        NodeKind::Entry {
+            morecols, morerows, ..
+        } => {
             out.push_str("<table:table-cell");
             if *morecols > 0 {
                 let _ = write!(out, " table:number-columns-spanned=\"{}\"", morecols + 1);

@@ -55,10 +55,9 @@ fn aggregate_parity() {
         let raw = include_str!("data/option_parsing.yaml");
         let cases = common::parse_yaml_format(raw);
         let (_, _, f) = run_fixture("options (parse)", &cases, |case| {
-            match myst_md_rs::options::options_to_items(&case.content) {
-                Ok(_) => Ok(false), // pending: we don't compare JSON yet
-                Err(_) => Ok(false),
-            }
+            myst_md_rs::options::options_to_items(&case.content)
+                .map(|_| true)
+                .map_err(|error| error.to_string())
         });
         unexpected.fetch_add(f, Ordering::Relaxed);
     }
@@ -69,8 +68,8 @@ fn aggregate_parity() {
         let cases = common::parse_yaml_format(raw);
         let (_, _, f) = run_fixture("options (errors)", &cases, |case| {
             match myst_md_rs::options::options_to_items(&case.content) {
-                Err(_) => Ok(false), // pending: we don't compare error messages yet
-                Ok(_) => Ok(false),
+                Err(_) => Ok(true),
+                Ok(_) => Err("invalid option fixture was accepted".into()),
             }
         });
         unexpected.fetch_add(f, Ordering::Relaxed);

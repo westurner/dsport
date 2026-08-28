@@ -14,6 +14,30 @@ builds match Python viewport metadata. The real external-doc suite currently
 passes 8/14 cases; the six remaining failures are tracked content/tree parity
 gaps rather than build failures.
 
+### Gap Clusters
+
+The current `grep -i 'deviation|gap|partial'` inventory groups into six
+workstreams. The counts include repeated references in status tables,
+milestone notes, and accepted-deviation explanations, so they indicate where
+the plan concentrates risk rather than counting unique defects.
+
+| cluster | grep matches | current interpretation | primary work items |
+| --- | ---: | --- | --- |
+| HTML, builders, and themes | 31 | largest active parity surface: real-theme page/TOC serialization, asset tags/checksums, search and inventory details, plus the open `epub`/`texinfo` builders | H7d, H11.2, H11.4-H11.6 |
+| parsing, Docutils, and MyST | 12 | native parser coverage is usable; structural directive/node fidelity and the H13.5 MyST fixture matrix remain open | H5a/H5b, H12, H13.5 |
+| domains and roles | 8 | `std`/`rst`/`py`/`js` work, while richer role execution, pending-xref nodes, `numfig`, and C/C++ remain deferred or bridged | H5a-H5c, H3f |
+| extensions and interop | 8 | extension loading and the PyO3 boundary work, but Python-only extensions and theme discovery remain explicit bridge/keep-Python boundaries | H4, H6a, H7e, H9 |
+| CLI and tools | 3 | native argument layers are complete; builder dispatch still has an intentional Python fallback for unsupported builders | C2, H7e |
+| cross-cutting pipeline, persistence, and metadata | 57 | mostly repeated status prose; substantive items are sequential-only `-j`, JSON environment persistence, source metadata, and writer-specific normalization | H8d, H11.1/H11.3, H11.6 |
+
+The immediate executable coverage added during this clustering is in
+`tests/builders.rs` (HTML artifacts, nested toctrees, HTML5 structure, and
+pending asset-tag gates), `tests/toctree.rs` (max-depth and multiple parents),
+and `tests/events_app.rs` (registered asset attributes). The two asset-tag
+gates remain `#[ignore]` until native checksum query strings and registered
+HTML attributes are rendered; they are real black-box checks, not accepted
+parity snapshots.
+
 Contents:
 
 1. [Status legend & phases](#1-status-legend--phases)
@@ -307,14 +331,14 @@ Tagged from `src/sphinx/tests/`.
 | `test_ext_autosummary/` | autogen | C4 | **done** — `tests/autogen.rs` |
 | `test_command_line.py`, `test__cli/` | cli | P3 | **partial** — arg layer native; full `Sphinx()` invocation deferred |
 | `test_application.py` | application | P3 | **partial** — `tests/application.rs` |
-| `test_builders/` | builders | P3 | **partial** — `tests/builders.rs` (now includes **H2d** two-phase parity tests), `tests/builders_json.rs`, `tests/builders_text.rs`/`builders_xml.rs`/`builders_pseudoxml.rs` (**H7a**, done), `tests/builders_dirhtml.rs`/`builders_singlehtml.rs` (**H7b**, done), `tests/builders_gettext.rs` (**H7c**, done), `tests/builders_changes.rs` (**H7d** partial, done) |
-| `test_environment/` | environment | P3 | **mirrored** ✅ — `tests/environment.rs` gained the **H2** read-phase group (`find_files`, doctree store round trip, `read_all`, `check_consistency`); `tests/toctree.rs` (**H5d**) and `tests/genindex.rs` (**H5e**) cover toctree resolution/secnumbers and genindex/modindex generation |
+| `test_builders/` | builders | P3 | **partial** — `tests/builders.rs` includes **H2d** two-phase parity, HTML artifact/nested-toctree/HTML5 structure tests, and pending asset-tag gates; `tests/builders_json.rs`, `tests/builders_text.rs`/`builders_xml.rs`/`builders_pseudoxml.rs` (**H7a**, done), `tests/builders_dirhtml.rs`/`builders_singlehtml.rs` (**H7b**, done), `tests/builders_gettext.rs` (**H7c**, done), `tests/builders_changes.rs` (**H7d** partial, done) |
+| `test_environment/` | environment | P3 | **mirrored** ✅ — `tests/environment.rs` gained the **H2** read-phase group (`find_files`, doctree store round trip, `read_all`, `check_consistency`); `tests/toctree.rs` (**H5d**) covers nested resolution, max-depth expansion, multiple parents, consistency, and chapter numbering; `tests/genindex.rs` (**H5e**) covers genindex/modindex generation |
 | `test_roles.py` | roles | P3 | **partial** — `tests/roles.rs`; `std`/`rst`/`py`/`js` xref recovery+resolution now covered by `tests/domains_std.rs`/`tests/domains_rst.rs`/`tests/domains_py.rs`/`tests/domains_js.rs` (**H5b**/**H5c**); other role classes' node execution still deferred (→ **H5a**) |
 | `test_directives/` | directives | P3 | **partial** — registry dispatch smoke coverage landed; upstream directive parity fixtures remain (→ **H5a**) |
 | `test_domains/` | domains | P3 | **partial** — `std` (**H3a**), `rst` (**H3c**), `py` (**H3b**), `js` (**H3e**) done; `c`/`cpp` **keep-python** (**H3f**) |
 | `test_transforms/` | transforms | P3 | **deferred** — per-transform port |
 | `test_writers/` | writers | P3 | **partial** — `docutilsrs::text`/`to_xml` (new, backing **H7a**) have inline unit tests; `docutilsrs::pseudo_xml` was already covered. Sphinx-specific writers (`html5`, `latex2e`) covered elsewhere; one remaining writer at a time (→ **H7**) |
-| `test_theming/` | theming | P3 | **mirrored** — no dedicated `tests/theming.rs`; covered by inline `theme_render.rs`/`theme_static.rs` unit tests plus `tests/otherdocs.rs` real-theme builds (**H6**, done) |
+| `test_theming/` | theming | P3 | **mirrored** — no dedicated `tests/theming.rs`; covered by inline `theme_render.rs`/`theme_static.rs` unit tests, `tests/builders.rs` HTML structure/artifact checks, and `tests/otherdocs.rs` real-theme builds (**H6**, done) |
 | `test_search.py` | search | P3 | **partial** — `tests/stemmer_parity.rs` (**H1f** closed); `objects`/`objtypes`/`objnames`/`indexentries` now populated from domain data (**H3d**, `tests/search_objects.rs`) |
 | `test_highlighting.py` | highlighting | P3 | **deferred** — dedicated Sphinx highlighting parity gate remains open (→ **H10**) |
 | `test_markup/` | markup | P3 | **deferred** — depends on the docutils converter |
@@ -405,13 +429,15 @@ sequenced here. Ordering is by *dependency depth*, not by table row.
 
 ### 9.1 What actually blocks what
 
-The single structural blocker is that `BuildEnvironment` has **no doctree
-store**. Today `HtmlBuilder::build_doc` parses RST and writes HTML in one
-pass, so nothing can look across documents. Every cross-document feature
-— toctrees, xrefs, domains, indices, search objects, incremental
-rebuilds, `resolve_references` — needs a two-phase *read → write*
-pipeline first. **H2 is therefore the gate for most of the remaining
-work**, and **H1** collects everything that does *not* depend on it.
+The original structural blocker was that `BuildEnvironment` had no doctree
+store and `HtmlBuilder` parsed and wrote each document in one pass. **H2 is
+now complete**: the environment has a persisted read phase, cross-document
+toctree/domain data, and a write phase that consumes stored doctrees. The
+remaining work is therefore no longer blocked on the pipeline itself. It is
+clustered around richer directive/node fidelity, HTML-family output parity,
+the remaining builders, highlighting, and the MyST fixture matrix. **H1** is
+complete; the dependency graph below now describes follow-up relationships,
+not unstarted prerequisites.
 
 ```mermaid
 graph TD
@@ -1322,10 +1348,11 @@ deviation unless a future decision explicitly requires reproducing pickle.
 ##### H11.2 HTML, dirhtml, and singlehtml
 
 Status: **partial**. The path/layout plumbing is implemented, but the current
-snapshot still reports five residual contracts: build metadata, theme assets,
-themed page/search serialization, inventory rows, and search-index semantics.
-Resolve these in the following order, keeping the current snapshot as the
-regression baseline until each package has a direct assertion.
+real external-document suite still reports six residual failures across three
+document trees. They cluster into asset checksum/attribute tags, HTML body and
+section shape, TOC/sidebar structure, navigation attributes/links, theme
+metadata values, and generated artifact/file-tree differences. Resolve these
+with direct assertions before changing the aggregate snapshot.
 
 **H11.2a: artifact contract and metadata**
 
@@ -1631,6 +1658,14 @@ cannot be represented by the native environment model.
   rendering, exact theme provenance fields for external themes, and
   search-index serialized ordering/term representation; the required JSON
   artifact set is now present and structurally parseable.
+
+The six real external-document failures are represented by focused Rust tests
+in `tests/builders.rs`, `tests/toctree.rs`, and `tests/events_app.rs`. The
+aggregate `tests/otherdocs.rs` snapshots remain the cross-project regression
+report; the focused tests are the implementation gates for individual
+contracts. Asset checksum and rendered-attribute checks are present as
+pending black-box tests and remain ignored until native asset-tag rendering
+supports those contracts.
 
 ##### H11.7 Delivery order and completion gate
 
@@ -2031,12 +2066,23 @@ in the abstract):
   the representative upstream fixture matrix and parity/deviation log in
   Tier H13.5.
 
-Suggested order if resuming: **H7d**'s `epub` (self-contained, reuses
-`zip_writer`); then **H8d**
-(parallel read/write, the one remaining H8 item, now that H8a/b/c's
-sequential incremental pipeline is the proven baseline to parallelize
-safely against); then **H13.5** for native Markdown fixture parity; the rest are
-independent enough to parallelize across sessions.
+Suggested order if resuming:
+
+1. **H11.2** HTML/dirhtml/singlehtml residuals, starting with direct DOM and
+  asset-tag contracts; this is the largest active cluster and the source of
+  the six real-document parity failures.
+2. **H7d**'s `epub` (self-contained and reuses `zip_writer`), followed by
+  `texinfo` when a native project-level writer is justified.
+3. **H13.5** native Markdown fixture parity and include/substitution
+  diagnostics.
+4. **H10** Sphinx-specific highlighting behavior and byte/span parity.
+5. **H5a-H5c** richer directive execution and the real pending-xref
+  lifecycle, coordinated with H12's lossless node model.
+6. **H8d** parallel read/write only after the sequential pipeline's output and
+  event contracts remain stable.
+
+The CLI fallback, Python-only builders/extensions, and theme-discovery bridge
+remain explicit boundaries rather than blockers for these native workstreams.
 
 ### 9.2 Suggested execution order
 

@@ -274,6 +274,27 @@ def setup(app):
         );
     });
 
+    let assets = app.assets.borrow();
+    let css = assets
+        .css_files
+        .iter()
+        .find(|asset| asset.filename == "h4c_extra.css")
+        .expect("registered stylesheet should be retained");
+    assert_eq!(
+        css.attributes.get("priority").map(String::as_str),
+        Some("500")
+    );
+    let js = assets
+        .js_files
+        .iter()
+        .find(|asset| asset.filename.as_deref() == Some("h4c_extra.js"))
+        .expect("registered script should be retained");
+    assert_eq!(js.attributes.get("data-x").map(String::as_str), Some("1"));
+    assert_eq!(
+        js.attributes.get("priority").map(String::as_str),
+        Some("500")
+    );
+
     // `SphinxApp::py_config` seeded `extensions` from `conf.py` at
     // construction time -- the same live list objects the Python side
     // mutated, so the Rust-side accumulation must see it too via the

@@ -286,6 +286,146 @@ fn build_all_ignores_non_rst_files() {
 }
 
 #[test]
+fn build_all_writes_html_builder_artifacts() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    std::fs::write(src.path().join("index.rst"), "Home\n====\n").unwrap();
+
+    let env = make_env(src.path(), out.path());
+    HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    for path in [
+        ".buildinfo",
+        "objects.inv",
+        "search.html",
+        "genindex.html",
+        "_static/basic.css",
+        "searchindex.js",
+    ] {
+        assert!(
+            out.path().join(path).exists(),
+            "missing HTML artifact {path}"
+        );
+    }
+}
+
+#[test]
+fn build_all_renders_nested_toctree_links() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    std::fs::create_dir(src.path().join("guide")).unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "Home\n====\n\n.. toctree::\n   :maxdepth: 2\n\n   guide\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join("guide.rst"),
+        "Guide\n=====\n\n.. toctree::\n\n   guide/intro\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join("guide").join("intro.rst"),
+        "Introduction\n============\n\nBody.\n",
+    )
+    .unwrap();
+
+    let config = SphinxConfig::new_defaults();
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let mut env = BuildEnvironment::new(config, project, src.path(), doctrees.path());
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+    HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    let index = read_html(out.path(), "index");
+    assert!(index.contains("guide.html"), "root toctree link is missing");
+    let guide = read_html(out.path(), "guide");
+    assert!(
+        guide.contains("guide/intro.html") || guide.contains("intro.html"),
+        "nested toctree link is missing"
+    );
+}
+
+#[test]
+fn build_doc_renders_html5_section_and_external_link() {
+    let out = TempDir::new().unwrap();
+    HtmlBuilder::new()
+        .build_doc(
+            "index",
+            "Title\n=====\n\nSection\n-------\n\nSee `Rust <https://www.rust-lang.org/>`_.\n",
+            out.path(),
+        )
+        .unwrap();
+    let html = read_html(out.path(), "index");
+    assert!(
+        html.contains("<section") || html.contains("Section"),
+        "section content is missing"
+    );
+    assert!(
+        html.contains("<h2") || html.contains("Section"),
+        "section heading is missing"
+    );
+    assert!(
+        html.contains("href=\"https://www.rust-lang.org/\""),
+        "external link href is missing"
+    );
+}
+
+/// Upstream `test_file_checksum` is retained as a pending parity test until
+/// HTML asset tags append Sphinx's file checksum.
+#[test]
+#[ignore = "pending native asset checksum query strings"]
+fn html_asset_tags_append_file_checksum_query_strings() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    std::fs::write(src.path().join("index.rst"), "Home\n====\n").unwrap();
+
+    let env = make_env(src.path(), out.path());
+    HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+    let html = read_html(out.path(), "index");
+    let expected = regex::Regex::new(r#"href="[^"]*basic\.css\?v=[0-9a-f]{8}"#).unwrap();
+    assert!(
+        expected.is_match(&html),
+        "Sphinx asset tags must include an eight-character checksum query string:\n{html}"
+    );
+}
+
+/// Upstream `test_html_assets` also checks attributes registered with
+/// `add_js_file`/`add_css_file`; the native renderer currently preserves only
+/// the registered filenames in its HTML tags.
+#[test]
+#[ignore = "pending native asset tag attributes"]
+fn html_asset_tags_preserve_registered_attributes() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    std::fs::write(src.path().join("index.rst"), "Home\n====\n").unwrap();
+
+    let mut env = make_env(src.path(), out.path());
+    env.added_js_files.push(sphinxdocrs::registry::JsFile {
+        filename: Some("_static/app.js".into()),
+        attributes: std::collections::HashMap::from([
+            ("async".into(), "async".into()),
+            ("data-x".into(), "1".into()),
+        ]),
+    });
+    HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+    let html = read_html(out.path(), "index");
+    assert!(
+        html.contains(r#"async="async""#) && html.contains(r#"data-x="1""#),
+        "registered script attributes must be rendered:\n{html}"
+    );
+}
+
+#[test]
 fn build_all_uses_env_all_docs_when_populated() {
     let src = TempDir::new().unwrap();
     let out = TempDir::new().unwrap();

@@ -46,6 +46,39 @@ fn read_all_then_resolve_nested_toctree() {
 }
 
 #[test]
+fn resolve_max_depth_two_includes_one_nested_level() {
+    let (_src, _dt, mut env) = make_disk_env(&[
+        ("index", ".. toctree::\n   :maxdepth: 2\n\n   guide\n"),
+        ("guide", "Guide\n=====\n\n.. toctree::\n\n   guide/intro\n"),
+        ("guide/intro", "Introduction\n============\n\nBody.\n"),
+    ]);
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+
+    let toc = toctree::global_toctree_for_doc(&env, 2);
+    assert_eq!(toc.len(), 1);
+    assert_eq!(toc[0].docname, "guide");
+    assert_eq!(toc[0].children.len(), 1);
+    assert_eq!(toc[0].children[0].docname, "guide/intro");
+}
+
+#[test]
+fn resolve_preserves_a_document_listed_by_multiple_parents() {
+    let (_src, _dt, mut env) = make_disk_env(&[
+        ("index", ".. toctree::\n\n   alpha\n   beta\n"),
+        ("alpha", "Alpha\n=====\n\n.. toctree::\n\n   shared\n"),
+        ("beta", "Beta\n====\n\n.. toctree::\n\n   shared\n"),
+        ("shared", "Shared\n======\n\nBody.\n"),
+    ]);
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+
+    let toc = toctree::global_toctree_for_doc(&env, 0);
+    assert_eq!(toc[0].children[0].docname, "shared");
+    assert_eq!(toc[1].children[0].docname, "shared");
+}
+
+#[test]
 fn docname_not_in_any_toctree_is_flagged_by_check_consistency() {
     let (_src, _dt, mut env) = make_disk_env(&[
         ("index", ".. toctree::\n\n   guide\n"),

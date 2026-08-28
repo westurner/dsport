@@ -1472,6 +1472,10 @@ explicitly documented renderer/theme provenance deviations.
 - Matched Sphinx's full breadcrumb ancestor chain for themed pages, omitting
   only the configured root document and preserving root-to-nearest order;
   nested parent-chain behavior is covered by a focused renderer regression.
+- Matched singlehtml's known-document URI contract: merged-page documents now
+  target `#document-{docname}`, while unknown additional pages retain their
+  standalone `.html` targets; focused unit and integration coverage exercise
+  both paths.
 - Added structured `objects.inv` comparison in `parity.rs`. Inventory rows
   now include virtual standard labels (`genindex`, `modindex`, `py-modindex`,
   and `search`), standard-document entries, target URIs, priorities, and

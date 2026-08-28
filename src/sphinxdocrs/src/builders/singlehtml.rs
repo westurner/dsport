@@ -28,9 +28,11 @@
 //! | `SingleFileHTMLBuilder.name` | `"singlehtml"` | constant |
 //! | `SingleFileHTMLBuilder.format` | `"html"` | constant |
 //! | `SingleFileHTMLBuilder.out_suffix` | `".html"` | constant |
-//! | `SingleFileHTMLBuilder.get_target_uri` | [`SinglehtmlBuilder::get_target_uri`] | `""` for `index`, else `"index.html#{docname}"` |
+//! | `SingleFileHTMLBuilder.get_target_uri` | [`SinglehtmlBuilder::get_target_uri`] | `#document-{docname}` for built docs, `""` for `index`, and `{docname}.html` for additional pages |
 //! | `SingleFileHTMLBuilder.assemble_doctree` + `write` | [`SinglehtmlBuilder::build_all`] | concatenates every document's rendered fragment into one `index.html` |
 
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::path::Path;
 
 use docutilsrs::parse_rst_with_source;
@@ -43,12 +45,14 @@ use crate::environment::BuildEnvironment;
 #[derive(Default)]
 pub struct SinglehtmlBuilder {
     inner: HtmlBuilder,
+    known_docs: RefCell<HashSet<String>>,
 }
 
 impl SinglehtmlBuilder {
     pub fn new() -> Self {
         Self {
             inner: HtmlBuilder::new(),
+            known_docs: RefCell::new(HashSet::new()),
         }
     }
 }
@@ -64,13 +68,16 @@ impl Builder for SinglehtmlBuilder {
         ".html"
     }
 
-    /// Mirrors `SingleFileHTMLBuilder.get_target_uri`: `""` for the root
-    /// document, else an in-page anchor into the single `index.html`.
+    /// Mirrors `SingleFileHTMLBuilder.get_target_uri` for documents known to
+    /// the most recent `build_all` call. The root remains page-relative so
+    /// existing links to the merged page continue to resolve correctly.
     fn get_target_uri(&self, docname: &str) -> String {
         if docname == "index" {
             String::new()
+        } else if self.known_docs.borrow().contains(docname) {
+            format!("#document-{docname}")
         } else {
-            format!("index.html#{docname}")
+            format!("{docname}.html")
         }
     }
 
@@ -103,6 +110,8 @@ impl Builder for SinglehtmlBuilder {
             super::html::discover_docnames_pub(srcdir, &env.config)
         };
         let docnames = toctree_order(env, docnames);
+        self.known_docs
+            .replace(docnames.iter().cloned().collect::<HashSet<_>>());
 
         std::fs::create_dir_all(outdir)?;
         super::html::write_static_files(outdir, super::html::PathStyle::Flat, false)?;
@@ -250,11 +259,31 @@ mod tests {
     }
 
     #[test]
-    fn get_target_uri_root_is_empty_others_are_anchors() {
+    fn get_target_uri_defaults_to_root_or_additional_page() {
         let b = SinglehtmlBuilder::new();
         assert_eq!(b.get_target_uri("index"), "");
-        assert_eq!(b.get_target_uri("about"), "index.html#about");
-        assert_eq!(b.get_target_uri("guide/intro"), "index.html#guide/intro");
+        assert_eq!(b.get_target_uri("about"), "about.html");
+        assert_eq!(b.get_target_uri("guide/intro"), "guide/intro.html");
+    }
+
+    #[test]
+    fn get_target_uri_uses_anchors_for_known_docs() {
+        let b = SinglehtmlBuilder::new();
+        b.known_docs
+            .borrow_mut()
+            .extend(["index".to_string(), "about".to_string(), "guide/intro".to_string()]);
+
+        assert_eq!(b.get_target_uri("about"), "#document-about");
+        assert_eq!(b.get_target_uri("guide/intro"), "#document-guide/intro");
+        assert_eq!(b.get_target_uri("missing"), "missing.html");
+    }
+
+    #[test]
+    fn get_target_uri_keeps_root_page_behavior_for_known_index() {
+        let b = SinglehtmlBuilder::new();
+        b.known_docs.borrow_mut().insert("index".to_string());
+
+        assert_eq!(b.get_target_uri("index"), "");
     }
 
     #[test]
@@ -283,10 +312,12 @@ mod tests {
             crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
         let env =
             crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
-        let result = SinglehtmlBuilder::new()
-            .build_all(src.path(), out.path(), &env)
-            .unwrap();
+        let builder = SinglehtmlBuilder::new();
+        let result = builder.build_all(src.path(), out.path(), &env).unwrap();
         assert_eq!(result.written, 2);
+        assert_eq!(builder.get_target_uri("about"), "#document-about");
+        assert_eq!(builder.get_target_uri("additional"), "additional.html");
+        assert_eq!(builder.get_target_uri("index"), "");
         // Exactly one HTML file is produced.
         assert!(out.path().join("index.html").exists());
         assert!(!out.path().join("about.html").exists());

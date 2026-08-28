@@ -2,9 +2,17 @@
 
 This document tracks the CLI option parity between `docutilsrs` binaries and upstream Python `docutils`.
 
+## Current Status (2026-08-28)
+
+The shared and writer-specific option layers described below are implemented.
+All options listed in this inventory are checked off, and CLI parity coverage
+is maintained by the Rust test suite. Remaining writer behavior gaps are
+separate from option parsing and should be tracked in the writer parity
+inventories rather than this checklist.
+
 ## Strategy / Plan
 
-To make the `cli_parity` tests pass, we will:
+The implementation uses:
 1. **Shared CLI Options Module:** Create a shared structs module or sub-module in `docutilsrs` using `clap`'s `#[command(flatten)]` for all general docutils options (e.g. `--title`, `--config`, logging options, etc.)
 2. **Writer-specific Options:** Create `clap` structs for writer-specific options (e.g., HTML5 specific, LaTeX specific) and append them selectively to the CLI entry points.
 3. **Ignore internal/legacy options?** Some options might be purely skipped or marked as hidden if they no longer apply to Rust, though for perfect test parity, we need to at least parse them.

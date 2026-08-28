@@ -68,9 +68,19 @@ Columns:
 |-----------|-----------------|---------------|--------|-------|
 | crate scaffold | — | `src/sphinxdocrs/src/lib.rs` | exact-parity | M1: `version()` only |
 | config (math options) | `sphinx.config.Config` + `sphinx.ext.mathjax` / `sphinx.ext.imgmath` | `src/sphinxdocrs/src/config.rs` | accepted-deviation | `Config::from_conf_py(path)` executes `conf.py` via PyO3 and reads `extensions`, `math_renderer`, `mathjax_path` (default `https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js`), `mathjax_options`, `mathjax3_config`, `imgmath_image_format` / `imgmath_latex` / `imgmath_dvipng` / `imgmath_dvisvgm`. `effective_math_renderer()` resolves to `MathJax` / `ImgMath` / `Ratex` from the `extensions` list (with `dsport.ext.ratex` selecting the Rust-native RaTeX backend) or an explicit `math_renderer = "…"` setting. Exposed to Python as `sphinxdocrs.read_conf_py(path) -> dict`. Tests: `src/sphinxdocrs/tests/config.rs` (9 cases). |
-| environment | `sphinx.environment` | — | pending | phase 4 |
-| events | `sphinx.events` | — | pending | phase 4 (priority for plugins) |
-| builders | `sphinx.builders.*` | — | pending | phase 4 |
+| environment | `sphinx.environment` | `src/sphinxdocrs/src/environment.rs` | accepted-deviation | `find_files`, doctree persistence, read phase, consistency checks, and doctree resolution are implemented and covered; reference resolution and domains remain pending |
+| events | `sphinx.events` | `src/sphinxdocrs/src/app_events.rs` | accepted-deviation | structured native event dispatch and Python application facade bridge are implemented; broader upstream event surface remains incomplete |
+| builders | `sphinx.builders.*` | `src/sphinxdocrs/src/builders/` | accepted-deviation | native HTML-family, JSON, text, XML, pseudoxml, LaTeX, manpage, linkcheck, gettext, and changes builders are wired; real-doc content parity and epub/texinfo remain pending |
+
+### Current Verification (2026-08-28)
+
+- Theme renderer regression tests: **17/17 passed**.
+- The native builder parity matrix passes after the reviewed snapshot update.
+- Fresh Alabaster and Jinja/Pocoo builds match Python's viewport metatag
+	counts (**2/2** in each case).
+- The real documentation suite is **8/14 passing**; the six remaining
+	snapshot failures are known HTML body, navigation, asset, and generated
+	artifact differences. Their pending snapshots remain unaccepted.
 
 ## myst-md-rs
 

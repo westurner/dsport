@@ -5,6 +5,15 @@ This document merges the former `docs/sphinx-port-inventory.md`
 (*sphinx port inventory, Phase 4*) and `docs/sphinxdocrs-cli-port-plan.md`
 (*sphinxdocrs CLI port & test plan*); both are superseded by this file.
 
+## Current Verification (2026-08-28)
+
+The H4-H7 implementation rows below reflect the current native code, not the
+original phase-4 placeholders. The focused theme renderer suite passes 17/17,
+the native builder parity matrix passes, and fresh Alabaster and Jinja/Pocoo
+builds match Python viewport metadata. The real external-doc suite currently
+passes 8/14 cases; the six remaining failures are tracked content/tree parity
+gaps rather than build failures.
+
 Contents:
 
 1. [Status legend & phases](#1-status-legend--phases)
@@ -113,8 +122,8 @@ in the notes column of the relevant row.
 | `directives/` | `docutilsrs::plugins` + parser dispatch | P3 | **partial** | native registry now runs before built-ins; callable `app.add_directive` handlers return replacement RST. Full docutils Directive class/options/node execution remains (→ **H5a**) |
 | `domains/` | — | P3 | **deferred** | only `registry.add_domain` name-registration exists; `env.domaindata` is never populated (→ **H3**) |
 | `environment/` | `environment` | P3 | **mirrored** ✅ | `BuildEnvironment`: `find_files` (**H2a**), doctree store `parse_doc`/`store_doctree`/`get_doctree`/`has_stored_doctree` (**H2b**), `read_all` read phase (**H2c**), `get_and_resolve_doctree` (**H2e**), `check_consistency` (**H2f**). **Gap:** `resolve_references`, `domains` (→ **H3**) |
-| `builders/` | `builders` | P3 | **partial** | `Builder` trait + `HtmlBuilder`, `LatexBuilder`, `ManpageBuilder`, `LinkcheckBuilder`, `JsonBuilder`, `TextBuilder`, `XmlBuilder`, `PseudoxmlBuilder` (**H7a**, done), `DirhtmlBuilder`, `SinglehtmlBuilder` (**H7b**, done), `GettextBuilder` (**H7c**, done), `ChangesBuilder` (**H7d** partial, done), all dispatched by `SphinxApp`. **Gap:** no epub/texinfo (→ **H7d** remainder, see §9.5). `doctest`/`coverage`/`qthelp`/`devhelp`/`htmlhelp`/`applehelp` are **keep-python** (**H7e**, decided) |
-| `application.py` | `application` | P3 | **partial** | `SphinxApp`: path validation, config, registry, env, `read()` (**H2**: `find_files` + `read_all`), `build()` (`&mut self`, two-phase). **Gaps:** events, extension loading, parallel build, incremental rebuild, i18n (→ **H4**, **H8**) |
+| `builders/` | `builders` | P3 | **partial** | `Builder` trait + `HtmlBuilder`, `LatexBuilder`, `ManpageBuilder`, `LinkcheckBuilder`, `JsonBuilder`, `TextBuilder`, `XmlBuilder`, `PseudoxmlBuilder` (**H7a**, done), `DirhtmlBuilder`, `SinglehtmlBuilder` (**H7b**, done), `GettextBuilder` (**H7c**, done), `ChangesBuilder` (**H7d**, done), all dispatched by `SphinxApp`. **Gap:** no epub/texinfo (→ **H7d** remainder, see §9.5), plus real HTML body/navigation/content parity. `doctest`/`coverage`/`qthelp`/`devhelp`/`htmlhelp`/`applehelp` are **keep-python** (**H7e**, decided) |
+| `application.py` | `application` | P3 | **partial** | `SphinxApp`: path validation, config, registry, env, extension loading, native events, `read()` (**H2**: `find_files` + `read_all`), and `build()` (`&mut self`, two-phase). **Gaps:** parallel build, incremental rebuild, and full i18n (→ **H4**, **H8**) |
 | `theming.py` | `theme`, `theme_static`, `theme_render` | P3 | **mirrored** ✅ | self-contained `sphinxdocrs_basic` theme + real third-party theme inheritance (`alabaster`/`basic`) rendered through `jinja2rs`; full per-page context (`pathto`/`hasdoc`/`toctree()`/`toc`/relbar/sidebars/`html_context`/`html-page-context`) (**H6**, done). **Accepted deviation:** `theme.conf`/`theme.toml` inheritance-chain parsing still goes through an embedded PyO3 bootstrap rather than pure Rust (**H6a**) |
 | `search/` | `search` | P3 | **done** | `SearchIndex`, `split_words`, `feed`, `to_json`, Snowball stemming for all 15 `sphinx.search` languages (**H1f**, via `stemmer.rs`). **Accepted deviation:** `rust_stemmers`' Dutch algorithm is the legacy `dutch_porter` Snowball revision, not the one `snowballstemmer.stemmer('dutch')` resolves to — patched via built-in `ParityOverrides` for Sphinx's own Dutch stopword vocabulary; broader vocabularies may need project-supplied overrides. `objects`/`objtypes`/`objnames`/`indexentries` now populated from domain data (**H3d**) — see the accepted deviations noted on that row in §3 |
 | `ext/autodoc/` | `autodoc` | P3 | **mirrored** ✅ | `document_module`/`document_module_auto`/`render_function`/`render_class` with a PyO3 runtime-import bridge (`autodoc_runtime.rs`, falling back to `ruff_python_parser` static extraction when import fails), `:members:`/`:undoc-members:`/`:private-members:`/`:special-members:`/`:exclude-members:`/`:member-order:` option handling, type hints, decorators (`@property`/`@staticmethod`/`@classmethod`), `__all__` ordering, `autodoc_mock_imports` (**H9**, done). **Accepted deviations:** `:inherited-members:` parsed but not expanded; overload sets render only the last definition; `autodoc_typehints="description"` treated as `"signature"` — see the Tier H9 writeup in §9 |

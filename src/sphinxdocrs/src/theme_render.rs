@@ -225,7 +225,7 @@ impl Object for ToctreeGlobal {
 
     fn call(self: &Arc<Self>, _state: &State<'_, '_>, _args: &[Value]) -> Result<Value, Error> {
         let base_uri = self.0.current_target_uri();
-        let html = render_toc_html_for_style(&self.0.toc_entries, &base_uri, self.0.path_style);
+        let html = render_toc_html(&self.0.toc_entries, &base_uri, self.0.path_style);
         Ok(markupsafers::minijinja_compat::markup_to_value(
             Markup::from_safe(html),
         ))
@@ -402,7 +402,7 @@ fn resource_pathto(state: &PageState, name: &str) -> String {
 /// it (mirrors upstream's `pathto()`-based link construction) — a raw
 /// `get_target_uri` result is root-relative and 404s from any page not at
 /// the project root.
-fn render_toc_html_for_style(
+fn render_toc_html(
     entries: &[TocEntry],
     base_uri: &str,
     path_style: PathStyle,
@@ -429,7 +429,7 @@ fn render_toc_html_for_style(
         ));
         if !entry.children.is_empty() {
             out.push('\n');
-            out.push_str(&render_toc_html_for_style(
+            out.push_str(&render_toc_html(
                 &entry.children,
                 base_uri,
                 path_style,
@@ -859,7 +859,7 @@ impl ThemeRenderer {
         // `toctree()` remains backed by the environment's document tree.
         ctx.insert(
             "toc".into(),
-            render_toc_html_for_style(
+            render_toc_html(
                 &toc_entries_for_doc,
                 &base_uri,
                 self.state.path_style,
@@ -1350,7 +1350,7 @@ mod tests {
                 children: vec![],
             }],
         }];
-        let html = render_toc_html_for_style(&entries, "index.html", PathStyle::Flat);
+        let html = render_toc_html(&entries, "index.html", PathStyle::Flat);
         assert!(html.contains("guide/intro.html"), "got: {html}");
         assert!(html.contains("Intro"), "got: {html}");
         assert!(html.contains("guide/sub.html"), "got: {html}");
@@ -1376,7 +1376,7 @@ mod tests {
                 children: vec![],
             },
         ];
-        let html = render_toc_html_for_style(&entries, "tutorial/foo.html", PathStyle::Flat);
+        let html = render_toc_html(&entries, "tutorial/foo.html", PathStyle::Flat);
         assert!(
             html.contains("href=\"index.html\""),
             "same-directory link should have no ../ prefix, got: {html}"
@@ -1394,7 +1394,7 @@ mod tests {
             title: "Intro".into(),
             children: vec![],
         }];
-        let html = render_toc_html_for_style(&entries, "guide/", PathStyle::Dir);
+        let html = render_toc_html(&entries, "guide/", PathStyle::Dir);
 
         assert!(html.contains("href=\"intro/\""), "got: {html}");
         assert!(!html.contains(".html"), "got: {html}");
@@ -1428,7 +1428,7 @@ mod tests {
         );
         assert_eq!(entries[0].children[0].title, "Nested");
 
-        let html = render_toc_html_for_style(&entries, "guide.html", PathStyle::Flat);
+        let html = render_toc_html(&entries, "guide.html", PathStyle::Flat);
         assert!(html.contains("href=\"#first\""), "got: {html}");
         assert!(html.contains("href=\"#nested\""), "got: {html}");
         assert!(html.contains("href=\"#second\""), "got: {html}");
@@ -1631,9 +1631,9 @@ mod tests {
                 children: vec![],
             }],
         }];
-        let global_html = render_toc_html_for_style(&root_entries, "index.html", PathStyle::Flat);
+        let global_html = render_toc_html(&root_entries, "index.html", PathStyle::Flat);
         // The document "guide/intro" has no nested toctree of its own.
-        let local_html = render_toc_html_for_style(&[], "index.html", PathStyle::Flat);
+        let local_html = render_toc_html(&[], "index.html", PathStyle::Flat);
         assert!(global_html.contains("guide/intro.html"));
         assert!(local_html.is_empty());
         assert_ne!(global_html, local_html);

@@ -376,10 +376,7 @@ fn build_doc_renders_html5_section_and_external_link() {
     );
 }
 
-/// Upstream `test_file_checksum` is retained as a pending parity test until
-/// HTML asset tags append Sphinx's file checksum.
 #[test]
-#[ignore = "pending native asset checksum query strings"]
 fn html_asset_tags_append_file_checksum_query_strings() {
     let src = TempDir::new().unwrap();
     let out = TempDir::new().unwrap();
@@ -397,11 +394,7 @@ fn html_asset_tags_append_file_checksum_query_strings() {
     );
 }
 
-/// Upstream `test_html_assets` also checks attributes registered with
-/// `add_js_file`/`add_css_file`; the native renderer currently preserves only
-/// the registered filenames in its HTML tags.
 #[test]
-#[ignore = "pending native asset tag attributes"]
 fn html_asset_tags_preserve_registered_attributes() {
     let src = TempDir::new().unwrap();
     let out = TempDir::new().unwrap();
@@ -411,7 +404,7 @@ fn html_asset_tags_preserve_registered_attributes() {
     env.added_js_files.push(sphinxdocrs::registry::JsFile {
         filename: Some("_static/app.js".into()),
         attributes: std::collections::HashMap::from([
-            ("async".into(), "async".into()),
+            ("loading_method".into(), "defer".into()),
             ("data-x".into(), "1".into()),
         ]),
     });
@@ -420,7 +413,7 @@ fn html_asset_tags_preserve_registered_attributes() {
         .unwrap();
     let html = read_html(out.path(), "index");
     assert!(
-        html.contains(r#"async="async""#) && html.contains(r#"data-x="1""#),
+        html.contains(r#"defer="defer""#) && html.contains(r#"data-x="1""#),
         "registered script attributes must be rendered:\n{html}"
     );
 }

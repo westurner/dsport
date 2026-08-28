@@ -38,12 +38,11 @@
 //!   `read_dir` returns them, sorted for determinism), with any files a
 //!   Python extension registered via `app.add_css_file`/`app.add_js_file`
 //!   (**H4c** — `crate::app_facade::PyAppFacade`) appended afterward if not
-//!   already present. Registered files are only linked as plain
-//!   `<link>`/`<script>` tags (no extra HTML attributes, no SRI, no
-//!   inline-script bodies) and are **not** copied into `_static/`
-//!   themselves — a registered file renders correctly only when it
-//!   already lands there through `html_static_path` or the active theme's
-//!   own static files.
+//!   already present. Registered attributes, loading methods, and local-file
+//!   checksum query strings are rendered by the asset tag globals. Registered
+//!   files are **not** copied into `_static/` themselves — a registered file
+//!   renders correctly only when it already lands there through
+//!   `html_static_path` or the active theme's own static files.
 //! - `meta` (per-page docinfo) is not modeled. The default docutils viewport
 //!   metatag is supplied only when the active theme does not declare one.
 //! - `sphinx_version` reports this crate's own version, not upstream
@@ -100,6 +99,11 @@ struct PageState {
     toc_entries: Vec<TocEntry>,
     /// Output layout used to resolve page URIs and asset roots.
     path_style: PathStyle,
+    /// Output directory used for local asset checksums.
+    outdir: PathBuf,
+    /// Attributes registered for CSS and JavaScript assets, keyed by filename.
+    css_attributes: HashMap<String, HashMap<String, String>>,
+    js_attributes: HashMap<String, HashMap<String, String>>,
 }
 
 impl PageState {
@@ -238,8 +242,8 @@ impl Object for ToctreeGlobal {
 /// (plain filename strings, not `_JavaScript`/`_CascadingStyleSheet`
 /// objects with extra attributes/priority): a plain `<script src=... >`
 /// or `<link rel="stylesheet" ...>` tag with a `pathto(..., resource=True)`
-/// href. **Accepted deviation:** no SRI checksum query string, no extra
-/// attributes (`body`, `async`, ...).
+/// href. Asset metadata is resolved from [`PageState`] by filename, including
+/// local-file checksum query strings and registered tag attributes.
 struct JsTagGlobal(Arc<PageState>);
 
 impl std::fmt::Debug for JsTagGlobal {
@@ -254,12 +258,33 @@ impl Object for JsTagGlobal {
     }
 
     fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
-        let js = args.first().map(|v| v.to_string()).unwrap_or_default();
-        let uri = resource_pathto(&self.0, &js);
+        let js = args.first().map(asset_filename).unwrap_or_default();
+        let uri = append_checksum(
+            resource_pathto(&self.0, &js),
+            file_checksum(&self.0.outdir, &js).as_deref(),
+        );
+        let mut asset_attributes = self
+            .0
+            .js_attributes
+            .get(&js)
+            .cloned()
+            .unwrap_or_default();
+        let body = asset_attributes.remove("body").unwrap_or_default();
+        if let Some(loading_method) = asset_attributes.remove("loading_method") {
+            if matches!(loading_method.as_str(), "async" | "defer") {
+                asset_attributes.insert(loading_method.clone(), loading_method);
+            }
+        }
+        let attributes = render_attributes(&asset_attributes);
+        let prefix = if attributes.is_empty() {
+            "<script".to_string()
+        } else {
+            format!("<script {attributes}")
+        };
         Ok(markupsafers::minijinja_compat::markup_to_value(
             Markup::from_safe(format!(
-                "<script src=\"{}\"></script>",
-                html_escape_attr(&uri)
+                "{prefix} src=\"{}\">{body}</script>",
+                html_escape_attr(&uri),
             )),
         ))
     }
@@ -279,15 +304,83 @@ impl Object for CssTagGlobal {
     }
 
     fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
-        let css = args.first().map(|v| v.to_string()).unwrap_or_default();
-        let uri = resource_pathto(&self.0, &css);
+        let css = args.first().map(asset_filename).unwrap_or_default();
+        let uri = append_checksum(
+            resource_pathto(&self.0, &css),
+            file_checksum(&self.0.outdir, &css).as_deref(),
+        );
+        let attributes = self
+            .0
+            .css_attributes
+            .get(&css)
+            .map(render_attributes)
+            .unwrap_or_default();
+        let prefix = if attributes.is_empty() {
+            "<link".to_string()
+        } else {
+            format!("<link {attributes}")
+        };
         Ok(markupsafers::minijinja_compat::markup_to_value(
             Markup::from_safe(format!(
-                "<link rel=\"stylesheet\" type=\"text/css\" href=\"{}\" />",
+                "{prefix} rel=\"stylesheet\" type=\"text/css\" href=\"{}\" />",
                 html_escape_attr(&uri)
             )),
         ))
     }
+}
+
+fn render_attributes(attributes: &HashMap<String, String>) -> String {
+    let mut entries: Vec<_> = attributes
+        .iter()
+        .filter(|(key, _)| key.as_str() != "priority" && key.as_str() != "loading_method")
+        .collect();
+    entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+    entries
+        .into_iter()
+        .map(|(key, value)| format!("{}=\"{}\"", key, html_escape_attr(value)))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn append_checksum(uri: String, checksum: Option<&str>) -> String {
+    match checksum {
+        Some(checksum) => format!("{uri}?v={checksum}"),
+        None => uri,
+    }
+}
+
+fn file_checksum(outdir: &Path, filename: &str) -> Option<String> {
+    if filename.contains("://") || filename.contains('?') {
+        return None;
+    }
+    let path = if filename.starts_with("_static/") {
+        outdir.join(filename)
+    } else {
+        outdir.join("_static").join(filename)
+    };
+    let content = std::fs::read(path).ok()?;
+    if content.is_empty() {
+        return None;
+    }
+    let mut crc = 0xffff_ffffu32;
+    for byte in content.into_iter().filter(|byte| *byte != b'\r') {
+        crc ^= u32::from(byte);
+        for _ in 0..8 {
+            crc = if crc & 1 == 1 {
+                (crc >> 1) ^ 0xedb8_8320
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    Some(format!("{:08x}", !crc))
+}
+
+fn asset_filename(value: &Value) -> String {
+    value
+        .get_item(&Value::from("filename"))
+        .map(|filename| filename.to_string())
+        .unwrap_or_else(|_| value.to_string())
 }
 
 /// Shared `pathto(name, resource=True)` computation used by
@@ -562,6 +655,22 @@ impl ThemeRenderer {
             use_index: env.config.html_use_index(),
             toc_entries: toc_entries.clone(),
             path_style,
+            outdir: outdir.to_path_buf(),
+            css_attributes: env
+                .added_css_files
+                .iter()
+                .map(|asset| (asset.filename.clone(), asset.attributes.clone()))
+                .collect(),
+            js_attributes: env
+                .added_js_files
+                .iter()
+                .filter_map(|asset| {
+                    asset
+                        .filename
+                        .as_ref()
+                        .map(|filename| (filename.clone(), asset.attributes.clone()))
+                })
+                .collect(),
         });
 
         let mut jinja_env = jinja_env;
@@ -788,10 +897,7 @@ fn theme_declares_viewport(template_dirs: &[PathBuf]) -> bool {
                 .is_some_and(|extension| extension == "html" || extension == "jinja");
             is_template
                 && std::fs::read_to_string(path)
-                    .map(|contents| {
-                        contents.contains("set metatags")
-                            && contents.contains("name=\"viewport\"")
-                    })
+                    .map(|contents| contents.contains("name=\"viewport\""))
                     .unwrap_or(false)
         })
     }
@@ -833,11 +939,23 @@ fn to_minijinja_context(ctx: serde_json::Map<String, serde_json::Value>) -> Hash
                 .as_array()
                 .map(|items| Value::from_iter(items.iter().map(project_link_value)))
                 .unwrap_or_else(|| Value::from_iter(std::iter::empty::<Value>())),
+            "css_files" | "script_files" => value
+                .as_array()
+                .map(|items| Value::from_iter(items.iter().map(asset_value)))
+                .unwrap_or_else(|| Value::from_iter(std::iter::empty::<Value>())),
             _ => Value::from_serialize(&value),
         };
         out.insert(key, converted);
     }
     out
+}
+
+fn asset_value(value: &serde_json::Value) -> Value {
+    let filename = value.as_str().unwrap_or_default();
+    Value::from_iter([(
+        "filename",
+        Value::from_safe_string(filename.to_string()),
+    )])
 }
 
 /// Convert one `{"link": ..., "title": ...}` relation object (built by
@@ -1340,7 +1458,7 @@ mod tests {
     }
 
     #[test]
-    fn theme_declares_viewport_ignores_basic_template() {
+    fn theme_declares_viewport_recognizes_direct_and_templated_meta() {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let basic_dir = temp_dir.path().join("basic");
         let pocoo_dir = temp_dir.path().join("pocoo");
@@ -1357,7 +1475,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!theme_declares_viewport(&[basic_dir]));
+        assert!(theme_declares_viewport(&[basic_dir]));
         assert!(theme_declares_viewport(&[pocoo_dir]));
     }
 

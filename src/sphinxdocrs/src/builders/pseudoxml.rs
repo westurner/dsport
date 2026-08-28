@@ -30,6 +30,25 @@ impl PseudoxmlBuilder {
     pub fn new() -> Self {
         Self
     }
+
+    fn build_doc_with_source_path(
+        &self,
+        docname: &str,
+        source: &str,
+        outdir: &Path,
+        source_path: &Path,
+    ) -> Result<(), BuildError> {
+        let mut tree = parse_rst_with_options(source, docname, TitlePromotion::Preserve);
+        tree.set_source(source_path.to_string_lossy());
+        let output = pseudo_xml(&tree);
+        let rel: PathBuf = docname.split('/').collect::<PathBuf>();
+        let out_path = outdir.join(rel).with_extension("pseudoxml");
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&out_path, output.as_bytes())?;
+        Ok(())
+    }
 }
 
 impl Builder for PseudoxmlBuilder {
@@ -48,15 +67,7 @@ impl Builder for PseudoxmlBuilder {
     }
 
     fn build_doc(&self, docname: &str, source: &str, outdir: &Path) -> Result<(), BuildError> {
-        let tree = parse_rst_with_options(source, docname, TitlePromotion::Preserve);
-        let output = pseudo_xml(&tree);
-        let rel: PathBuf = docname.split('/').collect::<PathBuf>();
-        let out_path = outdir.join(rel).with_extension("pseudoxml");
-        if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(&out_path, output.as_bytes())?;
-        Ok(())
+        self.build_doc_with_source_path(docname, source, outdir, Path::new(docname))
     }
 
     fn build_all(
@@ -80,7 +91,7 @@ impl Builder for PseudoxmlBuilder {
                     .map_err(|e| {
                         BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
                     })?;
-            self.build_doc(docname, &source, outdir)?;
+            self.build_doc_with_source_path(docname, &source, outdir, &src_path)?;
             result.written += 1;
         }
         Ok(result)
@@ -143,5 +154,31 @@ mod tests {
         assert_eq!(result.written, 2);
         assert!(outdir.join("index.pseudoxml").exists());
         assert!(outdir.join("other.pseudoxml").exists());
+    }
+
+    #[test]
+    fn build_all_writes_the_absolute_source_path() {
+        let src = TempDir::new().unwrap();
+        let outdir = TempDir::new().unwrap();
+        std::fs::write(src.path().join("index.rst"), "Index\n=====\n\nBody.\n").unwrap();
+        let config = crate::config::SphinxConfig::new_defaults();
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let env = crate::environment::BuildEnvironment::new(
+            config,
+            project,
+            src.path(),
+            outdir.path(),
+        );
+
+        PseudoxmlBuilder::new()
+            .build_all(src.path(), outdir.path(), &env)
+            .unwrap();
+
+        let output = std::fs::read_to_string(outdir.path().join("index.pseudoxml")).unwrap();
+        assert!(output.contains(&format!(
+            "source=\"{}\"",
+            src.path().join("index.rst").display()
+        )));
     }
 }

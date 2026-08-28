@@ -525,6 +525,17 @@ impl Doctree {
         tree
     }
 
+    /// Replace the root document's source attribute.
+    pub fn set_source(&mut self, source: impl Into<String>) {
+        if let NodeKind::Document {
+            source: document_source,
+            ..
+        } = &mut self.node_mut(self.root).kind
+        {
+            *document_source = source.into();
+        }
+    }
+
     /// Identifier of the root `<document>` node.
     pub fn root(&self) -> NodeId {
         self.root

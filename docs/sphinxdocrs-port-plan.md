@@ -1548,11 +1548,10 @@ the fixture cases, not merely a refreshed snapshot.
   the `.xml`/`.pseudoxml` outputs still have accepted deviations, but the
   byte-diff offset moved substantially later (title/underline/comment/ids
   sections now match); remaining known gaps: `index.txt` toctree/paragraph
-  body-content formatting, and the XML/pseudo-XML `source="..."` attribute
-  (Rust emits the bare docname; Python emits the real source file path) —
-  fixing the latter needs a `Builder::build_doc` signature change to thread
-  a real path through, not attempted here due to the blast radius across all
-  ~12 builder implementations.
+  body-content formatting. XML and pseudo-XML `build_all` now replace the
+  parser's docname source with the real source file path, matching Python's
+  root `source="..."` metadata; direct single-document `build_doc` calls retain
+  their existing docname-based behavior.
 - Verified via `cargo test -p docutilsrs --lib` (51 passed) and
   `cargo test -p sphinxdocrs --lib`/`--test builders`/`--test application`
   (all green), plus a regenerated and determinism-reconfirmed

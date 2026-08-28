@@ -74,6 +74,10 @@ fn build_all_over_a_multi_document_project_produces_well_formed_xml() {
 
     let index_xml = std::fs::read_to_string(out.path().join("index.xml")).unwrap();
     assert_well_formed(&index_xml);
+    assert!(index_xml.contains(&format!(
+        "source=\"{}\"",
+        src.path().join("index.rst").display()
+    )));
     // '&' and '<' in the source text must come through XML-escaped.
     assert!(index_xml.contains("Homepage &amp; &lt;content&gt;."));
 

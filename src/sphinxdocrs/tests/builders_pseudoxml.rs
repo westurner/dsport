@@ -64,7 +64,13 @@ fn build_all_over_a_multi_document_project_with_subdirectory() {
         .build_all(src.path(), out.path(), &env)
         .unwrap();
     assert_eq!(result.written, 2);
-    assert!(out.path().join("index.pseudoxml").exists());
+    let index_pseudoxml = out.path().join("index.pseudoxml");
+    assert!(index_pseudoxml.exists());
+    let output = std::fs::read_to_string(index_pseudoxml).unwrap();
+    assert!(output.contains(&format!(
+        "source=\"{}\"",
+        src.path().join("index.rst").display()
+    )));
     assert!(out.path().join("guide/intro.pseudoxml").exists());
 }
 

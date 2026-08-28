@@ -1461,6 +1461,9 @@ explicitly documented renderer/theme provenance deviations.
 - Passed the active HTML-family path style into local TOC rendering, preserving
   directory targets for dirhtml pages instead of emitting flat `.html` links;
   `theme_render` now covers this nested navigation contract directly.
+- Preserved `html-page-context` listener mutations for the synthetic search page
+  before rendering `search.html`, matching the normal page event path and
+  covering the behavior with an extension-backed integration test.
 - Added structured `objects.inv` comparison in `parity.rs`. Inventory rows
   now include virtual standard labels (`genindex`, `modindex`, `py-modindex`,
   and `search`), standard-document entries, target URIs, priorities, and

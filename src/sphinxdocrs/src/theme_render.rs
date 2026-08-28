@@ -868,11 +868,14 @@ impl ThemeRenderer {
                     &[EventArg::HtmlPageContext {
                         pagename: "search".to_string(),
                         templatename: "search.html".to_string(),
-                        context,
+                        context: context.clone(),
                         doctree: None,
                     }],
                 )
                 .map_err(|e| e.0)?;
+            for (key, value) in context.borrow().iter() {
+                ctx.insert(key.clone(), value.clone());
+            }
         }
 
         self.env

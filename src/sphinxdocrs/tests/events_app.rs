@@ -560,6 +560,57 @@ def setup(app):
     app.build().unwrap();
 }
 
+#[test]
+fn html_page_context_search_mutation_reaches_rendered_page() {
+    let pydir = TempDir::new().unwrap();
+    std::fs::write(
+        pydir.path().join("h11_search_context_ext.py"),
+        r#"
+def on_page_context(app, pagename, templatename, context, doctree):
+    if pagename == "search":
+        context["metatags"] = '<meta name="h11-search-marker" content="search-context-marker" />'
+
+
+def setup(app):
+    app.connect("html-page-context", on_page_context)
+    return {"version": "0.1", "parallel_read_safe": True}
+"#,
+    )
+    .unwrap();
+
+    pyo3::Python::attach(|py| {
+        let sys = py.import("sys").unwrap();
+        let path = sys.getattr("path").unwrap();
+        path.call_method1("insert", (0, pydir.path().to_str().unwrap()))
+            .unwrap();
+    });
+
+    let src = TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "Welcome\n=======\n\nHomepage.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join("conf.py"),
+        "extensions = ['h11_search_context_ext']\n",
+    )
+    .unwrap();
+
+    let out = TempDir::new().unwrap();
+    let dt = TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+
+    app.build().unwrap();
+
+    let html = std::fs::read_to_string(out.path().join("search.html")).unwrap();
+    assert!(
+        html.contains("search-context-marker"),
+        "html-page-context mutation missing from rendered search page:\n{html}"
+    );
+}
+
 /// `doctree-read`'s `doctree` argument (`_Doctree`/`docutilsrs.Doctree`):
 /// regression test for the `AttributeError: 'str' object has no attribute
 /// 'findall'` crash confirmed by a real `make otherdocs-sphinx-rs` run of

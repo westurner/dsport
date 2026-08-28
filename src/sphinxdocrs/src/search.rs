@@ -237,6 +237,25 @@ fn node_text(tree: &Doctree, id: NodeId) -> String {
     out
 }
 
+fn sort_json_keys(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(object) => {
+            let mut entries: Vec<_> = object.into_iter().collect();
+            entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+            serde_json::Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key, sort_json_keys(value)))
+                    .collect(),
+            )
+        }
+        serde_json::Value::Array(values) => {
+            serde_json::Value::Array(values.into_iter().map(sort_json_keys).collect())
+        }
+        value => value,
+    }
+}
+
 /// Walk a doctree and gather the words that feed the search index.
 fn collect_words(tree: &Doctree) -> WordStore {
     let mut title = String::new();
@@ -627,7 +646,9 @@ impl SearchIndex {
     ///
     /// The JS runtime expects `Search.setIndex(<json>)`.
     pub fn to_js(&self) -> String {
-        format!("Search.setIndex({})", self.to_json())
+        let json = serde_json::to_string(&sort_json_keys(self.to_json()))
+            .expect("search index JSON serialization cannot fail");
+        format!("Search.setIndex({json})")
     }
 
     /// Build a search index by feeding every `.rst` document under `srcdir`
@@ -792,6 +813,38 @@ The widget handles rendering and layout.\n";
         let inner = &js["Search.setIndex(".len()..js.len() - 1];
         let v: serde_json::Value = serde_json::from_str(inner).unwrap();
         assert!(v["docnames"].is_array());
+    }
+
+    #[test]
+    fn to_js_sorts_nested_keys_and_preserves_array_order() {
+        let mut object = serde_json::Map::new();
+        object.insert(
+            "z".to_string(),
+            serde_json::json!({"nested-z": 1, "nested-a": 2}),
+        );
+        object.insert("a".to_string(), serde_json::json!(["first", "second"]));
+
+        let json = serde_json::to_string(&sort_json_keys(serde_json::Value::Object(object)))
+            .unwrap();
+        assert_eq!(
+            json,
+            r#"{"a":["first","second"],"z":{"nested-a":2,"nested-z":1}}"#
+        );
+
+        let first = parse_rst_with_source("First\n=====\n", "z");
+        let second = parse_rst_with_source("Second\n======\n", "a");
+        let mut idx = SearchIndex::new();
+        idx.feed("z", &first);
+        idx.feed("a", &second);
+        let js = idx.to_js();
+        let payload = &js["Search.setIndex(".len()..js.len() - 1];
+        assert!(!payload.contains(' '));
+        assert!(payload.starts_with(r#"{"alltitles""#));
+        assert!(payload.find(r#""alltitles"#).unwrap() < payload.find(r#""docnames"#).unwrap());
+        assert!(payload.find(r#""docnames"#).unwrap() < payload.find(r#""envversion"#).unwrap());
+        assert!(payload.contains(r#""envversion":{"sphinx":66,"sphinx.domains.c":3"#));
+        let value: serde_json::Value = serde_json::from_str(payload).unwrap();
+        assert_eq!(value["docnames"], serde_json::json!(["a", "z"]));
     }
 
     #[test]

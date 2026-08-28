@@ -1464,6 +1464,11 @@ explicitly documented renderer/theme provenance deviations.
 - Preserved `html-page-context` listener mutations for the synthetic search page
   before rendering `search.html`, matching the normal page event path and
   covering the behavior with an extension-backed integration test.
+- Matched Sphinx's compact, recursively key-sorted `searchindex.js` JSON
+  serialization while preserving array order; focused search tests now cover
+  nested key ordering and the `Search.setIndex(...)` wrapper. The real-builder
+  parity matrix still reports a separate semantic term gap (`guid`), so this
+  closes serialization order without claiming complete search-index parity.
 - Added structured `objects.inv` comparison in `parity.rs`. Inventory rows
   now include virtual standard labels (`genindex`, `modindex`, `py-modindex`,
   and `search`), standard-document entries, target URIs, priorities, and

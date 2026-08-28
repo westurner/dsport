@@ -42,6 +42,7 @@
 //! listener needs reentrancy yet.
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::rc::Rc;
 
@@ -103,6 +104,14 @@ pub enum EventArg {
     /// same accepted-deviation shape as `source-read`'s `StrList` arg (see
     /// this module's other doc comments).
     Doctree(Doctree),
+    /// The structured payload for `html-page-context`. The context is shared
+    /// so a Python listener can update values before the theme renders.
+    HtmlPageContext {
+        pagename: String,
+        templatename: String,
+        context: Rc<RefCell<BTreeMap<String, serde_json::Value>>>,
+        doctree: Option<Doctree>,
+    },
 }
 
 /// Boxed listener callback. Not `Send`/`Sync`: listeners may wrap Python

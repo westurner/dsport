@@ -51,7 +51,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyTuple};
+use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
 
 use docutilsrs::python::PyDoctree;
 
@@ -85,6 +85,45 @@ fn event_arg_to_py(py: Python<'_>, arg: &EventArg) -> PyResult<Py<PyAny>> {
         EventArg::Str(s) => s.into_pyobject(py)?.into_any().unbind(),
         EventArg::StrList(items) => PyList::new(py, items)?.into_any().unbind(),
         EventArg::Doctree(tree) => Py::new(py, PyDoctree::new(tree.clone()))?.into_any(),
+        EventArg::HtmlPageContext { .. } => {
+            return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                "html-page-context must be expanded by the event bridge",
+            ));
+        }
+    })
+}
+
+fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
+    Ok(match value {
+        serde_json::Value::Null => py.None(),
+        serde_json::Value::Bool(value) => PyBool::new(py, *value).to_owned().into_any().unbind(),
+        serde_json::Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                value.into_pyobject(py)?.into_any().unbind()
+            } else {
+                value
+                    .as_f64()
+                    .unwrap_or_default()
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
+            }
+        }
+        serde_json::Value::String(value) => value.into_pyobject(py)?.into_any().unbind(),
+        serde_json::Value::Array(values) => {
+            let values = values
+                .iter()
+                .map(|value| json_value_to_py(py, value))
+                .collect::<PyResult<Vec<_>>>()?;
+            PyList::new(py, values)?.into_any().unbind()
+        }
+        serde_json::Value::Object(values) => {
+            let dict = PyDict::new(py);
+            for (key, value) in values {
+                dict.set_item(key, json_value_to_py(py, value)?)?;
+            }
+            dict.into_any().unbind()
+        }
     })
 }
 
@@ -798,6 +837,10 @@ impl PyAppFacade {
                     .map_err(|e| py_err_to_event_error(py, &event_name, &callback, e))?;
                 let mut call_args: Vec<Py<PyAny>> = Vec::with_capacity(args.len() + 2);
                 call_args.push(facade.into_any());
+                let mut page_context: Option<(
+                    Py<PyDict>,
+                    Rc<RefCell<std::collections::BTreeMap<String, serde_json::Value>>>,
+                )> = None;
                 // Mirrors upstream `emit("config-inited", self, self.config)`:
                 // this event's second positional argument is always the
                 // live `Config` object, never one of the native pipeline's
@@ -812,9 +855,68 @@ impl PyAppFacade {
                     call_args.push(config_facade.into_any());
                 }
                 for a in args {
-                    let v = event_arg_to_py(py, a)
-                        .map_err(|e| py_err_to_event_error(py, &event_name, &callback, e))?;
-                    call_args.push(v);
+                    if let EventArg::HtmlPageContext {
+                        pagename,
+                        templatename,
+                        context,
+                        doctree,
+                    } = a
+                    {
+                        call_args.push(
+                            pagename
+                                .into_pyobject(py)
+                                .map_err(|e| {
+                                    py_err_to_event_error(
+                                        py,
+                                        &event_name,
+                                        &callback,
+                                        e.into(),
+                                    )
+                                })?
+                                .into_any()
+                                .unbind(),
+                        );
+                        call_args.push(
+                            templatename
+                                .into_pyobject(py)
+                                .map_err(|e| {
+                                    py_err_to_event_error(
+                                        py,
+                                        &event_name,
+                                        &callback,
+                                        e.into(),
+                                    )
+                                })?
+                                .into_any()
+                                .unbind(),
+                        );
+                        let context_dict = PyDict::new(py);
+                        for (key, value) in context.borrow().iter() {
+                            context_dict
+                                .set_item(key, json_value_to_py(py, value).map_err(|e| {
+                                    py_err_to_event_error(py, &event_name, &callback, e)
+                                })?)
+                                .map_err(|e| {
+                                    py_err_to_event_error(py, &event_name, &callback, e)
+                                })?;
+                        }
+                        let context_obj = context_dict.unbind();
+                        call_args.push(context_obj.clone_ref(py).into_any());
+                        call_args.push(match doctree {
+                            Some(tree) => Py::new(py, PyDoctree::new(tree.clone()))
+                                .map_err(|e| {
+                                    py_err_to_event_error(py, &event_name, &callback, e)
+                                })?
+                                .into_any(),
+                            None => py.None(),
+                        });
+                        page_context = Some((context_obj, context.clone()));
+                    } else {
+                        let v = event_arg_to_py(py, a).map_err(|e| {
+                            py_err_to_event_error(py, &event_name, &callback, e)
+                        })?;
+                        call_args.push(v);
+                    }
                 }
                 let tuple = PyTuple::new(py, &call_args)
                     .map_err(|e| py_err_to_event_error(py, &event_name, &callback, e))?;
@@ -822,7 +924,20 @@ impl PyAppFacade {
                     .bind(py)
                     .call1(tuple)
                     .map(|_| ())
-                    .map_err(|e| py_err_to_event_error(py, &event_name, &callback, e))
+                    .map_err(|e| py_err_to_event_error(py, &event_name, &callback, e))?;
+                if let Some((context_obj, native_context)) = page_context {
+                    let context_dict = context_obj.bind(py);
+                    let mut updated = native_context.borrow_mut();
+                    for (key, value) in context_dict.iter() {
+                        let Ok(key) = key.extract::<String>() else {
+                            continue;
+                        };
+                        if let Ok(value) = value.extract::<String>() {
+                            updated.insert(key, serde_json::Value::String(value));
+                        }
+                    }
+                }
+                Ok(())
             })
         });
         Ok(id)

@@ -268,6 +268,7 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
         for key in &[
             "project",
             "author",
+            "copyright",
             "version",
             "release",
             "language",
@@ -275,6 +276,8 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
             "root_doc",
             "source_encoding",
             "html_theme",
+            "html_title",
+            "html_short_title",
         ] {
             if let Ok(Some(v)) = globals.get_item(*key) {
                 if let Some(val) = py_to_val(&v) {
@@ -471,6 +474,17 @@ pub fn conf_py_setup(path: &Path) -> PyResult<Option<Py<PyAny>>> {
 fn py_to_configval(v: &pyo3::Bound<'_, pyo3::PyAny>) -> Option<ConfigVal> {
     if v.is_none() {
         Some(ConfigVal::Null)
+    } else if let (Ok(title), Ok(url)) = (
+        v.getattr("title").and_then(|value| value.extract::<String>()),
+        v.getattr("url").and_then(|value| value.extract::<String>()),
+    ) {
+        // Sphinx extensions commonly put named tuples such as
+        // pallets_sphinx_themes.ProjectLink in html_context. Preserve their
+        // attribute shape so Jinja templates can use item.title/item.url.
+        Some(ConfigVal::Map(vec![
+            ("title".to_string(), ConfigVal::Str(title)),
+            ("url".to_string(), ConfigVal::Str(url)),
+        ]))
     } else if let Ok(b) = v.extract::<bool>() {
         Some(ConfigVal::Bool(b))
     } else if let Ok(i) = v.extract::<i64>() {
@@ -735,6 +749,9 @@ pub struct SphinxConfig {
     options: HashMap<String, ConfigOpt>,
     /// The `extensions` list, extracted from `raw_config` at construction.
     pub extensions: Vec<String>,
+    /// HTML themes registered by loaded extensions. This is runtime state,
+    /// not a conf.py option, and is populated by `SphinxApp` after setup.
+    registered_themes: Vec<(String, std::path::PathBuf)>,
 }
 
 impl SphinxConfig {
@@ -745,6 +762,7 @@ impl SphinxConfig {
             overrides: HashMap::new(),
             options: HashMap::new(),
             extensions: Vec::new(),
+            registered_themes: Vec::new(),
         };
         cfg.register_builtin_options();
         cfg
@@ -767,9 +785,23 @@ impl SphinxConfig {
             overrides,
             options: HashMap::new(),
             extensions,
+            registered_themes: Vec::new(),
         };
         cfg.register_builtin_options();
         cfg
+    }
+
+    /// Install HTML themes registered through `app.add_html_theme()`.
+    pub(crate) fn set_registered_themes(
+        &mut self,
+        themes: Vec<(String, std::path::PathBuf)>,
+    ) {
+        self.registered_themes = themes;
+    }
+
+    /// Return HTML themes registered by extensions, in registration order.
+    pub(crate) fn registered_themes(&self) -> &[(String, std::path::PathBuf)] {
+        &self.registered_themes
     }
 
     // ── option registry ───────────────────────────────────────────────────────

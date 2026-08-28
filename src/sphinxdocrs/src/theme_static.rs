@@ -44,6 +44,10 @@ struct ResolvedTheme {
     layers: Vec<ThemeLayer>,
     /// Merged `theme_<option>` → value map (child overrides parent).
     options: BTreeMap<String, String>,
+    /// Stylesheets declared by the active theme.
+    stylesheets: Vec<String>,
+    /// Default sidebar templates declared by the active theme.
+    sidebars: Vec<String>,
     /// Directory holding the minified stemmer JS (`sphinx/search/minified-js`).
     search_js_dir: String,
     /// Pygments stylesheet text from the PyO3 fallback (empty when unused).
@@ -69,7 +73,10 @@ struct ResolvedTheme {
 const RESOLVE_PY: &str = r#"
 import os, json, configparser
 
-def _locate_theme_dir(name, theme_path_dirs):
+def _locate_theme_dir(name, theme_path_dirs, registered_themes):
+    for registered_name, registered_path in registered_themes:
+        if registered_name == name and os.path.isdir(registered_path):
+            return registered_path
     # `html_theme_path` — project-local theme directories (e.g. sphinx/doc's
     # `_themes/sphinx13`) take priority, matching `Theme.load_extra_theme`'s
     # `html_theme_path` handling: a project can shadow a builtin theme name.
@@ -98,6 +105,8 @@ def _locate_theme_dir(name, theme_path_dirs):
 def _parse_conf(theme_dir):
     inherit = None
     options = {}
+    sidebars = None
+    stylesheets = []
     conf = os.path.join(theme_dir, 'theme.conf')
     toml = os.path.join(theme_dir, 'theme.toml')
     if os.path.isfile(conf):
@@ -105,6 +114,10 @@ def _parse_conf(theme_dir):
         cp.read(conf)
         if cp.has_option('theme', 'inherit'):
             inherit = cp.get('theme', 'inherit')
+        if cp.has_option('theme', 'sidebars'):
+            sidebars = [item.strip() for item in cp.get('theme', 'sidebars').split(',') if item.strip()]
+        if cp.has_option('theme', 'stylesheet'):
+            stylesheets = [item.strip() for item in cp.get('theme', 'stylesheet').split(',') if item.strip()]
         if cp.has_section('options'):
             for k, v in cp.items('options'):
                 options[k] = v
@@ -116,6 +129,12 @@ def _parse_conf(theme_dir):
                 data = tomllib.load(f)
             theme = data.get('theme', {})
             inherit = theme.get('inherit')
+            sidebars = theme.get('sidebars')
+            if isinstance(sidebars, str):
+                sidebars = [item.strip() for item in sidebars.split(',') if item.strip()]
+            stylesheets = theme.get('stylesheets', [])
+            if isinstance(stylesheets, str):
+                stylesheets = [item.strip() for item in stylesheets.split(',') if item.strip()]
             if isinstance(inherit, str) and inherit == 'none':
                 inherit = None
             options = {str(k): str(v) for k, v in data.get('options', {}).items()}
@@ -128,22 +147,28 @@ def _parse_conf(theme_dir):
         pyg = None
     if inherit == 'none':
         inherit = None
-    return inherit, options, pyg
+    return inherit, options, pyg, sidebars, stylesheets
 
-def resolve(theme_name, theme_path_dirs):
+def resolve(theme_name, theme_path_dirs, registered_themes):
     chain = []
     seen = set()
     name = theme_name
     pygments_style = None
+    sidebars = []
+    stylesheets = []
     while name and name not in seen:
         seen.add(name)
-        d = _locate_theme_dir(name, theme_path_dirs)
+        d = _locate_theme_dir(name, theme_path_dirs, registered_themes)
         if not d:
             break
-        inherit, options, pyg = _parse_conf(d)
+        inherit, options, pyg, declared_sidebars, declared_stylesheets = _parse_conf(d)
         if pyg and not pygments_style:
             pygments_style = pyg
         chain.append({'static': os.path.join(d, 'static'), 'options': options, 'dir': d})
+        if not sidebars and declared_sidebars:
+            sidebars = declared_sidebars
+        if not stylesheets and declared_stylesheets:
+            stylesheets = declared_stylesheets
         name = inherit
     chain.reverse()  # base-first
     merged = {}
@@ -194,6 +219,8 @@ def resolve(theme_name, theme_path_dirs):
         'static_dirs': static_dirs,
         'template_dirs': template_dirs,
         'options': {f'theme_{k}': v for k, v in merged.items()},
+        'sidebars': sidebars,
+        'stylesheets': stylesheets,
         'search_js_dir': search_js,
         'pygments_css': pyg_css,
         'pygments_style': pygments_style or 'default',
@@ -207,7 +234,11 @@ def resolve(theme_name, theme_path_dirs):
 /// `html_theme_path` config value, searched before builtin/entry-point
 /// themes. Returns `None` if Python or Sphinx is unavailable (build
 /// proceeds without theme assets).
-fn resolve_theme(theme_name: &str, theme_path_dirs: &[String]) -> Option<ResolvedTheme> {
+fn resolve_theme(
+    theme_name: &str,
+    theme_path_dirs: &[String],
+    registered_themes: &[(String, std::path::PathBuf)],
+) -> Option<ResolvedTheme> {
     Python::attach(|py| -> PyResult<ResolvedTheme> {
         let globals = PyDict::new(py);
         py.run(
@@ -216,7 +247,11 @@ fn resolve_theme(theme_name: &str, theme_path_dirs: &[String]) -> Option<Resolve
             None,
         )?;
         let resolve = globals.get_item("resolve")?.unwrap();
-        let result = resolve.call1((theme_name, theme_path_dirs.to_vec()))?;
+        let registered: Vec<(String, String)> = registered_themes
+            .iter()
+            .map(|(name, path)| (name.clone(), path.to_string_lossy().into_owned()))
+            .collect();
+        let result = resolve.call1((theme_name, theme_path_dirs.to_vec(), registered))?;
         let dict = result.cast::<PyDict>()?;
 
         let static_dirs: Vec<String> = dict
@@ -231,6 +266,16 @@ fn resolve_theme(theme_name: &str, theme_path_dirs: &[String]) -> Option<Resolve
             .unwrap_or_default();
         let options: BTreeMap<String, String> = dict
             .get_item("options")?
+            .map(|v| v.extract())
+            .transpose()?
+            .unwrap_or_default();
+        let sidebars: Vec<String> = dict
+            .get_item("sidebars")?
+            .map(|v| v.extract())
+            .transpose()?
+            .unwrap_or_default();
+        let stylesheets: Vec<String> = dict
+            .get_item("stylesheets")?
             .map(|v| v.extract())
             .transpose()?
             .unwrap_or_default();
@@ -266,6 +311,8 @@ fn resolve_theme(theme_name: &str, theme_path_dirs: &[String]) -> Option<Resolve
                 .map(|static_dir| ThemeLayer { static_dir })
                 .collect(),
             options,
+            sidebars,
+            stylesheets,
             search_js_dir,
             pygments_css,
             pygments_style,
@@ -289,9 +336,15 @@ pub fn resolve_theme_templates(
     theme_name: &str,
     confdir: &Path,
     theme_path: &[String],
-) -> Option<(Vec<std::path::PathBuf>, BTreeMap<String, String>)> {
+    registered_themes: &[(String, std::path::PathBuf)],
+) -> Option<(
+    Vec<std::path::PathBuf>,
+    BTreeMap<String, String>,
+    Vec<String>,
+    Vec<String>,
+)> {
     let theme_path_dirs = resolve_theme_path_dirs(confdir, theme_path);
-    let theme = resolve_theme(theme_name, &theme_path_dirs)?;
+    let theme = resolve_theme(theme_name, &theme_path_dirs, registered_themes)?;
     if theme.template_dirs.is_empty() {
         return None;
     }
@@ -302,6 +355,8 @@ pub fn resolve_theme_templates(
             .map(std::path::PathBuf::from)
             .collect(),
         theme.options,
+        theme.sidebars,
+        theme.stylesheets,
     ))
 }
 
@@ -397,7 +452,12 @@ pub fn copy_theme_static_files(
     outdir: &Path,
     confdir: &Path,
 ) -> std::io::Result<()> {
-    copy_theme_static_files_for_builder(config, outdir, confdir, "html")
+    copy_theme_static_files_for_builder(
+        config,
+        outdir,
+        confdir,
+        "html",
+    )
 }
 
 /// Copy theme assets using the output metadata for a specific HTML-family
@@ -412,7 +472,7 @@ pub fn copy_theme_static_files_for_builder(
 ) -> std::io::Result<()> {
     let theme_name = config.html_theme();
     let theme_path_dirs = resolve_theme_path_dirs(confdir, &config.html_theme_path());
-    let Some(theme) = resolve_theme(&theme_name, &theme_path_dirs) else {
+    let Some(theme) = resolve_theme(&theme_name, &theme_path_dirs, config.registered_themes()) else {
         // No Python/Sphinx — skip theme assets silently.
         return Ok(());
     };

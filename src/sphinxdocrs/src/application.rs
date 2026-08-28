@@ -390,6 +390,18 @@ impl SphinxApp {
         for ext_name in app.config.extensions() {
             app.load_extension(&ext_name)?;
         }
+        let registered_themes: Vec<(String, PathBuf)> = app
+            .registry
+            .borrow()
+            .html_themes
+            .iter()
+            .map(|(name, path)| (name.clone(), path.clone()))
+            .collect();
+        app.config.set_registered_themes(registered_themes.clone());
+        app.env
+            .borrow_mut()
+            .config
+            .set_registered_themes(registered_themes);
         app.verify_needs_extensions()?;
 
         app.events.borrow_mut().emit("config-inited", &[])?;

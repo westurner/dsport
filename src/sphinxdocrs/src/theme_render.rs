@@ -44,8 +44,8 @@
 //!   themselves — a registered file renders correctly only when it
 //!   already lands there through `html_static_path` or the active theme's
 //!   own static files.
-//! - `meta`/`metatags` (per-page docinfo/HTML `<meta>` tags) are not
-//!   modeled; both are always empty.
+//! - `meta` (per-page docinfo) is not modeled. The default docutils viewport
+//!   metatag is supplied only when the active theme does not declare one.
 //! - `sphinx_version` reports this crate's own version, not upstream
 //!   Sphinx's, since there is no bundled Python Sphinx version to report in
 //!   a pure-Rust build.
@@ -56,8 +56,10 @@
 //!   in the vendored `minijinja` fork itself (`value::ops::add`), so every
 //!   theme benefits without any theme-side or call-site change here.
 
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use jinja2rs::Environment;
@@ -294,8 +296,13 @@ fn resource_pathto(state: &PageState, name: &str) -> String {
     if name.contains("://") {
         return name.to_string();
     }
+    let name = if name.starts_with("_static/") {
+        name.to_string()
+    } else {
+        format!("_static/{name}")
+    };
     let base_uri = state.current_target_uri();
-    let uri = relative_uri(&base_uri, name);
+    let uri = relative_uri(&base_uri, &name);
     if uri.is_empty() { "#".to_string() } else { uri }
 }
 
@@ -473,6 +480,9 @@ pub struct ThemeRenderer {
     /// page — mirrors `self.theme.sidebar_templates` (the classic `basic`
     /// theme's own default list; see the module accepted-deviation note).
     default_sidebars: Vec<String>,
+    /// The default docutils viewport tag, omitted when the resolved template
+    /// chain declares its own viewport tag.
+    default_metatags: String,
 }
 
 impl ThemeRenderer {
@@ -501,10 +511,12 @@ impl ThemeRenderer {
         path_style: PathStyle,
     ) -> Option<Self> {
         let theme_name = env.config.html_theme();
-        let (template_dirs, theme_conf_options) = crate::theme_static::resolve_theme_templates(
+        let (template_dirs, theme_conf_options, theme_sidebars, theme_stylesheets) =
+            crate::theme_static::resolve_theme_templates(
             &theme_name,
             &env.srcdir,
             &env.config.html_theme_path(),
+            env.config.registered_themes(),
         )?;
 
         // Mirrors upstream `BuiltinTemplateLoader.init`'s
@@ -559,8 +571,19 @@ impl ThemeRenderer {
         jinja_env.add_global("js_tag", Value::from_object(JsTagGlobal(state.clone())));
         jinja_env.add_global("css_tag", Value::from_object(CssTagGlobal(state.clone())));
 
-        let global_ctx =
-            build_global_context(env, outdir, &theme_conf_options, &toc_entries, path_style);
+        let global_ctx = build_global_context(
+            env,
+            outdir,
+            &theme_conf_options,
+            &theme_stylesheets,
+            &toc_entries,
+            path_style,
+        );
+        let default_metatags = if theme_declares_viewport(&template_dirs) {
+            String::new()
+        } else {
+            r#"<meta name="viewport" content="width=device-width, initial-scale=1" />"#.into()
+        };
 
         Some(Self {
             env: jinja_env,
@@ -568,12 +591,8 @@ impl ThemeRenderer {
             global_ctx,
             relations,
             html_sidebars: env.config.html_sidebars(),
-            default_sidebars: vec![
-                "localtoc.html".to_string(),
-                "relations.html".to_string(),
-                "sourcelink.html".to_string(),
-                "searchbox.html".to_string(),
-            ],
+            default_sidebars: theme_sidebars,
+            default_metatags,
         })
     }
 
@@ -588,6 +607,7 @@ impl ThemeRenderer {
         title: &str,
         body_html: &str,
         source_suffix: &str,
+        doctree: Option<&docutilsrs::doctree::Doctree>,
     ) -> Result<String, String> {
         *self.state.current_docname.lock().unwrap() = docname.to_string();
 
@@ -597,10 +617,7 @@ impl ThemeRenderer {
         ctx.insert("title".into(), title.into());
         ctx.insert("body".into(), body_html.into());
         ctx.insert("meta".into(), serde_json::Value::Null);
-        ctx.insert(
-            "metatags".into(),
-            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n".into(),
-        );
+        ctx.insert("metatags".into(), self.default_metatags.clone().into());
         ctx.insert("has_maths_elements".into(), false.into());
 
         let relation = self.relations.get(docname).cloned().unwrap_or_default();
@@ -656,7 +673,10 @@ impl ThemeRenderer {
         );
 
         let sourcename = if env.config.html_copy_source() {
-            format!("{docname}{source_suffix}")
+            format!(
+                "{docname}{source_suffix}{}",
+                env.config.html_sourcelink_suffix()
+            )
         } else {
             String::new()
         };
@@ -672,10 +692,26 @@ impl ThemeRenderer {
         // propagate as a render error (closing the former "listener errors
         // are swallowed" deviation — see `crate::app_events`'s module docs).
         if let Some(events) = env.events_handle() {
+            let context = Rc::new(RefCell::new(
+                ctx.iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect::<BTreeMap<_, _>>(),
+            ));
             events
                 .borrow_mut()
-                .emit("html-page-context", &[EventArg::Str(docname.to_string())])
+                .emit(
+                    "html-page-context",
+                    &[EventArg::HtmlPageContext {
+                        pagename: docname.to_string(),
+                        templatename: "page.html".to_string(),
+                        context: context.clone(),
+                        doctree: doctree.cloned(),
+                    }],
+                )
                 .map_err(|e| e.0)?;
+            for (key, value) in context.borrow().iter() {
+                ctx.insert(key.clone(), value.clone());
+            }
         }
 
         self.env
@@ -695,7 +731,7 @@ impl ThemeRenderer {
         ctx.insert("title".into(), "Search".into());
         ctx.insert("body".into(), "".into());
         ctx.insert("meta".into(), serde_json::Value::Null);
-        ctx.insert("metatags".into(), "".into());
+        ctx.insert("metatags".into(), self.default_metatags.clone().into());
         ctx.insert("has_maths_elements".into(), false.into());
         ctx.insert("next".into(), serde_json::Value::Null);
         ctx.insert("prev".into(), serde_json::Value::Null);
@@ -710,9 +746,22 @@ impl ThemeRenderer {
         );
 
         if let Some(events) = env.events_handle() {
+            let context = Rc::new(RefCell::new(
+                ctx.iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect::<BTreeMap<_, _>>(),
+            ));
             events
                 .borrow_mut()
-                .emit("html-page-context", &[EventArg::Str("search".to_string())])
+                .emit(
+                    "html-page-context",
+                    &[EventArg::HtmlPageContext {
+                        pagename: "search".to_string(),
+                        templatename: "search.html".to_string(),
+                        context,
+                        doctree: None,
+                    }],
+                )
                 .map_err(|e| e.0)?;
         }
 
@@ -722,6 +771,34 @@ impl ThemeRenderer {
             .render(to_minijinja_context(ctx))
             .map_err(|e| e.to_string())
     }
+}
+
+fn theme_declares_viewport(template_dirs: &[PathBuf]) -> bool {
+    fn directory_declares_viewport(dir: &Path) -> bool {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return false;
+        };
+        entries.flatten().any(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                return directory_declares_viewport(&path);
+            }
+            let is_template = path
+                .extension()
+                .is_some_and(|extension| extension == "html" || extension == "jinja");
+            is_template
+                && std::fs::read_to_string(path)
+                    .map(|contents| {
+                        contents.contains("set metatags")
+                            && contents.contains("name=\"viewport\"")
+                    })
+                    .unwrap_or(false)
+        })
+    }
+
+    template_dirs
+        .iter()
+        .any(|directory| directory_declares_viewport(directory))
 }
 
 /// Convert a `serde_json`-built context into a
@@ -752,6 +829,10 @@ fn to_minijinja_context(ctx: serde_json::Map<String, serde_json::Value>) -> Hash
                     .map(|items| items.iter().map(relation_link_value).collect::<Vec<_>>())
                     .unwrap_or_default(),
             ),
+            "project_links" => value
+                .as_array()
+                .map(|items| Value::from_iter(items.iter().map(project_link_value)))
+                .unwrap_or_else(|| Value::from_iter(std::iter::empty::<Value>())),
             _ => Value::from_serialize(&value),
         };
         out.insert(key, converted);
@@ -779,7 +860,23 @@ fn relation_link_value(value: &serde_json::Value) -> Value {
         };
         out.insert(k.clone(), converted);
     }
-    Value::from_serialize(&out)
+    Value::from_iter(out)
+}
+
+fn project_link_value(value: &serde_json::Value) -> Value {
+    let Some(obj) = value.as_object() else {
+        return Value::from_serialize(value);
+    };
+    let mut out = std::collections::BTreeMap::new();
+    for (key, value) in obj {
+        let converted = if key == "url" {
+            Value::from_safe_string(value.as_str().unwrap_or_default().to_string())
+        } else {
+            Value::from_serialize(value)
+        };
+        out.insert(key.clone(), converted);
+    }
+    Value::from_iter(out)
 }
 
 /// Build the context shared by every page of this build: theme options,
@@ -789,6 +886,7 @@ fn build_global_context(
     env: &BuildEnvironment,
     outdir: &Path,
     theme_conf_options: &std::collections::BTreeMap<String, String>,
+    theme_stylesheets: &[String],
     toc_entries: &[TocEntry],
     path_style: PathStyle,
 ) -> serde_json::Map<String, serde_json::Value> {
@@ -892,7 +990,7 @@ fn build_global_context(
     // `app.add_css_file`/`app.add_js_file` (H4c) that aren't already in
     // that discovered list (e.g. a name the extension expects
     // `html_static_path`/the active theme to have already copied in).
-    let (mut css_files, mut script_files) = discover_static_assets(outdir);
+    let (mut css_files, mut script_files) = discover_static_assets(outdir, theme_stylesheets);
     for css in &env.added_css_files {
         if !css_files.contains(&css.filename) {
             css_files.push(css.filename.clone());
@@ -935,6 +1033,8 @@ fn build_global_context(
 fn basename_or_url(path: &str) -> String {
     if is_url(path) {
         path.to_string()
+    } else if path.starts_with("_static/") {
+        path.to_string()
     } else {
         Path::new(path)
             .file_name()
@@ -946,12 +1046,12 @@ fn basename_or_url(path: &str) -> String {
 
 /// Scan `outdir/_static` for top-level `*.css`/`*.js` files (sorted for
 /// determinism). See the module accepted-deviation note.
-fn discover_static_assets(outdir: &Path) -> (Vec<String>, Vec<String>) {
+fn discover_static_assets(outdir: &Path, theme_stylesheets: &[String]) -> (Vec<String>, Vec<String>) {
     let static_dir = outdir.join("_static");
-    let mut css = Vec::new();
+    let mut available_css = HashSet::new();
     let mut js = Vec::new();
     let Ok(entries) = std::fs::read_dir(&static_dir) else {
-        return (css, js);
+        return (Vec::new(), js);
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -962,12 +1062,23 @@ fn discover_static_assets(outdir: &Path) -> (Vec<String>, Vec<String>) {
             continue;
         };
         if name.ends_with(".css") {
-            css.push(format!("_static/{name}"));
+            available_css.insert(name.to_string());
         } else if name.ends_with(".js") {
             js.push(format!("_static/{name}"));
         }
     }
-    css.sort_by_key(|name| (!name.ends_with("pygments.css"), name.clone()));
+    let mut css = Vec::new();
+    if available_css.contains("pygments.css") {
+        css.push("_static/pygments.css".to_string());
+    }
+    for stylesheet in theme_stylesheets {
+        if available_css.contains(stylesheet) {
+            let asset = format!("_static/{stylesheet}");
+            if !css.contains(&asset) {
+                css.push(asset);
+            }
+        }
+    }
     let js_order = [
         "documentation_options.js",
         "doctools.js",
@@ -1204,6 +1315,52 @@ mod tests {
         assert_ne!(global_html, local_html);
     }
 
+    #[test]
+    fn discover_static_assets_preserves_theme_stylesheet_order() {
+        let outdir = tempfile::TempDir::new().unwrap();
+        let static_dir = outdir.path().join("_static");
+        std::fs::create_dir_all(&static_dir).unwrap();
+        for name in ["alabaster.css", "basic.css", "pygments.css", "custom.css"] {
+            std::fs::write(static_dir.join(name), "/* css */").unwrap();
+        }
+
+        let (css_files, _) = discover_static_assets(
+            outdir.path(),
+            &["basic.css".into(), "alabaster.css".into()],
+        );
+
+        assert_eq!(
+            css_files,
+            vec![
+                "_static/pygments.css",
+                "_static/basic.css",
+                "_static/alabaster.css",
+            ]
+        );
+    }
+
+    #[test]
+    fn theme_declares_viewport_ignores_basic_template() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let basic_dir = temp_dir.path().join("basic");
+        let pocoo_dir = temp_dir.path().join("pocoo");
+        std::fs::create_dir_all(&basic_dir).unwrap();
+        std::fs::create_dir_all(&pocoo_dir).unwrap();
+        std::fs::write(
+            basic_dir.join("layout.html"),
+            "<meta name=\"viewport\" content=\"basic\">",
+        )
+        .unwrap();
+        std::fs::write(
+            pocoo_dir.join("layout.html"),
+            "{% set metatags %}<meta name=\"viewport\" content=\"theme\">{% endset %}",
+        )
+        .unwrap();
+
+        assert!(!theme_declares_viewport(&[basic_dir]));
+        assert!(theme_declares_viewport(&[pocoo_dir]));
+    }
+
     fn make_test_env(srcdir: &str, doctreedir: &str) -> crate::environment::BuildEnvironment {
         let config = crate::config::SphinxConfig::new_defaults();
         let project = crate::environment::EnvProject::new(srcdir, &[(".rst", "restructuredtext")]);
@@ -1231,7 +1388,14 @@ mod tests {
         });
 
         let outdir = Path::new("/tmp/theme-render-test-assets-outdir-does-not-exist");
-        let ctx = build_global_context(&env, outdir, &Default::default(), &[], PathStyle::Flat);
+        let ctx = build_global_context(
+            &env,
+            outdir,
+            &Default::default(),
+            &[],
+            &[],
+            PathStyle::Flat,
+        );
 
         let css_files: Vec<String> = ctx["css_files"]
             .as_array()
@@ -1268,7 +1432,7 @@ mod tests {
         );
         let outdir = Path::new("/tmp/theme-render-test-link-suffix-outdir-does-not-exist");
         for style in [PathStyle::Flat, PathStyle::Dir] {
-            let ctx = build_global_context(&env, outdir, &Default::default(), &[], style);
+            let ctx = build_global_context(&env, outdir, &Default::default(), &[], &[], style);
             assert_eq!(
                 ctx["link_suffix"], ".html",
                 "path_style {style:?} should report link_suffix = .html"
@@ -1298,6 +1462,7 @@ mod tests {
             &env,
             outdir.path(),
             &Default::default(),
+            &[],
             &[],
             PathStyle::Flat,
         );

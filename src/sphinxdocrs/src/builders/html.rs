@@ -130,7 +130,8 @@ impl HtmlBuilder {
         // Extract promoted document title from NodeKind::Document { title, .. }
         let title = match &tree.node(tree.root()).kind {
             NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
-            _ => docname.rsplit('/').next().unwrap_or(docname).to_owned(),
+            _ => first_title_text(tree)
+                .unwrap_or_else(|| docname.rsplit('/').next().unwrap_or(docname).to_owned()),
         };
         let body = html5(tree, &self.html5_options, &self.common_options);
         (title, body)
@@ -276,7 +277,14 @@ impl HtmlBuilder {
             .extension()
             .map(|e| format!(".{}", e.to_string_lossy()))
             .unwrap_or_else(|| ".rst".to_string());
-        let page = match renderer.render_page(env, docname, &title, &body, &source_suffix) {
+        let page = match renderer.render_page(
+            env,
+            docname,
+            &title,
+            &body,
+            &source_suffix,
+            Some(tree),
+        ) {
             Ok(html) => html,
             Err(e) => {
                 eprintln!(
@@ -449,6 +457,35 @@ impl HtmlBuilder {
     }
 }
 
+fn first_title_text(tree: &Doctree) -> Option<String> {
+    fn find_title(tree: &Doctree, node_id: usize) -> Option<String> {
+        if matches!(tree.node(node_id).kind, NodeKind::Title) {
+            let mut text = String::new();
+            collect_text(tree, node_id, &mut text);
+            if !text.is_empty() {
+                return Some(text);
+            }
+        }
+        for child in tree.node(node_id).children.iter().copied() {
+            if let Some(title) = find_title(tree, child) {
+                return Some(title);
+            }
+        }
+        None
+    }
+
+    fn collect_text(tree: &Doctree, node_id: usize, text: &mut String) {
+        if let NodeKind::Text(value) = &tree.node(node_id).kind {
+            text.push_str(value);
+        }
+        for child in tree.node(node_id).children.iter().copied() {
+            collect_text(tree, child, text);
+        }
+    }
+
+    find_title(tree, tree.root())
+}
+
 /// Page-level metadata passed to the theme when rendering a document.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PageMeta {
@@ -574,6 +611,7 @@ impl Builder for HtmlBuilder {
             &env.config.html_theme(),
             srcdir,
             &env.config.html_theme_path(),
+            env.config.registered_themes(),
         )
         .is_some()
         {

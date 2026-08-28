@@ -333,10 +333,11 @@ impl JsonBuilder {
                     serde_json::json!([])
                 },
             );
-            if let Some((_, theme_options)) = crate::theme_static::resolve_theme_templates(
+            if let Some((_, theme_options, _, _)) = crate::theme_static::resolve_theme_templates(
                 &env.config.html_theme(),
                 &env.srcdir,
                 &env.config.html_theme_path(),
+                env.config.registered_themes(),
             ) {
                 for (key, option) in theme_options {
                     fields.insert(key, option.into());

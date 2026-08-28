@@ -526,7 +526,7 @@ impl BuildEnvironment {
         let path = self.doc2path(docname);
         match self.parser_for_path(&path).as_str() {
             "restructuredtext" => Ok(docutilsrs::parse_rst_with_source(source, docname)),
-            "myst" => Ok(myst_md_rs::parse_to_doctree(
+            "myst" | "markdown" => Ok(myst_md_rs::parse_to_doctree(
                 source,
                 path.to_string_lossy().into_owned(),
                 &myst_md_rs::DoctreeOptions::default(),
@@ -851,8 +851,7 @@ impl BuildEnvironment {
                 && (trimmed.starts_with(".. highlight::")
                     || ["code", "code-block", "sourcecode"]
                         .iter()
-                        .any(|name| trimmed.starts_with(&format!(".. {name}::")))
-                    )
+                        .any(|name| trimmed.starts_with(&format!(".. {name}::"))))
             {
                 output.push(line.to_string());
                 continue;

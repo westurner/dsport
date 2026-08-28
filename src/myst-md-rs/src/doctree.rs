@@ -11,7 +11,7 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Par
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::{frontmatter, preprocess, role};
+use crate::{directives, frontmatter, preprocess, role};
 
 /// Configuration for the Markdown-to-doctree bridge.
 #[derive(Debug, Clone)]
@@ -352,6 +352,12 @@ fn start_tag(
                 CodeKind::Directive { name, .. } if is_admonition(name) => NodeKind::Admonition {
                     kind: admonition_kind(name),
                 },
+                CodeKind::Directive { name, argument } if name == "admonition" => {
+                    NodeKind::GenericAdmonition {
+                        title: argument.clone(),
+                        classes: String::new(),
+                    }
+                }
                 CodeKind::Directive { name, .. } if known_directive(name) => NodeKind::Container {
                     classes: format!("myst-directive {name}"),
                 },
@@ -532,10 +538,48 @@ fn end_tag(
                     let included = docutilsrs::parse_rst_with_source(&body, "<eval-rst>");
                     clone_children(&included, included.root(), tree, parent);
                 }
-                CodeKind::Directive { .. } => {
+                CodeKind::Directive { name, argument } => {
+                    let body_lines = body.lines().collect::<Vec<_>>();
+                    let spec = directive_spec(&name);
+                    let parsed = directives::parse_directive_text(&spec, &argument, &body_lines);
+                    let (directive_body, class) = match parsed {
+                        Ok(parsed) => (
+                            parsed.body.join("\n"),
+                            parsed.coerced_options.get("class").and_then(|value| {
+                                if let directives::OptionValue::Classes(classes) = value {
+                                    Some(classes.join(" "))
+                                } else {
+                                    None
+                                }
+                            }),
+                        ),
+                        Err(_) => {
+                            tree.set_kind(
+                                id,
+                                NodeKind::SystemMessage {
+                                    level: 2,
+                                    line: None,
+                                    ty: "ERROR",
+                                    ids: String::new(),
+                                    backrefs: String::new(),
+                                },
+                            );
+                            (body, None)
+                        }
+                    };
+                    if let Some(class) = class {
+                        match &mut tree.node_mut(id).kind {
+                            NodeKind::Container { classes } => {
+                                classes.push(' ');
+                                classes.push_str(&class);
+                            }
+                            NodeKind::GenericAdmonition { classes, .. } => *classes = class,
+                            _ => {}
+                        }
+                    }
                     let paragraph = tree.append(id, NodeKind::Paragraph);
-                    if !body.is_empty() {
-                        tree.append(paragraph, NodeKind::Text(body));
+                    if !directive_body.is_empty() {
+                        tree.append(paragraph, NodeKind::Text(directive_body));
                     }
                 }
                 CodeKind::Literal(_) => {
@@ -874,8 +918,23 @@ fn is_admonition(name: &str) -> bool {
 fn known_directive(name: &str) -> bool {
     matches!(
         name,
-        "container" | "code-block" | "raw" | "math" | "include" | "eval-rst"
+        "admonition" | "container" | "code-block" | "raw" | "math" | "include" | "eval-rst"
     ) || is_admonition(name)
+}
+
+fn directive_spec(name: &str) -> directives::DirectiveSpec {
+    let mut spec = directives::DirectiveSpec {
+        has_content: true,
+        ..directives::DirectiveSpec::default()
+    };
+    if name == "admonition" {
+        spec.required_arguments = 1;
+        spec.optional_arguments = 0;
+        spec.final_argument_whitespace = true;
+    }
+    spec.option_spec
+        .insert("class".into(), directives::OptionKind::Classes);
+    spec
 }
 
 fn admonition_kind(name: &str) -> &'static str {
@@ -952,6 +1011,39 @@ mod tests {
         assert!(
             !xml.contains("myst-directive"),
             "HTML wrapper must not be the bridge representation"
+        );
+    }
+
+    #[test]
+    fn lowers_directive_options_and_generic_admonition_title() {
+        let tree = parse_to_doctree(
+            "```{note}\n:class: important\n\nRead this.\n```\n\n```{admonition} A heading\n:class: custom\n\nBody.\n```\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        let xml = docutilsrs::to_xml(&tree);
+        assert!(xml.contains("<note>"));
+        assert!(xml.contains("Read this."));
+        assert!(
+            xml.contains("<admonition title=\"A heading\" classes=\"custom\">")
+                || xml.contains("<admonition classes=\"custom\" title=\"A heading\">")
+        );
+        assert!(xml.contains("Body."));
+        assert!(!xml.contains(":class:"));
+    }
+
+    #[test]
+    fn malformed_generic_admonition_preserves_a_diagnostic_node() {
+        let tree = parse_to_doctree(
+            "```{admonition}\nBody.\n```\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        assert!(
+            tree.node(tree.root())
+                .children
+                .iter()
+                .any(|id| matches!(tree.node(*id).kind, NodeKind::SystemMessage { .. }))
         );
     }
 

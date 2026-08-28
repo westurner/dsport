@@ -124,6 +124,8 @@ fn syntax_error_in_conf_is_config_error() {
 use rstest::*;
 use std::collections::HashMap;
 
+use docutilsrs::NodeKind;
+use sphinxdocrs::application::SphinxApp;
 use sphinxdocrs::config::{ConfigVal, RebuildKind, SphinxConfig, raw_config_from_conf_py};
 use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 
@@ -291,6 +293,65 @@ fn source_suffix_dict_md_selects_myst_and_renders_with_myst_md_rs() {
     assert!(env.found_docs().contains("index"));
     assert!(env.found_docs().contains("guide"));
     assert_eq!(env.doc2path("guide"), src.path().join("guide.md"));
+}
+
+#[test]
+fn source_suffix_dict_supports_rst_txt_and_markdown() {
+    let src = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("conf.py"),
+        "source_suffix = {'.rst': 'restructuredtext', '.txt': 'restructuredtext', '.md': 'markdown'}\nmaster_doc = 'index'\nproject = 'Mixed suffixes'\n",
+    )
+    .unwrap();
+    std::fs::write(src.path().join("index.rst"), "Index\n=====\n\nRST body.\n").unwrap();
+    std::fs::write(
+        src.path().join("reference.txt"),
+        "Reference\n=========\n\nTXT body.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join("guide.md"),
+        "# Markdown guide\n\nA **Markdown** body.\n",
+    )
+    .unwrap();
+
+    let output = tempfile::TempDir::new().unwrap();
+    let doctrees = tempfile::TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        src.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    assert_eq!(
+        env.parser_for_path(&src.path().join("index.rst")),
+        "restructuredtext"
+    );
+    assert_eq!(
+        env.parser_for_path(&src.path().join("reference.txt")),
+        "restructuredtext"
+    );
+    assert_eq!(
+        env.parser_for_path(&src.path().join("guide.md")),
+        "markdown"
+    );
+    assert_eq!(env.found_docs().len(), 3);
+    assert!(env.has_stored_doctree("reference"));
+    assert!(env.has_stored_doctree("guide"));
+    let guide = env.get_doctree("guide").unwrap();
+    assert!((0..guide.nodes_len()).any(|id| matches!(guide.node(id).kind, NodeKind::Strong)));
+    drop(env);
+
+    let result = app.build().unwrap();
+    assert_eq!(result.written, 3);
+    assert!(output.path().join("reference.html").exists());
+    assert!(output.path().join("guide.html").exists());
 }
 
 // ── filter ────────────────────────────────────────────────────────────────────

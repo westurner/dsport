@@ -1962,7 +1962,8 @@ The first bridge slice is implemented in dependency order:
 
 1. headings, paragraphs, emphasis/strong/literal, links, images, and code;
 2. front matter and source metadata;
-3. colon-fence directives and inline roles;
+3. colon-fence directives and inline roles, including directive option
+  lowering for `class`/`classes` and generic admonition titles;
 4. math and common MyST extensions;
 5. full directive registry validation, include options/errors, recursive
   substitution diagnostics, and reporter warning nodes. Table spans are
@@ -1981,7 +1982,11 @@ The environment read path now uses parser dispatch keyed by the configured
 suffix mapping:
 
 * `'.rst': 'restructuredtext'` continues to use `docutilsrs` RST parsing;
+* `'.txt': 'restructuredtext'` is supported alongside `.rst` and follows the
+  same discovery, persistence, and writer path;
 * `'.md': 'myst'` uses `myst-md-rs::parse_to_doctree`;
+* `'.md': 'markdown'` is accepted as the upstream parser alias and uses the
+  same native MyST bridge;
 * string `source_suffix = '.md'` retains Sphinx's default filetype
   `restructuredtext` semantics and therefore does not implicitly select
   MyST;
@@ -2016,10 +2021,14 @@ exists.
 
 #### H13.5 — Upstream parity and completion gate
 
-With H13.4 passing, the remaining work is to port representative MyST Sphinx fixtures and run the
-existing `test_sphinx` builder matrix against the native path. Keep tests
-that require Python-only extensions or Python object identity on the Python
-bridge, but record every native-path deviation in `docs/compat.md`.
+With H13.4 passing, the remaining work is to port representative MyST Sphinx
+fixtures and run the existing `test_sphinx` builder matrix against the native
+path. The native bridge now lowers directive options and generic admonition
+titles/classes, and preserves malformed generic-admonition diagnostics. The
+directive aggregate runner still needs to compare the remaining fixture cases
+against `parse_directive_text` rather than marking the whole group pending.
+Keep tests that require Python-only extensions or Python object identity on the
+Python bridge, but record every native-path deviation in `docs/compat.md`.
 
 H13 is complete when:
 

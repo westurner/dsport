@@ -529,15 +529,29 @@ impl Builder for HtmlBuilder {
     /// assert_eq!(b.get_target_uri("guide/intro"), "guide/intro.html");
     /// ```
     fn get_target_uri(&self, docname: &str) -> String {
+        let (docname, fragment) = docname
+            .split_once('#')
+            .map(|(name, fragment)| (name, Some(fragment)))
+            .unwrap_or((docname, None));
+        let append_fragment = |uri: String| {
+            fragment
+                .filter(|fragment| !fragment.is_empty())
+                .map(|fragment| format!("{uri}#{fragment}"))
+                .unwrap_or(uri)
+        };
         match self.path_style {
-            PathStyle::Flat => format!("{}{}", percent_encode_path(docname), self.link_suffix),
+            PathStyle::Flat => append_fragment(format!(
+                "{}{}",
+                percent_encode_path(docname),
+                self.link_suffix
+            )),
             PathStyle::Dir => {
                 if docname == "index" {
-                    String::new()
+                    append_fragment(String::new())
                 } else if let Some(stripped) = docname.strip_suffix("/index") {
-                    format!("{}/", percent_encode_path(stripped))
+                    append_fragment(format!("{}/", percent_encode_path(stripped)))
                 } else {
-                    format!("{}/", percent_encode_path(docname))
+                    append_fragment(format!("{}/", percent_encode_path(docname)))
                 }
             }
         }

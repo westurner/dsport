@@ -1476,6 +1476,9 @@ explicitly documented renderer/theme provenance deviations.
   target `#document-{docname}`, while unknown additional pages retain their
   standalone `.html` targets; focused unit and integration coverage exercise
   both paths.
+- Corrected themed `toc` semantics to use only the current document's section
+  headings, excluding document-level toctree children; section fragment links
+  are preserved through flat and dirhtml target URI generation.
 - Added structured `objects.inv` comparison in `parity.rs`. Inventory rows
   now include virtual standard labels (`genindex`, `modindex`, `py-modindex`,
   and `search`), standard-document entries, target URIs, priorities, and

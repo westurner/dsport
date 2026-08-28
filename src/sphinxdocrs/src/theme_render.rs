@@ -18,7 +18,7 @@
 //! | `pathto` | [`PathtoGlobal`] — `crate::util_osutil::relative_uri` between two `get_target_uri` results |
 //! | `hasdoc` | [`HasdocGlobal`] — `env.all_docs` / `use_index` / a fixed `has_search = true` |
 //! | `toctree()` | [`ToctreeGlobal`] — the *global* toctree from `crate::toctree::global_toctree_for_doc` (H5d), rendered fresh to HTML on every call with hrefs relative to the current page (see [`render_toc_html`]) |
-//! | `toc` (per-page) | rendered from `crate::toctree::get_toc_for(env, docname)` — the subtree *rooted at this document*, distinct from the global `toctree()` above |
+//! | `toc` (per-page) | rendered from the current document's section tree, distinct from the global `toctree()` above |
 //! | `sidebars` | [`resolve_sidebars`] — `html_sidebars` pattern-matched per docname via `crate::util_matching` (the same `fnmatch`-style glob translator `exclude_patterns`/`include_patterns` use), mirroring `StandaloneHTMLBuilder._get_sidebars`'s wildcard-precedence rule |
 //! | `parents`/`next`/`prev`/`rellinks` | [`collect_relations`] — a pre-order flatten of the global toctree, mirroring `BuildEnvironment.collect_relations` |
 //! | `theme_<option>` | merged `theme.conf`/`theme.toml` options + `html_theme_options` (config wins) |
@@ -26,12 +26,7 @@
 //! | `html-page-context` event | emitted per page via `BuildEnvironment::events_handle` (H4a), best-effort no-op when absent |
 //!
 //! **Accepted deviations** (see also `crate::toctree`'s own module doc):
-//! - `toc` is the subtree of the global toctree *rooted at the current
-//!   document* (H5d has no per-section/heading structure to draw a true
-//!   in-page heading TOC from, so this is document-granularity, not
-//!   section-granularity — still a real local/global distinction, just a
-//!   coarser one than upstream's), and `toctree()` ignores its
-//!   `maxdepth`/`collapse`/`includehidden` kwargs.
+//! - `toctree()` ignores its `maxdepth`/`collapse`/`includehidden` kwargs.
 //! - `css_files`/`script_files` are primarily discovered by scanning
 //!   `outdir/_static/` for top-level `*.css`/`*.js` files after static
 //!   assets are copied (every copied asset gets linked, in the order
@@ -419,6 +414,14 @@ fn render_toc_html_for_style(
     for entry in entries {
         let target_uri = target_uri(path_style, &entry.docname);
         let href = relative_uri(base_uri, &target_uri);
+        let href = if href.is_empty() {
+            target_uri
+                .split_once('#')
+                .map(|(_, fragment)| format!("#{fragment}"))
+                .unwrap_or(href)
+        } else {
+            href
+        };
         out.push_str(&format!(
             "<li class=\"toctree-l1\"><a href=\"{}\">{}</a>",
             html_escape_attr(&href),
@@ -436,6 +439,57 @@ fn render_toc_html_for_style(
     }
     out.push_str("</ul>\n");
     out
+}
+
+/// Extract the section-heading TOC for one document. Unlike the global
+/// toctree, this deliberately never follows document-level `.. toctree::`
+/// entries.
+fn local_toc_from_doctree(
+    doctree: Option<&docutilsrs::doctree::Doctree>,
+    docname: &str,
+) -> Vec<TocEntry> {
+    fn text_content(tree: &docutilsrs::doctree::Doctree, id: docutilsrs::doctree::NodeId) -> String {
+        let node = tree.node(id);
+        match &node.kind {
+            docutilsrs::doctree::NodeKind::Text(text) => text.clone(),
+            _ => node
+                .children
+                .iter()
+                .map(|&child| text_content(tree, child))
+                .collect(),
+        }
+    }
+
+    fn sections(
+        tree: &docutilsrs::doctree::Doctree,
+        parent: docutilsrs::doctree::NodeId,
+        docname: &str,
+    ) -> Vec<TocEntry> {
+        tree.node(parent)
+            .children
+            .iter()
+            .filter_map(|&id| {
+                let node = tree.node(id);
+                let docutilsrs::doctree::NodeKind::Section { ids, .. } = &node.kind else {
+                    return None;
+                };
+                let title = node.children.iter().find_map(|&child| {
+                    let title_node = tree.node(child);
+                    matches!(title_node.kind, docutilsrs::doctree::NodeKind::Title)
+                        .then(|| text_content(tree, child))
+                })?;
+                Some(TocEntry {
+                    docname: format!("{docname}#{ids}"),
+                    title,
+                    children: sections(tree, id, docname),
+                })
+            })
+            .collect()
+    }
+
+    doctree
+        .map(|tree| sections(tree, tree.root(), docname))
+        .unwrap_or_default()
 }
 
 fn html_escape_text(s: &str) -> String {
@@ -774,10 +828,9 @@ impl ThemeRenderer {
         .collect();
         ctx.insert("parents".into(), parents.into());
 
-        let toc_entries_for_doc = toctree::get_toc_for(env, docname);
-        // Local TOC: the subtree rooted at *this* document (distinct from
-        // `toctree()`'s global tree — see the module accepted-deviation
-        // note on granularity).
+        let toc_entries_for_doc = local_toc_from_doctree(doctree, docname);
+        // Local TOC: section headings from this document only. The global
+        // `toctree()` remains backed by the environment's document tree.
         ctx.insert(
             "toc".into(),
             render_toc_html_for_style(
@@ -1258,6 +1311,7 @@ fn config_val_to_json(v: &crate::config::ConfigVal) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use docutilsrs::parse_rst_with_source;
 
     #[test]
     fn render_toc_html_nested() {
@@ -1318,6 +1372,42 @@ mod tests {
 
         assert!(html.contains("href=\"intro/\""), "got: {html}");
         assert!(!html.contains(".html"), "got: {html}");
+    }
+
+    #[test]
+    fn local_toc_ignores_document_level_toctree() {
+        let doctree = parse_rst_with_source(
+            ".. toctree::\n\n   guide/intro\n   guide/reference\n",
+            "index",
+        );
+
+        assert!(local_toc_from_doctree(Some(&doctree), "index").is_empty());
+        assert!(local_toc_from_doctree(None, "index").is_empty());
+    }
+
+    #[test]
+    fn local_toc_contains_ordered_nested_sections() {
+        let doctree = parse_rst_with_source(
+            "Guide\n=====\n\nFirst\n-----\n\nNested\n~~~~~~\n\nSecond\n------\n",
+            "guide",
+        );
+
+        let entries = local_toc_from_doctree(Some(&doctree), "guide");
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["First", "Second"]
+        );
+        assert_eq!(entries[0].children[0].title, "Nested");
+
+        let html = render_toc_html_for_style(&entries, "guide.html", PathStyle::Flat);
+        assert!(html.contains("href=\"#first\""), "got: {html}");
+        assert!(html.contains("href=\"#nested\""), "got: {html}");
+        assert!(html.contains("href=\"#second\""), "got: {html}");
+        assert!(html.find("First").unwrap() < html.find("Second").unwrap());
+        assert!(html.find("Nested").unwrap() > html.find("First").unwrap());
     }
 
     #[test]

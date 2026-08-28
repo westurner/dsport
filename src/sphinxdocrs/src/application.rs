@@ -1033,8 +1033,8 @@ mod tests {
     }
 
     #[test]
-    fn non_native_builder_epub() {
-        assert!(!is_native_builder("epub"));
+    fn native_builder_epub() {
+        assert!(is_native_builder("epub"));
     }
 
     #[test]
@@ -1201,7 +1201,7 @@ mod tests {
         // Bypass builder validation in ::new by using html then swapping.
         let mut app =
             SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
-        app.buildername = "epub".into();
+        app.buildername = "not-a-builder".into();
         let err = app.build().unwrap_err();
         assert!(matches!(err, AppError::UnknownBuilder(_)));
     }

@@ -291,7 +291,7 @@ fn build_html_multi_doc_project() {
     assert!(out.path().join("guide").join("intro.html").exists());
 }
 
-/// `build()` returns `AppError::UnknownBuilder` for non-native builders.
+/// `build()` returns `AppError::UnknownBuilder` for unregistered builders.
 #[test]
 fn build_unknown_builder_returns_error() {
     let src = make_src_with_docs(&[("index", "T\n=\n")]);
@@ -299,10 +299,10 @@ fn build_unknown_builder_returns_error() {
     let dt = tempfile::TempDir::new().unwrap();
     let mut app =
         SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
-    app.buildername = "epub".into();
+    app.buildername = "not-a-builder".into();
     let err = app.build().unwrap_err();
     assert!(matches!(err, AppError::UnknownBuilder(_)));
-    assert!(err.to_string().contains("epub"));
+    assert!(err.to_string().contains("not-a-builder"));
 }
 
 // ── config wiring ─────────────────────────────────────────────────────────────

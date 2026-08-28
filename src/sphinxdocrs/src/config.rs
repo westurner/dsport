@@ -854,6 +854,54 @@ impl SphinxConfig {
         add("today_fmt", Null, Env, "strftime format");
         add("language", Str("en".into()), Env, "Language");
         add(
+            "epub_title",
+            Str(String::new()),
+            Env,
+            "EPUB title",
+        );
+        add(
+            "epub_author",
+            Str(String::new()),
+            Env,
+            "EPUB author",
+        );
+        add(
+            "epub_language",
+            Str(String::new()),
+            Env,
+            "EPUB language",
+        );
+        add(
+            "epub_uid",
+            Str(String::new()),
+            Env,
+            "EPUB unique identifier",
+        );
+        add(
+            "epub_description",
+            Str(String::new()),
+            Env,
+            "EPUB description",
+        );
+        add(
+            "epub_publisher",
+            Str(String::new()),
+            Env,
+            "EPUB publisher",
+        );
+        add(
+            "epub_copyright",
+            Str(String::new()),
+            Env,
+            "EPUB rights",
+        );
+        add(
+            "epub_basename",
+            Str(String::new()),
+            Env,
+            "EPUB output basename",
+        );
+        add(
             "locale_dirs",
             List(vec![Str("locales".into())]),
             Env,

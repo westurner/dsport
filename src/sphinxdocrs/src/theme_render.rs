@@ -493,6 +493,24 @@ fn collect_relations(entries: &[TocEntry]) -> HashMap<String, Relation> {
     relations
 }
 
+fn parent_chain(
+    docname: &str,
+    relations: &HashMap<String, Relation>,
+    root_doc: &str,
+) -> Vec<String> {
+    let mut parents = Vec::new();
+    let mut current = docname;
+    while let Some(parent) = relations.get(current).and_then(|relation| relation.parent.as_deref()) {
+        if parent == root_doc {
+            break;
+        }
+        parents.push(parent.to_string());
+        current = parent;
+    }
+    parents.reverse();
+    parents
+}
+
 // ── sidebars (html_sidebars pattern matching) ─────────────────────────────────
 
 /// `sphinx.util.matching.patmatch(name, pattern)`: does `pattern` (a
@@ -746,14 +764,14 @@ impl ThemeRenderer {
                 .map(|d| serde_json::json!({"link": link_of(d), "title": title_of(d)}))
                 .unwrap_or(serde_json::Value::Null),
         );
-        // Parent chain (immediate parent only — upstream walks the full
-        // ancestor chain via `self.relations`; H5d's toctree data only
-        // tracks the immediate container, so this is a single-entry chain).
-        let parents: Vec<serde_json::Value> = relation
-            .parent
-            .as_deref()
-            .map(|d| vec![serde_json::json!({"link": link_of(d), "title": title_of(d)})])
-            .unwrap_or_default();
+        let parents: Vec<serde_json::Value> = parent_chain(
+            docname,
+            &self.relations,
+            &env.config.root_doc(),
+        )
+        .iter()
+        .map(|d| serde_json::json!({"link": link_of(d), "title": title_of(d)}))
+        .collect();
         ctx.insert("parents".into(), parents.into());
 
         let toc_entries_for_doc = toctree::get_toc_for(env, docname);
@@ -1328,6 +1346,38 @@ mod tests {
         assert_eq!(rel["a1"].next.as_deref(), Some("b"));
         assert_eq!(rel["b"].prev.as_deref(), Some("a1"));
         assert_eq!(rel["b"].next, None);
+    }
+
+    #[test]
+    fn parent_chain_omits_root_and_preserves_ancestor_order() {
+        let entries = vec![TocEntry {
+            docname: "index".into(),
+            title: "Root".into(),
+            children: vec![TocEntry {
+                docname: "guide".into(),
+                title: "Guide".into(),
+                children: vec![TocEntry {
+                    docname: "guide/intro".into(),
+                    title: "Introduction".into(),
+                    children: vec![TocEntry {
+                        docname: "guide/intro/details".into(),
+                        title: "Details".into(),
+                        children: vec![],
+                    }],
+                }],
+            }],
+        }];
+        let relations = collect_relations(&entries);
+
+        assert_eq!(parent_chain("index", &relations, "index"), Vec::<String>::new());
+        assert_eq!(
+            parent_chain("guide", &relations, "index"),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            parent_chain("guide/intro/details", &relations, "index"),
+            vec!["guide", "guide/intro"]
+        );
     }
 
     #[test]

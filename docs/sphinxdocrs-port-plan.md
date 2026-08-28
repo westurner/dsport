@@ -1469,6 +1469,9 @@ explicitly documented renderer/theme provenance deviations.
   nested key ordering and the `Search.setIndex(...)` wrapper. The real-builder
   parity matrix still reports a separate semantic term gap (`guid`), so this
   closes serialization order without claiming complete search-index parity.
+- Matched Sphinx's full breadcrumb ancestor chain for themed pages, omitting
+  only the configured root document and preserving root-to-nearest order;
+  nested parent-chain behavior is covered by a focused renderer regression.
 - Added structured `objects.inv` comparison in `parity.rs`. Inventory rows
   now include virtual standard labels (`genindex`, `modindex`, `py-modindex`,
   and `search`), standard-document entries, target URIs, priorities, and

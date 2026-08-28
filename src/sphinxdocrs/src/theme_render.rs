@@ -547,6 +547,24 @@ fn collect_relations(entries: &[TocEntry]) -> HashMap<String, Relation> {
     relations
 }
 
+fn append_relation_rellinks(
+    rellinks: &mut Vec<serde_json::Value>,
+    relation: &Relation,
+    title_of: impl Fn(&str) -> String,
+) {
+    if let Some(docname) = &relation.next {
+        rellinks.push(serde_json::json!([docname, title_of(docname), "N", "next"]));
+    }
+    if let Some(docname) = &relation.prev {
+        rellinks.push(serde_json::json!([
+            docname,
+            title_of(docname),
+            "P",
+            "previous"
+        ]));
+    }
+}
+
 fn parent_chain(
     docname: &str,
     relations: &HashMap<String, Relation>,
@@ -818,6 +836,14 @@ impl ThemeRenderer {
                 .map(|d| serde_json::json!({"link": link_of(d), "title": title_of(d)}))
                 .unwrap_or(serde_json::Value::Null),
         );
+        let mut rellinks = self
+            .global_ctx
+            .get("rellinks")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        append_relation_rellinks(&mut rellinks, &relation, title_of);
+        ctx.insert("rellinks".into(), rellinks.into());
         let parents: Vec<serde_json::Value> = parent_chain(
             docname,
             &self.relations,
@@ -919,7 +945,7 @@ impl ThemeRenderer {
         ctx.insert("parents".into(), Vec::<serde_json::Value>::new().into());
         ctx.insert("toc".into(), "".into());
         ctx.insert("display_toc".into(), false.into());
-        ctx.insert("sidebars".into(), Vec::<String>::new().into());
+        ctx.insert("sidebars".into(), serde_json::Value::Null);
         ctx.insert("sourcename".into(), "".into());
         ctx.insert(
             "content_root".into(),
@@ -1436,6 +1462,29 @@ mod tests {
         assert_eq!(rel["a1"].next.as_deref(), Some("b"));
         assert_eq!(rel["b"].prev.as_deref(), Some("a1"));
         assert_eq!(rel["b"].next, None);
+    }
+
+    #[test]
+    fn relation_rellinks_append_next_then_previous() {
+        let relation = Relation {
+            prev: Some("a".into()),
+            next: Some("b".into()),
+            ..Relation::default()
+        };
+        let mut rellinks = vec![serde_json::json!(["genindex", "General Index", "I", "index"] )];
+
+        append_relation_rellinks(&mut rellinks, &relation, |docname| {
+            format!("{docname} title")
+        });
+
+        assert_eq!(
+            rellinks,
+            vec![
+                serde_json::json!(["genindex", "General Index", "I", "index"]),
+                serde_json::json!(["b", "b title", "N", "next"]),
+                serde_json::json!(["a", "a title", "P", "previous"]),
+            ]
+        );
     }
 
     #[test]

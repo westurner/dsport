@@ -1466,9 +1466,17 @@ explicitly documented renderer/theme provenance deviations.
   covering the behavior with an extension-backed integration test.
 - Matched Sphinx's compact, recursively key-sorted `searchindex.js` JSON
   serialization while preserving array order; focused search tests now cover
-  nested key ordering and the `Search.setIndex(...)` wrapper. The real-builder
-  parity matrix still reports a separate semantic term gap (`guid`), so this
-  closes serialization order without claiming complete search-index parity.
+  nested key ordering and the `Search.setIndex(...)` wrapper. Environment-backed
+  indexing now resolves toctree labels and projects version-modified directive
+  labels into the searchable terms, matching Sphinx's transformed doctree.
+  The fixture parity matrix no longer reports a `searchindex.js` deviation.
+- Added page-local `next`/`previous` entries to the real-theme `rellinks`
+  context, restoring the basic theme's related-navigation links and access
+  keys for ordinary HTML-family pages.
+- Matched the basic theme's synthetic search-page sidebar context (`None`),
+  preserving its empty sidebar wrapper while keeping search-page navigation
+  suppressed. The remaining fixture search-page difference is the documented
+  native-versus-upstream Sphinx version footer.
 - Matched Sphinx's full breadcrumb ancestor chain for themed pages, omitting
   only the configured root document and preserving root-to-nearest order;
   nested parent-chain behavior is covered by a focused renderer regression.
@@ -1486,8 +1494,8 @@ explicitly documented renderer/theme provenance deviations.
   longer mistaken for row-semantic differences.
 - Added environment-backed search-index reuse and case-preserving tokenization
   so native `terms` retain Sphinx's post-stemming fallback behavior. Remaining
-  H11.2 differences are real-theme page serialization, search-page markup,
-  singlehtml's embedded renderer, and byte-level search-index ordering.
+  H11.2 differences are real-theme page serialization, search-page markup, and
+  singlehtml's embedded renderer.
 
 ##### H11.3 Text, XML, and pseudo-XML writers
 

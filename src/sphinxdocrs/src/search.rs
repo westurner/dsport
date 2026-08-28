@@ -275,6 +275,14 @@ fn collect_words(tree: &Doctree) -> WordStore {
                     title_words.extend(split_words(&t));
                 }
             }
+            NodeKind::VersionModified { kind, version } => {
+                body_words.extend(split_words(kind));
+                body_words.extend(split_words("version"));
+                body_words.extend(split_words(version));
+                if *kind == "deprecated" {
+                    body_words.extend(split_words("since"));
+                }
+            }
             NodeKind::Text(s) if !under_title(tree, id) => {
                 body_words.extend(split_words(s));
             }
@@ -735,6 +743,8 @@ impl SearchIndex {
                 }
             };
             let tree = parse_rst_with_source(&source, docname);
+            let mut tree = tree;
+            env.resolve_toctree_nodes(&mut tree, docname);
             idx.feed(docname, &tree);
         }
         idx.set_objects(env.domain_objects());
@@ -785,6 +795,32 @@ The widget handles rendering and layout.\n";
         assert!(json["terms"].get("layout").is_some());
         assert!(json["terms"].get("the").is_none());
         assert!(json["terms"].get("and").is_none());
+    }
+
+    #[test]
+    fn feed_indexes_stemmed_body_terms() {
+        let tree = parse_rst_with_source(
+            "Title\n=====\n\nThis is the guide document.\n",
+            "guide",
+        );
+        let mut idx = SearchIndex::new();
+        idx.feed("guide", &tree);
+
+        assert_eq!(idx.to_json()["terms"]["guid"], 0);
+    }
+
+    #[test]
+    fn feed_indexes_version_modified_labels() {
+        let tree = parse_rst_with_source(
+            "Reference\n=========\n\n.. versionadded:: 1.0\n\n   A documented feature.\n",
+            "reference",
+        );
+        let mut idx = SearchIndex::new();
+        idx.feed("reference", &tree);
+        let terms = &idx.to_json()["terms"];
+
+        assert_eq!(terms["add"], 0);
+        assert_eq!(terms["version"], 0);
     }
 
     #[test]

@@ -87,3 +87,31 @@ fn search_index_entries_populated_from_env() {
     assert!(indexentries.contains_key("widget"));
     assert!(indexentries.contains_key("widget; rendering"));
 }
+
+#[test]
+fn search_index_includes_resolved_toctree_labels() {
+    let (src, _dt, mut env) = make_disk_env(&[
+        (
+            "index",
+            "Project\n=======\n\n.. toctree::\n\n   guide\n",
+        ),
+        ("guide", "Guide\n=====\n\nBody.\n"),
+    ]);
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+
+    let outdir = TempDir::new().unwrap();
+    SearchIndex::build_and_write_with_env(
+        &env,
+        src.path(),
+        outdir.path(),
+        &["guide".to_string(), "index".to_string()],
+    )
+    .unwrap();
+
+    let content = std::fs::read_to_string(outdir.path().join("searchindex.js")).unwrap();
+    let inner = &content["Search.setIndex(".len()..content.len() - 1];
+    let json: serde_json::Value = serde_json::from_str(inner).unwrap();
+
+    assert_eq!(json["terms"]["guid"], 1);
+}

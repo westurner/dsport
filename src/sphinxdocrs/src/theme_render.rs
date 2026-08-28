@@ -407,10 +407,6 @@ fn resource_pathto(state: &PageState, name: &str) -> String {
 /// it (mirrors upstream's `pathto()`-based link construction) — a raw
 /// `get_target_uri` result is root-relative and 404s from any page not at
 /// the project root.
-fn render_toc_html(entries: &[TocEntry], base_uri: &str) -> String {
-    render_toc_html_for_style(entries, base_uri, PathStyle::Flat)
-}
-
 fn render_toc_html_for_style(
     entries: &[TocEntry],
     base_uri: &str,
@@ -766,7 +762,12 @@ impl ThemeRenderer {
         // note on granularity).
         ctx.insert(
             "toc".into(),
-            render_toc_html(&toc_entries_for_doc, &base_uri).into(),
+            render_toc_html_for_style(
+                &toc_entries_for_doc,
+                &base_uri,
+                self.state.path_style,
+            )
+            .into(),
         );
         ctx.insert(
             "display_toc".into(),
@@ -1248,7 +1249,7 @@ mod tests {
                 children: vec![],
             }],
         }];
-        let html = render_toc_html(&entries, "index.html");
+        let html = render_toc_html_for_style(&entries, "index.html", PathStyle::Flat);
         assert!(html.contains("guide/intro.html"), "got: {html}");
         assert!(html.contains("Intro"), "got: {html}");
         assert!(html.contains("guide/sub.html"), "got: {html}");
@@ -1274,7 +1275,7 @@ mod tests {
                 children: vec![],
             },
         ];
-        let html = render_toc_html(&entries, "tutorial/foo.html");
+        let html = render_toc_html_for_style(&entries, "tutorial/foo.html", PathStyle::Flat);
         assert!(
             html.contains("href=\"index.html\""),
             "same-directory link should have no ../ prefix, got: {html}"
@@ -1283,6 +1284,19 @@ mod tests {
             html.contains("href=\"../usage/installation.html\""),
             "cross-directory link should climb back out, got: {html}"
         );
+    }
+
+    #[test]
+    fn render_toc_html_dir_style_uses_directory_targets() {
+        let entries = vec![TocEntry {
+            docname: "guide/intro".into(),
+            title: "Intro".into(),
+            children: vec![],
+        }];
+        let html = render_toc_html_for_style(&entries, "guide/", PathStyle::Dir);
+
+        assert!(html.contains("href=\"intro/\""), "got: {html}");
+        assert!(!html.contains(".html"), "got: {html}");
     }
 
     #[test]
@@ -1425,9 +1439,9 @@ mod tests {
                 children: vec![],
             }],
         }];
-        let global_html = render_toc_html(&root_entries, "index.html");
+        let global_html = render_toc_html_for_style(&root_entries, "index.html", PathStyle::Flat);
         // The document "guide/intro" has no nested toctree of its own.
-        let local_html = render_toc_html(&[], "index.html");
+        let local_html = render_toc_html_for_style(&[], "index.html", PathStyle::Flat);
         assert!(global_html.contains("guide/intro.html"));
         assert!(local_html.is_empty());
         assert_ne!(global_html, local_html);

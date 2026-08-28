@@ -1458,6 +1458,9 @@ explicitly documented renderer/theme provenance deviations.
 - Updated real-theme viewport detection to recognize direct `<meta
   name="viewport">` declarations as well as templated `metatags` blocks, so
   the renderer does not inject a duplicate default viewport tag.
+- Passed the active HTML-family path style into local TOC rendering, preserving
+  directory targets for dirhtml pages instead of emitting flat `.html` links;
+  `theme_render` now covers this nested navigation contract directly.
 - Added structured `objects.inv` comparison in `parity.rs`. Inventory rows
   now include virtual standard labels (`genindex`, `modindex`, `py-modindex`,
   and `search`), standard-document entries, target URIs, priorities, and

@@ -1003,14 +1003,16 @@ The shared `docutilsrs` parser now dispatches `code`/`code-block`/
 `sourcecode` through native `pygmentsrs` first, with the existing Python
 bridge as fallback; Sphinx `automodule` expansion feeds generated
 docstrings through the same path, and Sphinx `highlight` state supplies the
-configured language to unlabeled code blocks. A Sphinx-side matrix now
-exercises representative Python, JavaScript, Rust, JSON, HTML, CSS, Bash,
-SQL, YAML, and Markdown blocks. The current `pygmentsrs` inventory reports
-512 native lexers and zero transpilable lexers remaining, so lexer breadth is
-no longer the blocker. **Remaining gate:** wire any Sphinx-specific
-`highlighting.py` behavior that is still observable beyond docutils' code
-block path and byte-parity-test highlighted `code-block` output for the top
-~20 languages.
+configured language to unlabeled code blocks. Sphinx-compatible alias
+normalization now covers `py`/`py3`/`python3`/`default`, Python console
+detection, `pycon3`, and literal `none`/`text` modes; `guess` uses upstream
+Pygments when available. A Sphinx-side matrix now exercises representative
+Python, JavaScript, Rust, JSON, HTML, CSS, Bash, SQL, YAML, and Markdown
+blocks. The current `pygmentsrs` inventory reports 512 native lexers and zero
+transpilable lexers remaining, so lexer breadth is no longer the blocker.
+**Remaining gate:** match Sphinx's lexer-error logging, relaxed retry,
+`raiseonerror`, and location-rich diagnostics beyond docutils' code-block
+path and byte-parity-tested highlighted output.
 
 ### Remaining H5/H10 completion plan
 

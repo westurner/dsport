@@ -42,15 +42,30 @@ pub type Span = (Option<String>, String);
 /// - both pygmentsrs and the Python bridge are unavailable;
 /// - the language is not recognized by either backend.
 pub fn tokenize(lang: &str, code: &str) -> Option<Vec<Span>> {
-    let lang = lang.trim();
-    if lang.is_empty() || lang.eq_ignore_ascii_case("text") {
+    let lang = normalize_language(lang, code);
+    if lang.is_empty() || lang == "text" || lang == "none" {
         return None;
     }
     #[cfg(feature = "syntax-highlighting")]
-    if let Some(spans) = tokenize_native(lang, code) {
+    if let Some(spans) = tokenize_native(&lang, code) {
         return Some(spans);
     }
-    tokenize_bridge(lang, code)
+    tokenize_bridge(&lang, code)
+}
+
+fn normalize_language(lang: &str, code: &str) -> String {
+    let lang = lang.trim().to_ascii_lowercase();
+    match lang.as_str() {
+        "py" | "py3" | "python3" | "default" => {
+            if code.starts_with(">>>") {
+                "pycon".into()
+            } else {
+                "python".into()
+            }
+        }
+        "pycon3" => "pycon".into(),
+        _ => lang,
+    }
 }
 
 #[cfg(feature = "syntax-highlighting")]
@@ -73,6 +88,21 @@ fn tokenize_bridge(lang: &str, code: &str) -> Option<Vec<Span>> {
             .unwrap_or(false);
         if !with_pygments {
             return None;
+        }
+        if lang == "guess" {
+            let lexers = py.import("pygments.lexers").ok()?;
+            let lexer = lexers.getattr("guess_lexer").ok()?.call1((code,)).ok()?;
+            let pygments = py.import("pygments").ok()?;
+            let stream = pygments.getattr("lex").ok()?.call1((code, lexer)).ok()?;
+            let mut raw = Vec::new();
+            for item in stream.try_iter().ok()? {
+                let item = item.ok()?;
+                let tuple = item.cast::<pyo3::types::PyTuple>().ok()?;
+                let token = tuple.get_item(0).ok()?.repr().ok()?.extract().ok()?;
+                let value = tuple.get_item(1).ok()?.extract().ok()?;
+                raw.push((token, value));
+            }
+            return Some(normalize_long(raw));
         }
         let lexer_cls = analyzer.getattr("Lexer").ok()?;
         let lexer = lexer_cls.call1((code, lang, "long")).ok()?;
@@ -99,7 +129,6 @@ fn tokenize_bridge(lang: &str, code: &str) -> Option<Vec<Span>> {
     })?
 }
 
-#[cfg(feature = "syntax-highlighting")]
 /// Normalize pygmentsrs' `(token_repr, value)` stream into the
 /// docutils long-name form: drop `Token` / `Token.Text` ancestors,
 /// downcase, space-join, merge adjacent, strip a final `\n`.
@@ -113,7 +142,6 @@ fn normalize_long(raw: Vec<(String, String)>) -> Vec<Span> {
     strip_trailing_newline(merged)
 }
 
-#[cfg(feature = "syntax-highlighting")]
 fn long_classes(ttype: &str) -> Option<String> {
     // `str(tokentype).lower().split('.')` — `Token.Name.Function`
     // → `["token", "name", "function"]`. The leading `Token` is
@@ -146,7 +174,6 @@ fn merge_adjacent(spans: Vec<Span>) -> Vec<Span> {
     out
 }
 
-#[cfg(feature = "syntax-highlighting")]
 fn strip_trailing_newline(mut spans: Vec<Span>) -> Vec<Span> {
     if let Some(last) = spans.last_mut() {
         if let Some(stripped) = last.1.strip_suffix('\n') {
@@ -220,7 +247,30 @@ mod tests {
     #[test]
     fn text_language_passes_through() {
         assert!(tokenize("text", "x = 1").is_none());
+        assert!(tokenize("none", "x = 1").is_none());
         assert!(tokenize("", "x = 1").is_none());
         assert!(tokenize("  TEXT  ", "x = 1").is_none());
+    }
+
+    #[test]
+    fn sphinx_aliases_normalize_before_dispatch() {
+        assert_eq!(
+            normalize_language("py", "def answer():\n    return 1"),
+            "python"
+        );
+        assert_eq!(
+            normalize_language("py3", "def answer():\n    return 1"),
+            "python"
+        );
+        assert_eq!(
+            normalize_language("python3", "def answer():\n    return 1"),
+            "python"
+        );
+        assert_eq!(
+            normalize_language("default", "def answer():\n    return 1"),
+            "python"
+        );
+        assert_eq!(normalize_language("default", ">>> answer()"), "pycon");
+        assert_eq!(normalize_language("pycon3", ">>> answer()"), "pycon");
     }
 }

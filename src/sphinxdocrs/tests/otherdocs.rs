@@ -335,13 +335,10 @@ fn build_otherdocs_parity(#[case] docs_rel: &str, #[case] builder: &str) {
 // `build_otherdocs_parity` (above) only compares file *names* — it says
 // nothing about whether the pages Rust does produce match Python's
 // rendered *content*. This test builds the same real doc trees again and
-// diffs each side's rendered `index.html` after stripping known-volatile
-// substrings (the Sphinx / `sphinxdocrs` generator version strings),
-// tracking the diff as an insta snapshot — the same "snapshot the current
-// parity gap, shrink it over time" pattern `tests/parity.rs`'s
-// `html_parity_gap_*`/`sphinx_docs_parity_gap_*` tests already use for
-// structural gaps. A snapshot failure means the diff between the two
-// sides changed (for better or worse) — review with `cargo insta review`.
+// compares each side's rendered `index.html` after stripping known-volatile
+// substrings (the Sphinx / `sphinxdocrs` generator version strings). The
+// comparison is strict: a snapshot of a known gap is useful for progress
+// tracking, but must not make a parity test pass while content differs.
 
 /// Strip substrings from rendered HTML that legitimately differ between a
 /// Python and a Rust build of the identical project, so this test tracks
@@ -502,12 +499,10 @@ fn build_otherdocs_index_html_content_parity(#[case] docs_rel: &str, #[case] bui
     let rs_norm = normalize_html_for_diff(&rs_html);
 
     // ── diff + snapshot ──────────────────────────────────────────────────────
-    let diff = compact_line_diff("python", &py_norm, "rust", &rs_norm, 0);
-
-    let snap_name = format!(
-        "otherdocs__{}__{}__index_html_diff",
-        docs_rel.replace(['/', '\\', '.'], "_"),
-        builder,
+    assert_eq!(
+        py_norm,
+        rs_norm,
+        "HTML parity mismatch for `{docs_rel}` builder=`{builder}`\n{}",
+        compact_line_diff("python", &py_norm, "rust", &rs_norm, 80)
     );
-    insta::assert_snapshot!(snap_name, diff);
 }

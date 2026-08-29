@@ -92,6 +92,10 @@ impl Runner for NativeMakeRunner {
             parsed.really_quiet,
             parsed.warnfile.clone(),
         );
+        let command = std::iter::once("sphinx-build".to_owned())
+            .chain(args.iter().cloned())
+            .collect::<Vec<_>>()
+            .join(" ");
 
         if !logging.suppress_status {
             eprintln!(
@@ -107,6 +111,13 @@ impl Runner for NativeMakeRunner {
             overrides,
         ) {
             Err(e) => {
+                record_error_log(
+                    &parsed,
+                    &command,
+                    parsed.warnfile.as_deref(),
+                    &[],
+                    Some(&e.to_string()),
+                );
                 if !logging.suppress_warnings {
                     eprintln!("Error: {e}");
                 }
@@ -117,6 +128,13 @@ impl Runner for NativeMakeRunner {
                 app.set_incremental_options(parsed.freshenv, parsed.force_all);
                 match app.build() {
                     Ok(result) => {
+                        record_error_log(
+                            &parsed,
+                            &command,
+                            parsed.warnfile.as_deref(),
+                            &app.warnings,
+                            None,
+                        );
                         if !logging.suppress_status {
                             eprintln!("Build succeeded: {} file(s) written.", result.written);
                         }
@@ -127,6 +145,13 @@ impl Runner for NativeMakeRunner {
                         ))
                     }
                     Err(e) => {
+                        record_error_log(
+                            &parsed,
+                            &command,
+                            parsed.warnfile.as_deref(),
+                            &app.warnings,
+                            Some(&e.to_string()),
+                        );
                         if !logging.suppress_warnings {
                             eprintln!("Build error: {e}");
                         }
@@ -135,6 +160,34 @@ impl Runner for NativeMakeRunner {
                 }
             }
         }
+    }
+}
+
+fn record_error_log(
+    parsed: &crate::build::BuildArgs,
+    command: &str,
+    logpath: Option<&Path>,
+    warnings: &[String],
+    build_error: Option<&str>,
+) {
+    #[cfg(feature = "sqlite-error-db")]
+    {
+        let Some(database) = parsed.error_db.as_deref() else {
+            return;
+        };
+        if let Err(error) = crate::error_log::record_native_build(
+            database,
+            command,
+            logpath,
+            warnings,
+            build_error,
+        ) {
+            eprintln!("sphinxdocrs: failed to record build diagnostics: {error}");
+        }
+    }
+    #[cfg(not(feature = "sqlite-error-db"))]
+    {
+        let _ = (parsed, command, logpath, warnings, build_error);
     }
 }
 

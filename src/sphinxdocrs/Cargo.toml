@@ -42,6 +42,10 @@ search-stemming = ["dep:rust-stemmers"]
 # variable; any other value, or this feature being disabled, uses `curl`.
 http-reqwest = ["dep:reqwest"]
 
+# SQLite-backed build diagnostic capture and review CLI. Off by default so
+# the normal Sphinx build does not require the SQLite error database.
+sqlite-error-db = ["dep:rusqlite"]
+
 # Default feature set.
 default = ["syntax-highlighting", "search-stemming"]
 
@@ -75,6 +79,7 @@ thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
+rusqlite = { version = "0.37", features = ["bundled"], optional = true }
 unicode-normalization = "0.1"
 # Civil-date decomposition for `intl::format_date`. Already in the workspace
 # lockfile via `docutilsrs`, so this adds no new transitive dependencies.
@@ -139,3 +144,7 @@ path = "src/bin/sphinx_apidoc.rs"
 [[bin]]
 name = "sphinx-autogen-rs"
 path = "src/bin/sphinx_autogen.rs"
+
+[[bin]]
+name = "sphinx-errors-rs"
+path = "src/bin/sphinx_errors.rs"

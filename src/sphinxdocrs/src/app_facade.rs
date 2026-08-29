@@ -866,12 +866,7 @@ impl PyAppFacade {
                             pagename
                                 .into_pyobject(py)
                                 .map_err(|e| {
-                                    py_err_to_event_error(
-                                        py,
-                                        &event_name,
-                                        &callback,
-                                        e.into(),
-                                    )
+                                    py_err_to_event_error(py, &event_name, &callback, e.into())
                                 })?
                                 .into_any()
                                 .unbind(),
@@ -880,12 +875,7 @@ impl PyAppFacade {
                             templatename
                                 .into_pyobject(py)
                                 .map_err(|e| {
-                                    py_err_to_event_error(
-                                        py,
-                                        &event_name,
-                                        &callback,
-                                        e.into(),
-                                    )
+                                    py_err_to_event_error(py, &event_name, &callback, e.into())
                                 })?
                                 .into_any()
                                 .unbind(),
@@ -893,9 +883,12 @@ impl PyAppFacade {
                         let context_dict = PyDict::new(py);
                         for (key, value) in context.borrow().iter() {
                             context_dict
-                                .set_item(key, json_value_to_py(py, value).map_err(|e| {
-                                    py_err_to_event_error(py, &event_name, &callback, e)
-                                })?)
+                                .set_item(
+                                    key,
+                                    json_value_to_py(py, value).map_err(|e| {
+                                        py_err_to_event_error(py, &event_name, &callback, e)
+                                    })?,
+                                )
                                 .map_err(|e| {
                                     py_err_to_event_error(py, &event_name, &callback, e)
                                 })?;
@@ -904,17 +897,14 @@ impl PyAppFacade {
                         call_args.push(context_obj.clone_ref(py).into_any());
                         call_args.push(match doctree {
                             Some(tree) => Py::new(py, PyDoctree::new(tree.clone()))
-                                .map_err(|e| {
-                                    py_err_to_event_error(py, &event_name, &callback, e)
-                                })?
+                                .map_err(|e| py_err_to_event_error(py, &event_name, &callback, e))?
                                 .into_any(),
                             None => py.None(),
                         });
                         page_context = Some((context_obj, context.clone()));
                     } else {
-                        let v = event_arg_to_py(py, a).map_err(|e| {
-                            py_err_to_event_error(py, &event_name, &callback, e)
-                        })?;
+                        let v = event_arg_to_py(py, a)
+                            .map_err(|e| py_err_to_event_error(py, &event_name, &callback, e))?;
                         call_args.push(v);
                     }
                 }

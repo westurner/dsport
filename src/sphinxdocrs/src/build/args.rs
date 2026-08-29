@@ -27,6 +27,8 @@ pub struct BuildArgs {
     /// "yes" | "no" | "auto"
     pub color: String,
     pub warnfile: Option<PathBuf>,
+    #[cfg(feature = "sqlite-error-db")]
+    pub error_db: Option<PathBuf>,
     pub warningiserror: bool,
     pub keep_going: bool,
     pub traceback: bool,
@@ -90,6 +92,8 @@ pub fn parse_args(argv: &[String]) -> Result<BuildArgs, ParseError> {
 
     let color = parse_color(m.get_flag("color"), m.get_flag("no_color"));
     let warnfile = m.get_one::<String>("warnfile").map(PathBuf::from);
+    #[cfg(feature = "sqlite-error-db")]
+    let error_db = m.get_one::<String>("error_db").map(PathBuf::from);
 
     let define: Vec<String> = m
         .get_many::<String>("define")
@@ -129,6 +133,8 @@ pub fn parse_args(argv: &[String]) -> Result<BuildArgs, ParseError> {
         really_quiet: m.get_flag("really_quiet"),
         color,
         warnfile,
+        #[cfg(feature = "sqlite-error-db")]
+        error_db,
         warningiserror: m.get_flag("warningiserror"),
         keep_going: m.get_flag("keep_going"),
         traceback: m.get_flag("traceback"),

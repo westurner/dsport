@@ -6,7 +6,7 @@ use clap::{Arg, ArgAction, Command};
 
 /// Build the clap [`Command`] mirroring upstream `get_parser()`.
 pub fn build_parser() -> Command {
-    Command::new("sphinx-build")
+    let command = Command::new("sphinx-build")
         .about("Generate documentation from source files.")
         .arg(
             Arg::new("sourcedir")
@@ -163,7 +163,16 @@ pub fn build_parser() -> Command {
                 .long("warning-file")
                 .value_name("FILE")
                 .help("write warnings (and errors) to given file"),
-        )
+        );
+    #[cfg(feature = "sqlite-error-db")]
+    let command = command
+        .arg(
+            Arg::new("error_db")
+                .long("error-db")
+                .value_name("FILE")
+                .help("record native build diagnostics in a SQLite database"),
+        );
+    command
         .arg(
             Arg::new("warningiserror")
                 .short('W')

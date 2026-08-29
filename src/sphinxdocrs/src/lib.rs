@@ -30,6 +30,11 @@ pub mod cli;
 pub mod config;
 pub mod domains;
 pub mod environment;
+#[cfg(feature = "sqlite-error-db")]
+pub mod error_log;
+#[cfg(not(feature = "sqlite-error-db"))]
+#[path = "error_log_disabled.rs"]
+pub mod error_log;
 pub mod errors;
 pub mod events;
 pub mod extension;

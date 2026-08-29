@@ -11,6 +11,7 @@
 //! `SPHINXDOCRS_PY_FALLBACK=1` is set.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use sphinxdocrs::application::{SphinxApp, is_native_builder};
 use sphinxdocrs::build::NativeMakeRunner;
@@ -22,6 +23,7 @@ use sphinxdocrs::scan::scan_requirements;
 
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    let command = std::env::args().collect::<Vec<_>>().join(" ");
 
     // Global fallback.
     if py_fallback_requested(&argv) {
@@ -87,6 +89,13 @@ fn main() {
         }
         match SphinxApp::new(&srcdir, &outdir, &doctreedir, &parsed.builder, overrides) {
             Err(e) => {
+                record_error_log(
+                    &parsed,
+                    &command,
+                    parsed.warnfile.as_deref(),
+                    &[],
+                    Some(&e.to_string()),
+                );
                 if !logging.suppress_warnings {
                     eprintln!("Error: {e}");
                 }
@@ -97,6 +106,13 @@ fn main() {
                 app.set_incremental_options(parsed.freshenv, parsed.force_all);
                 match app.build() {
                     Ok(result) => {
+                        record_error_log(
+                            &parsed,
+                            &command,
+                            parsed.warnfile.as_deref(),
+                            &app.warnings,
+                            None,
+                        );
                         if !logging.suppress_status {
                             eprintln!("Build succeeded: {} file(s) written.", result.written);
                         }
@@ -104,6 +120,13 @@ fn main() {
                         std::process::exit(code);
                     }
                     Err(e) => {
+                        record_error_log(
+                            &parsed,
+                            &command,
+                            parsed.warnfile.as_deref(),
+                            &app.warnings,
+                            Some(&e.to_string()),
+                        );
                         if !logging.suppress_warnings {
                             eprintln!("Build error: {e}");
                         }
@@ -117,4 +140,32 @@ fn main() {
     // Fall back to Python for all other builders.
     eprintln!("sphinxdocrs: no rust builder found. running python: sphinx.cmd.build");
     run_python_impl("sphinx.cmd.build", &argv);
+}
+
+fn record_error_log(
+    parsed: &sphinxdocrs::build::BuildArgs,
+    command: &str,
+    logpath: Option<&Path>,
+    warnings: &[String],
+    build_error: Option<&str>,
+) {
+    #[cfg(feature = "sqlite-error-db")]
+    {
+        let Some(database) = parsed.error_db.as_deref() else {
+            return;
+        };
+        if let Err(error) = sphinxdocrs::error_log::record_native_build(
+            database,
+            command,
+            logpath,
+            warnings,
+            build_error,
+        ) {
+            eprintln!("sphinxdocrs: failed to record build diagnostics: {error}");
+        }
+    }
+    #[cfg(not(feature = "sqlite-error-db"))]
+    {
+        let _ = (parsed, command, logpath, warnings, build_error);
+    }
 }

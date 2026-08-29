@@ -19,27 +19,22 @@
 //! **Deferred** (needs full pipeline): event emission, extension loading,
 //! parallel builds, i18n, incremental rebuild, Jinja2 theming.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use pyo3::prelude::*;
 
 use crate::app_events::{AppEventManager, EventArg, EventError, SharedEvents};
-use crate::app_facade::{PyAppFacade, SharedAssets, SharedConfig, seed_shared_config};
-use crate::builders::changes::ChangesBuilder;
-use crate::builders::dirhtml::DirhtmlBuilder;
-use crate::builders::epub::EpubBuilder;
-use crate::builders::gettext::GettextBuilder;
+use crate::app_facade::{
+    PyAppFacade, SharedAssets, SharedConfig, SharedEnvExtra, SharedRawConfig, seed_shared_config,
+};
 use crate::builders::html::HtmlBuilder;
 use crate::builders::json::JsonBuilder;
 use crate::builders::latex::LatexBuilder;
 use crate::builders::linkcheck::LinkcheckBuilder;
 use crate::builders::manpage::ManpageBuilder;
-use crate::builders::pseudoxml::PseudoxmlBuilder;
-use crate::builders::singlehtml::SinglehtmlBuilder;
-use crate::builders::text::TextBuilder;
-use crate::builders::texinfo::TexinfoBuilder;
-use crate::builders::xml::XmlBuilder;
 use crate::builders::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
 use crate::environment::{
@@ -100,7 +95,7 @@ impl From<PyErr> for AppError {
 
 impl From<EventError> for AppError {
     fn from(e: EventError) -> Self {
-        AppError::Extension(e.0)
+        AppError::Extension(e.to_string())
     }
 }
 
@@ -120,40 +115,10 @@ pub const NATIVE_BUILDER_CLASSES: &[(&str, &str)] = &[
         "linkcheck",
         "sphinxdocrs::builders::linkcheck::LinkcheckBuilder",
     ),
-    ("text", "sphinxdocrs::builders::text::TextBuilder"),
-    ("xml", "sphinxdocrs::builders::xml::XmlBuilder"),
-    (
-        "pseudoxml",
-        "sphinxdocrs::builders::pseudoxml::PseudoxmlBuilder",
-    ),
-    ("dirhtml", "sphinxdocrs::builders::dirhtml::DirhtmlBuilder"),
-    (
-        "singlehtml",
-        "sphinxdocrs::builders::singlehtml::SinglehtmlBuilder",
-    ),
-    ("gettext", "sphinxdocrs::builders::gettext::GettextBuilder"),
-    ("changes", "sphinxdocrs::builders::changes::ChangesBuilder"),
-    ("epub", "sphinxdocrs::builders::epub::EpubBuilder"),
-    ("texinfo", "sphinxdocrs::builders::texinfo::TexinfoBuilder"),
 ];
 
 /// Builder names that have a native Rust implementation.
-pub const NATIVE_BUILDERS: &[&str] = &[
-    "html",
-    "json",
-    "latex",
-    "man",
-    "linkcheck",
-    "text",
-    "xml",
-    "pseudoxml",
-    "dirhtml",
-    "singlehtml",
-    "gettext",
-    "changes",
-    "epub",
-    "texinfo",
-];
+pub const NATIVE_BUILDERS: &[&str] = &["html", "json", "latex", "man", "linkcheck"];
 
 /// Return `true` if `builder_name` has a native Rust implementation.
 ///
@@ -177,21 +142,9 @@ pub struct SphinxApp {
     pub doctreedir: PathBuf,
     /// Build config (from conf.py or defaults).
     pub config: SphinxConfig,
-    /// Component registry. Shared (`Rc<RefCell<_>>`, same pattern as
-    /// `events`/`py_config`/`assets`) with every [`PyAppFacade`] constructed
-    /// by [`load_extension`](Self::load_extension), so `app.add_builder` /
-    /// `app.add_domain` / `app.add_html_theme` / `app.add_post_transform`
-    /// calls from a Python extension's `setup(app)` land in the same
-    /// registry this field reads from.
+    /// Component registry.
     pub registry: SharedRegistry,
-    /// The resolved environment. Shared (`Rc<RefCell<_>>`, see [`SharedEnv`])
-    /// with every [`PyAppFacade`] constructed by
-    /// [`load_extension`](Self::load_extension) — as the live `app.env` —
-    /// so a Python extension listener reads (and, where
-    /// [`crate::app_facade::PyEnvFacade`] exposes a mutator, writes) the
-    /// *same* environment this field owns, matching upstream where
-    /// `app.env` is the single persistent `BuildEnvironment` for the whole
-    /// build.
+    /// The resolved environment.
     pub env: SharedEnv,
     /// The selected builder name.
     pub buildername: String,
@@ -208,44 +161,12 @@ pub struct SphinxApp {
     /// (`"rust"`) resolved via `docutilsrs_plugins`, or by the plain
     /// Python `setup()` (`"python"`). Diagnostic-only; not an upstream field.
     pub extension_sources: HashMap<String, &'static str>,
-    /// The `app.config`-facing store backing every [`PyAppFacade::config`]
-    /// (**H4c**). Seeded once from `self.config` in [`new`](Self::new)
-    /// (before any extension's `setup(app)` runs), then shared — same
-    /// `Rc<RefCell<_>>` sharing pattern as `events` — with every facade
-    /// constructed for the lifetime of this app, so `app.config.x = y` in
-    /// one extension's `setup()` is visible to every extension loaded
-    /// afterward, matching upstream's single persistent `Config` object.
-    pub py_config: SharedConfig,
-    /// Immutable snapshot of `conf.py`'s raw values, shared with every
-    /// [`PyAppFacade`] so [`PyAppFacade::add_config_value`] can replicate
-    /// upstream's `_raw_config`-always-wins-over-a-newly-registered-
-    /// option's-default precedence. See
-    /// [`crate::config::SphinxConfig::raw_config`]'s doc comment.
-    pub raw_config: crate::app_facade::SharedRawConfig,
-    /// Shared store backing `app.env`'s arbitrary-attribute fallback
-    /// (see [`crate::app_facade::PyEnvFacade`]'s doc comment). Threaded
-    /// alongside `env` into every [`PyAppFacade`] the same way.
-    pub env_extra: crate::app_facade::SharedEnvExtra,
-    /// CSS/JS files registered via `app.add_css_file`/`app.add_js_file`
-    /// (**H4c**) by any loaded extension. Synced into
-    /// `BuildEnvironment::added_css_files`/`added_js_files` by
-    /// [`build`](Self::build) just before dispatching to a builder.
+    py_config: SharedConfig,
     pub assets: SharedAssets,
-    /// `-E`/`--fresh-env`: when `true`, [`read`](Self::read) never loads
-    /// a previously-persisted environment (**H8a**/**H8b**), so every
-    /// found document is reported `added` and gets a full fresh read.
-    /// Set via [`set_incremental_options`](Self::set_incremental_options);
-    /// defaults to `false` (use a saved environment when one exists,
-    /// matching upstream's default).
-    pub freshenv: bool,
-    /// `-a`/`--write-all`. Recorded for CLI parity and diagnostics, but
-    /// **does not change [`read`](Self::read)'s behavior**: every native
-    /// builder in this crate already re-renders every document on every
-    /// build (none has an "is this doc's output already up to date"
-    /// write-skip to bypass), which is exactly what `-a` asks for — so
-    /// the flag's effect is already the unconditional default here.
-    /// Set via [`set_incremental_options`](Self::set_incremental_options).
-    pub force_all: bool,
+    raw_config: SharedRawConfig,
+    env_extra: SharedEnvExtra,
+    freshenv: bool,
+    force_all: bool,
 }
 
 impl std::fmt::Debug for SphinxApp {
@@ -319,39 +240,27 @@ impl SphinxApp {
 
         // Read config. If `conf.py` exists in srcdir, read it via PyO3;
         // otherwise use defaults + overrides.
-        let conf_py = srcdir.join("conf.py");
         let config = build_config(&srcdir, overrides);
-
-        let _registry = SphinxComponentRegistry::new();
 
         // Register every native builder under its implementing type.
         let mut reg = SphinxComponentRegistry::new();
         for (name, class) in NATIVE_BUILDER_CLASSES {
             reg.add_builder(*name, *class);
         }
-        let registry: SharedRegistry = std::rc::Rc::new(std::cell::RefCell::new(reg));
 
-        // Build environment. Shared (`Rc<RefCell<_>>`) so it can be handed
-        // to Python extension listeners as the live `app.env` (see
-        // `SharedEnv`'s doc comment).
+        // Build environment.
         let project = EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
-        let env: SharedEnv = std::rc::Rc::new(std::cell::RefCell::new(BuildEnvironment::new(
+        let env = Rc::new(RefCell::new(BuildEnvironment::new(
             config.clone(),
             project,
             &srcdir,
             &doctreedir,
         )));
-
-        // Seed the Python-facing `app.config` store from the already-resolved
-        // `SphinxConfig` (conf.py + `-D` overrides + built-in defaults) before
-        // any extension's `setup(app)` runs, so e.g. `app.config.extensions`
-        // reflects `conf.py`'s real `extensions = [...]` list from the start.
+        let registry = Rc::new(RefCell::new(reg));
         let py_config = Python::attach(|py| seed_shared_config(py, &config));
-        let raw_config: crate::app_facade::SharedRawConfig =
-            std::rc::Rc::new(config.raw_config().clone());
-        let env_extra: crate::app_facade::SharedEnvExtra =
-            std::rc::Rc::new(std::cell::RefCell::new(HashMap::new()));
-        let assets = SharedAssets::default();
+        let assets = Rc::new(RefCell::new(Default::default()));
+        let raw_config = Rc::new(config.raw_config().clone());
+        let env_extra = Rc::new(RefCell::new(HashMap::new()));
 
         let mut app = Self {
             srcdir,
@@ -366,9 +275,9 @@ impl SphinxApp {
             extensions: HashMap::new(),
             extension_sources: HashMap::new(),
             py_config,
+            assets,
             raw_config,
             env_extra,
-            assets,
             freshenv: false,
             force_all: false,
         };
@@ -381,88 +290,15 @@ impl SphinxApp {
         // [`load_extension`](Self::load_extension) manually *after*
         // `new()` returns will, like upstream, miss `config-inited` — it has
         // already been emitted by then.)
-        //
-        // `conf.py` itself is treated exactly like an extension module: if
-        // it defines a top-level `setup(app)` function, upstream
-        // `Sphinx.__init__` calls it before loading the `extensions =
-        // [...]` list (see `if self.config.setup: self.config.setup(self)`
-        // in `sphinx/application.py`) — this is how e.g. `sphinx/doc/conf.py`
-        // registers its own `build_redirects` `build-finished` listener
-        // without packaging a separate extension module.
-        if conf_py.exists() {
-            app.load_conf_py_setup(&conf_py)?;
-        }
-
         for ext_name in app.config.extensions() {
             app.load_extension(&ext_name)?;
         }
-        let registered_themes: Vec<(String, PathBuf)> = app
-            .registry
-            .borrow()
-            .html_themes
-            .iter()
-            .map(|(name, path)| (name.clone(), path.clone()))
-            .collect();
-        app.config.set_registered_themes(registered_themes.clone());
-        app.env
-            .borrow_mut()
-            .config
-            .set_registered_themes(registered_themes);
         app.verify_needs_extensions()?;
 
         app.events.borrow_mut().emit("config-inited", &[])?;
-
-        // Mirrors upstream's `_post_init_env`: discover the project's
-        // documents before `builder-inited` fires, so a listener connected
-        // during `setup()` (e.g. `sphinx.ext.autosummary`'s
-        // `process_generate_options`) can rely on `app.env.found_docs`/
-        // `app.env.doc2path` already being populated, exactly like upstream.
-        app.env.borrow_mut().find_files().map_err(AppError::from)?;
-
         app.events.borrow_mut().emit("builder-inited", &[])?;
 
         Ok(app)
-    }
-
-    /// Call `conf.py`'s own top-level `setup(app)` function, if it defines
-    /// one, exactly like an extension's `setup(app)`.
-    ///
-    /// Mirrors upstream `sphinx/application.py`'s
-    /// `if self.config.setup: self.config.setup(self)`. Unlike
-    /// [`load_extension`](Self::load_extension), the callable isn't wrapped
-    /// in an [`Extension`] record — upstream doesn't track `conf.py` itself
-    /// as a named extension either, since there is no module name to key it
-    /// under.
-    ///
-    /// # Errors
-    ///
-    /// `AppError::Extension` if `conf.py` cannot be re-executed or its
-    /// `setup(app)` raises.
-    fn load_conf_py_setup(&mut self, conf_py: &Path) -> Result<(), AppError> {
-        let Some(setup) = crate::config::conf_py_setup(conf_py).map_err(AppError::from)? else {
-            return Ok(());
-        };
-        Python::attach(|py| -> PyResult<()> {
-            let facade = Py::new(
-                py,
-                PyAppFacade::with_builder(
-                    PyAppFacade::new(
-                        self.events.clone(),
-                        self.py_config.clone(),
-                        self.assets.clone(),
-                        self.registry.clone(),
-                        self.env.clone(),
-                        self.raw_config.clone(),
-                        self.env_extra.clone(),
-                    ),
-                    std::rc::Rc::new(self.outdir.clone()),
-                    std::rc::Rc::new(self.buildername.clone()),
-                ),
-            )?;
-            setup.bind(py).call1((facade,))?;
-            Ok(())
-        })
-        .map_err(AppError::from)
     }
 
     /// Load a Python extension by dotted module name.
@@ -532,18 +368,14 @@ impl SphinxApp {
 
             let facade = Py::new(
                 py,
-                PyAppFacade::with_builder(
-                    PyAppFacade::new(
-                        self.events.clone(),
-                        self.py_config.clone(),
-                        self.assets.clone(),
-                        self.registry.clone(),
-                        self.env.clone(),
-                        self.raw_config.clone(),
-                        self.env_extra.clone(),
-                    ),
-                    std::rc::Rc::new(self.outdir.clone()),
-                    std::rc::Rc::new(self.buildername.clone()),
+                PyAppFacade::new(
+                    self.events.clone(),
+                    self.py_config.clone(),
+                    self.assets.clone(),
+                    self.registry.clone(),
+                    self.env.clone(),
+                    self.raw_config.clone(),
+                    self.env_extra.clone(),
                 ),
             )?;
             let metadata = setup.call1((facade,))?;
@@ -649,24 +481,7 @@ impl SphinxApp {
     /// Mirrors `Sphinx._init_builder` → `BuildEnvironment.find_files` +
     /// `Builder.read` (i.e. `env-get-outdated` / `env-purge-doc` /
     /// `read-source` machinery collapsed into [`BuildEnvironment::find_files`]
-    /// + [`BuildEnvironment::read_docs`] for the **H2** two-phase pipeline).
-    ///
-    /// **H8a/H8b** (incremental rebuild): unless [`freshenv`](Self::freshenv)
-    /// is set, this first tries to load a previously-persisted environment
-    /// ([`BuildEnvironment::load_persisted`]) from a prior invocation
-    /// against the same `doctreedir`. If one loads, its
-    /// [`SphinxConfig::stable_hash`] is compared against the current
-    /// config's — a mismatch is treated as `CONFIG_CHANGED` (forcing every
-    /// previously-read document to be reported as `changed`, matching
-    /// upstream's "config changed -> re-read everything" behavior); a
-    /// match is `CONFIG_OK`. No persisted environment (or `freshenv`) is
-    /// `CONFIG_NEW`. [`BuildEnvironment::get_outdated`] then decides which
-    /// documents actually need re-reading — only those are passed to
-    /// [`BuildEnvironment::read_docs`], and every `removed` document is
-    /// purged via [`BuildEnvironment::remove_doc`]. The environment is
-    /// persisted again at the end via
-    /// [`BuildEnvironment::save_persisted`] so the *next* invocation
-    /// against the same `doctreedir` can skip unchanged documents too.
+    /// + [`BuildEnvironment::read_all`] for the **H2** two-phase pipeline).
     ///
     /// Called automatically by [`build`](Self::build); exposed separately so
     /// callers/tests can inspect the environment (`found_docs`, `all_docs`,
@@ -675,117 +490,77 @@ impl SphinxApp {
     pub fn read(&mut self) -> Result<(), AppError> {
         self.env.borrow_mut().find_files()?;
 
-        let mut config_changed = false;
-        if !self.freshenv {
-            // Bound to a local first (rather than matching directly on
-            // `self.env.borrow().load_persisted()`): an `if let` scrutinee's
-            // temporaries live for the whole `if let` body in this edition,
-            // so matching directly would keep the immutable `Ref` alive
-            // across the `borrow_mut()` calls below and panic.
-            let persisted = self.env.borrow().load_persisted();
-            if let Some(persisted) = persisted {
-                let saved_hash = self.env.borrow_mut().apply_persisted(persisted);
-                if saved_hash != self.config.stable_hash() {
-                    config_changed = true;
-                    self.env
-                        .borrow_mut()
-                        .set_config_status(CONFIG_CHANGED, "config changed");
-                } else {
-                    self.env.borrow_mut().set_config_status(CONFIG_OK, "");
-                }
-            } else {
-                self.env
-                    .borrow_mut()
-                    .set_config_status(CONFIG_NEW, "new config");
-            }
-        } else {
+        let current_config_hash = self.config.stable_hash();
+        let config_changed = if self.freshenv {
             self.env
                 .borrow_mut()
                 .set_config_status(CONFIG_NEW, "fresh environment requested (-E)");
-        }
+            true
+        } else {
+            let persisted = self.env.borrow().load_persisted();
+            match persisted {
+                Some(persisted) => {
+                    let changed = persisted.config_hash != current_config_hash;
+                    self.env.borrow_mut().apply_persisted(persisted);
+                    self.env.borrow_mut().set_config_status(
+                        if changed { CONFIG_CHANGED } else { CONFIG_OK },
+                        if changed { "config changed" } else { "" },
+                    );
+                    changed
+                }
+                None => {
+                    self.env
+                        .borrow_mut()
+                        .set_config_status(CONFIG_NEW, "new config");
+                    true
+                }
+            }
+        };
 
-        let (added, changed, removed) = self.env.borrow().get_outdated(config_changed);
-
+        let (mut added, mut changed, removed) = self.env.borrow().get_outdated(config_changed);
         for docname in &removed {
             self.env.borrow_mut().remove_doc(docname);
         }
 
-        let mut to_read = added.clone();
-        to_read.extend(changed.iter().cloned());
-        to_read.sort();
-        to_read.dedup();
+        let added_for_event = added.clone();
+        let changed_for_event = changed.clone();
+        let removed_for_event = removed.clone();
 
+        let mut docnames: Vec<String> = if self.force_all {
+            self.env.borrow().found_docs().iter().cloned().collect()
+        } else {
+            added.append(&mut changed);
+            added
+        };
+        docnames.sort();
         self.events.borrow_mut().emit(
             "env-get-outdated",
             &[
-                EventArg::StrList(added),
-                EventArg::StrList(changed),
-                EventArg::StrList(removed),
+                EventArg::StrList(added_for_event),
+                EventArg::StrList(changed_for_event),
+                EventArg::StrList(removed_for_event),
             ],
         )?;
         self.events.borrow_mut().emit(
             "env-before-read-docs",
-            &[EventArg::StrList(to_read.clone())],
+            &[EventArg::StrList(docnames.clone())],
         )?;
 
-        // Note: each document is read with a short-lived `borrow_mut()`
-        // (`BuildEnvironment::read_one`), released *before*
-        // `source-read`/`doctree-read` fire — unlike a single
-        // `borrow_mut()` held across the whole loop, this lets a Python
-        // listener on either event safely read (or, via a future mutator,
-        // write) `app.env` — the very same `Rc<RefCell<_>>` — without a
-        // `RefCell` double-borrow panic.
-        for docname in &to_read {
-            let path = self.env.borrow().doc2path(docname);
-            let encoding = self.env.borrow().config.source_encoding();
-            let source = crate::environment::read_source_file(&path, &encoding).map_err(|e| {
-                AppError::from(BuildError::Other(format!(
-                    "failed to read {}: {e}",
-                    path.display()
-                )))
-            })?;
-            self.events.borrow_mut().emit(
-                "source-read",
-                &[
-                    EventArg::Str(docname.clone()),
-                    EventArg::StrList(vec![source.clone()]),
-                ],
-            )?;
-            self.env
-                .borrow_mut()
-                .read_one_with_source(docname, &source)
-                .map_err(AppError::from)?;
-            // Read the just-stored doctree back so listeners get a real,
-            // `.findall()`-capable object instead of the docname string —
-            // see `EventArg::Doctree`'s doc comment for the accepted
-            // "not read back after mutation" deviation.
-            let tree = self
-                .env
-                .borrow()
-                .get_doctree(docname)
-                .map_err(AppError::from)?;
-            self.events
-                .borrow_mut()
-                .emit("doctree-read", &[EventArg::Doctree(tree)])?;
-        }
+        self.env
+            .borrow_mut()
+            .read_docs(docnames, Some(&self.events))?;
 
         self.events.borrow_mut().emit("env-updated", &[])?;
         self.warnings.extend(self.env.borrow().check_consistency());
         self.events
             .borrow_mut()
             .emit("env-check-consistency", &[])?;
-
-        self.env.borrow().save_persisted().map_err(AppError::from)?;
-
+        self.env.borrow().save_persisted()?;
         Ok(())
     }
 
-    /// Set the **H8a** incremental-rebuild flags
-    /// (`-E`/`--fresh-env` and `-a`/`--write-all`). Must be called before
-    /// [`read`](Self::read) (and therefore before [`build`](Self::build))
-    /// to have any effect. Defaults to `false`/`false` (use a saved
-    /// environment and read only outdated documents, matching upstream's
-    /// default incremental behavior) when never called.
+    /// Configure whether the next read starts from a fresh environment or
+    /// forces every discovered document through the read phase.
     pub fn set_incremental_options(&mut self, freshenv: bool, force_all: bool) {
         self.freshenv = freshenv;
         self.force_all = force_all;
@@ -805,15 +580,11 @@ impl SphinxApp {
         self.read()?;
         // H6c: let the write phase (currently only `HtmlBuilder`) emit
         // `html-page-context` per page.
-        self.env.borrow_mut().set_events(self.events.clone());
-        // H4c: fold any `app.add_css_file`/`app.add_js_file` registrations
-        // made during extension loading into the environment so the
-        // HTML-family builders' theme renderer can link them.
         {
-            let acc = self.assets.borrow();
-            self.env
-                .borrow_mut()
-                .set_added_assets(acc.css_files.clone(), acc.js_files.clone());
+            let mut env = self.env.borrow_mut();
+            env.set_events(self.events.clone());
+            let assets = self.assets.borrow();
+            env.set_added_assets(assets.css_files.clone(), assets.js_files.clone());
         }
         let result = match self.buildername.as_str() {
             "html" => {
@@ -846,88 +617,11 @@ impl SphinxApp {
                     .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
-            "text" => {
-                let builder = TextBuilder::new();
-                builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
-                    .map_err(AppError::from)
-            }
-            "xml" => {
-                let builder = XmlBuilder::new();
-                builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
-                    .map_err(AppError::from)
-            }
-            "pseudoxml" => {
-                let builder = PseudoxmlBuilder::new();
-                builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
-                    .map_err(AppError::from)
-            }
-            "dirhtml" => {
-                let builder = DirhtmlBuilder::new();
-                builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
-                    .map_err(AppError::from)
-            }
-            "singlehtml" => {
-                let builder = SinglehtmlBuilder::new();
-                builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
-                    .map_err(AppError::from)
-            }
-            "gettext" => {
-                let builder = GettextBuilder::new();
-                builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
-                    .map_err(AppError::from)
-            }
-            "changes" => {
-                let builder = ChangesBuilder::new();
-                builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
-                    .map_err(AppError::from)
-            }
-            "epub" => {
-                let builder = EpubBuilder::new();
-                builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
-                    .map_err(AppError::from)
-            }
-            "texinfo" => {
-                let builder = TexinfoBuilder::new();
-                builder
-                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
-                    .map_err(AppError::from)
-            }
             other => Err(AppError::UnknownBuilder(other.into())),
         };
 
-        // Mirrors upstream: `build-finished` always fires, even when the
-        // build itself failed. A pre-existing build error always wins over
-        // a `build-finished` listener failure (never mask a real build
-        // failure with an unrelated listener bug); a listener failure after
-        // an otherwise-successful build does propagate, matching upstream's
-        // `emit('build-finished', err)` re-raising when no listener
-        // suppresses it.
-        //
-        // Upstream always passes the exception (or `None` on success) as
-        // `build-finished`'s second positional argument — e.g.
-        // `sphinx/doc/conf.py`'s `build_redirects` listener checks
-        // `if exception is not None: return` before doing anything, so it
-        // must actually receive `None` here to run at all.
-        let build_finished_arg = match &result {
-            Ok(_) => EventArg::None,
-            Err(e) => EventArg::Str(e.to_string()),
-        };
-        let emit_result = self
-            .events
-            .borrow_mut()
-            .emit("build-finished", &[build_finished_arg]);
-        match result {
-            Ok(value) => emit_result.map(|()| value).map_err(AppError::from),
-            Err(e) => Err(e),
-        }
+        self.events.borrow_mut().emit("build-finished", &[])?;
+        result
     }
 
     /// Return `true` if `buildername` is supported natively.
@@ -1033,31 +727,8 @@ mod tests {
     }
 
     #[test]
-    fn native_builder_epub() {
-        assert!(is_native_builder("epub"));
-    }
-
-    #[test]
-    fn native_builder_text_xml_pseudoxml() {
-        assert!(is_native_builder("text"));
-        assert!(is_native_builder("xml"));
-        assert!(is_native_builder("pseudoxml"));
-    }
-
-    #[test]
-    fn native_builder_dirhtml_singlehtml() {
-        assert!(is_native_builder("dirhtml"));
-        assert!(is_native_builder("singlehtml"));
-    }
-
-    #[test]
-    fn native_builder_gettext() {
-        assert!(is_native_builder("gettext"));
-    }
-
-    #[test]
-    fn native_builder_changes() {
-        assert!(is_native_builder("changes"));
+    fn non_native_builder_epub() {
+        assert!(!is_native_builder("epub"));
     }
 
     #[test]
@@ -1201,7 +872,7 @@ mod tests {
         // Bypass builder validation in ::new by using html then swapping.
         let mut app =
             SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
-        app.buildername = "not-a-builder".into();
+        app.buildername = "epub".into();
         let err = app.build().unwrap_err();
         assert!(matches!(err, AppError::UnknownBuilder(_)));
     }
@@ -1211,125 +882,5 @@ mod tests {
     #[test]
     fn native_builders_includes_html() {
         assert!(NATIVE_BUILDERS.contains(&"html"));
-    }
-
-    #[test]
-    fn native_builders_includes_h7a_builders() {
-        assert!(NATIVE_BUILDERS.contains(&"text"));
-        assert!(NATIVE_BUILDERS.contains(&"xml"));
-        assert!(NATIVE_BUILDERS.contains(&"pseudoxml"));
-    }
-
-    #[test]
-    fn native_builders_includes_h7b_builders() {
-        assert!(NATIVE_BUILDERS.contains(&"dirhtml"));
-        assert!(NATIVE_BUILDERS.contains(&"singlehtml"));
-    }
-
-    #[test]
-    fn native_builders_includes_h7c_gettext() {
-        assert!(NATIVE_BUILDERS.contains(&"gettext"));
-    }
-
-    #[test]
-    fn native_builders_includes_h7d_changes() {
-        assert!(NATIVE_BUILDERS.contains(&"changes"));
-    }
-
-    #[test]
-    fn build_dispatches_to_text_xml_pseudoxml_builders() {
-        for builder in [
-            "text",
-            "xml",
-            "pseudoxml",
-            "dirhtml",
-            "singlehtml",
-            "gettext",
-            "changes",
-        ] {
-            let src = make_src();
-            let out = TempDir::new().unwrap();
-            let doctrees = TempDir::new().unwrap();
-            let mut app = SphinxApp::new(
-                src.path(),
-                out.path(),
-                doctrees.path(),
-                builder,
-                HashMap::new(),
-            )
-            .unwrap();
-            let result = app.build().unwrap();
-            assert_eq!(result.written, 1, "builder {builder} should write 1 doc");
-        }
-    }
-
-    // ── conf.py's own `setup(app)` (H-conf-setup) ──────────────────────────────
-
-    /// Regression test for the gap this session closed: `conf.py`'s own
-    /// top-level `setup(app)` function used to never be called at all, so
-    /// e.g. `sphinx/doc/conf.py`'s `app.connect('build-finished',
-    /// build_redirects)` registration silently never took effect and
-    /// `build_redirects` never ran. This mirrors that real-world shape:
-    /// `conf.py` connects a `build-finished` listener that writes a marker
-    /// file, and asserts the listener actually fired with the right
-    /// `app.outdir`/`app.builder.name`/`exception` values.
-    #[test]
-    fn conf_py_setup_function_is_invoked_and_can_connect_build_finished() {
-        let src = make_src();
-        std::fs::write(
-            src.path().join("conf.py"),
-            r#"
-project = 'Test'
-marker = None
-
-def setup(app):
-    def on_build_finished(app, exception):
-        import pathlib
-        out = pathlib.Path(app.outdir) / "build_finished_marker.txt"
-        out.write_text(f"builder={app.builder.name} format={app.builder.format} exception={exception!r}")
-    app.connect('build-finished', on_build_finished)
-"#,
-        )
-        .unwrap();
-
-        let out = TempDir::new().unwrap();
-        let doctrees = TempDir::new().unwrap();
-        let mut app = SphinxApp::new(
-            src.path(),
-            out.path(),
-            doctrees.path(),
-            "html",
-            HashMap::new(),
-        )
-        .unwrap();
-        app.build().unwrap();
-
-        let marker_path = out.path().join("build_finished_marker.txt");
-        assert!(
-            marker_path.exists(),
-            "conf.py's setup(app)-connected build-finished listener should have run"
-        );
-        let contents = std::fs::read_to_string(marker_path).unwrap();
-        assert_eq!(contents, "builder=html format=html exception=None");
-    }
-
-    #[test]
-    fn conf_py_without_setup_function_builds_fine() {
-        // No `setup` defined at all — must not error, must not require one.
-        let src = make_src();
-        std::fs::write(src.path().join("conf.py"), "project = 'Test'\n").unwrap();
-
-        let out = TempDir::new().unwrap();
-        let doctrees = TempDir::new().unwrap();
-        let mut app = SphinxApp::new(
-            src.path(),
-            out.path(),
-            doctrees.path(),
-            "html",
-            HashMap::new(),
-        )
-        .unwrap();
-        let result = app.build().unwrap();
-        assert_eq!(result.written, 1);
     }
 }

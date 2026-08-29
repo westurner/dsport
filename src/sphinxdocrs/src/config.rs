@@ -2,11 +2,6 @@
 //!
 //! This is intentionally narrow: it covers the surface needed to wire
 //! sphinx's math options (`extensions`, `mathjax_path`,
-//! `mathjax_options`, `mathjax3_config`, `imgmath_image_format`,
-//! `imgmath_latex`, `imgmath_dvipng`, `imgmath_dvisvgm`) and to pick a
-//! default math backend. Anything else on `conf.py` is ignored.
-//!
-//! The reader executes the user's `conf.py` with PyO3 (sphinx itself
 //! does the same via `exec()` in `sphinx.config.Config`), then reads
 //! attributes off the module's globals. Missing attributes fall back
 //! to sphinx's documented defaults.
@@ -1774,19 +1769,15 @@ impl SphinxConfig {
     // ── H6c: full page context ────────────────────────────────────────────────
 
     /// `html_title` — mirrors `Config.html_title`'s computed default:
-    /// `"{project} {release} documentation"` (or without the version
-    /// segment when `release` is empty).
+    /// `"{project} {release} documentation"`, preserving the separator when
+    /// `release` is empty as upstream Sphinx does.
     pub fn html_title(&self) -> String {
         if let Some(ConfigVal::Str(s)) = self.get("html_title") {
             return s;
         }
         let project = self.project();
         let release = self.release();
-        if release.is_empty() {
-            format!("{project} documentation")
-        } else {
-            format!("{project} {release} documentation")
-        }
+        format!("{project} {release} documentation")
     }
 
     /// `html_short_title` — defaults to [`Self::html_title`].
@@ -1952,6 +1943,15 @@ mod sphinx_config_tests {
     fn defaults_root_doc() {
         let cfg = SphinxConfig::new_defaults();
         assert_eq!(cfg.root_doc(), "index");
+    }
+
+    #[test]
+    fn html_title_preserves_empty_release_separator() {
+        let mut raw = HashMap::new();
+        raw.insert("project".into(), ConfigVal::Str("Docs".into()));
+        raw.insert("release".into(), ConfigVal::Str(String::new()));
+        let cfg = SphinxConfig::new(raw, HashMap::new());
+        assert_eq!(cfg.html_title(), "Docs  documentation");
     }
 
     #[test]

@@ -1498,6 +1498,10 @@ explicitly documented renderer/theme provenance deviations.
   so native `terms` retain Sphinx's post-stemming fallback behavior. Remaining
   H11.2 differences are real-theme page serialization, search-page markup, and
   singlehtml's embedded renderer.
+- Preserved Sphinx's safe HTML `accesskey` attributes through the native Jinja
+  global, and matched the default `html_title` separator when `release` is
+  empty. A minimal basic-theme search-page comparison now differs only in the
+  expected native-versus-upstream `sphinx_version` footer value.
 
 ##### H11.3 Text, XML, and pseudo-XML writers
 

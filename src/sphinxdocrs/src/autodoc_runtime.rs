@@ -28,6 +28,43 @@ use std::collections::HashSet;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
+fn python_runtime_lock(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    let sys = py.import("sys")?;
+    let threading = py.import("threading")?;
+    let init_lock = threading.getattr("_active_limbo_lock")?;
+    init_lock.call_method0("acquire")?;
+
+    let result = match sys.getattr("_sphinxdocrs_autodoc_runtime_lock") {
+        Ok(lock) => Ok(lock),
+        Err(_) => {
+            let lock = threading.getattr("RLock")?.call0()?;
+            sys.setattr("_sphinxdocrs_autodoc_runtime_lock", &lock)?;
+            Ok(lock)
+        }
+    };
+    let release_result = init_lock.call_method0("release");
+    match (result, release_result) {
+        (Ok(lock), Ok(_)) => Ok(lock),
+        (Err(error), Ok(_)) => Err(error),
+        (Ok(_), Err(error)) | (Err(_), Err(error)) => Err(error.into()),
+    }
+}
+
+fn with_python_runtime_lock<T>(
+    py: Python<'_>,
+    operation: impl FnOnce() -> PyResult<T>,
+) -> PyResult<T> {
+    let lock = python_runtime_lock(py)?;
+    lock.call_method0("acquire")?;
+    let result = operation();
+    let release_result = lock.call_method0("release");
+    match (result, release_result) {
+        (Ok(value), Ok(_)) => Ok(value),
+        (Err(error), Ok(_)) => Err(error),
+        (Ok(_), Err(error)) | (Err(_), Err(error)) => Err(error.into()),
+    }
+}
+
 /// Coarse kind of a runtime-introspected member, for template/rendering
 /// dispatch downstream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -169,6 +206,10 @@ impl ClassIntrospection {
 /// A name that *is* genuinely importable is left alone (its real module is
 /// used, matching upstream's `ismock()`-aware skip).
 pub fn install_mock_imports(py: Python<'_>, mock_imports: &[String]) -> PyResult<()> {
+    with_python_runtime_lock(py, || install_mock_imports_unlocked(py, mock_imports))
+}
+
+fn install_mock_imports_unlocked(py: Python<'_>, mock_imports: &[String]) -> PyResult<()> {
     if mock_imports.is_empty() {
         return Ok(());
     }
@@ -211,69 +252,71 @@ pub fn introspect_module(
     mock_imports: &[String],
 ) -> PyResult<ModuleIntrospection> {
     Python::attach(|py| {
-        install_mock_imports(py, mock_imports)?;
-        let module = py.import(module_name)?;
-        let inspect = py.import("inspect")?;
+        with_python_runtime_lock(py, || {
+            install_mock_imports_unlocked(py, mock_imports)?;
+            let module = py.import(module_name)?;
+            let inspect = py.import("inspect")?;
 
-        let docstring = inspect
-            .call_method1("getdoc", (&module,))?
-            .extract::<Option<String>>()?;
+            let docstring = inspect
+                .call_method1("getdoc", (&module,))?
+                .extract::<Option<String>>()?;
 
-        let all: Option<Vec<String>> = module
-            .getattr("__all__")
-            .ok()
-            .and_then(|a| a.extract::<Vec<String>>().ok());
+            let all: Option<Vec<String>> = module
+                .getattr("__all__")
+                .ok()
+                .and_then(|a| a.extract::<Vec<String>>().ok());
 
-        let submodule_names: HashSet<String> = {
-            let sys = py.import("sys")?;
-            let modules = sys.getattr("modules")?;
-            let modules: &pyo3::Bound<'_, PyDict> = modules.cast()?;
-            let prefix = format!("{module_name}.");
-            let mut set = HashSet::new();
-            for key in modules.keys() {
-                if let Ok(k) = key.extract::<String>() {
-                    if let Some(rest) = k.strip_prefix(&prefix) {
-                        if !rest.contains('.') {
-                            set.insert(rest.to_string());
+            let submodule_names: HashSet<String> = {
+                let sys = py.import("sys")?;
+                let modules = sys.getattr("modules")?;
+                let modules: &pyo3::Bound<'_, PyDict> = modules.cast()?;
+                let prefix = format!("{module_name}.");
+                let mut set = HashSet::new();
+                for key in modules.keys() {
+                    if let Ok(k) = key.extract::<String>() {
+                        if let Some(rest) = k.strip_prefix(&prefix) {
+                            if !rest.contains('.') {
+                                set.insert(rest.to_string());
+                            }
                         }
                     }
                 }
+                set
+            };
+
+            let mut members = Vec::new();
+            let member_pairs = inspect.call_method1("getmembers", (&module,))?;
+            for pair in member_pairs.try_iter()? {
+                let pair = pair?;
+                let name: String = pair.get_item(0)?.extract()?;
+                if name.starts_with("__") && name.ends_with("__") {
+                    continue; // dunder module attributes (e.g. __name__, __file__)
+                }
+                let obj = pair.get_item(1)?;
+
+                let kind = classify(py, &inspect, &obj, &submodule_names, &name)?;
+                let Some(kind) = kind else { continue };
+
+                let signature = signature_of(&inspect, &obj);
+                let member_doc = inspect
+                    .call_method1("getdoc", (&obj,))?
+                    .extract::<Option<String>>()
+                    .unwrap_or(None);
+
+                members.push(MemberInfo {
+                    name,
+                    kind,
+                    signature,
+                    docstring: member_doc,
+                });
             }
-            set
-        };
 
-        let mut members = Vec::new();
-        let member_pairs = inspect.call_method1("getmembers", (&module,))?;
-        for pair in member_pairs.try_iter()? {
-            let pair = pair?;
-            let name: String = pair.get_item(0)?.extract()?;
-            if name.starts_with("__") && name.ends_with("__") {
-                continue; // dunder module attributes (e.g. __name__, __file__)
-            }
-            let obj = pair.get_item(1)?;
-
-            let kind = classify(py, &inspect, &obj, &submodule_names, &name)?;
-            let Some(kind) = kind else { continue };
-
-            let signature = signature_of(&inspect, &obj);
-            let member_doc = inspect
-                .call_method1("getdoc", (&obj,))?
-                .extract::<Option<String>>()
-                .unwrap_or(None);
-
-            members.push(MemberInfo {
-                name,
-                kind,
-                signature,
-                docstring: member_doc,
-            });
-        }
-
-        Ok(ModuleIntrospection {
-            name: module_name.to_string(),
-            docstring,
-            all,
-            members,
+            Ok(ModuleIntrospection {
+                name: module_name.to_string(),
+                docstring,
+                all,
+                members,
+            })
         })
     })
 }
@@ -286,58 +329,60 @@ pub fn introspect_class(
     mock_imports: &[String],
 ) -> PyResult<ClassIntrospection> {
     Python::attach(|py| {
-        install_mock_imports(py, mock_imports)?;
-        let module = py.import(module_name)?;
-        let class = module.getattr(class_name)?;
-        let inspect = py.import("inspect")?;
+        with_python_runtime_lock(py, || {
+            install_mock_imports_unlocked(py, mock_imports)?;
+            let module = py.import(module_name)?;
+            let class = module.getattr(class_name)?;
+            let inspect = py.import("inspect")?;
 
-        let docstring = inspect
-            .call_method1("getdoc", (&class,))?
-            .extract::<Option<String>>()?;
+            let docstring = inspect
+                .call_method1("getdoc", (&class,))?
+                .extract::<Option<String>>()?;
 
-        let mut members = Vec::new();
-        let member_pairs = inspect.call_method1("getmembers", (&class,))?;
-        for pair in member_pairs.try_iter()? {
-            let pair = pair?;
-            let name: String = pair.get_item(0)?.extract()?;
-            if name.starts_with("__") && name.ends_with("__") && name != "__init__" {
-                continue;
+            let mut members = Vec::new();
+            let member_pairs = inspect.call_method1("getmembers", (&class,))?;
+            for pair in member_pairs.try_iter()? {
+                let pair = pair?;
+                let name: String = pair.get_item(0)?.extract()?;
+                if name.starts_with("__") && name.ends_with("__") && name != "__init__" {
+                    continue;
+                }
+                let obj = pair.get_item(1)?;
+
+                let kind = if inspect
+                    .call_method1("isroutine", (&obj,))?
+                    .extract::<bool>()?
+                {
+                    MemberKind::Method
+                } else if is_property(py, &obj)? {
+                    MemberKind::Property
+                } else {
+                    MemberKind::Attribute
+                };
+
+                let signature = if kind == MemberKind::Method {
+                    signature_of(&inspect, &obj)
+                } else {
+                    None
+                };
+                let member_doc = inspect
+                    .call_method1("getdoc", (&obj,))?
+                    .extract::<Option<String>>()
+                    .unwrap_or(None);
+
+                members.push(MemberInfo {
+                    name,
+                    kind,
+                    signature,
+                    docstring: member_doc,
+                });
             }
-            let obj = pair.get_item(1)?;
 
-            let kind = if inspect
-                .call_method1("isroutine", (&obj,))?
-                .extract::<bool>()?
-            {
-                MemberKind::Method
-            } else if is_property(py, &obj)? {
-                MemberKind::Property
-            } else {
-                MemberKind::Attribute
-            };
-
-            let signature = if kind == MemberKind::Method {
-                signature_of(&inspect, &obj)
-            } else {
-                None
-            };
-            let member_doc = inspect
-                .call_method1("getdoc", (&obj,))?
-                .extract::<Option<String>>()
-                .unwrap_or(None);
-
-            members.push(MemberInfo {
-                name,
-                kind,
-                signature,
-                docstring: member_doc,
-            });
-        }
-
-        Ok(ClassIntrospection {
-            name: class_name.to_string(),
-            docstring,
-            members,
+            Ok(ClassIntrospection {
+                name: class_name.to_string(),
+                docstring,
+                members,
+            })
         })
     })
 }

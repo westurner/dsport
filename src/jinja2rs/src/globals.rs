@@ -139,7 +139,7 @@ impl Object for AccessKey {
             Ok(Value::from(""))
         } else {
             seen.insert(key.clone());
-            Ok(Value::from(format!(r#"accesskey="{key}""#)))
+            Ok(Value::from_safe_string(format!(r#"accesskey="{key}""#)))
         }
     }
 }
@@ -511,6 +511,19 @@ mod tests {
         assert!(!seen.contains("n"));
         seen.insert("n".to_owned());
         assert!(seen.contains("n"));
+    }
+
+    #[test]
+    fn test_accesskey_renders_as_an_html_attribute() {
+        let mut env = crate::Environment::new();
+        env.add_template("access.html", r#"{{ accesskey("I") }}"#)
+            .unwrap();
+        let rendered = env
+            .get_template("access.html")
+            .unwrap()
+            .render(serde_json::json!({}))
+            .unwrap();
+        assert_eq!(rendered, r#"accesskey="I""#);
     }
 
     #[test]

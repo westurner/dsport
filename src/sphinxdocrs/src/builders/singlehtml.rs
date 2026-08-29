@@ -40,6 +40,7 @@ use docutilsrs::parse_rst_with_source;
 use super::html::HtmlBuilder;
 use super::{BuildError, BuildResult, Builder};
 use crate::environment::BuildEnvironment;
+use crate::util_strypes::html_escape_attr;
 
 /// Single-page HTML builder: every document rendered into one `index.html`.
 #[derive(Default)]
@@ -87,7 +88,10 @@ impl Builder for SinglehtmlBuilder {
     fn build_doc(&self, docname: &str, source: &str, outdir: &Path) -> Result<(), BuildError> {
         let tree = parse_rst_with_source(source, docname);
         let (title, body) = self.inner.render_fragment_from_tree(docname, &tree);
-        let anchored = format!("<div id=\"{}\">\n{body}\n</div>", html_escape_attr(docname));
+        let anchored = format!(
+            "<div id=\"{}\">\n{body}\n</div>",
+            html_escape_attr(docname)
+        );
         let page = HtmlBuilder::render_embedded_or_wrap(
             docname,
             &title,
@@ -234,15 +238,6 @@ fn flatten_toctree(
         }
         flatten_toctree(&entry.children, all, ordered, seen);
     }
-}
-
-/// Minimal attribute-safe escaping for the `id="..."` anchors built from
-/// docnames (which may contain `/`, harmless in an HTML `id` attribute but
-/// still passed through a real escaper for `"`/`&`/`<` safety).
-fn html_escape_attr(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
 }
 
 #[cfg(test)]

@@ -17,7 +17,6 @@ use std::sync::Mutex;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use regex::Regex;
 
 static COLOURING_DISABLED: Mutex<bool> = Mutex::new(false);
 
@@ -82,19 +81,7 @@ pub fn colourise(colour_name: &str, text: &str) -> Result<String, String> {
     Ok(wrap(code, text))
 }
 
-/// `_ANSI_CODES` re-implementation. Matches the SGR colour code
-/// shape `\x1b\[(?:\d+;){0,2}\d*m` or the erase-in-line shape
-/// `\x1b\[[012]?K`.
-fn ansi_re() -> &'static Regex {
-    use std::sync::OnceLock;
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\x1b\[(?:(?:\d+;){0,2}\d*m|[012]?K)").unwrap())
-}
-
-/// Port of `sphinx._cli.util.errors.strip_escape_sequences`.
-pub fn strip_escape_sequences(text: &str) -> String {
-    ansi_re().replace_all(text, "").into_owned()
-}
+pub use crate::util_strypes::strip_escape_sequences;
 
 /// Port of `sphinx._cli.util.errors.terminal_safe` (also re-exported
 /// as `sphinx.util.console.terminal_safe`). Encodes via ASCII with

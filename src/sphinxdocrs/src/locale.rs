@@ -41,6 +41,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+use crate::util_strypes::{unescape_po_string, unescape_po_string_safe};
+
 // ── built-in locale directory ─────────────────────────────────────────────────
 
 /// Relative path (from the crate root) to the sphinx locale symlink.
@@ -157,7 +159,9 @@ impl PoCatalog {
                 in_msgid = true;
                 in_msgstr = false;
                 in_msgstr0 = false;
-                cur_id = unescape_po_string(strip_po_quotes(line.trim_start_matches("msgid ")));
+                cur_id = unescape_po_string(
+                    strip_po_quotes(line.trim_start_matches("msgid ")),
+                );
                 continue;
             }
 
@@ -171,7 +175,7 @@ impl PoCatalog {
                 in_msgstr = false;
                 in_msgstr0 = true;
                 let rest = line.trim_start_matches("msgstr[0]").trim_start_matches(' ');
-                cur_str = unescape_po_string(strip_po_quotes(rest));
+                cur_str = unescape_po_string_safe(strip_po_quotes(rest));
                 continue;
             }
 
@@ -187,13 +191,19 @@ impl PoCatalog {
                 in_msgid = false;
                 in_msgstr = true;
                 in_msgstr0 = false;
-                cur_str = unescape_po_string(strip_po_quotes(line.trim_start_matches("msgstr ")));
+                cur_str = unescape_po_string_safe(
+                    strip_po_quotes(line.trim_start_matches("msgstr ")),
+                );
                 continue;
             }
 
             // Continuation line: starts with `"`
             if line.starts_with('"') {
-                let chunk = unescape_po_string(strip_po_quotes(line));
+                let chunk = if in_msgid {
+                    unescape_po_string(strip_po_quotes(line))
+                } else {
+                    unescape_po_string_safe(strip_po_quotes(line))
+                };
                 if in_msgid {
                     cur_id.push_str(&chunk);
                 } else if in_msgstr || in_msgstr0 {
@@ -275,31 +285,6 @@ fn strip_po_quotes(s: &str) -> &str {
     } else {
         s
     }
-}
-
-/// Decode C-style escape sequences used in `.po` files.
-fn unescape_po_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\\' {
-            match chars.next() {
-                Some('n') => out.push('\n'),
-                Some('t') => out.push('\t'),
-                Some('r') => out.push('\r'),
-                Some('"') => out.push('"'),
-                Some('\\') => out.push('\\'),
-                Some(c) => {
-                    out.push('\\');
-                    out.push(c);
-                }
-                None => out.push('\\'),
-            }
-        } else {
-            out.push(ch);
-        }
-    }
-    out
 }
 
 // ── Translator ────────────────────────────────────────────────────────────────
@@ -668,6 +653,16 @@ msgstr "zeile1\nzeile2"
 "#;
         let cat = PoCatalog::parse(po);
         assert_eq!(cat.gettext("line1\nline2"), "zeile1\nzeile2");
+    }
+
+    #[test]
+    fn parse_translation_removes_terminal_controls() {
+        let po = r#"
+msgid "status"
+msgstr "\x1b[31mred\x1b[0m\x1b]title\a\r"
+"#;
+        let cat = PoCatalog::parse(po);
+        assert_eq!(cat.gettext("status"), "red");
     }
 
     #[test]

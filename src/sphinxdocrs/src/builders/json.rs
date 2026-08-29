@@ -48,6 +48,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{BuildError, BuildResult, Builder};
 use crate::environment::BuildEnvironment;
+use crate::util_strypes::{html_escape_attr, html_escape_text};
 
 /// A [`serde_json::ser::Formatter`] matching Python's `json.dump(obj)`
 /// default output exactly: a single line, `", "` between array/object
@@ -232,8 +233,8 @@ impl JsonBuilder {
             {
                 entries.push(format!(
                     r#"<li><a href="{}">{}</a></li>"#,
-                    html_escape(target_uri),
-                    html_escape(candidate),
+                    html_escape_attr(target_uri),
+                    html_escape_text(candidate),
                 ));
             }
         }
@@ -383,7 +384,7 @@ impl JsonBuilder {
 
         let ctx = PageContext {
             body,
-            title: html_escape(&title),
+            title: html_escape_text(&title),
             toc,
             display_toc,
             current_page_name: docname.to_string(),
@@ -542,7 +543,10 @@ impl Builder for JsonBuilder {
                         BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
                     })?;
             let title = Self::extract_title(docname, &source);
-            titles.insert(docname.clone(), html_escape(&title));
+            titles.insert(
+                docname.clone(),
+                html_escape_text(&title),
+            );
             sources.push(source);
         }
 
@@ -816,13 +820,6 @@ fn src_path_for_docname(srcdir: &Path, docname: &str, source_suffix: &str) -> Pa
     srcdir.join(format!("{docname}.{ext}"))
 }
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
 // ── inline unit tests ─────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1094,14 +1091,17 @@ mod tests {
 
     #[test]
     fn html_escape_ampersand() {
-        assert_eq!(html_escape("a & b"), "a &amp; b");
+        assert_eq!(html_escape_text("a & b"), "a &amp; b");
     }
     #[test]
     fn html_escape_angle_brackets() {
-        assert_eq!(html_escape("<em>"), "&lt;em&gt;");
+        assert_eq!(html_escape_text("<em>"), "&lt;em&gt;");
     }
     #[test]
     fn html_escape_quotes() {
-        assert_eq!(html_escape(r#"say "hi""#), "say &quot;hi&quot;");
+        assert_eq!(
+            html_escape_text(r#"say "hi""#),
+            "say &quot;hi&quot;"
+        );
     }
 }

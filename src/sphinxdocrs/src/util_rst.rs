@@ -7,7 +7,7 @@
 //! | upstream symbol | Rust target | notes |
 //! | --- | --- | --- |
 //! | `SECTIONING_CHARS` | [`SECTIONING_CHARS`] | `['=', '-', '~']` |
-//! | `escape(text)` | [`escape`] | escapes RST special characters |
+//! | `escape(text)` | [`escape`] | strictly sanitizes untrusted RST text |
 //! | `textwidth(text, widechars)` | [`textwidth`] | east-Asian aware display width |
 //! | `heading(env, text, level)` | [`heading`] | renders a heading with underline |
 //! | `_prepend_prologue(content, prologue)` | [`prepend_prologue`] | insert prologue after docinfo |
@@ -46,51 +46,7 @@ pub const WIDECHARS_JA: &str = "WFA";
 
 // ── escape ────────────────────────────────────────────────────────────────────
 
-/// Escape RST special characters in `text`.
-///
-/// Mirrors `sphinx.util.rst.escape`:
-/// - Backslash-escapes all ASCII symbols in the range `!` to `~` except `.`
-///   (i.e. `!-\-/`, `:-@`, `\[-\``, `{-~`).
-/// - Additionally escapes a leading `.` at the start of the string.
-///
-/// ```rust
-/// use sphinxdocrs::util_rst::escape;
-/// assert_eq!(escape(":ref:`id`"), r"\:ref\:\`id\`");
-/// assert_eq!(escape("sphinx.application"), "sphinx.application");
-/// ```
-pub fn escape(text: &str) -> String {
-    // Mirrors: symbols_re = re.compile(r'([!-\-/:-@\[-`{-~])')
-    // In ASCII these are: !, ", #, $, %, &, ', (, ), *, +, ,, -, /
-    //                      :, ;, <, =, >, ?, @
-    //                      [, \, ], ^, _, `
-    //                      {, |, }, ~
-    // i.e. all printable ASCII punctuation except `.` (0x2e)
-    let mut out = String::with_capacity(text.len() * 2);
-    for c in text.chars() {
-        if is_rst_symbol(c) {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    // Also escape a leading dot (mirrors `re.sub(r'^\.', r'\.', text)`)
-    if out.starts_with('.') {
-        out.insert(0, '\\');
-    }
-    out
-}
-
-/// Return `true` for RST special symbols (ASCII punctuation except `.`).
-fn is_rst_symbol(c: char) -> bool {
-    // Ranges from the Python regex `[!-\-/:-@\[-`{-~]`:
-    // '!' (0x21) to '-' (0x2D) inclusive
-    // '/' (0x2F)
-    // ':' (0x3A) to '@' (0x40) inclusive
-    // '[' (0x5B) to '`' (0x60) inclusive
-    // '{' (0x7B) to '~' (0x7E) inclusive
-    matches!(c,
-        '!'..='-' | '/' | ':'..='@' | '['..='`' | '{'..='~'
-    )
-}
+pub use crate::util_strypes::rst_escape as escape;
 
 // ── textwidth ─────────────────────────────────────────────────────────────────
 
@@ -389,15 +345,14 @@ mod tests {
 
     #[test]
     fn escape_dotted_module() {
-        // Mirrors: escape('sphinx.application') == 'sphinx.application'
-        // dots are NOT escaped in the middle
-        assert_eq!(escape("sphinx.application"), "sphinx.application");
+        // Strict sanitization escapes punctuation anywhere in the text.
+        assert_eq!(escape("sphinx.application"), r"sphinx\.application");
     }
 
     #[test]
     fn escape_toctree_directive() {
-        // Mirrors: escape('.. toctree::') == r'\.. toctree\:\:'
-        assert_eq!(escape(".. toctree::"), r"\.. toctree\:\:");
+        // Strict sanitization neutralizes the directive marker and colons.
+        assert_eq!(escape(".. toctree::"), r"\.\. toctree\:\:");
     }
 
     #[test]

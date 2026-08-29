@@ -68,6 +68,7 @@ use crate::environment::BuildEnvironment;
 use crate::toctree::{self, TocEntry};
 use crate::util_osutil::relative_uri;
 use crate::util_uri::is_url;
+use crate::util_strypes::{html_escape_attr, html_escape_text, is_safe_html_attribute_name};
 
 // ── PageState (shared, per-build) ─────────────────────────────────────────────
 
@@ -111,9 +112,15 @@ impl PageState {
 }
 
 fn target_uri(path_style: PathStyle, docname: &str) -> String {
-    match path_style {
+    let (docname, fragment) = docname.split_once('#').unwrap_or((docname, ""));
+    let uri = match path_style {
         PathStyle::Flat => HtmlBuilder::new().get_target_uri(docname),
         PathStyle::Dir => HtmlBuilder::new_dir_style().get_target_uri(docname),
+    };
+    if fragment.is_empty() {
+        uri
+    } else {
+        format!("{uri}#{fragment}")
     }
 }
 
@@ -327,7 +334,14 @@ fn render_attributes(attributes: &HashMap<String, String>) -> String {
     entries.sort_by(|(left, _), (right, _)| left.cmp(right));
     entries
         .into_iter()
-        .map(|(key, value)| format!("{}=\"{}\"", key, html_escape_attr(value)))
+        .filter(|(key, _)| is_safe_html_attribute_name(key))
+        .map(|(key, value)| {
+            format!(
+                "{}=\"{}\"",
+                key,
+                html_escape_attr(value)
+            )
+        })
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -480,16 +494,6 @@ fn local_toc_from_doctree(
     doctree
         .map(|tree| sections(tree, tree.root(), docname))
         .unwrap_or_default()
-}
-
-fn html_escape_text(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-fn html_escape_attr(s: &str) -> String {
-    html_escape_text(s).replace('"', "&quot;")
 }
 
 // ── relations (parents / prev / next) ─────────────────────────────────────────
@@ -1323,6 +1327,17 @@ fn config_val_to_json(v: &crate::config::ConfigVal) -> serde_json::Value {
 mod tests {
     use super::*;
     use docutilsrs::parse_rst_with_source;
+
+    #[test]
+    fn render_attributes_rejects_markup_and_event_attribute_names() {
+        let attributes = HashMap::from([
+            ("data-label".to_string(), "safe\"value".to_string()),
+            ("onerror".to_string(), "alert(1)".to_string()),
+            ("bad name".to_string(), "ignored".to_string()),
+        ]);
+        let rendered = render_attributes(&attributes);
+        assert_eq!(rendered, "data-label=\"safe&quot;value\"");
+    }
 
     #[test]
     fn render_toc_html_nested() {

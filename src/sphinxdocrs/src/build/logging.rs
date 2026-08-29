@@ -11,6 +11,8 @@
 
 use std::path::PathBuf;
 
+use crate::util_strypes::strip_escape_sequences;
+
 /// Resolved logging configuration.
 #[derive(Debug)]
 pub struct LoggingConfig {
@@ -61,7 +63,7 @@ pub fn finish_build(warnings: &[String], config: &LoggingConfig, warningiserror:
     if let Some(path) = &config.warnfile {
         let mut stripped = String::new();
         for w in warnings {
-            stripped.push_str(&crate::util_console::strip_escape_sequences(w));
+            stripped.push_str(&strip_escape_sequences(w));
             stripped.push('\n');
         }
         if let Err(e) = std::fs::write(path, stripped) {

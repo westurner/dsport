@@ -29,6 +29,7 @@ use super::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
 use crate::environment::BuildEnvironment;
 use crate::genindex::{GenIndexTerm, ModIndexEntry};
+use crate::util_strypes::html_escape_text;
 
 // ── HtmlBuilder ───────────────────────────────────────────────────────────────
 
@@ -130,8 +131,7 @@ impl HtmlBuilder {
         // Extract promoted document title from NodeKind::Document { title, .. }
         let title = match &tree.node(tree.root()).kind {
             NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
-            _ => first_title_text(tree)
-                .unwrap_or_else(|| docname.rsplit('/').next().unwrap_or(docname).to_owned()),
+            _ => docname.rsplit('/').next().unwrap_or(docname).to_owned(),
         };
         let body = html5(tree, &self.html5_options, &self.common_options);
         (title, body)
@@ -142,11 +142,14 @@ impl HtmlBuilder {
     /// Includes a link to `_static/sphinxdocrs.css` so pages have basic
     /// styling without requiring the full Jinja2 theme pipeline.
     fn wrap_page(title: &str, body: &str, project: &str) -> String {
-        let title_esc = html_escape(title);
+        let title_esc = html_escape_text(title);
         let page_title = if project.is_empty() {
             title_esc.clone()
         } else {
-            format!("{title_esc} &#8212; {}", html_escape(project))
+            format!(
+                "{title_esc} &#8212; {}",
+                html_escape_text(project)
+            )
         };
         format!(
             "<!DOCTYPE html>\n\
@@ -334,8 +337,8 @@ impl HtmlBuilder {
         };
         format!(
             "<a href=\"{}\">{}</a>",
-            html_escape(&href),
-            html_escape(docname)
+            html_escape_text(&href),
+            html_escape_text(docname)
         )
     }
 
@@ -360,12 +363,12 @@ impl HtmlBuilder {
         }
         body.push_str("<div class=\"genindex-jumpbox\">\n");
         for (letter, _) in buckets {
-            let l = html_escape(letter);
+            let l = html_escape_text(letter);
             body.push_str(&format!("<a href=\"#{l}\"><strong>{l}</strong></a> | "));
         }
         body.push_str("\n</div>\n");
         for (letter, terms) in buckets {
-            let l = html_escape(letter);
+            let l = html_escape_text(letter);
             body.push_str(&format!("<h2 id=\"{l}\">{l}</h2>\n<ul>\n"));
             for term in terms {
                 body.push_str("<li>");
@@ -373,8 +376,8 @@ impl HtmlBuilder {
                     let label = if *is_seealso { "see also" } else { "see" };
                     body.push_str(&format!(
                         "{} <em>({label} {})</em>",
-                        html_escape(&term.name),
-                        html_escape(target)
+                        html_escape_text(&term.name),
+                        html_escape_text(target)
                     ));
                 } else if term.subterms.is_empty() {
                     let links: Vec<String> = term
@@ -384,7 +387,7 @@ impl HtmlBuilder {
                         .collect();
                     body.push_str(&format!(
                         "{}: {}",
-                        html_escape(&term.name),
+                        html_escape_text(&term.name),
                         links.join(", ")
                     ));
                 } else {
@@ -398,7 +401,10 @@ impl HtmlBuilder {
                             .collect();
                         format!(" ({})", links.join(", "))
                     };
-                    body.push_str(&format!("{}{direct}\n<ul>\n", html_escape(&term.name)));
+                    body.push_str(&format!(
+                        "{}{direct}\n<ul>\n",
+                        html_escape_text(&term.name)
+                    ));
                     for (sub, sublinks) in &term.subterms {
                         let links: Vec<String> = sublinks
                             .iter()
@@ -406,7 +412,7 @@ impl HtmlBuilder {
                             .collect();
                         body.push_str(&format!(
                             "<li>{}: {}</li>\n",
-                            html_escape(sub),
+                            html_escape_text(sub),
                             links.join(", ")
                         ));
                     }
@@ -442,48 +448,19 @@ impl HtmlBuilder {
         for (letter, modules) in buckets {
             body.push_str(&format!(
                 "<tr><td colspan=\"2\"><strong>{}</strong></td></tr>\n",
-                html_escape(letter)
+                html_escape_text(letter)
             ));
             for module in modules {
                 let link = self.index_link(&module.docname, &module.anchor);
                 body.push_str(&format!(
                     "<tr><td></td><td><code>{}</code> {link}</td></tr>\n",
-                    html_escape(&module.name)
+                    html_escape_text(&module.name)
                 ));
             }
         }
         body.push_str("</table>\n");
         Self::render_embedded_or_wrap("py-modindex", "Python Module Index", &body, meta)
     }
-}
-
-fn first_title_text(tree: &Doctree) -> Option<String> {
-    fn find_title(tree: &Doctree, node_id: usize) -> Option<String> {
-        if matches!(tree.node(node_id).kind, NodeKind::Title) {
-            let mut text = String::new();
-            collect_text(tree, node_id, &mut text);
-            if !text.is_empty() {
-                return Some(text);
-            }
-        }
-        for child in tree.node(node_id).children.iter().copied() {
-            if let Some(title) = find_title(tree, child) {
-                return Some(title);
-            }
-        }
-        None
-    }
-
-    fn collect_text(tree: &Doctree, node_id: usize, text: &mut String) {
-        if let NodeKind::Text(value) = &tree.node(node_id).kind {
-            text.push_str(value);
-        }
-        for child in tree.node(node_id).children.iter().copied() {
-            collect_text(tree, child, text);
-        }
-    }
-
-    find_title(tree, tree.root())
 }
 
 /// Page-level metadata passed to the theme when rendering a document.
@@ -529,29 +506,15 @@ impl Builder for HtmlBuilder {
     /// assert_eq!(b.get_target_uri("guide/intro"), "guide/intro.html");
     /// ```
     fn get_target_uri(&self, docname: &str) -> String {
-        let (docname, fragment) = docname
-            .split_once('#')
-            .map(|(name, fragment)| (name, Some(fragment)))
-            .unwrap_or((docname, None));
-        let append_fragment = |uri: String| {
-            fragment
-                .filter(|fragment| !fragment.is_empty())
-                .map(|fragment| format!("{uri}#{fragment}"))
-                .unwrap_or(uri)
-        };
         match self.path_style {
-            PathStyle::Flat => append_fragment(format!(
-                "{}{}",
-                percent_encode_path(docname),
-                self.link_suffix
-            )),
+            PathStyle::Flat => format!("{}{}", percent_encode_path(docname), self.link_suffix),
             PathStyle::Dir => {
                 if docname == "index" {
-                    append_fragment(String::new())
+                    String::new()
                 } else if let Some(stripped) = docname.strip_suffix("/index") {
-                    append_fragment(format!("{}/", percent_encode_path(stripped)))
+                    format!("{}/", percent_encode_path(stripped))
                 } else {
-                    append_fragment(format!("{}/", percent_encode_path(docname)))
+                    format!("{}/", percent_encode_path(docname))
                 }
             }
         }
@@ -579,7 +542,7 @@ impl Builder for HtmlBuilder {
     /// Build all RST documents in `srcdir` into `outdir`.
     ///
     /// Documents are taken from `env.all_docs` if populated, otherwise
-    /// discovered by walking `srcdir` for configured source suffixes.
+    /// discovered by walking `srcdir` for `*.rst` files.
     fn build_all(
         &self,
         srcdir: &Path,
@@ -616,20 +579,6 @@ impl Builder for HtmlBuilder {
             asset_builder,
         ) {
             eprintln!("Warning: failed to copy theme static files: {e}");
-        }
-
-        // The fallback stylesheet is useful only when the embedded theme is
-        // active. A resolved upstream theme owns the stylesheet list and
-        // must not receive an extra native-only asset.
-        if crate::theme_static::resolve_theme_templates(
-            &env.config.html_theme(),
-            srcdir,
-            &env.config.html_theme_path(),
-            env.config.registered_themes(),
-        )
-        .is_some()
-        {
-            let _ = std::fs::remove_file(outdir.join("_static/sphinxdocrs.css"));
         }
 
         // Fetch intersphinx inventory files (no-op when extension is absent).
@@ -695,7 +644,7 @@ impl Builder for HtmlBuilder {
                     .map_err(|e| {
                         BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
                     })?;
-                    env.parse_source(docname, &source)?
+                    parse_rst_with_source(&source, docname)
                 }
             };
             // Keep the resolution call as an idempotent compatibility fallback
@@ -908,27 +857,13 @@ pub(crate) fn write_objects_inventory(
         entries.push(crate::intersphinx::InventoryEntry {
             name: docname.clone(),
             item_type: "std:doc".to_string(),
-            priority: -1,
+            priority: 0,
             uri: builder.get_target_uri(docname),
             display_name: env.titles.get(docname).cloned().unwrap_or_default(),
         });
     }
-    for (name, docname, display_name) in [
-        ("genindex", "genindex", "Index"),
-        ("modindex", "py-modindex", "Module Index"),
-        ("py-modindex", "py-modindex", "Python Module Index"),
-        ("search", "search", "Search Page"),
-    ] {
-        entries.push(crate::intersphinx::InventoryEntry {
-            name: name.to_string(),
-            item_type: "std:label".to_string(),
-            priority: -1,
-            uri: builder.get_target_uri(docname),
-            display_name: display_name.to_string(),
-        });
-    }
     entries.sort_by(|left, right| {
-        (&left.name, &left.item_type, &left.uri).cmp(&(&right.name, &right.item_type, &right.uri))
+        (&left.item_type, &left.name, &left.uri).cmp(&(&right.item_type, &right.name, &right.uri))
     });
     let content =
         crate::intersphinx::dumps(&env.config.project(), &env.config.version(), &entries)?;
@@ -943,9 +878,8 @@ pub(crate) fn write_objects_inventory(
 /// its **contents** (not the directory itself) are copied into `_static/`,
 /// matching Sphinx.  Missing directories are skipped with a warning.
 ///
-/// Theme-provided assets (alabaster.css, doctools.js, ...) are copied separately
-/// by [`crate::theme_static::copy_theme_static_files_for_builder`]; this helper
-/// handles only user-provided files.
+/// Theme-provided assets (alabaster.css, doctools.js, …) are **not** produced
+/// because the Jinja2 theme pipeline is not ported — only user files are copied.
 pub(crate) fn copy_html_static_path(
     srcdir: &Path,
     outdir: &Path,
@@ -1034,8 +968,8 @@ pub fn discover_docnames_pub(srcdir: &Path, config: &SphinxConfig) -> Vec<String
     discover_docnames(srcdir, config)
 }
 
-/// Walk `srcdir` and return all `.rst` docnames (relative, no extension),
-/// `/`-separated. Public for callers that intentionally use the default
+/// Walk `srcdir` and return all `.rst` docnames (relative, no extension,
+/// `/`-separated). Public for callers that intentionally use the default
 /// source suffix.
 pub fn discover_rst_docnames_pub(srcdir: &Path) -> Vec<String> {
     let mut docnames = Vec::new();
@@ -1185,14 +1119,6 @@ fn hex_digit(n: u8) -> char {
         10..=15 => (b'A' + n - 10) as char,
         _ => unreachable!(),
     }
-}
-
-/// Minimal HTML escaping for page title.
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 // ── inline tests ──────────────────────────────────────────────────────────────
@@ -1448,14 +1374,17 @@ mod tests {
     #[test]
     fn html_escape_special_chars() {
         assert_eq!(
-            html_escape("A & B < C > D \"E\""),
+            html_escape_text("A & B < C > D \"E\""),
             "A &amp; B &lt; C &gt; D &quot;E&quot;"
         );
     }
 
     #[test]
     fn html_escape_plain_text() {
-        assert_eq!(html_escape("Hello World"), "Hello World");
+        assert_eq!(
+            html_escape_text("Hello World"),
+            "Hello World"
+        );
     }
 
     #[test]

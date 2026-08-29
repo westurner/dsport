@@ -36,6 +36,7 @@ use std::path::Path;
 
 use super::{BuildError, BuildResult, Builder};
 use crate::environment::BuildEnvironment;
+use crate::util_strypes::html_escape_text;
 
 /// One recovered `versionadded`/`versionchanged`/`deprecated` entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,12 +189,6 @@ pub fn scan_version_changes(source: &str) -> Vec<VersionChange> {
     out
 }
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
 /// Render the grouped changes as a minimal HTML report, newest version
 /// first (reverse string sort, see the module-level accepted deviation).
 fn render_report(by_version: &BTreeMap<String, Vec<(String, VersionChange)>>) -> String {
@@ -201,14 +196,14 @@ fn render_report(by_version: &BTreeMap<String, Vec<(String, VersionChange)>>) ->
     for (version, entries) in by_version.iter().rev() {
         body.push_str(&format!(
             "<h2>Changes in version {}</h2>\n<ul>\n",
-            html_escape(version)
+            html_escape_text(version)
         ));
         for (docname, change) in entries {
             body.push_str(&format!(
                 "<li><strong>{}</strong> ({}): {}</li>\n",
-                html_escape(change.kind),
-                html_escape(docname),
-                html_escape(&change.description)
+                html_escape_text(change.kind),
+                html_escape_text(docname),
+                html_escape_text(&change.description)
             ));
         }
         body.push_str("</ul>\n");

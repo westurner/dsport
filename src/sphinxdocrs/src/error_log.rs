@@ -9,6 +9,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::cli::io::Terminal;
+use crate::util_strypes::strip_escape_sequences;
 
 pub const STATUS_EDITED: &str = "edited";
 pub const STATUS_SKIPPED: &str = "skipped";
@@ -270,7 +271,7 @@ fn path_string(path: &Path) -> String {
 pub fn parse_text(log: &str) -> Vec<ErrorMessage> {
     let mut result = Vec::new();
     for raw_line in log.lines() {
-        let line = crate::util_console::strip_escape_sequences(raw_line)
+        let line = strip_escape_sequences(raw_line)
             .trim()
             .to_owned();
         if let Some(error) = parse_location_line(&line) {

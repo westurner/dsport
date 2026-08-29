@@ -58,9 +58,11 @@ pub mod toctree;
 pub mod util_console;
 pub mod util_docstrings;
 pub mod util_lines;
+pub mod util_md;
 pub mod util_matching;
 pub mod util_osutil;
 pub mod util_rst;
+pub mod util_strypes;
 pub mod util_uri;
 pub mod versioning;
 

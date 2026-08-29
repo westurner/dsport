@@ -6,6 +6,7 @@ use docutilsrs::{Doctree, html5, parse_rst_with_source, zip_writer::ZipBuilder};
 
 use super::{BuildError, BuildResult, Builder};
 use crate::environment::BuildEnvironment;
+use crate::util_strypes::xml_escape;
 
 #[derive(Debug, Default)]
 pub struct EpubBuilder;
@@ -98,15 +99,6 @@ impl EpubBuilder {
         }
         zip.finish()
     }
-}
-
-fn xml_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
 }
 
 fn config_string(env: &BuildEnvironment, key: &str, fallback: &str) -> String {

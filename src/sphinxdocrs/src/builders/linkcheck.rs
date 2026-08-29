@@ -402,36 +402,29 @@ pub fn check_uri(docname: &str, uri: &str, cfg: &LinkcheckConfig) -> CheckResult
     }
 }
 
-/// Escape a string for inclusion in a JSON string literal.
-fn json_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out
+#[derive(serde::Serialize)]
+struct LinkcheckJsonEntry {
+    filename: String,
+    lineno: u32,
+    status: String,
+    code: i32,
+    uri: String,
+    info: String,
 }
 
 /// Serialise a `CheckResult` as a single-line JSON object matching the
 /// upstream `write_linkstat` key set (`filename`, `lineno`, `status`,
 /// `code`, `uri`, `info`).
 fn result_to_json(r: &CheckResult) -> String {
-    format!(
-        "{{\"filename\": \"{}\", \"lineno\": {}, \"status\": \"{}\", \"code\": {}, \"uri\": \"{}\", \"info\": \"{}\"}}",
-        json_escape(&format!("{}.rst", r.docname)),
-        0,
-        r.status.as_str(),
-        r.code,
-        json_escape(&r.uri),
-        json_escape(&r.info),
-    )
+    serde_json::to_string(&LinkcheckJsonEntry {
+        filename: format!("{}.rst", r.docname),
+        lineno: 0,
+        status: r.status.as_str().to_string(),
+        code: r.code,
+        uri: r.uri.clone(),
+        info: r.info.clone(),
+    })
+    .expect("linkcheck JSON entry contains only serializable fields")
 }
 
 impl Builder for LinkcheckBuilder {
@@ -625,30 +618,26 @@ See section_.\n\
     }
 
     #[test]
-    fn json_escape_handles_quotes_and_control() {
-        assert_eq!(json_escape("a\"b"), "a\\\"b");
-        assert_eq!(json_escape("a\\b"), "a\\\\b");
-        assert_eq!(json_escape("a\nb"), "a\\nb");
-    }
-
-    #[test]
     fn result_to_json_has_required_keys() {
         let r = CheckResult {
             docname: "index".into(),
-            uri: "https://example.com/".into(),
+            uri: "https://example.com/\"bad".into(),
             status: LinkStatus::Working,
             code: 200,
-            info: String::new(),
+            info: "line\n\"break".into(),
         };
         let json = result_to_json(&r);
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         for key in ["filename", "lineno", "status", "code", "uri", "info"] {
             assert!(
                 json.contains(&format!("\"{key}\"")),
                 "missing key {key} in {json}"
             );
         }
-        assert!(json.contains("\"status\": \"working\""));
-        assert!(json.contains("\"code\": 200"));
+        assert_eq!(value["uri"], "https://example.com/\"bad");
+        assert_eq!(value["info"], "line\n\"break");
+        assert_eq!(value["status"], "working");
+        assert_eq!(value["code"], 200);
     }
 
     #[test]

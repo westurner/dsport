@@ -606,6 +606,7 @@ impl Builder for HtmlBuilder {
         let real_theme =
             crate::theme_render::ThemeRenderer::new(env, outdir, &docnames, self.path_style);
         if let Some(renderer) = &real_theme {
+            let _ = std::fs::remove_file(outdir.join("_static/sphinxdocrs.css"));
             if let Ok(search_page) = renderer.render_search_page(env) {
                 let search_path = match self.path_style {
                     PathStyle::Flat => outdir.join("search.html"),

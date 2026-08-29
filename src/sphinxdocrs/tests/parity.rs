@@ -2151,8 +2151,8 @@ fn html_parity_snapshot_gap(html_parity_shared: &HtmlParityShared) {
 // ── _static/ directory parity ─────────────────────────────────────────────────
 //
 // Python sphinx-build copies many assets into _static/ — theme CSS, JS,
-// Pygments stylesheet, search index, and fonts.  The Rust builder currently
-// only writes `_static/sphinxdocrs.css`.
+// Pygments stylesheet, search index, and fonts. The Rust builder and theme
+// pipeline write/copy the native and resolved-theme assets here.
 //
 // These tests:
 //   1. Assert the Rust builder creates `_static/`.
@@ -2162,8 +2162,8 @@ fn html_parity_snapshot_gap(html_parity_shared: &HtmlParityShared) {
 //   5. Assert every `_static/` href/src in Rust HTML resolves to a file on disk
 //      (no broken stylesheet or script links).
 //
-// To grow parity: add asset copying in `write_static_files`
-// (src/sphinxdocrs/src/builders/html.rs).
+// To grow parity: extend `copy_theme_static_files_for_builder` and the
+// user-static-path handling in the HTML builder.
 
 /// Rust must create a `_static/` directory during an HTML build.
 #[rstest]
@@ -3640,7 +3640,6 @@ fn sphinx_docs_parity_gap_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildSha
 /// | `contents.html`        | Sphinx compat redirect (needs master_doc logic) |
 /// | `changes.html`         | Sphinx changes-builder / todo extension output |
 /// | `searchindex.js`       | Search index serialisation (needs indexer) |
-/// | `_static/sphinxdocrs.css` | sphinxdocrs-own stylesheet (not in Python) |
 #[rstest]
 fn sphinx_docs_html_pages_match(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
     if !sphinx_docs_build_shared.py_built {
@@ -3659,9 +3658,6 @@ fn sphinx_docs_html_pages_match(sphinx_docs_build_shared: &SphinxDocsBuildShared
         "_modules/", // viewcode extension output
         "_static/",  // Python theme static assets (JS, CSS) not in our minimal builder
     ];
-
-    /// Files sphinxdocrs produces that Python doesn't (intentional deviations).
-    const RS_ONLY_ALLOWLIST: &[&str] = &["_static/sphinxdocrs.css"];
 
     /// Standard HTML pages sphinx always generates (not from a source RST file).
     const STANDARD_PAGES: &[&str] = &["genindex.html", "search.html"];
@@ -3710,22 +3706,8 @@ fn sphinx_docs_html_pages_match(sphinx_docs_build_shared: &SphinxDocsBuildShared
             }
         })
     };
-    let is_allowed_rs_only = |p: &str| {
-        RS_ONLY_ALLOWLIST.iter().any(|a| {
-            if a.ends_with('/') {
-                p.starts_with(a)
-            } else {
-                p == *a
-            }
-        })
-    };
-
     // Unexpected Rust-only pages (not on the allowlist).
-    let mut unexpected_rs_only: Vec<String> = rs_html
-        .difference(&py_html)
-        .filter(|p| !is_allowed_rs_only(p))
-        .cloned()
-        .collect();
+    let mut unexpected_rs_only: Vec<String> = rs_html.difference(&py_html).cloned().collect();
     unexpected_rs_only.sort();
 
     // Unexpected Python-only pages (not on the allowlist) — pages Rust should produce.

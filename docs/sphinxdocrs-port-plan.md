@@ -1449,6 +1449,11 @@ explicitly documented renderer/theme provenance deviations.
   stopwords are embedded in `language_data.js`, and the basic theme's
   `NoneStyle` is used for `pygments.css`. The fallback `sphinxdocrs.css` is
   removed whenever a real theme is resolved.
+- Added direct HTML builder coverage for both sides of that stylesheet
+  contract: real-theme pages do not emit or link `sphinxdocrs.css`, while the
+  embedded fallback still emits and links it.
+- Removed the obsolete `_static/sphinxdocrs.css` exception from the strict
+  HTML page-set parity test; unexpected Rust-only pages are now reported.
 - Added root-toctree relation repair, viewport `metatags`, deterministic
   theme asset ordering, and JSON-specific `FILE_SUFFIX` handling. The
   `documentation_options.js` context now reports `.fjson` for the JSON

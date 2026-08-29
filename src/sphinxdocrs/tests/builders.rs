@@ -238,6 +238,45 @@ fn build_all_single_doc() {
 }
 
 #[test]
+fn build_all_does_not_emit_fallback_css_when_real_theme_resolves() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    std::fs::write(src.path().join("index.rst"), "Welcome\n=======\n").unwrap();
+    let env = make_env(src.path(), out.path());
+
+    HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    assert!(out.path().join("_static/basic.css").exists());
+    assert!(!out.path().join("_static/sphinxdocrs.css").exists());
+    let html = read_html(out.path(), "index");
+    assert!(!html.contains("_static/sphinxdocrs.css"));
+}
+
+#[test]
+fn build_all_keeps_fallback_css_when_real_theme_is_unavailable() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    std::fs::write(src.path().join("index.rst"), "Welcome\n=======\n").unwrap();
+    let mut config = SphinxConfig::new_defaults();
+    config.set(
+        "html_theme",
+        ConfigVal::Str("theme-that-does-not-exist".to_string()),
+    );
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let env = BuildEnvironment::new(config, project, src.path(), out.path());
+
+    HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    assert!(out.path().join("_static/sphinxdocrs.css").exists());
+    let html = read_html(out.path(), "index");
+    assert!(html.contains("_static/sphinxdocrs.css"));
+}
+
+#[test]
 fn build_all_multiple_docs() {
     let src = TempDir::new().unwrap();
     let out = TempDir::new().unwrap();

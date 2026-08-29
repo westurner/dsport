@@ -296,6 +296,22 @@ fn html_theme_overwritten_by_later_add() {
     assert_eq!(r.html_themes["t"], PathBuf::from("/new"));
 }
 
+#[test]
+fn html_themes_keep_registration_order_when_overwritten() {
+    let mut r = reg();
+    r.add_html_theme("first", "/first");
+    r.add_html_theme("second", "/second");
+    r.add_html_theme("first", "/updated");
+
+    assert_eq!(
+        r.get_html_themes(),
+        vec![
+            ("first".to_string(), PathBuf::from("/updated")),
+            ("second".to_string(), PathBuf::from("/second")),
+        ]
+    );
+}
+
 // ── directives / roles (bookkeeping only) ─────────────────────────────────
 
 #[test]

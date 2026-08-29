@@ -296,7 +296,9 @@ impl SphinxApp {
         app.verify_needs_extensions()?;
 
         app.events.borrow_mut().emit("config-inited", &[])?;
+        app.sync_registered_themes();
         app.events.borrow_mut().emit("builder-inited", &[])?;
+        app.sync_registered_themes();
 
         Ok(app)
     }
@@ -394,10 +396,21 @@ impl SphinxApp {
             Ok(())
         })
         .map_err(AppError::from);
+        if result.is_ok() {
+            self.sync_registered_themes();
+        }
         if let Some(warning) = version_guard_warning {
             self.warnings.push(warning);
         }
         result
+    }
+
+    /// Make themes registered by extensions available to every config copy
+    /// used during the build.
+    fn sync_registered_themes(&mut self) {
+        let themes = self.registry.borrow().get_html_themes();
+        self.config.set_registered_themes(themes.clone());
+        self.env.borrow_mut().config.set_registered_themes(themes);
     }
 
     /// Verify `config.needs_extensions` against the currently loaded
@@ -791,6 +804,49 @@ mod tests {
             SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
         assert_eq!(app.buildername, "html");
         assert!(app.supports_native());
+    }
+
+    #[test]
+    fn extension_themes_sync_to_app_and_environment_config() {
+        let extension_dir = TempDir::new().unwrap();
+        let theme_path = extension_dir.path().join("theme");
+        std::fs::create_dir(&theme_path).unwrap();
+        let extension_path = extension_dir.path().join("registered_theme_ext.py");
+        std::fs::write(
+            &extension_path,
+            format!(
+                "def setup(app):\n    app.add_html_theme('custom', {:?})\n    return {{'version': '0.1'}}\n",
+                theme_path.to_str().unwrap()
+            ),
+        )
+        .unwrap();
+
+        Python::attach(|py| {
+            let sys = py.import("sys").unwrap();
+            sys.getattr("path")
+                .unwrap()
+                .call_method1("insert", (0, extension_dir.path().to_str().unwrap()))
+                .unwrap();
+        });
+
+        let src = TempDir::new().unwrap();
+        std::fs::write(src.path().join("index.rst"), "Welcome\n=======\n").unwrap();
+        std::fs::write(
+            src.path().join("conf.py"),
+            "extensions = ['registered_theme_ext']\n",
+        )
+        .unwrap();
+        let out = TempDir::new().unwrap();
+        let dt = TempDir::new().unwrap();
+        let app =
+            SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+
+        let expected = vec![("custom".to_string(), theme_path)];
+        assert_eq!(app.config.registered_themes(), expected.as_slice());
+        assert_eq!(
+            app.env.borrow().config.registered_themes(),
+            expected.as_slice()
+        );
     }
 
     // ── SphinxApp::build ──────────────────────────────────────────────────────

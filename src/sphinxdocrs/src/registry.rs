@@ -138,6 +138,9 @@ pub struct SphinxComponentRegistry {
     /// Mirrors `html_themes: dict[str, str]`.
     pub html_themes: HashMap<String, PathBuf>,
 
+    /// HTML theme names in their first-registration order.
+    html_theme_order: Vec<String>,
+
     // ── P3 additions ─────────────────────────────────────────────────────────
     /// Builders: name → class name string.
     ///
@@ -409,7 +412,23 @@ impl SphinxComponentRegistry {
     ///
     /// Mirrors `SphinxComponentRegistry.add_html_theme(name, theme_path)`.
     pub fn add_html_theme(&mut self, name: impl Into<String>, theme_path: impl Into<PathBuf>) {
-        self.html_themes.insert(name.into(), theme_path.into());
+        let name = name.into();
+        if !self.html_themes.contains_key(&name) {
+            self.html_theme_order.push(name.clone());
+        }
+        self.html_themes.insert(name, theme_path.into());
+    }
+
+    /// Return registered HTML themes in their registration order.
+    pub fn get_html_themes(&self) -> Vec<(String, PathBuf)> {
+        self.html_theme_order
+            .iter()
+            .filter_map(|name| {
+                self.html_themes
+                    .get(name)
+                    .map(|path| (name.clone(), path.clone()))
+            })
+            .collect()
     }
 
     // ── P3 additions: builders / domains / translators / math renderers ───────

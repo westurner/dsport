@@ -1148,13 +1148,9 @@ impl PyAppFacade {
     }
 
     /// Mirrors `Sphinx.add_html_theme(name, theme_path)`: records the
-    /// theme directory in the shared [`SharedRegistry`]. **Accepted
-    /// deviation:** this makes the theme *discoverable*
-    /// (`SphinxComponentRegistry::html_themes`/`get_html_theme`-shaped
-    /// bookkeeping) but `crate::theme_static::resolve_theme_templates`
-    /// (H6a) does not yet consult it — a custom extension-provided theme
-    /// still isn't found by `html_theme = "..."` until that lookup is
-    /// wired in.
+    /// theme directory in the shared [`SharedRegistry`]. `SphinxApp`
+    /// synchronizes this registry with the application and environment
+    /// configs after extension setup and before theme resolution.
     fn add_html_theme(&self, name: String, theme_path: String) {
         self.registry
             .borrow_mut()

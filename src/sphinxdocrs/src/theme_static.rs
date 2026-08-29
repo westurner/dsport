@@ -452,12 +452,7 @@ pub fn copy_theme_static_files(
     outdir: &Path,
     confdir: &Path,
 ) -> std::io::Result<()> {
-    copy_theme_static_files_for_builder(
-        config,
-        outdir,
-        confdir,
-        "html",
-    )
+    copy_theme_static_files_for_builder(config, outdir, confdir, "html")
 }
 
 /// Copy theme assets using the output metadata for a specific HTML-family
@@ -472,7 +467,8 @@ pub fn copy_theme_static_files_for_builder(
 ) -> std::io::Result<()> {
     let theme_name = config.html_theme();
     let theme_path_dirs = resolve_theme_path_dirs(confdir, &config.html_theme_path());
-    let Some(theme) = resolve_theme(&theme_name, &theme_path_dirs, config.registered_themes()) else {
+    let Some(theme) = resolve_theme(&theme_name, &theme_path_dirs, config.registered_themes())
+    else {
         // No Python/Sphinx — skip theme assets silently.
         return Ok(());
     };

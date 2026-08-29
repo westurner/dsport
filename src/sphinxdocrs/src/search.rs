@@ -799,10 +799,7 @@ The widget handles rendering and layout.\n";
 
     #[test]
     fn feed_indexes_stemmed_body_terms() {
-        let tree = parse_rst_with_source(
-            "Title\n=====\n\nThis is the guide document.\n",
-            "guide",
-        );
+        let tree = parse_rst_with_source("Title\n=====\n\nThis is the guide document.\n", "guide");
         let mut idx = SearchIndex::new();
         idx.feed("guide", &tree);
 
@@ -860,8 +857,8 @@ The widget handles rendering and layout.\n";
         );
         object.insert("a".to_string(), serde_json::json!(["first", "second"]));
 
-        let json = serde_json::to_string(&sort_json_keys(serde_json::Value::Object(object)))
-            .unwrap();
+        let json =
+            serde_json::to_string(&sort_json_keys(serde_json::Value::Object(object))).unwrap();
         assert_eq!(
             json,
             r#"{"a":["first","second"],"z":{"nested-a":2,"nested-z":1}}"#

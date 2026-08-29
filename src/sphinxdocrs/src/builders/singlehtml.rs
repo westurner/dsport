@@ -269,9 +269,11 @@ mod tests {
     #[test]
     fn get_target_uri_uses_anchors_for_known_docs() {
         let b = SinglehtmlBuilder::new();
-        b.known_docs
-            .borrow_mut()
-            .extend(["index".to_string(), "about".to_string(), "guide/intro".to_string()]);
+        b.known_docs.borrow_mut().extend([
+            "index".to_string(),
+            "about".to_string(),
+            "guide/intro".to_string(),
+        ]);
 
         assert_eq!(b.get_target_uri("about"), "#document-about");
         assert_eq!(b.get_target_uri("guide/intro"), "#document-guide/intro");

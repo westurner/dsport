@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use docutilsrs::{html5, parse_rst_with_source, zip_writer::ZipBuilder, Doctree};
+use docutilsrs::{Doctree, html5, parse_rst_with_source, zip_writer::ZipBuilder};
 
 use super::{BuildError, BuildResult, Builder};
 use crate::environment::BuildEnvironment;
@@ -22,7 +22,10 @@ impl EpubBuilder {
             &docutilsrs::cli::CommonOptions::default(),
         );
         let title = Self::title_text(tree).unwrap_or_else(|| docname.to_string());
-        format!("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>{}</title></head><body>{body}</body></html>\n", xml_escape(&title))
+        format!(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>{}</title></head><body>{body}</body></html>\n",
+            xml_escape(&title)
+        )
     }
 
     fn title_text(tree: &Doctree) -> Option<String> {
@@ -66,7 +69,16 @@ impl EpubBuilder {
         let spine: String = (0..documents.len())
             .map(|index| format!("<itemref idref=\"doc{index}\"/>"))
             .collect();
-        let opf = format!("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"pub-id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"pub-id\">{}</dc:identifier><dc:title>{}</dc:title><dc:creator>{}</dc:creator><dc:language>{}</dc:language><dc:description>{}</dc:description><dc:publisher>{}</dc:publisher><dc:rights>{}</dc:rights></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>{manifest}</manifest><spine toc=\"ncx\">{spine}</spine></package>\n", xml_escape(uid), xml_escape(title), xml_escape(author), xml_escape(language), xml_escape(description), xml_escape(publisher), xml_escape(rights));
+        let opf = format!(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"pub-id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"pub-id\">{}</dc:identifier><dc:title>{}</dc:title><dc:creator>{}</dc:creator><dc:language>{}</dc:language><dc:description>{}</dc:description><dc:publisher>{}</dc:publisher><dc:rights>{}</dc:rights></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>{manifest}</manifest><spine toc=\"ncx\">{spine}</spine></package>\n",
+            xml_escape(uid),
+            xml_escape(title),
+            xml_escape(author),
+            xml_escape(language),
+            xml_escape(description),
+            xml_escape(publisher),
+            xml_escape(rights)
+        );
         zip.add_file("OEBPS/content.opf", opf.as_bytes());
         let nav: String = documents
             .iter()
@@ -225,9 +237,11 @@ mod tests {
             .unwrap();
         let bytes = std::fs::read(out.path().join("index.epub")).unwrap();
         assert!(bytes.windows(8).any(|window| window == b"mimetype"));
-        assert!(bytes
-            .windows(20)
-            .any(|window| window == b"application/epub+zip"));
+        assert!(
+            bytes
+                .windows(20)
+                .any(|window| window == b"application/epub+zip")
+        );
         assert!(bytes.windows(11).any(|window| window == b"content.opf"));
     }
 }

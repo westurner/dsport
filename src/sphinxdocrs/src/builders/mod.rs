@@ -23,8 +23,8 @@ pub mod linkcheck;
 pub mod manpage;
 pub mod pseudoxml;
 pub mod singlehtml;
-pub mod text;
 pub mod texinfo;
+pub mod text;
 pub mod xml;
 
 use std::io;

@@ -258,12 +258,7 @@ impl Object for JsTagGlobal {
             resource_pathto(&self.0, &js),
             file_checksum(&self.0.outdir, &js).as_deref(),
         );
-        let mut asset_attributes = self
-            .0
-            .js_attributes
-            .get(&js)
-            .cloned()
-            .unwrap_or_default();
+        let mut asset_attributes = self.0.js_attributes.get(&js).cloned().unwrap_or_default();
         let body = asset_attributes.remove("body").unwrap_or_default();
         if let Some(loading_method) = asset_attributes.remove("loading_method") {
             if matches!(loading_method.as_str(), "async" | "defer") {
@@ -402,11 +397,7 @@ fn resource_pathto(state: &PageState, name: &str) -> String {
 /// it (mirrors upstream's `pathto()`-based link construction) — a raw
 /// `get_target_uri` result is root-relative and 404s from any page not at
 /// the project root.
-fn render_toc_html(
-    entries: &[TocEntry],
-    base_uri: &str,
-    path_style: PathStyle,
-) -> String {
+fn render_toc_html(entries: &[TocEntry], base_uri: &str, path_style: PathStyle) -> String {
     if entries.is_empty() {
         return String::new();
     }
@@ -429,11 +420,7 @@ fn render_toc_html(
         ));
         if !entry.children.is_empty() {
             out.push('\n');
-            out.push_str(&render_toc_html(
-                &entry.children,
-                base_uri,
-                path_style,
-            ));
+            out.push_str(&render_toc_html(&entry.children, base_uri, path_style));
         }
         out.push_str("</li>\n");
     }
@@ -448,7 +435,10 @@ fn local_toc_from_doctree(
     doctree: Option<&docutilsrs::doctree::Doctree>,
     docname: &str,
 ) -> Vec<TocEntry> {
-    fn text_content(tree: &docutilsrs::doctree::Doctree, id: docutilsrs::doctree::NodeId) -> String {
+    fn text_content(
+        tree: &docutilsrs::doctree::Doctree,
+        id: docutilsrs::doctree::NodeId,
+    ) -> String {
         let node = tree.node(id);
         match &node.kind {
             docutilsrs::doctree::NodeKind::Text(text) => text.clone(),
@@ -572,7 +562,10 @@ fn parent_chain(
 ) -> Vec<String> {
     let mut parents = Vec::new();
     let mut current = docname;
-    while let Some(parent) = relations.get(current).and_then(|relation| relation.parent.as_deref()) {
+    while let Some(parent) = relations
+        .get(current)
+        .and_then(|relation| relation.parent.as_deref())
+    {
         if parent == root_doc {
             break;
         }
@@ -692,11 +685,11 @@ impl ThemeRenderer {
         let theme_name = env.config.html_theme();
         let (template_dirs, theme_conf_options, theme_sidebars, theme_stylesheets) =
             crate::theme_static::resolve_theme_templates(
-            &theme_name,
-            &env.srcdir,
-            &env.config.html_theme_path(),
-            env.config.registered_themes(),
-        )?;
+                &theme_name,
+                &env.srcdir,
+                &env.config.html_theme_path(),
+                env.config.registered_themes(),
+            )?;
 
         // Mirrors upstream `BuiltinTemplateLoader.init`'s
         // `loaderchain = pathchain + [p.parent for p in pathchain]`: a
@@ -844,14 +837,11 @@ impl ThemeRenderer {
             .unwrap_or_default();
         append_relation_rellinks(&mut rellinks, &relation, title_of);
         ctx.insert("rellinks".into(), rellinks.into());
-        let parents: Vec<serde_json::Value> = parent_chain(
-            docname,
-            &self.relations,
-            &env.config.root_doc(),
-        )
-        .iter()
-        .map(|d| serde_json::json!({"link": link_of(d), "title": title_of(d)}))
-        .collect();
+        let parents: Vec<serde_json::Value> =
+            parent_chain(docname, &self.relations, &env.config.root_doc())
+                .iter()
+                .map(|d| serde_json::json!({"link": link_of(d), "title": title_of(d)}))
+                .collect();
         ctx.insert("parents".into(), parents.into());
 
         let toc_entries_for_doc = local_toc_from_doctree(doctree, docname);
@@ -859,12 +849,7 @@ impl ThemeRenderer {
         // `toctree()` remains backed by the environment's document tree.
         ctx.insert(
             "toc".into(),
-            render_toc_html(
-                &toc_entries_for_doc,
-                &base_uri,
-                self.state.path_style,
-            )
-            .into(),
+            render_toc_html(&toc_entries_for_doc, &base_uri, self.state.path_style).into(),
         );
         ctx.insert(
             "display_toc".into(),
@@ -1053,10 +1038,7 @@ fn to_minijinja_context(ctx: serde_json::Map<String, serde_json::Value>) -> Hash
 
 fn asset_value(value: &serde_json::Value) -> Value {
     let filename = value.as_str().unwrap_or_default();
-    Value::from_iter([(
-        "filename",
-        Value::from_safe_string(filename.to_string()),
-    )])
+    Value::from_iter([("filename", Value::from_safe_string(filename.to_string()))])
 }
 
 /// Convert one `{"link": ..., "title": ...}` relation object (built by
@@ -1265,7 +1247,10 @@ fn basename_or_url(path: &str) -> String {
 
 /// Scan `outdir/_static` for top-level `*.css`/`*.js` files (sorted for
 /// determinism). See the module accepted-deviation note.
-fn discover_static_assets(outdir: &Path, theme_stylesheets: &[String]) -> (Vec<String>, Vec<String>) {
+fn discover_static_assets(
+    outdir: &Path,
+    theme_stylesheets: &[String],
+) -> (Vec<String>, Vec<String>) {
     let static_dir = outdir.join("_static");
     let mut available_css = HashSet::new();
     let mut js = Vec::new();
@@ -1471,7 +1456,12 @@ mod tests {
             next: Some("b".into()),
             ..Relation::default()
         };
-        let mut rellinks = vec![serde_json::json!(["genindex", "General Index", "I", "index"] )];
+        let mut rellinks = vec![serde_json::json!([
+            "genindex",
+            "General Index",
+            "I",
+            "index"
+        ])];
 
         append_relation_rellinks(&mut rellinks, &relation, |docname| {
             format!("{docname} title")
@@ -1508,7 +1498,10 @@ mod tests {
         }];
         let relations = collect_relations(&entries);
 
-        assert_eq!(parent_chain("index", &relations, "index"), Vec::<String>::new());
+        assert_eq!(
+            parent_chain("index", &relations, "index"),
+            Vec::<String>::new()
+        );
         assert_eq!(
             parent_chain("guide", &relations, "index"),
             Vec::<String>::new()
@@ -1648,10 +1641,8 @@ mod tests {
             std::fs::write(static_dir.join(name), "/* css */").unwrap();
         }
 
-        let (css_files, _) = discover_static_assets(
-            outdir.path(),
-            &["basic.css".into(), "alabaster.css".into()],
-        );
+        let (css_files, _) =
+            discover_static_assets(outdir.path(), &["basic.css".into(), "alabaster.css".into()]);
 
         assert_eq!(
             css_files,
@@ -1712,14 +1703,8 @@ mod tests {
         });
 
         let outdir = Path::new("/tmp/theme-render-test-assets-outdir-does-not-exist");
-        let ctx = build_global_context(
-            &env,
-            outdir,
-            &Default::default(),
-            &[],
-            &[],
-            PathStyle::Flat,
-        );
+        let ctx =
+            build_global_context(&env, outdir, &Default::default(), &[], &[], PathStyle::Flat);
 
         let css_files: Vec<String> = ctx["css_files"]
             .as_array()

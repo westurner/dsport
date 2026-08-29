@@ -168,12 +168,8 @@ mod tests {
         let config = crate::config::SphinxConfig::new_defaults();
         let project =
             crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
-        let env = crate::environment::BuildEnvironment::new(
-            config,
-            project,
-            src.path(),
-            outdir.path(),
-        );
+        let env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), outdir.path());
 
         XmlBuilder::new()
             .build_all(src.path(), outdir.path(), &env)

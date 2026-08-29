@@ -523,6 +523,7 @@ fn python_node_to_block(node: &Bound<'_, PyAny>) -> Option<crate::parser::Block>
             "literal_block" => crate::parser::Block::LiteralBlock {
                 classes: attribute_text(&attrs, "classes"),
                 text,
+                caption: None,
                 tokens: None,
             },
             "raw" => crate::parser::Block::Raw {

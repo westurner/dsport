@@ -13,15 +13,9 @@
 //!    missing, unknown language with `with_pygments=False`), return
 //!    `None` so the parser emits the flat `<literal_block>` shape.
 //!
-//! Token-class normalization mirrors
-//! `docutils.utils.code_analyzer.Lexer` with `tokennames="long"`:
-//!
-//! - `str(tokentype).lower().split('.')` (so `Token.Name.Function`
-//!   → `["token", "name", "function"]`)
-//! - drop entries in `unstyled_tokens = {"token", "text", ""}`
-//! - join the rest with a space (`"name function"`)
-//! - empty result → emit as bare text (no `<inline>` wrapper),
-//!   represented as a `None` class
+//! Token-class normalization uses Pygments' `STANDARD_TYPES` short names
+//! (so `Token.Name.Variable` becomes `nv`), matching the classes emitted by
+//! the HTML formatter and the bundled Pygments CSS.
 //!
 //! The very last token value has a single trailing `\n` stripped
 //! (pygments appends one; upstream's `merge()` strips it).
@@ -129,9 +123,8 @@ fn tokenize_bridge(lang: &str, code: &str) -> Option<Vec<Span>> {
     })?
 }
 
-/// Normalize pygmentsrs' `(token_repr, value)` stream into the
-/// docutils long-name form: drop `Token` / `Token.Text` ancestors,
-/// downcase, space-join, merge adjacent, strip a final `\n`.
+/// Normalize pygmentsrs' `(token_repr, value)` stream into Pygments CSS
+/// classes, merge adjacent spans, and strip a final `\n`.
 fn normalize_long(raw: Vec<(String, String)>) -> Vec<Span> {
     let mut out: Vec<Span> = Vec::with_capacity(raw.len());
     for (ttype, value) in raw {
@@ -143,20 +136,24 @@ fn normalize_long(raw: Vec<(String, String)>) -> Vec<Span> {
 }
 
 fn long_classes(ttype: &str) -> Option<String> {
-    // `str(tokentype).lower().split('.')` — `Token.Name.Function`
-    // → `["token", "name", "function"]`. The leading `Token` is
-    // always present in pygments repr; drop both `token` and `text`
-    // (and any literally empty entry — defensive).
-    let parts: Vec<String> = ttype
-        .to_ascii_lowercase()
-        .split('.')
-        .filter(|p| !matches!(*p, "token" | "text" | ""))
-        .map(|p| p.to_string())
-        .collect();
-    if parts.is_empty() {
+    #[cfg(feature = "syntax-highlighting")]
+    let short = pygmentsrs::token::short_name_for_dotted(ttype);
+
+    #[cfg(not(feature = "syntax-highlighting"))]
+    let short = {
+        let parts: Vec<String> = ttype
+            .to_ascii_lowercase()
+            .split('.')
+            .filter(|p| !matches!(*p, "token" | "text" | ""))
+            .map(|p| p.to_string())
+            .collect();
+        parts.join(" ")
+    };
+
+    if short.is_empty() {
         None
     } else {
-        Some(parts.join(" "))
+        Some(short)
     }
 }
 
@@ -191,21 +188,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn long_classes_drops_token_and_text() {
+    fn classes_use_pygments_short_names() {
         assert_eq!(long_classes("Token"), None);
         assert_eq!(long_classes("Token.Text"), None);
         assert_eq!(
             long_classes("Token.Text.Whitespace"),
-            Some("whitespace".into())
+            Some("w".into())
         );
         assert_eq!(
             long_classes("Token.Name.Function"),
-            Some("name function".into())
+            Some("nf".into())
         );
         assert_eq!(
             long_classes("Token.Literal.Number.Integer"),
-            Some("literal number integer".into())
+            Some("mi".into())
         );
+        assert_eq!(long_classes("Token.Name.Variable"), Some("nv".into()));
     }
 
     #[test]

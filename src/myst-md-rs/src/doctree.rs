@@ -374,6 +374,7 @@ fn start_tag(
                     } else {
                         format!("code {info}")
                     },
+                    caption: None,
                 },
             };
             let parent = current_parent(frames, sections, root);

@@ -189,7 +189,7 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             latex,
             out,
         ),
-        NodeKind::LiteralBlock { classes } => {
+        NodeKind::LiteralBlock { classes, .. } => {
             let mut attrs = vec![("xml:space", "preserve")];
             if !classes.is_empty() {
                 attrs.insert(0, ("classes", classes.as_str()));

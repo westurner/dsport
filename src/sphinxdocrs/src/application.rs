@@ -588,7 +588,8 @@ impl SphinxApp {
         }
         let result = match self.buildername.as_str() {
             "html" => {
-                let builder = HtmlBuilder::new();
+                let builder = HtmlBuilder::new()
+                    .with_external_link_class(self.config.html_add_external_link_class());
                 builder
                     .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
@@ -816,6 +817,31 @@ mod tests {
         app.build().unwrap();
         let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
         assert!(html.starts_with("<!DOCTYPE html>"));
+    }
+
+    #[test]
+    fn build_html_reads_external_link_class_from_conf() {
+        let src = TempDir::new().unwrap();
+        std::fs::write(
+            src.path().join("conf.py"),
+            "html_add_external_link_class = True\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.path().join("index.rst"),
+            "Welcome\n=======\n\nSee `the docs <https://example.test/docs>`_.\n",
+        )
+        .unwrap();
+        let out = TempDir::new().unwrap();
+        let dt = TempDir::new().unwrap();
+        let mut app =
+            SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+        app.build().unwrap();
+        let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+        assert!(
+            html.contains("class=\"external\" href=\"https://example.test/docs\""),
+            "conf.py option should enable external link classes:\n{html}"
+        );
     }
 
     /// H6c: when the real theme resolves (Python + the configured theme are

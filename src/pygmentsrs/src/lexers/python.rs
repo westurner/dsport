@@ -33,9 +33,8 @@
 //! * Escape sequences inside regular strings (`"\n"`, `"\x41"`,
 //!   `"\u0041"`, etc.) → `String.Escape`
 //! * Raw strings (`r"abc\n"`, `rb"abc"`, …) — no escape tokenization
-//! * Triple-quoted strings (`"""abc"""`, `'''abc'''`) → `String.Double`
-//!   / `String.Single` (accepted deviation: standalone docstrings emit
-//!   `String.Double` rather than `String.Doc`)
+//! * Triple-quoted strings (`"""abc"""`, `'''abc'''`) → `String.Doc` at the
+//!   start of a line, otherwise `String.Double` / `String.Single`
 //! * Prefixed strings (`b"…"`, `rb"…"`) → `String.Affix` + body
 //! * f-strings with `{expr}`, format specs `{x:.2f}`, conversion flags
 //!   `{x!r}`, literal braces `{{`/`}}`, triple f-strings, and nested
@@ -52,7 +51,7 @@
 //! * `match`/`case` soft keywords — requires lookaheads not supported
 //!   by the Rust `regex` crate; deferred (accepted deviation)
 //! * `Number.Complex` `3j` — upstream also emits `Name j`; no gap
-//! * Standalone triple-string docstrings → `String.Double` (not `.Doc`)
+//! * Context-sensitive docstring detection beyond line-start triple strings
 
 use crate::lexer::Lexer;
 use crate::lexer::engine::{NewState, Rule, StateTable};
@@ -170,6 +169,24 @@ fn rules_root() -> &'static [Rule] {
             Rule::token(r"\\", token::TEXT),
             // whitespace — `\n` is Whitespace; horizontal space is plain Text
             Rule::token(r"\n", token::WHITESPACE),
+            // A triple-quoted string at the start of a line is a docstring
+            // in Pygments. Keep indentation in the Whitespace span too.
+            Rule::bygroups(
+                r#"^(\s*)([rRuUbB]{0,2})(\"\"\"(?s:.*?)\"\"\")"#,
+                vec![
+                    Some(token::WHITESPACE),
+                    Some(token::STRING_AFFIX),
+                    Some(token::STRING_DOC),
+                ],
+            ),
+            Rule::bygroups(
+                r"^(\s*)([rRuUbB]{0,2})('''(?s:.*?)''')",
+                vec![
+                    Some(token::WHITESPACE),
+                    Some(token::STRING_AFFIX),
+                    Some(token::STRING_DOC),
+                ],
+            ),
             Rule::token(r"[ \t]+", token::TEXT),
             // comments
             Rule::token(r"#[^\n]*", token::COMMENT_SINGLE),
@@ -244,10 +261,8 @@ fn rules_root() -> &'static [Rule] {
                 NewState::Push(vec!["fstring_single_triple"]),
             ),
             // non-f prefix + triple → Affix + body (single merged token).
-            // String.Doc vs String.Double depends on context (docstring vs
-            // assignment); we default to String.Double for practical parity
-            // in code-block fixtures. Standalone prefixed docstrings diverge
-            // (accepted deviation).
+            // Line-start docstrings are handled above; these are strings in
+            // expression context and therefore use String.Double/String.Single.
             Rule::bygroups(
                 r#"([bBrRuU]|[bB][rR]|[rR][bB])("""(?s).*?""")"#,
                 vec![Some(token::STRING_AFFIX), Some(token::STRING_DOUBLE)],
@@ -256,13 +271,7 @@ fn rules_root() -> &'static [Rule] {
                 r"([bBrRuU]|[bB][rR]|[rR][bB])('''(?s).*?''')",
                 vec![Some(token::STRING_AFFIX), Some(token::STRING_SINGLE)],
             ),
-            // plain triple → String.Doc for standalone (docstring context).
-            // In assignment/call context upstream uses String.Double, but
-            // detecting context requires tracking prior tokens; the
-            // code_block directive almost never exercises standalone
-            // docstrings, so STRING_DOUBLE is used as a practical default.
-            // Standalone `"""..."""` as the first statement is an accepted
-            // deviation (tracked in pygmentsrs docs/compat.md).
+            // Plain triple strings in expression context.
             Rule::token(r#"(?s)""".*?""""#, token::STRING_DOUBLE),
             Rule::token(r"(?s)'''.*?'''", token::STRING_SINGLE),
 
@@ -726,6 +735,44 @@ impl StateTable for Table {
 impl Lexer for PythonLexer {
     fn get_tokens(&self, code: &str) -> Vec<(crate::token::TokenType, String)> {
         crate::lexer::engine::tokenize(&Table, code)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn line_start_triple_string_matches_pygments_docstring_tokens() {
+        let tokens = PythonLexer.get_tokens("    \"\"\"Colors enumerator\"\"\"\n");
+        assert_eq!(
+            tokens,
+            vec![
+                (token::WHITESPACE, "    ".into()),
+                (token::STRING_DOC, "\"\"\"Colors enumerator\"\"\"".into()),
+                (token::WHITESPACE, "\n".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn indented_class_docstring_matches_pygments_tokens() {
+        let tokens = PythonLexer.get_tokens(
+            "class Colors:\n    \"\"\"Colors enumerator\"\"\"\n",
+        );
+        assert_eq!(
+            tokens,
+            vec![
+                (token::KEYWORD, "class".into()),
+                (token::WHITESPACE, " ".into()),
+                (token::NAME_CLASS, "Colors".into()),
+                (token::PUNCTUATION, ":".into()),
+                (token::WHITESPACE, "\n".into()),
+                (token::WHITESPACE, "    ".into()),
+                (token::STRING_DOC, "\"\"\"Colors enumerator\"\"\"".into()),
+                (token::WHITESPACE, "\n".into()),
+            ]
+        );
     }
 }
 

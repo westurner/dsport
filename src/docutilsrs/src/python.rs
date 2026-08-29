@@ -399,7 +399,7 @@ impl PyNode {
                     dict.set_item("classes", classes)?;
                 }
             }
-            NodeKind::LiteralBlock { classes } => {
+            NodeKind::LiteralBlock { classes, .. } => {
                 if !classes.is_empty() {
                     dict.set_item("classes", classes)?;
                 }

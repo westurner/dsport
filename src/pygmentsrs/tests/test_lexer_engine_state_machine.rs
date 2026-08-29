@@ -205,7 +205,7 @@ fn test_action_using_this_docstring() {
 
     let has_string = tokens
         .iter()
-        .any(|(t, _)| *t == STRING_DOUBLE || *t == STRING);
+        .any(|(t, _)| *t == STRING_DOC || *t == STRING_DOUBLE || *t == STRING);
     assert!(has_string);
 }
 

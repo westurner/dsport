@@ -968,6 +968,12 @@ impl SphinxConfig {
         );
         add("pygments_style", Null, Html, "Pygments style");
         add(
+            "html_add_external_link_class",
+            Bool(false),
+            Html,
+            "Add an external class to non-internal content links",
+        );
+        add(
             "highlight_language",
             Str("default".into()),
             Env,
@@ -1548,6 +1554,14 @@ impl SphinxConfig {
             .unwrap_or_else(|| "default".into())
     }
 
+    /// `html_add_external_link_class` — opt in to `class="external"` on
+    /// non-internal content links.
+    pub fn html_add_external_link_class(&self) -> bool {
+        self.get("html_add_external_link_class")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
     /// `numfig` — whether numbered figures are enabled.
     pub fn numfig(&self) -> bool {
         self.get("numfig")
@@ -1937,6 +1951,17 @@ mod sphinx_config_tests {
     fn defaults_language() {
         let cfg = SphinxConfig::new_defaults();
         assert_eq!(cfg.language(), "en");
+    }
+
+    #[test]
+    fn external_link_class_defaults_off_and_reads_conf_value() {
+        let cfg = SphinxConfig::new_defaults();
+        assert!(!cfg.html_add_external_link_class());
+
+        let mut raw = HashMap::new();
+        raw.insert("html_add_external_link_class".into(), ConfigVal::Bool(true));
+        let cfg = SphinxConfig::new(raw, HashMap::new());
+        assert!(cfg.html_add_external_link_class());
     }
 
     #[test]

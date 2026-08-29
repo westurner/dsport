@@ -40,9 +40,9 @@
 //!   `html_static_path` or the active theme's own static files.
 //! - `meta` (per-page docinfo) is not modeled. The default docutils viewport
 //!   metatag is supplied only when the active theme does not declare one.
-//! - `sphinx_version` reports this crate's own version, not upstream
-//!   Sphinx's, since there is no bundled Python Sphinx version to report in
-//!   a pure-Rust build.
+//! - `sphinx_version` reports this crate's own version with a `-sphinxdocrs`
+//!   marker, not upstream Sphinx's, since there is no bundled Python Sphinx
+//!   version to report in a pure-Rust build.
 //! - A theme building `titlesuffix`-style values via Jinja string
 //!   concatenation (`" — "|safe + docstitle|e`) needs the `+` operator to
 //!   propagate markup-safety the way Python MarkupSafe's `Markup.__add__`
@@ -428,7 +428,7 @@ fn render_toc_html(entries: &[TocEntry], base_uri: &str, path_style: PathStyle) 
             href
         };
         out.push_str(&format!(
-            "<li class=\"toctree-l1\"><a href=\"{}\">{}</a>",
+            "<li class=\"toctree-l1\"><a class=\"reference internal\" href=\"{}\">{}</a>",
             html_escape_attr(&href),
             html_escape_text(&entry.title)
         ));
@@ -1143,7 +1143,10 @@ fn build_global_context(
     ctx.insert("file_suffix".into(), file_suffix.into());
     ctx.insert("link_suffix".into(), link_suffix.into());
     ctx.insert("language".into(), config.language().into());
-    ctx.insert("sphinx_version".into(), env!("CARGO_PKG_VERSION").into());
+    ctx.insert(
+        "sphinx_version".into(),
+        concat!(env!("CARGO_PKG_VERSION"), "-sphinxdocrs").into(),
+    );
     ctx.insert("builder".into(), builder.into());
     ctx.insert("html5_doctype".into(), true.into());
     ctx.insert("html_tag".into(), serde_json::Value::Null);
@@ -1352,6 +1355,10 @@ mod tests {
         }];
         let html = render_toc_html(&entries, "index.html", PathStyle::Flat);
         assert!(html.contains("guide/intro.html"), "got: {html}");
+        assert!(
+            html.contains("<a class=\"reference internal\" href=\"guide/intro.html\">"),
+            "toctree links should be internal references, got: {html}"
+        );
         assert!(html.contains("Intro"), "got: {html}");
         assert!(html.contains("guide/sub.html"), "got: {html}");
     }
@@ -1741,6 +1748,22 @@ mod tests {
         assert!(
             script_files.contains(&"extra.js".to_string()),
             "{script_files:?}"
+        );
+    }
+
+    #[test]
+    fn build_global_context_marks_sphinxdocrs_version() {
+        let env = make_test_env(
+            "/tmp/theme-render-test-version-src",
+            "/tmp/theme-render-test-version-doctrees",
+        );
+        let outdir = Path::new("/tmp/theme-render-test-version-outdir-does-not-exist");
+        let ctx =
+            build_global_context(&env, outdir, &Default::default(), &[], &[], PathStyle::Flat);
+
+        assert_eq!(
+            ctx["sphinx_version"],
+            concat!(env!("CARGO_PKG_VERSION"), "-sphinxdocrs")
         );
     }
 

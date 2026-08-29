@@ -74,6 +74,18 @@ fn wrap_with_class(node: &Node, tag: &str, class: &str, out: &mut String, tasks:
     schedule(node, format!("</{tag}>"), tasks);
 }
 
+fn heading_level(tree: &Doctree, id: NodeId) -> usize {
+    let mut level = 1;
+    let mut parent = tree.node(id).parent;
+    while let Some(parent_id) = parent {
+        if matches!(tree.node(parent_id).kind, NodeKind::Section { .. }) {
+            level += 1;
+        }
+        parent = tree.node(parent_id).parent;
+    }
+    level.min(6)
+}
+
 /// Write `id`'s own opening markup (if any) immediately to `out`, then
 /// schedule its closing markup and children as `tasks` rather than
 /// recursing — see the module doc comment.
@@ -97,9 +109,9 @@ fn emit_enter(
             schedule(node, "</section>", tasks);
         }
         NodeKind::Title => {
-            // Heading level is determined by ancestor section depth; we
-            // approximate as `<h1>` and rely on CSS for visual depth.
-            wrap(node, "h1", out, tasks);
+            let level = heading_level(tree, id);
+            let tag = format!("h{level}");
+            wrap(node, &tag, out, tasks);
         }
         NodeKind::Subtitle { .. } => wrap_with_class(node, "p", "subtitle", out, tasks),
         NodeKind::Transition => out.push_str("<hr/>"),
@@ -116,13 +128,35 @@ fn emit_enter(
             }
             schedule(node, "</span>", tasks);
         }
-        NodeKind::LiteralBlock { classes } => {
-            if classes.is_empty() {
+        NodeKind::LiteralBlock { classes, caption } => {
+            let language = classes.split_whitespace().nth(1).unwrap_or("text");
+            if classes.split_whitespace().next() == Some("code") {
+                if caption.is_some() {
+                    out.push_str("<div class=\"literal-block-wrapper docutils container\">");
+                    let caption = caption.as_deref().unwrap_or_default();
+                    let _ = write!(
+                        out,
+                        "<div class=\"code-block-caption\"><span class=\"caption-text\">{}</span></div>",
+                        escape(caption)
+                    );
+                }
+                let _ = write!(out, "<div class=\"highlight-{language} notranslate\"><div class=\"highlight\"><pre>");
+                schedule(
+                    node,
+                    if caption.is_some() {
+                        "</pre></div></div></div>"
+                    } else {
+                        "</pre></div></div>"
+                    },
+                    tasks,
+                );
+            } else if classes.is_empty() {
                 out.push_str("<pre>");
+                schedule(node, "</pre>", tasks);
             } else {
                 let _ = write!(out, "<pre class=\"{classes}\">");
+                schedule(node, "</pre>", tasks);
             }
-            schedule(node, "</pre>", tasks);
         }
         NodeKind::BulletList { .. } => {
             if is_compactable(tree, id, options, false) {
@@ -285,10 +319,30 @@ fn emit_enter(
             if should_cloak {
                 uri = uri.replace("@", "&#37;&#52;&#48;").replace(".", "&#46;");
             }
-            if classes.is_empty() {
+            let has_internal_class = classes.split_whitespace().any(|class| class == "internal");
+            let has_external_class = classes.split_whitespace().any(|class| class == "external");
+            let link_classes = if !options.add_external_link_class
+                || has_internal_class
+                || has_external_class
+                || refuri.is_empty()
+            {
+                classes.clone()
+            } else if refuri.starts_with('#') {
+                classes.clone()
+            } else if classes.is_empty() {
+                "external".to_string()
+            } else {
+                format!("{classes} external")
+            };
+            if link_classes.is_empty() {
                 let _ = write!(out, "<a href=\"{}\">", uri);
             } else {
-                let _ = write!(out, "<a class=\"{}\" href=\"{}\">", escape(classes), uri);
+                let _ = write!(
+                    out,
+                    "<a class=\"{}\" href=\"{}\">",
+                    escape(&link_classes),
+                    uri
+                );
             }
             tasks.push(Task::Append("</a>".to_string()));
             for &c in node.children.iter().rev() {
@@ -616,5 +670,26 @@ mod tests {
         );
         assert_eq!(rendered.matches("</div>").count(), 10_000);
         assert!(rendered.contains("deep"));
+    }
+
+    #[test]
+    fn code_block_caption_and_section_heading_match_sphinx_shape() {
+        let tree = crate::parse_rst_with_source(
+            "Title\n=====\n\nIntro.\n\nSection\n-------\n\n.. code-block:: python\n   :caption: example.py\n\n   class Colors:\n       \"\"\"Colors enumerator\"\"\"\n",
+            "example.rst",
+        );
+        let rendered = html5(
+            &tree,
+            &crate::cli::Html5Options::default(),
+            &crate::cli::CommonOptions::default(),
+        );
+
+        assert!(rendered.contains("<section id=\"section\"><h2>Section</h2>"));
+        assert!(rendered.contains(
+            "<div class=\"literal-block-wrapper docutils container\"><div class=\"code-block-caption\"><span class=\"caption-text\">example.py</span></div>"
+        ));
+        assert!(!rendered.contains("<span class=\"n\">caption</span>"));
+        assert!(rendered.contains("<div class=\"highlight-python notranslate\"><div class=\"highlight\"><pre>"));
+        assert!(rendered.contains("<span class=\"sd\">&quot;&quot;&quot;Colors enumerator&quot;&quot;&quot;</span>"));
     }
 }

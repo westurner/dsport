@@ -353,6 +353,9 @@ pub struct ManOptions {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct Html5Options {
+    #[arg(skip)]
+    pub add_external_link_class: bool,
+
     #[arg(long = "attribution", num_args = 0..=1)]
     pub attribution: Option<String>,
 

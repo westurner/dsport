@@ -96,6 +96,11 @@ impl HtmlBuilder {
         }
     }
 
+    pub(crate) fn with_external_link_class(mut self, enabled: bool) -> Self {
+        self.html5_options.add_external_link_class = enabled;
+        self
+    }
+
     /// Construct configured for `sphinx.builders.dirhtml.DirectoryHTMLBuilder`-style
     /// output: `<docname>/index.html` files and a matching `get_target_uri`.
     ///

@@ -197,6 +197,7 @@ pub enum NodeKind {
     /// Pre-formatted block. `classes` is space-separated (e.g. "code python").
     LiteralBlock {
         classes: String,
+        caption: Option<String>,
     },
     BulletList {
         bullet: char,
@@ -693,6 +694,8 @@ enum NodeKindData {
     },
     LiteralBlock {
         classes: String,
+        #[serde(default)]
+        caption: Option<String>,
     },
     BulletList {
         bullet: char,
@@ -923,7 +926,9 @@ impl From<&NodeKind> for NodeKindData {
             NodeKind::Inline { classes } => NodeKindData::Inline { classes },
             NodeKind::Math { latex } => NodeKindData::Math { latex },
             NodeKind::MathBlock { latex } => NodeKindData::MathBlock { latex },
-            NodeKind::LiteralBlock { classes } => NodeKindData::LiteralBlock { classes },
+            NodeKind::LiteralBlock { classes, caption } => {
+                NodeKindData::LiteralBlock { classes, caption }
+            }
             NodeKind::BulletList { bullet } => NodeKindData::BulletList { bullet },
             NodeKind::EnumeratedList {
                 enumtype,
@@ -1148,7 +1153,9 @@ impl From<NodeKindData> for NodeKind {
             NodeKindData::Inline { classes } => NodeKind::Inline { classes },
             NodeKindData::Math { latex } => NodeKind::Math { latex },
             NodeKindData::MathBlock { latex } => NodeKind::MathBlock { latex },
-            NodeKindData::LiteralBlock { classes } => NodeKind::LiteralBlock { classes },
+            NodeKindData::LiteralBlock { classes, caption } => {
+                NodeKind::LiteralBlock { classes, caption }
+            }
             NodeKindData::BulletList { bullet } => NodeKind::BulletList { bullet },
             NodeKindData::EnumeratedList {
                 enumtype,

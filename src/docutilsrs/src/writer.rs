@@ -127,7 +127,7 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
                 let _ = writeln!(out, "{inner}{line}");
             }
         }
-        NodeKind::LiteralBlock { classes } => {
+        NodeKind::LiteralBlock { classes, .. } => {
             if classes.is_empty() {
                 let _ = writeln!(out, "{indent}<literal_block xml:space=\"preserve\">");
             } else {

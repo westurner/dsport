@@ -49,6 +49,28 @@ Footnote [1]_.
 }
 
 #[test]
+fn test_html5_external_links_have_external_class() {
+    let tree = parse_rst("See `the docs <https://example.test/docs>`_.");
+    let default_html = html5(&tree, &Html5Options::default(), &CommonOptions::default());
+    assert!(
+        default_html.contains("<a href=\"https://example.test/docs\">"),
+        "External link class should be opt-in: {default_html}"
+    );
+    let html = html5(
+        &tree,
+        &Html5Options {
+            add_external_link_class: true,
+            ..Html5Options::default()
+        },
+        &CommonOptions::default(),
+    );
+    assert!(
+        html.contains("<a class=\"external\" href=\"https://example.test/docs\">"),
+        "External content links should carry the external class: {html}"
+    );
+}
+
+#[test]
 fn test_html5_math_output_mathjax() {
     let rst = r#"
 :math:`x^2`

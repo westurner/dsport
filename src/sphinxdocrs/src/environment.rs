@@ -2067,7 +2067,7 @@ mod tests {
         assert!((0..tree.nodes_len()).any(|id| {
             matches!(
                 &tree.node(id).kind,
-                NodeKind::Inline { classes } if classes == "keyword"
+                NodeKind::Inline { classes } if classes == "k"
             )
         }));
     }
@@ -2084,7 +2084,7 @@ mod tests {
         assert!((0..tree.nodes_len()).any(|id| {
             matches!(
                 &tree.node(id).kind,
-                NodeKind::Inline { classes } if classes == "keyword"
+                NodeKind::Inline { classes } if classes == "k"
             )
         }));
     }

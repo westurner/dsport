@@ -79,6 +79,28 @@ impl TokenType {
     }
 }
 
+/// Return the `STANDARD_TYPES` short name for a dotted token repr such as
+/// `Token.Name.Variable`, walking up to the nearest known ancestor.
+pub fn short_name_for_dotted(name: &str) -> String {
+    let trimmed = name.strip_prefix("Token.").unwrap_or(name);
+    let trimmed = if trimmed == "Token" { "" } else { trimmed };
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let segments: Vec<&str> = trimmed.split('.').collect();
+    let mut path = segments.as_slice();
+    loop {
+        if let Some(short) = standard_short(path) {
+            return short.to_string();
+        }
+        if path.is_empty() {
+            return String::new();
+        }
+        path = &path[..path.len() - 1];
+    }
+}
+
 /// Direct port of `pygments.token.STANDARD_TYPES`. `None` means the
 /// dotted type is not in the table — caller walks to parent.
 fn standard_short(path: &[&str]) -> Option<&'static str> {
@@ -371,5 +393,12 @@ mod tests {
         assert_eq!(extra.short_name(), "vm");
         let totally_unknown = TokenType::new(&["NotAToken"]);
         assert_eq!(totally_unknown.short_name(), "");
+    }
+
+    #[test]
+    fn dotted_short_names_match_standard_types() {
+        assert_eq!(short_name_for_dotted("Token.Name.Variable"), "nv");
+        assert_eq!(short_name_for_dotted("Token.Generic.Heading"), "gh");
+        assert_eq!(short_name_for_dotted("Token.Text.Whitespace"), "w");
     }
 }

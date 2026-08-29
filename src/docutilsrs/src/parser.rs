@@ -166,6 +166,7 @@ pub enum Block {
     LiteralBlock {
         text: String,
         classes: String,
+        caption: Option<String>,
         tokens: Option<Vec<crate::code_block::Span>>,
     },
     Section {
@@ -657,6 +658,7 @@ fn parse_blocks(lines: &[&str], base_indent: usize, base_line: u32) -> Vec<Block
                     blocks.push(Block::LiteralBlock {
                         text: text_lines.join("\n"),
                         classes: String::new(),
+                        caption: None,
                         tokens: None,
                     });
                 }
@@ -1806,6 +1808,36 @@ fn parse_directive(
         "code" | "code-block" | "sourcecode" => {
             let lang = args.trim();
             *i_ref += 1;
+            let mut caption = None;
+            let mut j = *i_ref;
+            while j < lines.len() && lines[j].trim().is_empty() {
+                j += 1;
+            }
+            if j < lines.len()
+                && let Some(ind) = leading_spaces(lines[j])
+                && ind > base_indent
+            {
+                while j < lines.len() {
+                    let line = lines[j];
+                    if line.trim().is_empty() {
+                        j += 1;
+                        continue;
+                    }
+                    if leading_spaces(line).unwrap_or(0) < ind {
+                        break;
+                    }
+                    let stripped = &line[ind..];
+                    if let Some((key, value)) = field_marker(stripped) {
+                        if key == "caption" {
+                            caption = Some(value.trim().to_string());
+                        }
+                        j += 1;
+                    } else {
+                        break;
+                    }
+                }
+                *i_ref = j;
+            }
             let inner = consume_indented_text(lines, i_ref, base_indent);
             let classes = if lang.is_empty() {
                 "code".to_string()
@@ -1817,6 +1849,7 @@ fn parse_directive(
             Block::LiteralBlock {
                 text,
                 classes,
+                caption,
                 tokens,
             }
         }
@@ -2025,6 +2058,7 @@ fn parse_directive(
                 children: vec![Block::LiteralBlock {
                     text: body,
                     classes: "graphviz".to_string(),
+                    caption: None,
                     tokens: None,
                 }],
             }
@@ -2300,6 +2334,7 @@ fn parse_directive(
                 Block::LiteralBlock {
                     text: content,
                     classes,
+                    caption: None,
                     tokens,
                 }
             } else {
@@ -3125,9 +3160,10 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             Block::LiteralBlock {
                 text,
                 classes,
+                caption,
                 tokens,
             } => {
-                let lb = tree.append(parent, NodeKind::LiteralBlock { classes });
+                let lb = tree.append(parent, NodeKind::LiteralBlock { classes, caption });
                 match tokens {
                     Some(spans) => {
                         for (class, value) in spans {

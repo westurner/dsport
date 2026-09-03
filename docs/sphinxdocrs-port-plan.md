@@ -1576,6 +1576,14 @@ names.
 
 Implement project configuration parsing first, then output generation.
 
+Verified slice: `latex_documents` and `man_pages` are loaded as structured
+configuration values and honored by the native builders. Configured LaTeX
+projects write the selected `.tex` output plus the vendored TeX support assets
+and rendered helper files; configured man projects write only the selected
+`name.section` outputs, reject duplicate output names, and write no implicit
+per-source pages when `man_pages` is absent. Structural master-document
+ordering/include parity and full support-file byte parity remain pending.
+
 For LaTeX:
 
 - read and honor `latex_documents`;

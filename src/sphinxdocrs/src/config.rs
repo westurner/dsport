@@ -299,6 +299,17 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
             }
         }
 
+        // ── project-level writer options ───────────────────────────────────
+        // These are nested tuple/list values rather than list-of-strings;
+        // preserve their complete shape for the LaTeX and manpage builders.
+        for key in &["latex_documents", "man_pages"] {
+            if let Ok(Some(v)) = globals.get_item(*key) {
+                if let Some(val) = py_to_configval(&v) {
+                    raw.insert((*key).into(), val);
+                }
+            }
+        }
+
         // ── intersphinx_mapping ──────────────────────────────────────────────
         // Python shape: {'name': ('base_url', inv_url_or_None), …}
         if let Ok(Some(v)) = globals.get_item("intersphinx_mapping") {
@@ -1011,6 +1022,18 @@ impl SphinxConfig {
             Map(vec![]),
             None,
             "Required extension versions",
+        );
+        add(
+            "latex_documents",
+            List(vec![]),
+            Env,
+            "LaTeX output documents",
+        );
+        add(
+            "man_pages",
+            List(vec![]),
+            Env,
+            "Man page output documents",
         );
         add("manpages_url", Null, Env, "Manpages URL template");
         add("nitpicky", Bool(false), None, "Nitpicky mode");

@@ -27,6 +27,196 @@ impl LatexBuilder {
         Self::default()
     }
 
+    fn write_support_files(outdir: &Path) -> Result<(), BuildError> {
+        const STATIC_ASSETS: &[(&str, &[u8])] = &[
+            (
+                "LICRcyr2utf8.xdy",
+                include_bytes!("../../../sphinx/sphinx/texinputs/LICRcyr2utf8.xdy"),
+            ),
+            (
+                "LICRlatin2utf8.xdy",
+                include_bytes!("../../../sphinx/sphinx/texinputs/LICRlatin2utf8.xdy"),
+            ),
+            (
+                "LatinRules.xdy",
+                include_bytes!("../../../sphinx/sphinx/texinputs/LatinRules.xdy"),
+            ),
+            (
+                "python.ist",
+                include_bytes!("../../../sphinx/sphinx/texinputs/python.ist"),
+            ),
+            (
+                "sphinx.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinx.sty"),
+            ),
+            (
+                "sphinx.xdy",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinx.xdy"),
+            ),
+            (
+                "sphinxhowto.cls",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxhowto.cls"),
+            ),
+            (
+                "sphinxlatexadmonitions.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexadmonitions.sty"),
+            ),
+            (
+                "sphinxlatexcontainers.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexcontainers.sty"),
+            ),
+            (
+                "sphinxlatexgraphics.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexgraphics.sty"),
+            ),
+            (
+                "sphinxlatexindbibtoc.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexindbibtoc.sty"),
+            ),
+            (
+                "sphinxlatexlists.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexlists.sty"),
+            ),
+            (
+                "sphinxlatexliterals.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexliterals.sty"),
+            ),
+            (
+                "sphinxlatexnumfig.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexnumfig.sty"),
+            ),
+            (
+                "sphinxlatexobjects.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexobjects.sty"),
+            ),
+            (
+                "sphinxlatexshadowbox.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexshadowbox.sty"),
+            ),
+            (
+                "sphinxlatexstyleheadings.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexstyleheadings.sty"),
+            ),
+            (
+                "sphinxlatexstylepage.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexstylepage.sty"),
+            ),
+            (
+                "sphinxlatexstyletext.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatexstyletext.sty"),
+            ),
+            (
+                "sphinxlatextables.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxlatextables.sty"),
+            ),
+            (
+                "sphinxmanual.cls",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxmanual.cls"),
+            ),
+            (
+                "sphinxoptionsgeometry.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxoptionsgeometry.sty"),
+            ),
+            (
+                "sphinxoptionshyperref.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxoptionshyperref.sty"),
+            ),
+            (
+                "sphinxpackageboxes.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxpackageboxes.sty"),
+            ),
+            (
+                "sphinxpackagecyrillic.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxpackagecyrillic.sty"),
+            ),
+            (
+                "sphinxpackagefootnote.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxpackagefootnote.sty"),
+            ),
+            (
+                "sphinxpackagesubstitutefont.sty",
+                include_bytes!("../../../sphinx/sphinx/texinputs/sphinxpackagesubstitutefont.sty"),
+            ),
+        ];
+        for (name, contents) in STATIC_ASSETS {
+            std::fs::write(outdir.join(name), contents)?;
+        }
+
+        let templates = [
+            (
+                "Makefile",
+                include_str!("../../../sphinx/sphinx/texinputs/Makefile.jinja"),
+            ),
+            (
+                "make.bat",
+                include_str!("../../../sphinx/sphinx/texinputs/make.bat.jinja"),
+            ),
+            (
+                "latexmkrc",
+                include_str!("../../../sphinx/sphinx/texinputs/latexmkrc.jinja"),
+            ),
+            (
+                "latexmkjarc",
+                include_str!("../../../sphinx/sphinx/texinputs/latexmkjarc.jinja"),
+            ),
+        ];
+        for (name, template) in templates {
+            std::fs::write(
+                outdir.join(name),
+                Self::render_support_template(template).as_bytes(),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn render_support_template(template: &str) -> String {
+        let mut output = String::new();
+        let mut stack: Vec<(bool, bool)> = Vec::new();
+        let mut active = true;
+        for line in template.lines() {
+            let directive = line
+                .trim()
+                .strip_prefix("{%")
+                .and_then(|v| v.strip_suffix("%}"))
+                .map(|v| v.trim_end_matches('-').trim());
+            if let Some(expression) = directive.and_then(|v| v.strip_prefix("if ")) {
+                let condition = Self::support_condition(expression.trim());
+                stack.push((active, condition));
+                active = active && condition;
+            } else if let Some(expression) = directive.and_then(|v| v.strip_prefix("elif ")) {
+                if let Some((parent, taken)) = stack.last_mut() {
+                    let condition = !*taken && Self::support_condition(expression.trim());
+                    active = *parent && condition;
+                    *taken |= condition;
+                }
+            } else if directive == Some("else") {
+                if let Some((parent, taken)) = stack.last_mut() {
+                    active = *parent && !*taken;
+                    *taken = true;
+                }
+            } else if directive == Some("endif") {
+                active = stack.pop().map(|(parent, _)| parent).unwrap_or(true);
+            } else if active {
+                output.push_str(
+                    &line
+                        .replace("{{ latex_engine }}", "pdflatex")
+                        .replace("{{ xindy_lang_option }}", "-L general -C utf8")
+                        .replace("{{ xindy_use }}", "false")
+                        .replace("{{ xindy_cyrillic }}", "false"),
+                );
+                output.push('\n');
+            }
+        }
+        output
+    }
+
+    fn support_condition(expression: &str) -> bool {
+        matches!(
+            expression,
+            "latex_engine == 'pdflatex'" | "latex_engine != 'xelatex'"
+        )
+    }
+
     fn configured_documents(env: &BuildEnvironment) -> Option<Vec<(String, String)>> {
         let Some(ConfigVal::List(entries)) = env.config.get("latex_documents") else {
             return None;
@@ -56,18 +246,13 @@ impl LatexBuilder {
         let tree = match env.get_and_resolve_doctree(docname) {
             Ok(tree) => tree,
             Err(_) => {
-                let src_path = super::html::src_path_for_docname_with_suffixes(
-                    srcdir,
-                    docname,
-                    &env.config,
-                )?;
-                let source = crate::environment::read_source_file(
-                    &src_path,
-                    &env.config.source_encoding(),
-                )
-                .map_err(|e| {
-                    BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
-                })?;
+                let src_path =
+                    super::html::src_path_for_docname_with_suffixes(srcdir, docname, &env.config)?;
+                let source =
+                    crate::environment::read_source_file(&src_path, &env.config.source_encoding())
+                        .map_err(|e| {
+                            BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
+                        })?;
                 docutilsrs::parse_rst_with_source(&source, docname)
             }
         };
@@ -120,10 +305,14 @@ impl Builder for LatexBuilder {
         std::fs::create_dir_all(outdir)?;
 
         if let Some(configured) = Self::configured_documents(env) {
+            Self::write_support_files(outdir)?;
             let mut result = BuildResult::default();
             for (docname, targetname) in configured {
                 let output = self.render_document(srcdir, env, &docname)?;
-                let rel: PathBuf = targetname.split('/').collect::<PathBuf>().with_extension("tex");
+                let rel: PathBuf = targetname
+                    .split('/')
+                    .collect::<PathBuf>()
+                    .with_extension("tex");
                 let out_path = outdir.join(rel);
                 if let Some(parent) = out_path.parent() {
                     std::fs::create_dir_all(parent)?;

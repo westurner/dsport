@@ -302,18 +302,21 @@ fn build_latex_honors_configured_project_output() {
         "project = 'Project'\n\nlatex_documents = [('index', 'project-manual', 'Project Manual', 'Author', 'manual')]\n",
     )
     .unwrap();
-    let raw = sphinxdocrs::config::raw_config_from_conf_py(&src.path().join("conf.py")).unwrap();
-    assert!(raw.contains_key("latex_documents"));
     let out = tempfile::TempDir::new().unwrap();
     let dt = tempfile::TempDir::new().unwrap();
     let mut app =
         SphinxApp::new(src.path(), out.path(), dt.path(), "latex", HashMap::new()).unwrap();
-    assert!(app.config.get("latex_documents").is_some());
 
     let result = app.build().unwrap();
 
     assert_eq!(result.written, 1);
     assert!(out.path().join("project-manual.tex").exists());
+    assert!(out.path().join("Makefile").exists());
+    assert!(out.path().join("make.bat").exists());
+    assert!(out.path().join("latexmkrc").exists());
+    assert!(out.path().join("sphinx.sty").exists());
+    let makefile = std::fs::read_to_string(out.path().join("Makefile")).unwrap();
+    assert!(!makefile.contains("{%"));
     assert!(!out.path().join("index.tex").exists());
     assert!(!out.path().join("guide.tex").exists());
 }
@@ -329,13 +332,10 @@ fn build_man_honors_configured_project_output() {
         "project = 'Project'\n\nman_pages = [('command', 'projectctl', 'Project command', ['Author'], '1')]\n",
     )
     .unwrap();
-    let raw = sphinxdocrs::config::raw_config_from_conf_py(&src.path().join("conf.py")).unwrap();
-    assert!(raw.contains_key("man_pages"));
     let out = tempfile::TempDir::new().unwrap();
     let dt = tempfile::TempDir::new().unwrap();
     let mut app =
         SphinxApp::new(src.path(), out.path(), dt.path(), "man", HashMap::new()).unwrap();
-    assert!(app.config.get("man_pages").is_some());
 
     let result = app.build().unwrap();
 
@@ -343,6 +343,38 @@ fn build_man_honors_configured_project_output() {
     assert!(out.path().join("projectctl.1").exists());
     assert!(!out.path().join("index.1").exists());
     assert!(!out.path().join("command.1").exists());
+}
+
+#[test]
+fn build_man_without_configuration_writes_no_pages() {
+    let src = make_src_with_docs(&[("index", "Project\n=======\n\nContent.\n")]);
+    let out = tempfile::TempDir::new().unwrap();
+    let dt = tempfile::TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "man", HashMap::new()).unwrap();
+
+    let result = app.build().unwrap();
+
+    assert_eq!(result.written, 0);
+    assert!(!out.path().join("index.1").exists());
+}
+
+#[test]
+fn build_man_rejects_duplicate_configured_outputs() {
+    let src = make_src_with_docs(&[("index", "Project\n=======\n\nContent.\n")]);
+    std::fs::write(
+        src.path().join("conf.py"),
+        "man_pages = [('index', 'projectctl', 'Project', ['Author'], '1'), ('index', 'projectctl', 'Again', ['Author'], '1')]\n",
+    )
+    .unwrap();
+    let out = tempfile::TempDir::new().unwrap();
+    let dt = tempfile::TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "man", HashMap::new()).unwrap();
+
+    let error = app.build().unwrap_err().to_string();
+
+    assert!(error.contains("duplicate man page output"));
 }
 
 /// `build()` returns `AppError::UnknownBuilder` for unregistered builders.

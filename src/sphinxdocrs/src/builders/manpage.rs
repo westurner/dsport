@@ -1,6 +1,7 @@
 //! `sphinxdocrs::builders::manpage` — Rust port of
 //! `sphinx.builders.manpage.ManualPageBuilder` (minimal path).
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use docutilsrs::cli::{CommonOptions, ManOptions};
@@ -22,25 +23,39 @@ impl ManpageBuilder {
         Self::default()
     }
 
-    fn configured_pages(env: &BuildEnvironment) -> Option<Vec<(String, String, String)>> {
+    fn configured_pages(
+        env: &BuildEnvironment,
+    ) -> Result<Option<Vec<(String, String, String)>>, BuildError> {
         let Some(ConfigVal::List(entries)) = env.config.get("man_pages") else {
-            return None;
+            return Ok(None);
         };
-        Some(
-            entries
-                .iter()
-                .filter_map(|entry| {
-                    let ConfigVal::List(fields) = entry else {
-                        return None;
-                    };
-                    Some((
-                        fields.first()?.as_str()?.to_owned(),
-                        fields.get(1)?.as_str()?.to_owned(),
-                        fields.get(4)?.as_str()?.to_owned(),
-                    ))
-                })
-                .collect(),
-        )
+        let mut pages = Vec::with_capacity(entries.len());
+        let mut outputs = HashSet::new();
+        for entry in entries {
+            let ConfigVal::List(fields) = entry else {
+                return Err(BuildError::Other(
+                    "man_pages entries must be sequences".into(),
+                ));
+            };
+            let docname = fields.first().and_then(ConfigVal::as_str).ok_or_else(|| {
+                BuildError::Other("man_pages entry has no source document".into())
+            })?;
+            let name = fields
+                .get(1)
+                .and_then(ConfigVal::as_str)
+                .ok_or_else(|| BuildError::Other("man_pages entry has no command name".into()))?;
+            let section = fields
+                .get(4)
+                .and_then(ConfigVal::as_str)
+                .ok_or_else(|| BuildError::Other("man_pages entry has no section".into()))?;
+            if !outputs.insert((name.to_owned(), section.to_owned())) {
+                return Err(BuildError::Other(format!(
+                    "duplicate man page output: {name}.{section}"
+                )));
+            }
+            pages.push((docname.to_owned(), name.to_owned(), section.to_owned()));
+        }
+        Ok(Some(pages))
     }
 
     fn render_document(
@@ -52,18 +67,13 @@ impl ManpageBuilder {
         let tree = match env.get_and_resolve_doctree(docname) {
             Ok(tree) => tree,
             Err(_) => {
-                let src_path = super::html::src_path_for_docname_with_suffixes(
-                    srcdir,
-                    docname,
-                    &env.config,
-                )?;
-                let source = crate::environment::read_source_file(
-                    &src_path,
-                    &env.config.source_encoding(),
-                )
-                .map_err(|e| {
-                    BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
-                })?;
+                let src_path =
+                    super::html::src_path_for_docname_with_suffixes(srcdir, docname, &env.config)?;
+                let source =
+                    crate::environment::read_source_file(&src_path, &env.config.source_encoding())
+                        .map_err(|e| {
+                            BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
+                        })?;
                 docutilsrs::parse_rst_with_source(&source, docname)
             }
         };
@@ -104,15 +114,9 @@ impl Builder for ManpageBuilder {
         outdir: &Path,
         env: &BuildEnvironment,
     ) -> Result<BuildResult, BuildError> {
-        let mut result = BuildResult::default();
-        let docnames: Vec<String> = if !env.all_docs.is_empty() {
-            env.all_docs.keys().cloned().collect()
-        } else {
-            super::html::discover_docnames_pub(srcdir, &env.config)
-        };
         std::fs::create_dir_all(outdir)?;
 
-        if let Some(configured) = Self::configured_pages(env) {
+        if let Some(configured) = Self::configured_pages(env)? {
             let mut result = BuildResult::default();
             for (docname, name, section) in configured {
                 let output = self.render_document(srcdir, env, &docname)?;
@@ -126,21 +130,7 @@ impl Builder for ManpageBuilder {
             }
             return Ok(result);
         }
-
-        for docname in &docnames {
-            // Use string append, not with_extension — the latter strips any
-            // existing dot in the final component (e.g. "0.1" → "0.rst").
-            let src_path =
-                super::html::src_path_for_docname_with_suffixes(srcdir, docname, &env.config)?;
-            let source =
-                crate::environment::read_source_file(&src_path, &env.config.source_encoding())
-                    .map_err(|e| {
-                        BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
-                    })?;
-            self.build_doc(docname, &source, outdir)?;
-            result.written += 1;
-        }
-        Ok(result)
+        Ok(BuildResult::default())
     }
 }
 

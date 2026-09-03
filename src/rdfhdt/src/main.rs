@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(
     name = "rdfhdt",
-    about = "Convert streaming N-Triples and HDT artifacts"
+    about = "Convert Oxigraph RDF formats and HDT artifacts"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -16,22 +16,40 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Convert N-Triples to HDT.
+    /// Convert an RDF input to HDT or HDTQ.
     Export {
-        /// Input N-Triples path, or `-` for stdin.
+        /// Input RDF path, or `-` for stdin.
         input: PathBuf,
-        /// Output HDT path, or `-` for stdout.
+        /// Output HDT/HDTQ path, or `-` for stdout.
         output: PathBuf,
+        /// Input format name, extension, or media type.
+        #[arg(long, default_value = "nt")]
+        input_format: String,
+        /// Output artifact: `hdt` or `hdtq`.
+        #[arg(long, default_value = "hdt")]
+        output_format: String,
         /// Dataset IRI written to the HDT header.
         #[arg(long, default_value = "https://example.invalid/rdfhdt-dataset")]
         base_iri: String,
+        /// Standard HDT named graph policy: `reject` or `flatten`.
+        #[arg(long, default_value = "reject")]
+        graph_policy: String,
+        /// HDTQ annotation mode: `ag` or `at`.
+        #[arg(long, default_value = "ag")]
+        annotation_mode: String,
     },
-    /// Convert HDT to N-Triples.
+    /// Convert HDT or HDTQ to an RDF format.
     Import {
-        /// Input HDT path, or `-` for stdin.
+        /// Input HDT/HDTQ path, or `-` for stdin.
         input: PathBuf,
-        /// Output N-Triples path, or `-` for stdout.
+        /// Output RDF path, or `-` for stdout.
         output: PathBuf,
+        /// Input artifact: `hdt` or `hdtq`.
+        #[arg(long, default_value = "hdt")]
+        input_format: String,
+        /// Output RDF format name, extension, or media type.
+        #[arg(long, default_value = "nt")]
+        output_format: String,
     },
 }
 
@@ -41,21 +59,62 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Export {
             input,
             output,
+            input_format,
+            output_format,
             base_iri,
+            graph_policy,
+            annotation_mode,
         } => {
             let input_size = input.metadata().ok().map(|metadata| metadata.len());
             let input = open_input(&input)?;
             let mut output = open_output(&output)?;
-            let stats = rdfhdt::ntriples_to_hdt(input, &base_iri, &mut output)?;
+            let input_format = rdfhdt::parse_rdf_format(&input_format)?;
+            let stats = match output_format.to_ascii_lowercase().as_str() {
+                "hdt" => rdfhdt::rdf_to_hdt(
+                    input,
+                    input_format,
+                    &base_iri,
+                    rdfhdt::NamedGraphPolicy::parse(&graph_policy)?,
+                    &mut output,
+                )?,
+                "hdtq" => rdfhdt::rdf_to_hdtq(
+                    input,
+                    input_format,
+                    &base_iri,
+                    rdfhdt::AnnotationMode::parse(&annotation_mode)?,
+                    &mut output,
+                )?,
+                other => {
+                    return Err(format!(
+                        "unsupported output artifact {other:?}; expected hdt or hdtq"
+                    )
+                    .into());
+                }
+            };
             if let Some(input_size) = input_size {
                 debug_assert_eq!(stats.input_bytes, input_size);
             }
             stats
         }
-        Command::Import { input, output } => {
+        Command::Import {
+            input,
+            output,
+            input_format,
+            output_format,
+        } => {
             let input = open_input(&input)?;
             let mut output = open_output(&output)?;
-            rdfhdt::hdt_to_ntriples(BufReader::new(input), &mut output)?
+            let output_format = rdfhdt::parse_rdf_format(&output_format)?;
+            match input_format.to_ascii_lowercase().as_str() {
+                "hdt" => rdfhdt::hdt_to_rdf(BufReader::new(input), output_format, &mut output)?,
+                "hdtq" => rdfhdt::hdtq_to_rdf(input, output_format, &mut output)?,
+                other => {
+                    return Err(format!(
+                        "unsupported input artifact {other:?}; expected hdt or hdtq"
+                    )
+                    .into());
+                }
+            }
         }
     };
     eprintln!(

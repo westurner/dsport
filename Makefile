@@ -1,6 +1,6 @@
 .PHONY: all build test develop clean \
 	build-docutilsrs build-pygmentsrs build-sphinxdocrs build-mathrenderrs build-myst-md-rs \
-	test-cargo test-cargo-docutilsrs test-cargo-pygmentsrs test-cargo-jinja2rs test-cargo-rdfhdt test-cargo-sphinxdocrs \
+	test-cargo test-cargo-docutilsrs test-cargo-pygmentsrs test-cargo-jinja2rs test-cargo-rdfhdt test-cargo-rdfhdt-coverage test-cargo-sphinxdocrs \
 	test-cargo-mathrenderrs test-cargo-myst-md-rs test-cargo-pygmentsrs-coverage \
 	test-coverage-pygmentsrs coverage-pygmentsrs \
 	develop-docutilsrs develop-pygmentsrs develop-sphinxdocrs develop-myst-md-rs \
@@ -136,6 +136,9 @@ test-cargo-myst-md-rs:
 
 test-cargo-rdfhdt:
 	cargo test -p rdfhdt
+
+test-cargo-rdfhdt-coverage:
+	cargo llvm-cov -p rdfhdt --lib --tests --text
 
 test-cargo-sphinxdocrs:
 	cd src/sphinxdocrs && cargo test

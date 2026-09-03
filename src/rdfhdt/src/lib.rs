@@ -11,7 +11,13 @@ use std::sync::{
 };
 
 use hdt::Hdt;
+use oxrdfio::{RdfParser, RdfSerializer};
 use oxttl::NTriplesParser;
+
+pub use oxrdfio::RdfFormat;
+
+mod hdtq;
+pub use hdtq::{AnnotationMode, hdtq_to_quads, hdtq_to_rdf, quads_to_hdtq, rdf_to_hdtq};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -44,6 +50,37 @@ pub struct Stats {
     pub output_bytes: u64,
 }
 
+/// Parses an Oxigraph RDF format from a file extension, media type, or name.
+pub fn parse_rdf_format(value: &str) -> Result<RdfFormat> {
+    let value = value.trim();
+    let extension = value.strip_prefix('.').unwrap_or(value);
+    let lowered = value.to_ascii_lowercase();
+    let format = match lowered.as_str() {
+        "jsonld" | "json-ld" => RdfFormat::from_extension("jsonld"),
+        "n3" => RdfFormat::from_extension("n3"),
+        "nq" | "n-quads" | "nquads" => RdfFormat::from_extension("nq"),
+        "nt" | "n-triples" | "ntriples" => RdfFormat::from_extension("nt"),
+        "rdf" | "rdfxml" | "rdf/xml" => RdfFormat::from_extension("rdf"),
+        "trig" => RdfFormat::from_extension("trig"),
+        "ttl" | "turtle" => RdfFormat::from_extension("ttl"),
+        _ => RdfFormat::from_extension(extension)
+            .or_else(|| RdfFormat::from_media_type(value))
+            .or_else(|| {
+                [
+                    RdfFormat::N3,
+                    RdfFormat::NQuads,
+                    RdfFormat::NTriples,
+                    RdfFormat::RdfXml,
+                    RdfFormat::TriG,
+                    RdfFormat::Turtle,
+                ]
+                .into_iter()
+                .find(|format| format.name().eq_ignore_ascii_case(value))
+            }),
+    };
+    format.ok_or_else(|| Error::UnsupportedFormat(value.to_owned()))
+}
+
 /// Errors returned by the bridge.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -62,6 +99,8 @@ pub enum Error {
     NamedGraph { graph: String },
     #[error("invalid named-graph policy {0:?}; expected reject or flatten")]
     InvalidPolicy(String),
+    #[error("unsupported RDF format {0:?}")]
+    UnsupportedFormat(String),
 }
 
 #[derive(Clone, Copy)]
@@ -69,6 +108,7 @@ enum Position {
     Subject,
     Predicate,
     Object,
+    Graph,
 }
 
 impl Position {
@@ -77,6 +117,7 @@ impl Position {
             Self::Subject => "subject",
             Self::Predicate => "predicate",
             Self::Object => "object",
+            Self::Graph => "graph",
         }
     }
 }
@@ -154,6 +195,76 @@ where
     write_hdt(triples, base_iri, writer)
 }
 
+/// Parses any RDF format supported by Oxigraph and writes a triple-only HDT.
+/// Named graphs are rejected or flattened according to `policy`.
+pub fn rdf_to_hdt<R, W>(
+    reader: R,
+    input_format: RdfFormat,
+    base_iri: &str,
+    policy: NamedGraphPolicy,
+    writer: W,
+) -> Result<Stats>
+where
+    R: Read,
+    W: Write,
+{
+    let input_bytes = Arc::new(AtomicU64::new(0));
+    let reader = CountingReader::new(reader, Arc::clone(&input_bytes));
+    let parser = RdfParser::from_format(input_format)
+        .with_base_iri(base_iri)
+        .map_err(|error| Error::Parse(error.to_string()))?;
+    let quads = parser.for_reader(reader).map(|item| {
+        let quad = item.map_err(|error| Error::Parse(error.to_string()))?;
+        Ok(QuadRecord {
+            triple: [
+                term_to_hdt(&quad.subject, Position::Subject)?,
+                term_to_hdt(&quad.predicate, Position::Predicate)?,
+                term_to_hdt(&quad.object, Position::Object)?,
+            ],
+            graph_name: if quad.graph_name.is_default_graph() {
+                None
+            } else {
+                Some(term_to_hdt(&quad.graph_name, Position::Graph)?)
+            },
+        })
+    });
+    let mut stats = quads_to_hdt(quads, base_iri, policy, writer)?;
+    stats.input_bytes = input_bytes.load(Ordering::Relaxed);
+    Ok(stats)
+}
+
+/// Reads a triple-only HDT and serializes it to any Oxigraph RDF format.
+/// The output is always in the default graph because standard HDT has no graph
+/// identity to restore.
+pub fn hdt_to_rdf<R, W>(reader: R, output_format: RdfFormat, writer: W) -> Result<Stats>
+where
+    R: BufRead,
+    W: Write,
+{
+    let hdt = Hdt::read(reader).map_err(|error| Error::Hdt(error.to_string()))?;
+    let mut writer = CountingWriter::new(writer);
+    let mut serializer = RdfSerializer::from_format(output_format).for_writer(writer);
+    let mut triple_count = 0_u64;
+    for triple in hdt.triples_all() {
+        let line = format!(
+            "{} {} {} .\n",
+            term_to_ntriples(&triple[0], Position::Subject)?,
+            term_to_ntriples(&triple[1], Position::Predicate)?,
+            term_to_ntriples(&triple[2], Position::Object)?,
+        );
+        let quad = parse_single_ntriple(&line)?;
+        serializer.serialize_quad(&quad).map_err(Error::Io)?;
+        triple_count += 1;
+    }
+    writer = serializer.finish().map_err(Error::Io)?;
+    writer.flush()?;
+    Ok(Stats {
+        triple_count,
+        output_bytes: writer.count(),
+        ..Stats::default()
+    })
+}
+
 /// Parses a streaming N-Triples input and writes the resulting HDT document.
 pub fn ntriples_to_hdt<R, W>(reader: R, base_iri: &str, writer: W) -> Result<Stats>
 where
@@ -217,7 +328,12 @@ fn term_to_hdt(term: &impl Display, position: Position) -> Result<String> {
         }
         return Ok(iri.to_owned());
     }
-    if term.starts_with("_:") && matches!(position, Position::Subject | Position::Object) {
+    if term.starts_with("_:")
+        && matches!(
+            position,
+            Position::Subject | Position::Object | Position::Graph
+        )
+    {
         return Ok(term);
     }
     if term.starts_with('"') && matches!(position, Position::Object) {
@@ -230,10 +346,18 @@ fn term_to_hdt(term: &impl Display, position: Position) -> Result<String> {
 }
 
 fn term_to_ntriples(term: &str, position: Position) -> Result<String> {
-    if term.starts_with("_:") && matches!(position, Position::Subject | Position::Object) {
+    if term.starts_with("_:")
+        && matches!(
+            position,
+            Position::Subject | Position::Object | Position::Graph
+        )
+    {
         return Ok(term.to_owned());
     }
     if term.starts_with('"') && matches!(position, Position::Object) {
+        return Ok(term.to_owned());
+    }
+    if term.starts_with('<') && term.ends_with('>') && term.len() > 2 {
         return Ok(term.to_owned());
     }
     if !term.is_empty() && !term.contains(['<', '>', '\n', '\r']) {
@@ -243,6 +367,20 @@ fn term_to_ntriples(term: &str, position: Position) -> Result<String> {
         term: term.to_owned(),
         position: position.name(),
     })
+}
+
+fn parse_single_ntriple(line: &str) -> Result<oxrdf::Quad> {
+    let mut parser = RdfParser::from_format(RdfFormat::NTriples).for_reader(line.as_bytes());
+    let quad = parser
+        .next()
+        .ok_or_else(|| Error::Parse("generated N-Triples line was empty".to_owned()))?
+        .map_err(|error| Error::Parse(error.to_string()))?;
+    if parser.next().is_some() {
+        return Err(Error::Parse(
+            "generated N-Triples line contained multiple triples".to_owned(),
+        ));
+    }
+    Ok(quad)
 }
 
 fn validate_ntriples(line: &str) -> Result<()> {
@@ -449,5 +587,151 @@ mod tests {
         )
         .unwrap();
         assert_eq!(stats.triple_count, 1);
+    }
+
+    fn parse_count(data: &[u8], format: RdfFormat) -> usize {
+        RdfParser::from_format(format)
+            .for_reader(data)
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap()
+            .len()
+    }
+
+    #[test]
+    fn every_oxigraph_format_round_trips_through_hdt() {
+        let jsonld = RdfFormat::from_extension("jsonld").unwrap();
+        let cases = [
+            (
+                RdfFormat::NTriples,
+                "<https://example.test/s> <https://example.test/p> <https://example.test/o> .\n",
+            ),
+            (
+                RdfFormat::NQuads,
+                "<https://example.test/s> <https://example.test/p> <https://example.test/o> .\n",
+            ),
+            (
+                RdfFormat::Turtle,
+                "@prefix ex: <https://example.test/> . ex:s ex:p ex:o .\n",
+            ),
+            (
+                RdfFormat::TriG,
+                "@prefix ex: <https://example.test/> . ex:s ex:p ex:o .\n",
+            ),
+            (
+                RdfFormat::N3,
+                "@prefix ex: <https://example.test/> . ex:s ex:p ex:o .\n",
+            ),
+            (
+                RdfFormat::RdfXml,
+                "<?xml version=\"1.0\"?><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\" xmlns:ex=\"https://example.test/\"><rdf:Description rdf:about=\"https://example.test/s\"><ex:p rdf:resource=\"https://example.test/o\"/></rdf:Description></rdf:RDF>",
+            ),
+            (
+                jsonld,
+                r#"{"@context":{"ex":"https://example.test/"},"@id":"ex:s","ex:p":{"@id":"ex:o"}}"#,
+            ),
+        ];
+        for (format, input) in cases {
+            let mut hdt = Vec::new();
+            let policy = if format.supports_datasets() {
+                NamedGraphPolicy::Flatten
+            } else {
+                NamedGraphPolicy::Reject
+            };
+            let stats = rdf_to_hdt(
+                input.as_bytes(),
+                format,
+                "https://example.test/base",
+                policy,
+                &mut hdt,
+            )
+            .unwrap();
+            assert_eq!(stats.triple_count, 1, "{}", format.name());
+            let mut output = Vec::new();
+            hdt_to_rdf(Cursor::new(hdt), format, &mut output).unwrap();
+            assert_eq!(parse_count(&output, format), 1, "{}", format.name());
+        }
+    }
+
+    #[test]
+    fn format_parser_accepts_names_extensions_and_media_types() {
+        assert_eq!(parse_rdf_format("n-triples").unwrap(), RdfFormat::NTriples);
+        assert_eq!(parse_rdf_format(".ttl").unwrap(), RdfFormat::Turtle);
+        assert_eq!(
+            parse_rdf_format("application/n-quads").unwrap(),
+            RdfFormat::NQuads
+        );
+        assert!(matches!(
+            parse_rdf_format("nope"),
+            Err(Error::UnsupportedFormat(_))
+        ));
+    }
+
+    #[test]
+    fn hdtq_preserves_graphs_in_both_annotation_modes() {
+        let triple = [
+            "https://example.test/s".to_owned(),
+            "https://example.test/p".to_owned(),
+            "https://example.test/o".to_owned(),
+        ];
+        let quads = [
+            QuadRecord::named_graph(triple.clone(), "https://example.test/g1"),
+            QuadRecord::named_graph(triple.clone(), "https://example.test/g2"),
+            QuadRecord::default_graph([
+                "https://example.test/s2".to_owned(),
+                "https://example.test/p".to_owned(),
+                "\"default\"".to_owned(),
+            ]),
+        ];
+        for mode in [
+            AnnotationMode::AnnotatedGraphs,
+            AnnotationMode::AnnotatedTriples,
+        ] {
+            let mut hdtq = Vec::new();
+            let stats = quads_to_hdtq(
+                quads.iter().cloned().map(Ok),
+                "https://example.test/dataset",
+                mode,
+                &mut hdtq,
+            )
+            .unwrap();
+            assert_eq!(stats.triple_count, 2);
+            let restored = hdtq_to_quads(Cursor::new(&hdtq)).unwrap();
+            assert_eq!(restored.len(), 3);
+            assert!(restored.contains(&QuadRecord::named_graph(
+                triple.clone(),
+                "https://example.test/g1",
+            )));
+            assert!(restored.contains(&QuadRecord::named_graph(
+                triple.clone(),
+                "https://example.test/g2",
+            )));
+            let mut nquads = Vec::new();
+            hdtq_to_rdf(Cursor::new(hdtq), RdfFormat::NQuads, &mut nquads).unwrap();
+            assert_eq!(parse_count(&nquads, RdfFormat::NQuads), 3);
+        }
+    }
+
+    #[test]
+    fn hdtq_rejects_corrupt_annotation_bitmap() {
+        let mut hdtq = Vec::new();
+        quads_to_hdtq(
+            [Ok(QuadRecord::named_graph(
+                [
+                    "https://example.test/s".to_owned(),
+                    "https://example.test/p".to_owned(),
+                    "https://example.test/o".to_owned(),
+                ],
+                "https://example.test/g",
+            ))],
+            "https://example.test/dataset",
+            AnnotationMode::AnnotatedGraphs,
+            &mut hdtq,
+        )
+        .unwrap();
+        *hdtq.last_mut().unwrap() ^= 1;
+        assert!(matches!(
+            hdtq_to_quads(Cursor::new(hdtq)),
+            Err(Error::Hdt(_))
+        ));
     }
 }

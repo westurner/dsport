@@ -10,9 +10,15 @@ The reusable bridge portion is implemented in [rdfhdt](../src/rdfhdt/):
   malformed dictionary terms as errors.
 - `QuadRecord` and `quads_to_hdt` provide an Oxigraph/OxiRS-neutral adapter with
   `reject` (default) and explicit `flatten` named-graph policies.
-- The `rdfhdt` CLI supports file paths or stdin/stdout for `export` and `import`.
-- Seven focused Rust tests cover term round-tripping, empty datasets, malformed
-  input, malformed HDT terms, and named-graph policy behavior.
+- `rdf_to_hdt` and `hdt_to_rdf` use Oxigraph's common parser and serializer for
+  N-Triples, N-Quads, Turtle, TriG, N3, RDF/XML, and JSON-LD.
+- `rdf_to_hdtq` and `hdtq_to_rdf` preserve graph identity using the HDTQ-java
+  fifth dictionary section and either annotated-graph or annotated-triple
+  bitmaps.
+- The `rdfhdt` CLI supports format selection, HDT/HDTQ selection, annotation
+  mode selection, and file paths or stdin/stdout for `export` and `import`.
+- Twelve focused Rust tests cover all supported RDF formats, term round-tripping,
+  malformed input, graph policies, HDTQ graph preservation, and bitmap checksums.
 
 This slice uses the local `hdt-rs` fork's public `Hdt::from_triples` API. The
 concrete DocIndex backend, Sphinx asset hook, Python capability detection, and
@@ -47,9 +53,10 @@ The implementation must therefore distinguish these goals:
 - **C:** remove the RDF serialization and reparsing step by adding or adopting a
   public bulk-builder API in `hdt-rs`.
 
-HDT is a triple format, while Oxigraph can contain named quads. Full named-graph
-round-tripping is out of scope for the first version and must not be implied by
-the API.
+Standard HDT is a triple format, while Oxigraph can contain named quads. The
+standard HDT API therefore keeps explicit reject/flatten semantics. Full graph
+round-tripping is provided by the separate HDTQ API; it supports the plain
+bitmap encoding used by HDTQ-java and intentionally rejects roaring payloads.
 
 ## Proposed Architecture
 

@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.87"
 license = "BSD-2-Clause"
-description = "Streaming N-Triples and RDF-store adapters for HDT artifacts"
+description = "RDF format and RDF-store adapters for HDT artifacts"
 repository = "https://github.com/westurner/dsport"
 readme = "README.md"
-keywords = ["rdf", "hdt", "n-triples"]
+keywords = ["rdf", "hdt", "oxigraph"]
 categories = ["compression", "parser-implementations"]
 
 [lib]
@@ -22,6 +22,9 @@ default = []
 
 [dependencies]
 clap = { workspace = true, features = ["derive"] }
+crc = "3"
 hdt = { path = "../hdt", default-features = false, features = ["nt"] }
+oxrdf = "0.3.4"
+oxrdfio = "0.2.6"
 oxttl = "0.2.1"
 thiserror = "2"

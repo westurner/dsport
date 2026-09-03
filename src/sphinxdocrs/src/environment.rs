@@ -33,22 +33,22 @@
 //! full `setup()` hook, `get_doctree`, `resolve_references`, search index.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+
+use docutilsrs::doctree::{Doctree, NodeKind};
+
+use crate::builders::BuildError;
+use crate::config::SphinxConfig;
+use crate::domains::{
+    IndexEntry, JsDomain, ObjectEntry, PendingXref, PyDomain, RstDomain, StdDomain, XrefResolution,
+    scan,
+};
+
 
 pub(crate) fn read_source_file(path: &Path, encoding: &str) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|err| err.to_string())?;
     docutilsrs::decode_source(&bytes, encoding).map_err(|err| err.to_string())
 }
-use std::path::{Path, PathBuf};
-
-use docutilsrs::doctree::{Doctree, NodeId, NodeKind};
-use serde::{Deserialize, Serialize};
-
-use crate::builders::BuildError;
-use crate::config::{ConfigVal, SphinxConfig};
-use crate::domains::{
-    IndexEntry, JsDomain, ObjectEntry, PendingXref, PyDomain, RstDomain, StdDomain, XrefResolution,
-    scan,
-};
 
 // ── project shim ─────────────────────────────────────────────────────────────
 
@@ -230,18 +230,6 @@ pub struct BuildEnvironment {
     /// when there is no owning app (e.g. a builder driven directly in a
     /// test) — event emission is then simply skipped.
     pub events: EventsHandle,
-
-    // ── extension-registered page assets (H4c) ───────────────────────────────
-    /// CSS files registered by a Python extension's `app.add_css_file(...)`
-    /// during `setup(app)` (or an event listener it connects). Synced from
-    /// `SphinxApp::assets` by [`crate::application::SphinxApp::build`] just
-    /// before dispatching to a builder; merged into the `css_files`
-    /// template list by `crate::theme_render::build_global_context`
-    /// alongside whatever is discovered under `outdir/_static/`.
-    pub added_css_files: Vec<crate::registry::CssFile>,
-    /// JS files registered via `app.add_js_file(...)`. See
-    /// `added_css_files`.
-    pub added_js_files: Vec<crate::registry::JsFile>,
 }
 
 /// Wraps `Option<crate::app_events::SharedEvents>` so [`BuildEnvironment`]
@@ -258,17 +246,6 @@ impl std::fmt::Debug for EventsHandle {
     }
 }
 
-/// Shared handle to a [`BuildEnvironment`].
-///
-/// [`crate::application::SphinxApp`] owns the single instance for the
-/// lifetime of a build; the very same `Rc` is cloned into every
-/// [`crate::app_facade::PyAppFacade`] (as `app.env`) constructed for that
-/// app, so a Python extension listener reads/writes the *live* environment
-/// — not a point-in-time copy — exactly like upstream, where `app.env` and
-/// `env` (the argument passed to most events) are the one persistent
-/// `BuildEnvironment` object for the whole build.
-pub type SharedEnv = std::rc::Rc<std::cell::RefCell<BuildEnvironment>>;
-
 impl BuildEnvironment {
     /// Construct a new `BuildEnvironment`.
     ///
@@ -282,8 +259,7 @@ impl BuildEnvironment {
         srcdir: impl Into<PathBuf>,
         doctreedir: impl Into<PathBuf>,
     ) -> Self {
-        let mut settings = default_settings();
-        settings.insert("input_encoding".to_string(), config.source_encoding());
+        let settings = default_settings();
         // upstream injects `self` into settings['env'] — we skip that here.
 
         Self {
@@ -317,8 +293,6 @@ impl BuildEnvironment {
             pending_xrefs: HashMap::new(),
             indexentries: HashMap::new(),
             events: EventsHandle::default(),
-            added_css_files: Vec::new(),
-            added_js_files: Vec::new(),
         }
     }
 
@@ -328,19 +302,6 @@ impl BuildEnvironment {
     /// builder so the write phase can emit `html-page-context` per page.
     pub fn set_events(&mut self, events: crate::app_events::SharedEvents) {
         self.events = EventsHandle(Some(events));
-    }
-
-    /// Install the extension-registered CSS/JS files accumulated during
-    /// extension loading (**H4c**). Called by
-    /// [`crate::application::SphinxApp::build`] just before dispatching to
-    /// a builder, mirroring [`set_events`](Self::set_events)'s timing.
-    pub fn set_added_assets(
-        &mut self,
-        css_files: Vec<crate::registry::CssFile>,
-        js_files: Vec<crate::registry::JsFile>,
-    ) {
-        self.added_css_files = css_files;
-        self.added_js_files = js_files;
     }
 
     /// Return the installed event bus handle, if any.
@@ -495,46 +456,9 @@ impl BuildEnvironment {
     pub fn parse_doc(&self, docname: &str) -> Result<Doctree, BuildError> {
         sanitize_docname(docname)?;
         let path = self.doc2path(docname);
-        let source = read_source_file(&path, &self.config.source_encoding())
+        let source = std::fs::read_to_string(&path)
             .map_err(|e| BuildError::Other(format!("failed to read {}: {e}", path.display())))?;
-        self.parse_source(docname, &source)
-    }
-
-    /// Return the parser identity configured for a source path.
-    ///
-    /// Suffixes are matched longest-first, matching `find_files()`. A path
-    /// with no configured match keeps the historical RST default so direct
-    /// callers that provide an unregistered path remain compatible.
-    pub fn parser_for_path(&self, path: &Path) -> String {
-        let mut suffixes: Vec<(String, String)> = self.config.source_suffix().into_iter().collect();
-        suffixes.sort_by_key(|(suffix, _)| std::cmp::Reverse(suffix.len()));
-        let path = path.to_string_lossy();
-        suffixes
-            .into_iter()
-            .find(|(suffix, _)| path.ends_with(suffix))
-            .map(|(_, parser)| parser)
-            .unwrap_or_else(|| "restructuredtext".into())
-    }
-
-    /// Parse source using the parser selected by `source_suffix`.
-    ///
-    /// The native MyST path produces a `docutilsrs::Doctree` directly. It
-    /// deliberately does not call the standalone HTML renderer, preserving
-    /// the Sphinx read-phase contract for transforms, persistence, and
-    /// writers.
-    pub fn parse_source(&self, docname: &str, source: &str) -> Result<Doctree, BuildError> {
-        let path = self.doc2path(docname);
-        match self.parser_for_path(&path).as_str() {
-            "restructuredtext" => Ok(docutilsrs::parse_rst_with_source(source, docname)),
-            "myst" | "markdown" => Ok(myst_md_rs::parse_to_doctree(
-                source,
-                path.to_string_lossy().into_owned(),
-                &myst_md_rs::DoctreeOptions::default(),
-            )),
-            parser => Err(BuildError::Other(format!(
-                "unknown source parser {parser:?} configured for {docname:?}"
-            ))),
-        }
+        Ok(docutilsrs::parse_rst_with_source(&source, docname))
     }
 
     /// Persist `tree` to `doctreedir/<docname>.doctree`.
@@ -596,9 +520,7 @@ impl BuildEnvironment {
     /// the port; they are picked up again in **H8** and **H3a**
     /// respectively.
     pub fn read_all(&mut self) -> Result<Vec<String>, BuildError> {
-        let mut docnames: Vec<String> = self.found_docs().iter().cloned().collect();
-        docnames.sort();
-        self.read_all_impl(docnames, None)
+        self.read_all_impl(None)
     }
 
     /// Same as [`read_all`](Self::read_all), but emits `source-read`
@@ -609,287 +531,60 @@ impl BuildEnvironment {
         &mut self,
         events: &crate::app_events::SharedEvents,
     ) -> Result<Vec<String>, BuildError> {
-        let mut docnames: Vec<String> = self.found_docs().iter().cloned().collect();
-        docnames.sort();
-        self.read_all_impl(docnames, Some(events))
-    }
-
-    /// Read exactly `docnames` (parsed, domain-scanned, and persisted to
-    /// the doctree store — same per-document work `read_all` does),
-    /// rather than every [`found_docs`](Self::found_docs) entry.
-    ///
-    /// Used by [`crate::application::SphinxApp::read`]'s **H8a**
-    /// incremental path to re-read only the documents `get_outdated`
-    /// reported as added/changed, leaving already-up-to-date documents'
-    /// persisted doctrees and domain data (restored by
-    /// [`apply_persisted`](Self::apply_persisted)) untouched.
-    pub fn read_docs(
-        &mut self,
-        docnames: Vec<String>,
-        events: Option<&crate::app_events::SharedEvents>,
-    ) -> Result<Vec<String>, BuildError> {
-        self.read_all_impl(docnames, events)
+        self.read_all_impl(Some(events))
     }
 
     fn read_all_impl(
         &mut self,
-        docnames: Vec<String>,
         events: Option<&crate::app_events::SharedEvents>,
     ) -> Result<Vec<String>, BuildError> {
         use crate::app_events::EventArg;
 
+        let mut docnames: Vec<String> = self.found_docs().iter().cloned().collect();
+        docnames.sort();
+
         for docname in &docnames {
+            if let Some(events) = events {
+                events
+                    .borrow_mut()
+                    .emit("source-read", &[EventArg::Str(docname.clone())]);
+            }
+
             let path = self.doc2path(docname);
-            let source = read_source_file(&path, &self.config.source_encoding()).map_err(|e| {
+            let source = std::fs::read_to_string(&path).map_err(|e| {
                 BuildError::Other(format!("failed to read {}: {e}", path.display()))
             })?;
 
+            let tree = docutilsrs::parse_rst_with_source(&source, docname);
+
+            let title = match &tree.node(tree.root()).kind {
+                NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
+                _ => docname.rsplit('/').next().unwrap_or(docname).to_string(),
+            };
+            self.set_title(docname.clone(), title);
+
+            let entries = scan_toctree_entries(&source);
+            if !entries.is_empty() {
+                self.note_toctree(docname.clone(), entries);
+            }
+
+            for include in scan_include_entries(&source) {
+                self.note_dependency(docname.clone(), include);
+            }
+
+            self.note_domain_data(docname, &source);
+
+            self.store_doctree(docname, &tree)?;
+            self.record_doc_read(docname.clone(), now_micros());
+
             if let Some(events) = events {
                 events
                     .borrow_mut()
-                    .emit(
-                        "source-read",
-                        &[
-                            EventArg::Str(docname.clone()),
-                            EventArg::StrList(vec![source.clone()]),
-                        ],
-                    )
-                    .map_err(|e| BuildError::Other(e.0))?;
+                    .emit("doctree-read", &[EventArg::Str(docname.clone())]);
             }
-
-            self.read_one_with_source(docname, &source)?;
-
-            if let Some(events) = events {
-                // Read the just-stored doctree back so listeners get a
-                // real, `.findall()`-capable object (see `EventArg::Doctree`'s
-                // doc comment for the accepted "not read back after mutation"
-                // deviation) instead of the docname string upstream's
-                // `doctree-read(app, doctree)` never actually passes.
-                let tree = self.get_doctree(docname)?;
-                events
-                    .borrow_mut()
-                    .emit("doctree-read", &[EventArg::Doctree(tree)])
-                    .map_err(|e| BuildError::Other(e.0))?;
-            }
-        }
-
-        // Domain inventories are complete only after every selected document
-        // has been read. Rewrite pending xrefs once at that boundary so all
-        // builders consume the same persisted doctree instead of each builder
-        // repeating the resolution walk during rendering.
-        let mut stored_docnames: Vec<String> = self.all_docs.keys().cloned().collect();
-        stored_docnames.sort();
-        for docname in stored_docnames {
-            let mut tree = self.get_doctree(&docname)?;
-            self.resolve_xref_nodes(&mut tree, &docname);
-            self.store_doctree(&docname, &tree)?;
         }
 
         Ok(docnames)
-    }
-
-    /// Parse, domain-scan, and persist a single document, reading its
-    /// source from disk itself. Thin wrapper around
-    /// [`read_one_with_source`](Self::read_one_with_source) — see that
-    /// method for the actual body and for why callers that need to fire
-    /// the upstream `source-read` event (with its mutable `source: list[str]`
-    /// argument) should read the file *themselves* and call
-    /// [`read_one_with_source`](Self::read_one_with_source) directly
-    /// instead.
-    pub fn read_one(&mut self, docname: &str) -> Result<(), BuildError> {
-        let path = self.doc2path(docname);
-        let source = read_source_file(&path, &self.config.source_encoding())
-            .map_err(|e| BuildError::Other(format!("failed to read {}: {e}", path.display())))?;
-        self.read_one_with_source(docname, &source)
-    }
-
-    /// Parse, domain-scan, and persist a single document from an
-    /// already-read `source` string — the per-document body of
-    /// [`read_all_impl`](Self::read_all_impl), factored out so
-    /// [`crate::application::SphinxApp::read`] can call it with only a
-    /// short-lived `RefCell` borrow (see `SharedEnv`'s doc comment): holding
-    /// a `borrow_mut()` across the surrounding `source-read`/`doctree-read`
-    /// event emissions would panic if a Python listener on either event
-    /// touches `app.env` (the exact same `Rc<RefCell<_>>`) while that
-    /// borrow is live.
-    ///
-    /// Taking `source` as a parameter (rather than reading the file here)
-    /// lets a caller emit the upstream `source-read` event — whose second
-    /// argument is the mutable `source: list[str]` a listener may rewrite
-    /// in place — *before* parsing, and feed back whatever content that
-    /// event left behind. **Accepted deviation:** this port does not
-    /// currently read back a Python listener's in-place edit to that list
-    /// (would need `emit`'s generic `EventArg` bus to support an
-    /// after-the-fact readback of a mutable arg); `source` is always
-    /// exactly the file's on-disk content.
-    pub fn read_one_with_source(&mut self, docname: &str, source: &str) -> Result<(), BuildError> {
-        let expanded_source = self.expand_autodoc(source);
-        let source = expanded_source.as_deref().unwrap_or(source);
-        let highlighted_source = self.apply_highlight_language(source);
-        let parse_source = highlighted_source.as_deref().unwrap_or(source);
-        let tree = self.parse_source(docname, parse_source)?;
-
-        let title = match &tree.node(tree.root()).kind {
-            NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
-            _ => docname.rsplit('/').next().unwrap_or(docname).to_string(),
-        };
-        self.set_title(docname.to_string(), title);
-
-        // Blank out code-block/literal-block bodies before text-scanning
-        // for directives: a documentation page that *illustrates*
-        // `.. toctree::`/`.. include::` syntax inside a
-        // `.. code-block:: rst` example (as Sphinx's own docs do) must not
-        // have that example misread as a real directive.
-        let scan_source = strip_opaque_literal_blocks(parse_source);
-
-        // `.. toctree::` entries are written *relative to the directory
-        // containing this document* (e.g. `tutorial/index.rst` listing
-        // `getting-started` really means `tutorial/getting-started`), not
-        // relative to the project root. Mirrors upstream
-        // `sphinx.util.docname_join` / `TocTree.run()` qualifying each
-        // entry against its own docname before recording it — without
-        // this, `toctree_includes`/sidebar-nav lookups keyed by the real
-        // docname (`env.titles`, `get_target_uri`, ...) would silently
-        // miss every non-root-level toctree entry.
-        let entries: Vec<String> = scan_toctree_entries(&scan_source)
-            .into_iter()
-            .map(|entry| docname_join(docname, &entry))
-            .collect();
-        if !entries.is_empty() {
-            self.note_toctree(docname.to_string(), entries);
-        }
-
-        for include in scan_include_entries(&scan_source) {
-            self.note_dependency(docname.to_string(), include);
-        }
-
-        self.note_domain_data(docname, parse_source);
-
-        self.store_doctree(docname, &tree)?;
-        self.record_doc_read(docname.to_string(), now_micros());
-
-        Ok(())
-    }
-
-    /// Expand the top-level `automodule` directive before docutils parsing.
-    ///
-    /// The autodoc renderer already owns the static/runtime import fallback;
-    /// this small integration point makes its generated RST participate in
-    /// the normal parser pipeline, including native code-block highlighting.
-    fn expand_autodoc(&self, source: &str) -> Option<String> {
-        let lines: Vec<&str> = source.lines().collect();
-        let mut output: Vec<String> = Vec::with_capacity(lines.len());
-        let mut changed = false;
-        let mut index = 0;
-
-        while index < lines.len() {
-            let line = lines[index];
-            let trimmed = line.trim_start();
-            let indent = line.len() - trimmed.len();
-            if indent == 0 && trimmed.starts_with(".. automodule::") {
-                let module_name = trimmed[15..].trim();
-                if !module_name.is_empty()
-                    && let Some(path) = self.resolve_python_module(module_name)
-                {
-                    let mut pairs = Vec::new();
-                    let mut next = index + 1;
-                    while next < lines.len() {
-                        let option = lines[next].trim();
-                        if let Some(option) = option.strip_prefix(':')
-                            && let Some((name, value)) = option.split_once(':')
-                        {
-                            pairs.push((name.trim().to_string(), value.trim().to_string()));
-                            next += 1;
-                            continue;
-                        }
-                        if option.is_empty() {
-                            next += 1;
-                        }
-                        break;
-                    }
-                    let options = crate::autodoc::AutodocOptions::from_option_pairs(&pairs);
-                    if let Ok(rendered) =
-                        crate::autodoc::document_module_auto(&path, module_name, &options, &[])
-                    {
-                        output.extend(rendered.lines().map(str::to_owned));
-                        output.push(String::new());
-                        index = next;
-                        changed = true;
-                        continue;
-                    }
-                }
-            }
-            output.push(line.to_owned());
-            index += 1;
-        }
-
-        changed.then(|| output.join("\n"))
-    }
-
-    fn resolve_python_module(&self, module_name: &str) -> Option<PathBuf> {
-        let relative = module_name.replace('.', "/");
-        let module = self.srcdir.join(format!("{relative}.py"));
-        if module.is_file() {
-            return Some(module);
-        }
-        let package = self.srcdir.join(relative).join("__init__.py");
-        package.is_file().then_some(package)
-    }
-
-    /// Resolve Sphinx's current `highlight` directive for code directives
-    /// without an explicit language. This keeps language state at the Sphinx
-    /// environment boundary while leaving docutilsrs' parser stateless.
-    fn apply_highlight_language(&self, source: &str) -> Option<String> {
-        let mut language = self.config.highlight_language();
-        let mut output = Vec::new();
-        let mut changed = false;
-
-        for line in source.lines() {
-            let trimmed = line.trim_start();
-            let indent = line.len() - trimmed.len();
-            if indent > 0
-                && (trimmed.starts_with(".. highlight::")
-                    || ["code", "code-block", "sourcecode"]
-                        .iter()
-                        .any(|name| trimmed.starts_with(&format!(".. {name}::"))))
-            {
-                output.push(line.to_string());
-                continue;
-            }
-            if let Some(rest) = trimmed.strip_prefix(".. highlight::") {
-                let next = rest.trim();
-                if !next.is_empty() {
-                    language = next.to_string();
-                }
-                output.push(String::new());
-                changed = true;
-                continue;
-            }
-
-            let directive = ["code", "code-block", "sourcecode"]
-                .iter()
-                .find(|name| trimmed.starts_with(&format!(".. {name}::")));
-            if let Some(name) = directive {
-                let prefix = format!(".. {name}::");
-                let args = trimmed[prefix.len()..].trim();
-                if args.is_empty() && !language.is_empty() && language != "none" {
-                    let prefix_indent = &line[..line.len() - trimmed.len()];
-                    output.push(format!("{prefix_indent}{prefix} {language}"));
-                    changed = true;
-                    continue;
-                }
-            }
-            output.push(line.to_string());
-        }
-
-        if !changed {
-            return None;
-        }
-        let mut rewritten = output.join("\n");
-        if source.ends_with('\n') {
-            rewritten.push('\n');
-        }
-        Some(rewritten)
     }
 
     /// Populate the `std`/`rst`/`py`/`js` domains, `indexentries`, and
@@ -920,16 +615,7 @@ impl BuildEnvironment {
         }
 
         for (objtype, name) in scan::scan_rst_domain_objects(source) {
-            // Mirrors real Sphinx's `make_id(env, document, objtype, name)`
-            // anchor scheme (e.g. `directive-toctree`, `role-ref`), not a
-            // `rst-`-prefixed anchor — this must match the `id="..."`
-            // docutilsrs's parser renders on the actual `.. rst:directive::`/
-            // `.. rst:role::` `<dt>` element (see
-            // `docutilsrs::parser::parse_directive`'s `"rst:directive" |
-            // "rst:role"` arm) for cross-references to resolve to the
-            // right place.
-            let id_prefix = objtype.replace(':', "-");
-            let labelid = format!("{id_prefix}-{}", crate::domains::normalize_id(&name));
+            let labelid = format!("rst-{objtype}-{}", crate::domains::normalize_id(&name));
             self.rst_domain.note_object(objtype, name, docname, labelid);
         }
 
@@ -1055,453 +741,6 @@ impl BuildEnvironment {
             .collect()
     }
 
-    /// Resolve every recognized standard-domain cross-reference role
-    /// (`:ref:`/`:doc:`/`:term:`/`:numref:`/`:keyword:`), as well as the
-    /// `rst` domain's `:rst:dir:`/`:rst:role:` roles, found anywhere in
-    /// `tree` into a real internal hyperlink, rewriting the doctree node
-    /// in place.
-    ///
-    /// Mirrors what upstream does to the `pending_xref` node inside
-    /// `env.resolve_references` (`_resolve_ref_xref` et al. build a real
-    /// `nodes.reference` and the transform swaps it in). This port has no
-    /// `pending_xref` node (see the accepted-deviation note on
-    /// `crate::domains`), but rather than leave resolution as a
-    /// side-channel report ([`resolve_references`](Self::resolve_references),
-    /// which has nothing to rewrite because it works from a source-text
-    /// scan), this walks the already-parsed doctree directly: every
-    /// generic `Inline { classes }` node docutilsrs's role-agnostic parser
-    /// produces for an unrecognized role name is inspected, and — when
-    /// `classes` names a std-domain reftype — turned into a
-    /// `Reference { classes: "reference internal", .. }` node wrapping an
-    /// `Inline { classes: "std std-<reftype>" | "doc" }` span, matching
-    /// real Sphinx's `<a class="reference internal" href="..."><span
-    /// class="...">title</span></a>` output.
-    ///
-    /// Walking the tree (rather than re-using the text-scanned
-    /// `pending_xrefs` list) also means roles nested inside directive
-    /// bodies (containers, admonitions, ...) resolve exactly like
-    /// top-level ones, since there's no source-position bookkeeping to
-    /// keep in sync with the parser's own recursion.
-    ///
-    /// Unresolved roles are left as the original generic `Inline` node
-    /// (matching the pre-existing `<span class="ref">...</span>`
-    /// fallback) rather than silently dropping content, mirroring
-    /// upstream logging a dangling-reference warning but leaving the
-    /// text in place.
-    pub fn resolve_xref_nodes(&self, tree: &mut Doctree, docname: &str) {
-        use crate::builders::Builder as _;
-        use crate::builders::html::HtmlBuilder;
-        use crate::domains::Domain as _;
-        use crate::util_osutil::relative_uri;
-
-        const KNOWN_STD_REFTYPES: &[&str] = &["ref", "doc", "term", "numref", "keyword"];
-        const KNOWN_RST_REFTYPES: &[&str] = &["dir", "role"];
-
-        // `sphinx.ext.extlinks`' `extlinks = {name: (url_template, caption_template), ...}`
-        // registers one role per key that renders an external link, e.g.
-        // `:dudir:`error`` -> `<a class="extlink-dudir reference external"
-        // href="https://.../directives.html#error">error</a>`. The extension
-        // itself isn't executed (no `add_role` call happens), so its role
-        // names are recognized here directly from the raw `conf.py` dict
-        // (`self.config` may not have `extlinks` "registered" as a typed
-        // option, hence `raw_config()` rather than `get()`).
-        let extlinks: Vec<(&str, &str, Option<&str>)> = self
-            .config
-            .raw_config()
-            .get("extlinks")
-            .and_then(ConfigVal::as_map)
-            .map(|entries| {
-                entries
-                    .iter()
-                    .filter_map(|(name, val)| {
-                        let parts = val.as_list()?;
-                        let url = parts.first()?.as_str()?;
-                        let caption = parts.get(1).and_then(ConfigVal::as_str);
-                        Some((name.as_str(), url, caption))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        fn flatten_text(tree: &Doctree, id: NodeId) -> String {
-            let mut out = String::new();
-            for &child in &tree.node(id).children {
-                if let NodeKind::Text(s) = &tree.node(child).kind {
-                    out.push_str(s);
-                }
-            }
-            out
-        }
-
-        let builder = HtmlBuilder::new();
-        let base_uri = builder.get_target_uri(docname);
-
-        // A single forward pass over the arena (`0..nodes_len()`) rather
-        // than a recursive parent->child walk collected into a `Vec`
-        // first: `Doctree`'s arena already stores nodes in (pre-)creation
-        // order, since `append`/`push` always add a parent before any of
-        // its children, so indices alone give the same traversal order
-        // without the extra recursion or intermediate allocation. Nodes
-        // this loop itself appends (the new `Reference`'s `Inline` span
-        // and its `Text` child) land past the upfront `nodes_len()` and
-        // are simply never visited, which is correct — they can't match
-        // `KNOWN_STD_REFTYPES` anyway.
-        for id in 0..tree.nodes_len() {
-            // `sphinx.ext.extlinks` roles (e.g. `dudir`, `duref`) take
-            // priority over the std/rst-domain dispatch below since their
-            // names never collide with a domain-prefixed (`domain:reftype`)
-            // or std reftype name.
-            if let NodeKind::Inline { classes } = &tree.node(id).kind {
-                if let Some(&(name, url_tmpl, caption_tmpl)) =
-                    extlinks.iter().find(|(name, ..)| *name == classes.as_str())
-                {
-                    let content = flatten_text(tree, id);
-                    let old_children: Vec<NodeId> = tree.node(id).children.clone();
-                    if let Some(rest) = content.strip_prefix('!') {
-                        // Bang prefix disables the link (same `XRefRole`
-                        // "disabled" behavior as std/rst-domain roles).
-                        for child in old_children {
-                            tree.detach(child);
-                        }
-                        tree.append(id, NodeKind::Text(rest.to_string()));
-                        continue;
-                    }
-                    let (part, explicit_title) = crate::domains::scan::split_phrase(&content);
-                    let url = url_tmpl.replace("%s", &part);
-                    let title = explicit_title.unwrap_or_else(|| match caption_tmpl {
-                        Some(c) => c.replace("%s", &part),
-                        None => part.clone(),
-                    });
-                    for child in old_children {
-                        tree.detach(child);
-                    }
-                    tree.set_kind(
-                        id,
-                        NodeKind::Reference {
-                            name: String::new(),
-                            refuri: url,
-                            anonymous: false,
-                            classes: format!("extlink-{name} reference external"),
-                        },
-                    );
-                    tree.append(id, NodeKind::Text(title));
-                    continue;
-                }
-            }
-
-            // `domain` is `"std"` for a bare std-domain reftype
-            // (`Inline{classes: "ref"}`), `"rst"` for a domain-prefixed one,
-            // or explicitly stored on a `NodeKind::PendingXref`.
-            let (is_pending_xref, domain, reftype, raw_target, explicit_title) = match &tree
-                .node(id)
-                .kind
-            {
-                NodeKind::PendingXref {
-                    reftype,
-                    reftarget,
-                    refdomain,
-                    refexplicit,
-                    ..
-                } => {
-                    let content = flatten_text(tree, id);
-                    let exp_title = if *refexplicit { Some(content) } else { None };
-                    let dom = if refdomain.is_empty() {
-                        "std".to_string()
-                    } else {
-                        refdomain.clone()
-                    };
-                    (true, dom, reftype.clone(), reftarget.clone(), exp_title)
-                }
-                NodeKind::Inline { classes } if KNOWN_STD_REFTYPES.contains(&classes.as_str()) => {
-                    let content = flatten_text(tree, id);
-                    let (raw_target, explicit_title) = crate::domains::scan::split_phrase(&content);
-                    (
-                        false,
-                        "std".to_string(),
-                        classes.clone(),
-                        raw_target,
-                        explicit_title,
-                    )
-                }
-                NodeKind::Inline { classes } => match classes.split_once(':') {
-                    Some(("rst", rt)) if KNOWN_RST_REFTYPES.contains(&rt) => {
-                        let content = flatten_text(tree, id);
-                        let (raw_target, explicit_title) =
-                            crate::domains::scan::split_phrase(&content);
-                        (
-                            false,
-                            "rst".to_string(),
-                            rt.to_string(),
-                            raw_target,
-                            explicit_title,
-                        )
-                    }
-                    Some((dom, rt)) => {
-                        let content = flatten_text(tree, id);
-                        let (raw_target, explicit_title) =
-                            crate::domains::scan::split_phrase(&content);
-                        (
-                            false,
-                            dom.to_string(),
-                            rt.to_string(),
-                            raw_target,
-                            explicit_title,
-                        )
-                    }
-                    _ => continue,
-                },
-                _ => continue,
-            };
-
-            let content = flatten_text(tree, id);
-            // A leading `!` disables cross-reference resolution entirely
-            // (mirrors `sphinx.roles.XRefRole.__call__`'s `disabled` flag):
-            // the role still renders, but as plain text with the bang
-            // stripped and no `pending_xref`/link ever created.
-            if let Some(rest) = content.strip_prefix('!') {
-                let old_children: Vec<NodeId> = tree.node(id).children.clone();
-                for child in old_children {
-                    tree.detach(child);
-                }
-                tree.append(id, NodeKind::Text(rest.to_string()));
-                continue;
-            }
-            let (target, shorten) = match raw_target.strip_prefix('~') {
-                Some(rest) => (rest.to_string(), true),
-                None => (raw_target.clone(), false),
-            };
-
-            let resolved = match domain.as_str() {
-                "std" | "" => self.std_domain.resolve_xref_explicit(
-                    self,
-                    docname,
-                    &reftype,
-                    &target,
-                    explicit_title.is_some(),
-                ),
-                "rst" => self
-                    .rst_domain
-                    .resolve_xref(self, docname, &reftype, &target),
-                "py" => self
-                    .py_domain
-                    .resolve_xref(self, docname, &reftype, &target),
-                "js" => self
-                    .js_domain
-                    .resolve_xref(self, docname, &reftype, &target),
-                _ => None,
-            };
-
-            let inner_class = match domain.as_str() {
-                "rst" => format!("xref rst rst-{reftype}"),
-                "py" => format!("xref py py-{reftype}"),
-                "js" => format!("xref js js-{reftype}"),
-                _ if reftype == "doc" => {
-                    if resolved.is_some() {
-                        "doc".to_string()
-                    } else {
-                        "xref doc".to_string()
-                    }
-                }
-                _ => format!("xref std std-{reftype}"),
-            };
-
-            let Some(resolved) = resolved else {
-                if is_pending_xref {
-                    let title = if let Some(t) = &explicit_title {
-                        t.clone()
-                    } else if shorten {
-                        target.rsplit('.').next().unwrap_or(&target).to_string()
-                    } else {
-                        target.clone()
-                    };
-                    let old_children: Vec<NodeId> = tree.node(id).children.clone();
-                    for child in old_children {
-                        tree.detach(child);
-                    }
-                    tree.set_kind(
-                        id,
-                        NodeKind::Inline {
-                            classes: inner_class,
-                        },
-                    );
-                    tree.append(id, NodeKind::Text(title));
-                }
-                continue;
-            };
-
-            let title = if let Some(t) = &explicit_title {
-                t.clone()
-            } else if shorten {
-                target.rsplit('.').next().unwrap_or(&target).to_string()
-            } else {
-                resolved.title.clone()
-            };
-
-            let target_uri = builder.get_target_uri(&resolved.docname);
-            // Mirrors `sphinx.util.nodes.make_refnode`: a same-document
-            // reference with a target id becomes a bare `#targetid`
-            // fragment (docutils resolves `refid` this way at write
-            // time), bypassing `relative_uri` entirely — which would
-            // otherwise collapse a same-page `to` down to `''`,
-            // silently dropping the fragment (see its own `b2 == t2`
-            // special case, matched here on purpose since our `to` is
-            // always fragment-stripped for that comparison too).
-            //
-            // For the cross-document case, `make_refnode` computes
-            // `get_relative_uri(fromdocname, todocname)` on the *bare*
-            // uri and only appends `'#' + targetid` to that *result*
-            // afterwards — never feeding the anchor into `relative_uri`
-            // itself. That ordering matters: `relative_uri` (both here
-            // and upstream) strips any `#fragment` off `to` before
-            // comparing paths, so embedding the anchor into `target_uri`
-            // first (rather than after) would just have it silently
-            // stripped back out again.
-            let href = if resolved.docname == docname && !resolved.anchor.is_empty() {
-                format!("#{}", resolved.anchor)
-            } else {
-                let rel = relative_uri(&base_uri, &target_uri);
-                if resolved.anchor.is_empty() {
-                    rel
-                } else {
-                    format!("{rel}#{}", resolved.anchor)
-                }
-            };
-
-            let old_children: Vec<NodeId> = tree.node(id).children.clone();
-            for child in old_children {
-                tree.detach(child);
-            }
-            tree.set_kind(
-                id,
-                NodeKind::Reference {
-                    name: String::new(),
-                    refuri: href,
-                    anonymous: false,
-                    classes: "reference internal".to_string(),
-                },
-            );
-            let span = tree.append(
-                id,
-                NodeKind::Inline {
-                    classes: inner_class,
-                },
-            );
-            tree.append(span, NodeKind::Text(title));
-        }
-    }
-
-    /// Expands every `docutilsrs::doctree::NodeKind::Toctree` placeholder
-    /// node in `tree` into the real HTML5-visible subtree Sphinx renders
-    /// inline in the body for a non-hidden `.. toctree::`: a
-    /// `<div class="toctree-wrapper compound">` (mirrored here as a
-    /// [`NodeKind::Container`]) containing an optional caption paragraph
-    /// followed by a nested bullet list of [`NodeKind::Reference`]s,
-    /// titled from `env.titles`/`env.longtitles` and linked with
-    /// `docname`-relative hrefs (mirrors `sphinx.util.nodes.make_refnode`
-    /// via the same `relative_uri`/`get_target_uri` pair
-    /// `resolve_xref_nodes` uses).
-    ///
-    /// Must run after `resolve_xref_nodes` splices in `:ref:`/`:doc:`
-    /// links (order doesn't actually matter between the two passes, but
-    /// keeping this one second avoids the new nodes it appends being
-    /// walked by the other pass's `0..nodes_len()` loop for no reason).
-    ///
-    /// **Accepted deviation** (see `crate::toctree`'s own module doc):
-    /// nested entries are only resolved via `env.toctree_includes`
-    /// (i.e. a listed document that itself contains a `.. toctree::`),
-    /// never by pulling in a target document's own internal section
-    /// structure the way upstream's `TocTree.resolve` does for
-    /// `maxdepth` levels beyond 1 when no nested toctree exists.
-    pub fn resolve_toctree_nodes(&self, tree: &mut Doctree, docname: &str) {
-        use crate::builders::Builder as _;
-        use crate::builders::html::HtmlBuilder;
-
-        let builder = HtmlBuilder::new();
-        let base_uri = builder.get_target_uri(docname);
-
-        for id in 0..tree.nodes_len() {
-            let (caption, maxdepth, hidden, entries) = match &tree.node(id).kind {
-                NodeKind::Toctree {
-                    caption,
-                    maxdepth,
-                    hidden,
-                    entries,
-                } => (caption.clone(), *maxdepth, *hidden, entries.clone()),
-                _ => continue,
-            };
-            if hidden {
-                tree.set_kind(id, NodeKind::Comment);
-                continue;
-            }
-            tree.set_kind(
-                id,
-                NodeKind::Container {
-                    classes: "toctree-wrapper compound".to_string(),
-                },
-            );
-            if let Some(caption) = caption {
-                let p = tree.append(id, NodeKind::Paragraph);
-                let span = tree.append(
-                    p,
-                    NodeKind::Inline {
-                        classes: "caption-text".to_string(),
-                    },
-                );
-                tree.append(span, NodeKind::Text(caption));
-            }
-            // Entries are written relative to the directory containing
-            // *this* document (e.g. `usage/restructuredtext/index.rst`
-            // listing `basics` really means `usage/restructuredtext/basics`),
-            // matching `scan_toctree_entries`'s own qualification above.
-            let entries: Vec<String> = entries
-                .into_iter()
-                .map(|entry| docname_join(docname, &entry))
-                .collect();
-            let depth = if maxdepth <= 0 { 0 } else { maxdepth as usize };
-            let resolved = crate::toctree::resolve_from_entries(self, &entries, depth);
-            if !resolved.is_empty() {
-                Self::append_toc_entries(tree, id, &resolved, &builder, &base_uri);
-            }
-        }
-    }
-
-    /// Recursively append `entries` under `parent` as a
-    /// `NodeKind::BulletList` of `NodeKind::ListItem`s, each holding a
-    /// `NodeKind::Reference` (linked via `docname`-relative href) and,
-    /// when the entry has children, a nested `BulletList` after it —
-    /// mirrors the `<li><a href="...">Title</a><ul>...</ul></li>` shape
-    /// `resolve_toctree_nodes` doc comment describes.
-    fn append_toc_entries(
-        tree: &mut Doctree,
-        parent: NodeId,
-        entries: &[crate::toctree::TocEntry],
-        builder: &crate::builders::html::HtmlBuilder,
-        base_uri: &str,
-    ) {
-        use crate::builders::Builder as _;
-        use crate::util_osutil::relative_uri;
-
-        let list = tree.append(parent, NodeKind::BulletList { bullet: '*' });
-        for entry in entries {
-            let item = tree.append(list, NodeKind::ListItem);
-            let target_uri = builder.get_target_uri(&entry.docname);
-            let href = relative_uri(base_uri, &target_uri);
-            let refnode = tree.append(
-                item,
-                NodeKind::Reference {
-                    name: String::new(),
-                    refuri: href,
-                    anonymous: false,
-                    classes: "reference internal".to_string(),
-                },
-            );
-            tree.append(refnode, NodeKind::Text(entry.title.clone()));
-            if !entry.children.is_empty() {
-                Self::append_toc_entries(tree, item, &entry.children, builder, base_uri);
-            }
-        }
-    }
-
     /// Record that `docname` contains a toctree with `entries` (already
     /// bare docnames, in document order).
     ///
@@ -1546,264 +785,6 @@ impl BuildEnvironment {
         warnings.sort();
         warnings
     }
-
-    // ── H8a: incremental rebuild — outdated detection ─────────────────────────
-
-    /// Determine which documents need (re-)reading.
-    ///
-    /// Mirrors `BuildEnvironment.get_outdated_files(config_changed)`,
-    /// returning `(added, changed, removed)` docname lists (each sorted).
-    ///
-    /// - `added`: found but never read before (no `all_docs` entry).
-    /// - `changed`: previously read, but `config_changed` is `true`, the
-    ///   docname is in [`reread_always`](Self) (mirrors upstream's
-    ///   `env.reread_always`, e.g. documents using `today`/`now`), or its
-    ///   source file (or any recorded dependency) has a newer mtime than
-    ///   its last-read time.
-    /// - `removed`: previously read (has an `all_docs` entry) but no
-    ///   longer in [`found_docs`](Self::found_docs).
-    ///
-    /// `config_changed` should be `true` when the caller has determined
-    /// the resolved config differs from what was persisted with this env
-    /// (compare [`SphinxConfig::stable_hash`](crate::config::SphinxConfig::stable_hash)
-    /// against [`EnvPersisted::config_hash`]) — every previously-read
-    /// document is then reported as `changed` regardless of mtime,
-    /// matching upstream's "config changed -> re-read everything"
-    /// fallback.
-    ///
-    /// **Accepted deviation:** mtime resolution is whatever the
-    /// filesystem/OS clock gives (the same source upstream's `os.stat`
-    /// uses), not content hashing.
-    pub fn get_outdated(&self, config_changed: bool) -> (Vec<String>, Vec<String>, Vec<String>) {
-        let found = self.found_docs();
-        let mut removed: Vec<String> = self
-            .all_docs
-            .keys()
-            .filter(|d| !found.contains(d.as_str()))
-            .cloned()
-            .collect();
-        removed.sort();
-
-        let mut added = Vec::new();
-        let mut changed = Vec::new();
-
-        for docname in found {
-            let Some(&last_read) = self.all_docs.get(docname) else {
-                added.push(docname.clone());
-                continue;
-            };
-            if config_changed || self.reread_always.contains(docname) {
-                changed.push(docname.clone());
-                continue;
-            }
-            let src_path = self.doc2path(docname);
-            let mut outdated = mtime_micros(&src_path)
-                .map(|m| m > last_read)
-                .unwrap_or(true);
-            if !outdated {
-                if let Some(deps) = self.dependencies.get(docname) {
-                    for dep in deps {
-                        let dep_path = self.srcdir.join(dep);
-                        if mtime_micros(&dep_path)
-                            .map(|m| m > last_read)
-                            .unwrap_or(true)
-                        {
-                            outdated = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if outdated {
-                changed.push(docname.clone());
-            }
-        }
-        added.sort();
-        changed.sort();
-        (added, changed, removed)
-    }
-
-    /// Purge every trace of `docname` from this environment (mirrors
-    /// `BuildEnvironment.clear_doc`), including its persisted doctree
-    /// file. Called for every docname [`get_outdated`](Self::get_outdated)
-    /// reports as `removed`.
-    pub fn remove_doc(&mut self, docname: &str) {
-        use crate::domains::Domain as _;
-
-        self.all_docs.remove(docname);
-        self.dependencies.remove(docname);
-        self.included.remove(docname);
-        self.reread_always.remove(docname);
-        self.metadata.remove(docname);
-        self.titles.remove(docname);
-        self.longtitles.remove(docname);
-        self.toc_num_entries.remove(docname);
-        self.toc_secnumbers.remove(docname);
-        self.toctree_includes.remove(docname);
-        self.files_to_rebuild.remove(docname);
-        for deps in self.files_to_rebuild.values_mut() {
-            deps.remove(docname);
-        }
-        self.glob_toctrees.remove(docname);
-        self.numbered_toctrees.remove(docname);
-        self.pending_xrefs.remove(docname);
-        self.indexentries.remove(docname);
-        self.std_domain.clear_doc(docname);
-        self.rst_domain.clear_doc(docname);
-        self.py_domain.clear_doc(docname);
-        self.js_domain.clear_doc(docname);
-        if let Ok(path) = self.doctree_path(docname) {
-            let _ = std::fs::remove_file(path);
-        }
-    }
-
-    // ── H8b: environment persistence ──────────────────────────────────────────
-
-    /// Snapshot the persistable subset of this environment. See
-    /// [`EnvPersisted`] for exactly what is (and isn't) included.
-    pub fn to_persisted(&self) -> EnvPersisted {
-        EnvPersisted {
-            version: ENV_PERSISTED_VERSION,
-            config_hash: self.config.stable_hash(),
-            all_docs: self.all_docs.clone(),
-            dependencies: self.dependencies.clone(),
-            included: self.included.clone(),
-            reread_always: self.reread_always.clone(),
-            metadata: self.metadata.clone(),
-            titles: self.titles.clone(),
-            longtitles: self.longtitles.clone(),
-            toc_num_entries: self.toc_num_entries.clone(),
-            toc_secnumbers: self.toc_secnumbers.clone(),
-            toctree_includes: self.toctree_includes.clone(),
-            files_to_rebuild: self.files_to_rebuild.clone(),
-            glob_toctrees: self.glob_toctrees.clone(),
-            numbered_toctrees: self.numbered_toctrees.clone(),
-            domaindata: self.domaindata.clone(),
-            std_domain: self.std_domain.clone(),
-            rst_domain: self.rst_domain.clone(),
-            py_domain: self.py_domain.clone(),
-            js_domain: self.js_domain.clone(),
-            pending_xrefs: self.pending_xrefs.clone(),
-            indexentries: self.indexentries.clone(),
-        }
-    }
-
-    /// Apply a previously-saved snapshot onto this (freshly-constructed)
-    /// environment, overwriting every field [`EnvPersisted`] carries.
-    /// Returns the snapshot's `config_hash` so the caller can compare it
-    /// against the current config's
-    /// [`SphinxConfig::stable_hash`](crate::config::SphinxConfig::stable_hash)
-    /// to decide whether a full re-read is needed anyway.
-    pub fn apply_persisted(&mut self, p: EnvPersisted) -> u64 {
-        let config_hash = p.config_hash;
-        self.all_docs = p.all_docs;
-        self.dependencies = p.dependencies;
-        self.included = p.included;
-        self.reread_always = p.reread_always;
-        self.metadata = p.metadata;
-        self.titles = p.titles;
-        self.longtitles = p.longtitles;
-        self.toc_num_entries = p.toc_num_entries;
-        self.toc_secnumbers = p.toc_secnumbers;
-        self.toctree_includes = p.toctree_includes;
-        self.files_to_rebuild = p.files_to_rebuild;
-        self.glob_toctrees = p.glob_toctrees;
-        self.numbered_toctrees = p.numbered_toctrees;
-        self.domaindata = p.domaindata;
-        self.std_domain = p.std_domain;
-        self.rst_domain = p.rst_domain;
-        self.py_domain = p.py_domain;
-        self.js_domain = p.js_domain;
-        self.pending_xrefs = p.pending_xrefs;
-        self.indexentries = p.indexentries;
-        config_hash
-    }
-
-    /// Path to the persisted environment snapshot. Mirrors upstream's
-    /// `doctreedir/environment.pickle`, using `.json` instead (see
-    /// [`EnvPersisted`]'s doc comment for the format deviation).
-    pub fn persisted_path(&self) -> PathBuf {
-        self.doctreedir.join("environment.json")
-    }
-
-    /// Serialize [`to_persisted`](Self::to_persisted) to
-    /// [`persisted_path`](Self::persisted_path).
-    pub fn save_persisted(&self) -> Result<(), BuildError> {
-        let path = self.persisted_path();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let bytes = serde_json::to_vec(&self.to_persisted())
-            .map_err(|e| BuildError::Other(format!("failed to serialize environment: {e}")))?;
-        std::fs::write(&path, bytes)?;
-        Ok(())
-    }
-
-    /// Load a previously-saved environment snapshot, if one exists at
-    /// [`persisted_path`](Self::persisted_path) and its
-    /// [`EnvPersisted::version`] matches [`ENV_PERSISTED_VERSION`].
-    ///
-    /// Returns `None` (never an error) for a missing file, an
-    /// unreadable/corrupt file, or a version mismatch — all three are
-    /// treated identically to upstream's `EnvironmentError` fallback:
-    /// "no usable saved environment, start fresh".
-    pub fn load_persisted(&self) -> Option<EnvPersisted> {
-        let bytes = std::fs::read(self.persisted_path()).ok()?;
-        let p: EnvPersisted = serde_json::from_slice(&bytes).ok()?;
-        if p.version != ENV_PERSISTED_VERSION {
-            return None;
-        }
-        Some(p)
-    }
-}
-
-/// Current [`EnvPersisted::version`]. Bump on any breaking change to that
-/// struct's shape so an on-disk file saved by a previous `sphinxdocrs`
-/// version is detected as stale (treated as absent) rather than
-/// misinterpreted by `serde_json` (which would otherwise silently accept
-/// a structurally-compatible-but-semantically-different old file).
-pub const ENV_PERSISTED_VERSION: u32 = 1;
-
-/// On-disk snapshot of the parts of [`BuildEnvironment`] that must
-/// survive between separate `sphinx-build-rs` invocations for
-/// incremental rebuild (**H8a**) to work: which documents were read and
-/// when, their titles/toctree structure, and every domain's recovered
-/// objects/labels/xrefs. Excludes anything cheaply recomputed every run
-/// (`project`, `settings`) or inherently non-serializable (`events`,
-/// which holds boxed closures).
-///
-/// Stored as JSON at `doctreedir/environment.json`
-/// ([`BuildEnvironment::persisted_path`]), matching the existing
-/// `Doctree::to_bytes`/`from_bytes` (**H2b**) precedent of a versioned
-/// serde-json format instead of Python's pickle — an accepted deviation
-/// recorded in the port plan (§3, `H8b` row).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EnvPersisted {
-    /// Format version; see [`ENV_PERSISTED_VERSION`].
-    pub version: u32,
-    /// [`SphinxConfig::stable_hash`](crate::config::SphinxConfig::stable_hash)
-    /// at the time this snapshot was saved.
-    pub config_hash: u64,
-    pub all_docs: HashMap<String, i64>,
-    pub dependencies: HashMap<String, HashSet<String>>,
-    pub included: HashMap<String, HashSet<String>>,
-    pub reread_always: HashSet<String>,
-    pub metadata: HashMap<String, HashMap<String, String>>,
-    pub titles: HashMap<String, String>,
-    pub longtitles: HashMap<String, String>,
-    pub toc_num_entries: HashMap<String, usize>,
-    pub toc_secnumbers: HashMap<String, HashMap<String, Vec<u32>>>,
-    pub toctree_includes: HashMap<String, Vec<String>>,
-    pub files_to_rebuild: HashMap<String, HashSet<String>>,
-    pub glob_toctrees: HashSet<String>,
-    pub numbered_toctrees: HashSet<String>,
-    pub domaindata: HashMap<String, HashMap<String, String>>,
-    pub std_domain: StdDomain,
-    pub rst_domain: RstDomain,
-    pub py_domain: PyDomain,
-    pub js_domain: JsDomain,
-    pub pending_xrefs: HashMap<String, Vec<PendingXref>>,
-    pub indexentries: HashMap<String, Vec<IndexEntry>>,
 }
 
 /// Always-excluded path patterns, matching upstream `sphinx.project.EXCLUDE_PATHS`.
@@ -1833,131 +814,6 @@ fn now_micros() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_micros() as i64)
         .unwrap_or(0)
-}
-
-/// `path`'s modification time in microseconds since the Unix epoch, for
-/// [`BuildEnvironment::get_outdated`]'s mtime comparison. `None` when the
-/// file doesn't exist or its mtime can't be read (treated as "always
-/// outdated" by the caller, the safe default).
-fn mtime_micros(path: &Path) -> Option<i64> {
-    std::fs::metadata(path)
-        .ok()?
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()
-        .map(|d| d.as_micros() as i64)
-}
-
-/// Resolve a `.. toctree::` entry written relative to the directory
-/// containing `base` into a full, project-root-relative docname.
-///
-/// Mirrors `sphinx.util.docname_join(base, other)`
-/// (`posixpath.normpath(posixpath.join('#' + base, '..', other))[1:]`):
-/// entries are relative to `base`'s *parent directory*, not the project
-/// root, so `docname_join("tutorial/index", "getting-started")` is
-/// `"tutorial/getting-started"` while `docname_join("index",
-/// "usage/installation")` stays `"usage/installation"`. `..`/`.` segments
-/// in `other` are normalized against `base`'s directory the same way.
-fn docname_join(base: &str, other: &str) -> String {
-    let mut segments: Vec<&str> = match base.rfind('/') {
-        Some(idx) => base[..idx].split('/').collect(),
-        None => Vec::new(),
-    };
-    for seg in other.split('/') {
-        match seg {
-            "" | "." => {}
-            ".." => {
-                segments.pop();
-            }
-            seg => segments.push(seg),
-        }
-    }
-    segments.join("/")
-}
-
-/// Recursive parent->child walk collecting every node reachable from
-/// `id` (`id` itself first, then its subtree, pre-order) — the same
-/// order [`BuildEnvironment::resolve_xref_nodes`]'s `0..nodes_len()`
-/// forward pass visits, for a tree freshly parsed and never mutated.
-/// Kept as a standalone helper (rather than folded back into
-/// `resolve_xref_nodes`, which uses the cheaper `0..nodes_len()` range
-/// directly — see that method's own doc comment for why) documenting
-/// and test-verifying the difference between the two: unlike a raw
-/// `0..nodes_len()` range, this only returns nodes still attached to the
-/// tree, skipping detached/orphaned arena slots (e.g. old `Text`
-/// children a prior `resolve_xref_nodes` pass left behind via
-/// `Doctree::detach`). Test-only (see `tests::collect_ids_*` below) —
-/// `#[cfg(test)]` rather than `#[allow(dead_code)]` since it has no
-/// production caller.
-#[cfg(test)]
-fn collect_ids(tree: &Doctree, id: NodeId, out: &mut Vec<NodeId>) {
-    out.push(id);
-    for &child in &tree.node(id).children {
-        collect_ids(tree, child, out);
-    }
-}
-
-/// Directive names whose body is *not* recursively parsed as
-/// reStructuredText by real docutils — source code / math text is taken
-/// verbatim, so a nested-looking `.. toctree::`/`.. include::` shown
-/// *inside* one of these (e.g. an example snippet in a
-/// `.. code-block:: rst`) is just text, not a real directive.
-const OPAQUE_LITERAL_DIRECTIVES: &[&str] =
-    &["code-block", "code", "sourcecode", "math", "literalinclude"];
-
-/// Blanks out (line-count-preserving, so this remains safe to run before
-/// any line-indexed scan) every code-block/literal-block body in
-/// `source`, so [`scan_toctree_entries`]/[`scan_include_entries`] never
-/// mistake an *illustrative* directive shown inside one for a real one.
-/// Handles both explicit opaque directives (`.. code-block:: rst`, ...)
-/// and the plain `::` paragraph-literal-block marker docutils recognizes.
-fn strip_opaque_literal_blocks(source: &str) -> String {
-    let lines: Vec<&str> = source.lines().collect();
-    let mut out: Vec<&str> = vec![""; lines.len()];
-    let mut i = 0;
-    while i < lines.len() {
-        let line = lines[i];
-        let trimmed = line.trim_start();
-        let indent = line.len() - trimmed.len();
-
-        let is_opaque_directive = trimmed.strip_prefix("..").is_some_and(|rest| {
-            let rest = rest.trim_start();
-            OPAQUE_LITERAL_DIRECTIVES.iter().any(|name| {
-                rest.strip_prefix(name)
-                    .is_some_and(|r| r.trim_start().starts_with("::"))
-            })
-        });
-        // A paragraph ending in `::` (and not itself a directive line)
-        // also introduces a literal block for its following indented
-        // lines — the standard rst "expanded marker" literal-block form.
-        let is_literal_marker = !trimmed.starts_with("..") && trimmed.ends_with("::");
-
-        if is_opaque_directive || is_literal_marker {
-            out[i] = line;
-            i += 1;
-            while i < lines.len() && lines[i].trim().is_empty() {
-                i += 1;
-            }
-            while i < lines.len() {
-                let body_line = lines[i];
-                if body_line.trim().is_empty() {
-                    i += 1;
-                    continue;
-                }
-                let body_indent = body_line.len() - body_line.trim_start().len();
-                if body_indent <= indent {
-                    break;
-                }
-                i += 1;
-            }
-            continue;
-        }
-
-        out[i] = line;
-        i += 1;
-    }
-    out.join("\n")
 }
 
 /// Very small text-level scan for `.. toctree::` directive bodies,
@@ -2046,104 +902,6 @@ mod tests {
     }
 
     #[test]
-    fn automodule_docstring_code_block_is_highlighted() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("demo.py"),
-            "\"\"\"Demo.\n\n.. code-block:: python\n\n   def f():\n       return 1\n\"\"\"\n",
-        )
-        .unwrap();
-        let project = EnvProject::new(dir.path(), &[(".rst", "restructuredtext")]);
-        let mut env = BuildEnvironment::new(
-            SphinxConfig::new_defaults(),
-            project,
-            dir.path(),
-            dir.path().join("doctrees"),
-        );
-
-        env.read_one_with_source("index", ".. automodule:: demo\n")
-            .unwrap();
-        let tree = env.get_doctree("index").unwrap();
-        assert!((0..tree.nodes_len()).any(|id| {
-            matches!(
-                &tree.node(id).kind,
-                NodeKind::Inline { classes } if classes == "k"
-            )
-        }));
-    }
-
-    #[test]
-    fn highlight_directive_sets_language_for_unlabeled_code_block() {
-        let mut env = make_env();
-        env.read_one_with_source(
-            "index",
-            ".. highlight:: python\n\n.. code-block::\n\n   return 1\n",
-        )
-        .unwrap();
-        let tree = env.get_doctree("index").unwrap();
-        assert!((0..tree.nodes_len()).any(|id| {
-            matches!(
-                &tree.node(id).kind,
-                NodeKind::Inline { classes } if classes == "k"
-            )
-        }));
-    }
-
-    #[test]
-    fn highlighting_matrix_produces_token_classes_for_representative_languages() {
-        let cases = [
-            ("python", "def answer():\n    return 42"),
-            ("javascript", "function answer() { return 42; }"),
-            ("rust", "fn answer() -> i32 { 42 }"),
-            ("json", "{\"answer\": 42}"),
-            ("html", "<p>answer</p>"),
-            ("css", "body { color: red; }"),
-            ("bash", "echo answer"),
-            ("sql", "SELECT 42;"),
-            ("yaml", "answer: 42"),
-            ("markdown", "**answer**"),
-        ];
-
-        for (language, code) in cases {
-            let mut env = make_env();
-            let source = format!(".. code-block:: {language}\n\n   {code}\n");
-            env.read_one_with_source(language, &source).unwrap();
-            let tree = env.get_doctree(language).unwrap();
-            assert!(
-                (0..tree.nodes_len()).any(|id| matches!(
-                    &tree.node(id).kind,
-                    NodeKind::Inline { classes } if !classes.is_empty()
-                )),
-                "no token classes produced for {language}"
-            );
-        }
-    }
-
-    #[test]
-    fn highlight_state_applies_until_replaced_and_preserves_trailing_newline() {
-        let env = make_env();
-        let rewritten = env
-            .apply_highlight_language(
-                ".. highlight:: python\n\n.. code-block::\n\n   return 1\n\n.. highlight:: rust\n\n.. code-block::\n\n   fn main() {}\n",
-            )
-            .unwrap();
-        assert!(rewritten.contains(".. code-block:: python"));
-        assert!(rewritten.contains(".. code-block:: rust"));
-        assert!(rewritten.ends_with('\n'));
-    }
-
-    #[test]
-    fn highlight_state_ignores_nested_directive_examples() {
-        let env = make_env();
-        let rewritten = env
-            .apply_highlight_language(
-                ".. highlight:: python\n\n.. code-block:: rst\n\n   .. code-block::\n\n      return 1\n",
-            )
-            .unwrap();
-        assert!(rewritten.contains("   .. code-block::\n"));
-    }
-
-    #[test]
     fn record_doc_read() {
         let mut env = make_env();
         env.record_doc_read("index", 1_000_000);
@@ -2213,32 +971,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_doc_accepts_latin1_source() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("index.rst"), b"Caf\xFC\n====\n").unwrap();
-        let project = EnvProject::new(dir.path(), &[(".rst", "restructuredtext")]);
-        let mut raw_config = HashMap::new();
-        raw_config.insert(
-            "source_encoding".to_string(),
-            crate::config::ConfigVal::Str("latin-1".to_string()),
-        );
-        let env = BuildEnvironment::new(
-            SphinxConfig::new(raw_config, HashMap::new()),
-            project,
-            dir.path(),
-            dir.path().join("doctrees"),
-        );
-
-        let tree = env.parse_doc("index").unwrap();
-        assert!(
-            tree.node(tree.root())
-                .children
-                .iter()
-                .any(|&id| matches!(tree.node(id).kind, NodeKind::Title))
-        );
-    }
-
-    #[test]
     fn srcdir_and_doctreedir() {
         let env = make_env();
         assert_eq!(env.srcdir, PathBuf::from("/tmp/src"));
@@ -2261,282 +993,5 @@ mod tests {
     fn domaindata_starts_empty() {
         let env = make_env();
         assert!(env.domaindata.is_empty());
-    }
-
-    // ── H8a: get_outdated / remove_doc ────────────────────────────────────────
-
-    fn make_env_with_tempdir() -> (tempfile::TempDir, BuildEnvironment) {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let srcdir = tmp.path().join("src");
-        let doctreedir = tmp.path().join("doctrees");
-        std::fs::create_dir_all(&srcdir).unwrap();
-        std::fs::create_dir_all(&doctreedir).unwrap();
-        let config = SphinxConfig::new_defaults();
-        let project = EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
-        let env = BuildEnvironment::new(config, project, &srcdir, &doctreedir);
-        (tmp, env)
-    }
-
-    #[test]
-    fn get_outdated_reports_found_but_unread_docname_as_added() {
-        let (_tmp, mut env) = make_env_with_tempdir();
-        env.project.docnames.insert("index".to_string());
-        let (added, changed, removed) = env.get_outdated(false);
-        assert_eq!(added, vec!["index".to_string()]);
-        assert!(changed.is_empty());
-        assert!(removed.is_empty());
-    }
-
-    #[test]
-    fn get_outdated_reports_unchanged_read_docname_as_neither() {
-        let (_tmp, mut env) = make_env_with_tempdir();
-        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
-        env.project.docnames.insert("index".to_string());
-        // Record a read time far in the future so the file's real mtime
-        // is never newer than it, regardless of test execution speed.
-        let far_future = now_micros() + 60_000_000_000; // +60,000s
-        env.record_doc_read("index", far_future);
-        let (added, changed, removed) = env.get_outdated(false);
-        assert!(added.is_empty());
-        assert!(changed.is_empty(), "got changed: {changed:?}");
-        assert!(removed.is_empty());
-    }
-
-    #[test]
-    fn get_outdated_reports_source_newer_than_last_read_as_changed() {
-        let (_tmp, mut env) = make_env_with_tempdir();
-        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
-        env.project.docnames.insert("index".to_string());
-        // Record a read time far in the past so the file's real mtime is
-        // always newer than it.
-        env.record_doc_read("index", 0);
-        let (added, changed, removed) = env.get_outdated(false);
-        assert!(added.is_empty());
-        assert_eq!(changed, vec!["index".to_string()]);
-        assert!(removed.is_empty());
-    }
-
-    #[test]
-    fn get_outdated_reports_previously_read_now_unfound_as_removed() {
-        let (_tmp, mut env) = make_env_with_tempdir();
-        env.record_doc_read("gone", now_micros());
-        let (added, changed, removed) = env.get_outdated(false);
-        assert!(added.is_empty());
-        assert!(changed.is_empty());
-        assert_eq!(removed, vec!["gone".to_string()]);
-    }
-
-    #[test]
-    fn get_outdated_config_changed_forces_every_read_doc_as_changed() {
-        let (_tmp, mut env) = make_env_with_tempdir();
-        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
-        env.project.docnames.insert("index".to_string());
-        env.record_doc_read("index", now_micros() + 60_000_000_000);
-        let (added, changed, removed) = env.get_outdated(true);
-        assert!(added.is_empty());
-        assert_eq!(changed, vec!["index".to_string()]);
-        assert!(removed.is_empty());
-    }
-
-    #[test]
-    fn get_outdated_reread_always_forces_changed() {
-        let (_tmp, mut env) = make_env_with_tempdir();
-        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
-        env.project.docnames.insert("index".to_string());
-        env.record_doc_read("index", now_micros() + 60_000_000_000);
-        env.reread_always.insert("index".to_string());
-        let (_added, changed, _removed) = env.get_outdated(false);
-        assert_eq!(changed, vec!["index".to_string()]);
-    }
-
-    #[test]
-    fn remove_doc_purges_titles_and_toctree_state() {
-        let (_tmp, mut env) = make_env_with_tempdir();
-        env.record_doc_read("index", 0);
-        env.set_title("index", "Welcome");
-        env.note_toctree("index", vec!["guide".to_string()]);
-        env.remove_doc("index");
-        assert!(!env.all_docs.contains_key("index"));
-        assert!(env.get_title("index").is_none());
-        assert!(!env.toctree_includes.contains_key("index"));
-        assert!(
-            !env.files_to_rebuild
-                .get("guide")
-                .is_some_and(|s| s.contains("index"))
-        );
-    }
-
-    // ── docname_join / toctree entry qualification ─────────────────────────────
-
-    #[test]
-    fn docname_join_qualifies_entry_against_base_directory() {
-        assert_eq!(
-            docname_join("tutorial/index", "getting-started"),
-            "tutorial/getting-started"
-        );
-        assert_eq!(
-            docname_join("tutorial/index", "more/details"),
-            "tutorial/more/details"
-        );
-    }
-
-    #[test]
-    fn docname_join_root_level_base_leaves_entry_unqualified() {
-        assert_eq!(
-            docname_join("index", "usage/installation"),
-            "usage/installation"
-        );
-        assert_eq!(docname_join("index", "about"), "about");
-    }
-
-    #[test]
-    fn docname_join_normalizes_dotdot_segments() {
-        assert_eq!(
-            docname_join("tutorial/sub/index", "../other"),
-            "tutorial/other"
-        );
-    }
-
-    #[test]
-    fn read_one_with_source_qualifies_toctree_entries_relative_to_docname() {
-        let (_tmp, mut env) = make_env_with_tempdir();
-        env.read_one_with_source(
-            "tutorial/index",
-            "Build your first project\n========================\n\n.. toctree::\n\n   getting-started\n   first-steps\n",
-        )
-        .unwrap();
-        assert_eq!(
-            env.toctree_includes.get("tutorial/index"),
-            Some(&vec![
-                "tutorial/getting-started".to_string(),
-                "tutorial/first-steps".to_string(),
-            ])
-        );
-    }
-
-    #[test]
-    fn read_one_with_source_root_level_toctree_entries_unqualified() {
-        let (_tmp, mut env) = make_env_with_tempdir();
-        env.read_one_with_source(
-            "index",
-            "Welcome\n=======\n\n.. toctree::\n\n   usage/installation\n",
-        )
-        .unwrap();
-        assert_eq!(
-            env.toctree_includes.get("index"),
-            Some(&vec!["usage/installation".to_string()])
-        );
-    }
-
-    #[test]
-    fn read_one_with_source_ignores_toctree_shown_inside_code_block_example() {
-        // Regression test: a documentation page that *illustrates*
-        // `.. toctree::` syntax inside a `.. code-block:: rst` example
-        // (exactly as `sphinx/doc/usage/quickstart.rst` does) must not
-        // have that example misread as a second, real toctree.
-        let (_tmp, mut env) = make_env_with_tempdir();
-        env.read_one_with_source(
-            "usage/quickstart",
-            "Quickstart\n==========\n\nReal content here.\n\n.. code-block:: rst\n\n   .. toctree::\n      :maxdepth: 2\n\n      usage/installation\n      usage/quickstart\n      ...\n\nMore real content.\n",
-        )
-        .unwrap();
-        assert!(
-            !env.toctree_includes.contains_key("usage/quickstart"),
-            "toctree example inside a code-block must not be recorded as real: {:?}",
-            env.toctree_includes.get("usage/quickstart")
-        );
-    }
-
-    // ── H8b: environment persistence ──────────────────────────────────────────
-
-    #[test]
-    fn load_persisted_returns_none_when_absent() {
-        let (_tmp, env) = make_env_with_tempdir();
-        assert!(env.load_persisted().is_none());
-    }
-
-    #[test]
-    fn save_and_load_persisted_round_trips_core_state() {
-        let (_tmp, mut env) = make_env_with_tempdir();
-        env.record_doc_read("index", 42);
-        env.set_title("index", "Welcome");
-        env.note_toctree("index", vec!["guide".to_string()]);
-        env.save_persisted().unwrap();
-
-        let loaded = env.load_persisted().expect("just-saved env should load");
-        assert_eq!(loaded.all_docs.get("index"), Some(&42));
-        assert_eq!(
-            loaded.titles.get("index").map(String::as_str),
-            Some("Welcome")
-        );
-        assert_eq!(
-            loaded.toctree_includes.get("index"),
-            Some(&vec!["guide".to_string()])
-        );
-        assert_eq!(loaded.config_hash, env.config.stable_hash());
-    }
-
-    #[test]
-    fn apply_persisted_restores_state_onto_a_fresh_env() {
-        let (_tmp, mut env) = make_env_with_tempdir();
-        env.record_doc_read("index", 42);
-        env.set_title("index", "Welcome");
-        let persisted = env.to_persisted();
-
-        let config = SphinxConfig::new_defaults();
-        let project = EnvProject::new(&env.srcdir, &[(".rst", "restructuredtext")]);
-        let mut fresh = BuildEnvironment::new(config, project, &env.srcdir, &env.doctreedir);
-        assert!(fresh.all_docs.is_empty());
-
-        let hash = fresh.apply_persisted(persisted);
-        assert_eq!(hash, env.config.stable_hash());
-        assert_eq!(fresh.all_docs.get("index"), Some(&42));
-        assert_eq!(fresh.get_title("index"), Some("Welcome"));
-    }
-
-    #[test]
-    fn load_persisted_returns_none_for_version_mismatch() {
-        let (_tmp, env) = make_env_with_tempdir();
-        let mut persisted = env.to_persisted();
-        persisted.version = ENV_PERSISTED_VERSION + 1;
-        let bytes = serde_json::to_vec(&persisted).unwrap();
-        std::fs::write(env.persisted_path(), bytes).unwrap();
-        assert!(env.load_persisted().is_none());
-    }
-
-    #[test]
-    fn collect_ids_visits_root_then_children_preorder() {
-        let mut tree = Doctree::new_document("test");
-        let root = tree.root();
-        let p1 = tree.append(root, NodeKind::Paragraph);
-        let t1 = tree.append(p1, NodeKind::Text("hello".into()));
-        let p2 = tree.append(root, NodeKind::Paragraph);
-        let t2 = tree.append(p2, NodeKind::Text("world".into()));
-
-        let mut ids = Vec::new();
-        collect_ids(&tree, root, &mut ids);
-
-        assert_eq!(ids, vec![root, p1, t1, p2, t2]);
-    }
-
-    #[test]
-    fn collect_ids_excludes_detached_subtrees() {
-        let mut tree = Doctree::new_document("test");
-        let root = tree.root();
-        let p1 = tree.append(root, NodeKind::Paragraph);
-        let t1 = tree.append(p1, NodeKind::Text("kept".into()));
-        let p2 = tree.append(root, NodeKind::Paragraph);
-        tree.append(p2, NodeKind::Text("dropped".into()));
-
-        // Detaching `p2` removes it (and its child) from `root`'s
-        // children, so a reachability walk from `root` must not surface
-        // either of them — unlike a raw `0..nodes_len()` arena scan,
-        // which still visits their (now-orphaned) slots.
-        tree.detach(p2);
-
-        let mut ids = Vec::new();
-        collect_ids(&tree, root, &mut ids);
-
-        assert_eq!(ids, vec![root, p1, t1]);
     }
 }

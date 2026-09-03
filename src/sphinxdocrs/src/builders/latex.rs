@@ -10,6 +10,7 @@ use docutilsrs::cli::{CommonOptions, LatexOptions};
 use docutilsrs::{latex, parse_rst_with_source};
 
 use super::{BuildError, BuildResult, Builder};
+use crate::config::ConfigVal;
 use crate::environment::BuildEnvironment;
 
 /// Minimal LaTeX builder.
@@ -24,6 +25,53 @@ pub struct LatexBuilder {
 impl LatexBuilder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn configured_documents(env: &BuildEnvironment) -> Option<Vec<(String, String)>> {
+        let Some(ConfigVal::List(entries)) = env.config.get("latex_documents") else {
+            return None;
+        };
+        Some(
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    let ConfigVal::List(fields) = entry else {
+                        return None;
+                    };
+                    Some((
+                        fields.first()?.as_str()?.to_owned(),
+                        fields.get(1)?.as_str()?.to_owned(),
+                    ))
+                })
+                .collect(),
+        )
+    }
+
+    fn render_document(
+        &self,
+        srcdir: &Path,
+        env: &BuildEnvironment,
+        docname: &str,
+    ) -> Result<String, BuildError> {
+        let tree = match env.get_and_resolve_doctree(docname) {
+            Ok(tree) => tree,
+            Err(_) => {
+                let src_path = super::html::src_path_for_docname_with_suffixes(
+                    srcdir,
+                    docname,
+                    &env.config,
+                )?;
+                let source = crate::environment::read_source_file(
+                    &src_path,
+                    &env.config.source_encoding(),
+                )
+                .map_err(|e| {
+                    BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
+                })?;
+                docutilsrs::parse_rst_with_source(&source, docname)
+            }
+        };
+        Ok(latex(&tree, &self.options, &self.common))
     }
 }
 
@@ -70,6 +118,22 @@ impl Builder for LatexBuilder {
             super::html::discover_docnames_pub(srcdir, &env.config)
         };
         std::fs::create_dir_all(outdir)?;
+
+        if let Some(configured) = Self::configured_documents(env) {
+            let mut result = BuildResult::default();
+            for (docname, targetname) in configured {
+                let output = self.render_document(srcdir, env, &docname)?;
+                let rel: PathBuf = targetname.split('/').collect::<PathBuf>().with_extension("tex");
+                let out_path = outdir.join(rel);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(out_path, output.as_bytes())?;
+                result.written += 1;
+            }
+            return Ok(result);
+        }
+
         for docname in &docnames {
             // Use string append, not with_extension — the latter strips any
             // existing dot in the final component (e.g. "0.1" → "0.rst").

@@ -291,6 +291,60 @@ fn build_html_multi_doc_project() {
     assert!(out.path().join("guide").join("intro.html").exists());
 }
 
+#[test]
+fn build_latex_honors_configured_project_output() {
+    let src = make_src_with_docs(&[
+        ("index", "Project\n=======\n\nSee guide.\n"),
+        ("guide", "Guide\n=====\n\nDetails.\n"),
+    ]);
+    std::fs::write(
+        src.path().join("conf.py"),
+        "project = 'Project'\n\nlatex_documents = [('index', 'project-manual', 'Project Manual', 'Author', 'manual')]\n",
+    )
+    .unwrap();
+    let raw = sphinxdocrs::config::raw_config_from_conf_py(&src.path().join("conf.py")).unwrap();
+    assert!(raw.contains_key("latex_documents"));
+    let out = tempfile::TempDir::new().unwrap();
+    let dt = tempfile::TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "latex", HashMap::new()).unwrap();
+    assert!(app.config.get("latex_documents").is_some());
+
+    let result = app.build().unwrap();
+
+    assert_eq!(result.written, 1);
+    assert!(out.path().join("project-manual.tex").exists());
+    assert!(!out.path().join("index.tex").exists());
+    assert!(!out.path().join("guide.tex").exists());
+}
+
+#[test]
+fn build_man_honors_configured_project_output() {
+    let src = make_src_with_docs(&[
+        ("index", "Project\n=======\n\nSee command.\n"),
+        ("command", "Command\n=======\n\nRun it.\n"),
+    ]);
+    std::fs::write(
+        src.path().join("conf.py"),
+        "project = 'Project'\n\nman_pages = [('command', 'projectctl', 'Project command', ['Author'], '1')]\n",
+    )
+    .unwrap();
+    let raw = sphinxdocrs::config::raw_config_from_conf_py(&src.path().join("conf.py")).unwrap();
+    assert!(raw.contains_key("man_pages"));
+    let out = tempfile::TempDir::new().unwrap();
+    let dt = tempfile::TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "man", HashMap::new()).unwrap();
+    assert!(app.config.get("man_pages").is_some());
+
+    let result = app.build().unwrap();
+
+    assert_eq!(result.written, 1);
+    assert!(out.path().join("projectctl.1").exists());
+    assert!(!out.path().join("index.1").exists());
+    assert!(!out.path().join("command.1").exists());
+}
+
 /// `build()` returns `AppError::UnknownBuilder` for unregistered builders.
 #[test]
 fn build_unknown_builder_returns_error() {

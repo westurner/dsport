@@ -7,6 +7,7 @@ use docutilsrs::cli::{CommonOptions, ManOptions};
 use docutilsrs::{manpage, parse_rst_with_source};
 
 use super::{BuildError, BuildResult, Builder};
+use crate::config::ConfigVal;
 use crate::environment::BuildEnvironment;
 
 /// Minimal man-page builder.
@@ -19,6 +20,54 @@ pub struct ManpageBuilder {
 impl ManpageBuilder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn configured_pages(env: &BuildEnvironment) -> Option<Vec<(String, String, String)>> {
+        let Some(ConfigVal::List(entries)) = env.config.get("man_pages") else {
+            return None;
+        };
+        Some(
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    let ConfigVal::List(fields) = entry else {
+                        return None;
+                    };
+                    Some((
+                        fields.first()?.as_str()?.to_owned(),
+                        fields.get(1)?.as_str()?.to_owned(),
+                        fields.get(4)?.as_str()?.to_owned(),
+                    ))
+                })
+                .collect(),
+        )
+    }
+
+    fn render_document(
+        &self,
+        srcdir: &Path,
+        env: &BuildEnvironment,
+        docname: &str,
+    ) -> Result<String, BuildError> {
+        let tree = match env.get_and_resolve_doctree(docname) {
+            Ok(tree) => tree,
+            Err(_) => {
+                let src_path = super::html::src_path_for_docname_with_suffixes(
+                    srcdir,
+                    docname,
+                    &env.config,
+                )?;
+                let source = crate::environment::read_source_file(
+                    &src_path,
+                    &env.config.source_encoding(),
+                )
+                .map_err(|e| {
+                    BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
+                })?;
+                docutilsrs::parse_rst_with_source(&source, docname)
+            }
+        };
+        Ok(manpage(&tree, &self.options, &self.common))
     }
 }
 
@@ -62,6 +111,22 @@ impl Builder for ManpageBuilder {
             super::html::discover_docnames_pub(srcdir, &env.config)
         };
         std::fs::create_dir_all(outdir)?;
+
+        if let Some(configured) = Self::configured_pages(env) {
+            let mut result = BuildResult::default();
+            for (docname, name, section) in configured {
+                let output = self.render_document(srcdir, env, &docname)?;
+                let rel: PathBuf = format!("{name}.{section}").split('/').collect();
+                let out_path = outdir.join(rel);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(out_path, output.as_bytes())?;
+                result.written += 1;
+            }
+            return Ok(result);
+        }
+
         for docname in &docnames {
             // Use string append, not with_extension — the latter strips any
             // existing dot in the final component (e.g. "0.1" → "0.rst").

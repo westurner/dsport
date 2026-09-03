@@ -1,6 +1,6 @@
 .PHONY: all build test develop clean \
 	build-docutilsrs build-pygmentsrs build-sphinxdocrs build-mathrenderrs build-myst-md-rs \
-	test-cargo test-cargo-docutilsrs test-cargo-pygmentsrs test-cargo-jinja2rs test-cargo-sphinxdocrs \
+	test-cargo test-cargo-docutilsrs test-cargo-pygmentsrs test-cargo-jinja2rs test-cargo-rdfhdt test-cargo-sphinxdocrs \
 	test-cargo-mathrenderrs test-cargo-myst-md-rs test-cargo-pygmentsrs-coverage \
 	test-coverage-pygmentsrs coverage-pygmentsrs \
 	develop-docutilsrs develop-pygmentsrs develop-sphinxdocrs develop-myst-md-rs \
@@ -24,7 +24,10 @@ build-all: build-all-cargo build-all-python
 build-all-cargo:
 	cargo build
 
-build-each: build-mathrenderrs build-pygmentsrs build-docutilsrs build-myst-md-rs build-sphinxdocrs
+build-each: build-mathrenderrs build-pygmentsrs build-docutilsrs build-myst-md-rs build-rdfhdt build-sphinxdocrs
+
+build-rdfhdt:
+	cargo build -p rdfhdt
 
 build-mathrenderrs:
 	cd src/mathrenderrs && cargo build
@@ -71,7 +74,7 @@ test-python-colors:
 	./shellwrap.sh -c "$(MAKE) test-python"
 
 test-cargo: test-cargo-mathrenderrs test-cargo-pygmentsrs test-cargo-docutilsrs \
-	test-cargo-jinja2rs test-cargo-myst-md-rs test-cargo-sphinxdocrs
+	test-cargo-jinja2rs test-cargo-myst-md-rs test-cargo-rdfhdt test-cargo-sphinxdocrs
 
 test-cargo-mathrenderrs:
 	cd src/mathrenderrs && cargo test
@@ -130,6 +133,9 @@ test-cargo-docutilsrs:
 
 test-cargo-myst-md-rs:
 	cd src/myst-md-rs && cargo test
+
+test-cargo-rdfhdt:
+	cargo test -p rdfhdt
 
 test-cargo-sphinxdocrs:
 	cd src/sphinxdocrs && cargo test

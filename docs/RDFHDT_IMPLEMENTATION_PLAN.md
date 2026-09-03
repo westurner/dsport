@@ -1,5 +1,24 @@
 # RDF-HDT Implementation Plan
 
+## Delivered Slice
+
+The reusable bridge portion is implemented in [rdfhdt](../src/rdfhdt/):
+
+- `ntriples_to_hdt` parses through `Read` and writes HDT through `Write`, with
+  no temporary N-Triples file or Python-side materialization.
+- `hdt_to_ntriples` reloads HDT, validates every generated term, and reports
+  malformed dictionary terms as errors.
+- `QuadRecord` and `quads_to_hdt` provide an Oxigraph/OxiRS-neutral adapter with
+  `reject` (default) and explicit `flatten` named-graph policies.
+- The `rdfhdt` CLI supports file paths or stdin/stdout for `export` and `import`.
+- Seven focused Rust tests cover term round-tripping, empty datasets, malformed
+  input, malformed HDT terms, and named-graph policy behavior.
+
+This slice uses the local `hdt-rs` fork's public `Hdt::from_triples` API. The
+concrete DocIndex backend, Sphinx asset hook, Python capability detection, and
+browser WASM integration are deliberately deferred; this keeps the bridge
+usable by either store without importing their separate nested workspaces.
+
 This document plans RDF-HDT import/export for the local Oxigraph-backed DocIndex
 backend. It deliberately delivers the streaming bridge first, then evaluates a
 direct bulk-builder API in `hdt-rs`.
@@ -16,10 +35,10 @@ The Sphinx hook writes that data to `docindex.nt` and probes for an optional HDT
 encoder ([hooks.py](../src/docindex/src/docindex-sphinx/src/docindex_sphinx/hooks.py#L144-L164)).
 
 The target crate is [`hdt`](https://docs.rs/hdt/latest/hdt/), currently version
-`0.7.3`. Its public API can read HDT, read N-Triples with the experimental `nt`
-feature, iterate triple patterns, write HDT, and write N-Triples. It does not
-currently expose a public mutable HDT builder that accepts Oxigraph terms
-directly.
+`0.7.3`. The local fork exposes a public `nt`-feature `Hdt::from_triples`
+builder in addition to HDT reading, triple iteration, and writing. The bridge
+uses the HDT-specific lexical term representation at that boundary rather than
+coupling the API to one RDF store's term types.
 
 The implementation must therefore distinguish these goals:
 
@@ -219,20 +238,23 @@ reload.
 
 ## Phase C: Direct Bulk Builder
 
-### C1. Confirm the missing public API
+### C1. Confirm the public API
 
-Before implementing C, verify the selected `hdt` release's public API and
-feature behavior. The current documented implementation has private dictionary
-and triple-section construction details, so C may require an upstream change or
-a maintained fork.
+The selected local `hdt` 0.7.3 fork exposes the required API behind the
+experimental `nt` feature:
 
 The desired API is conceptually:
 
 ```rust
 Hdt::from_triples(
-    triples: impl IntoIterator<Item = [String; 3]>
+  triples: impl IntoIterator<Item = [String; 3]>,
+  base_iri: &str,
 ) -> Result<Hdt>
 ```
+
+The bridge uses this API today. It remains subject to the fork's documented
+memory behavior: the parser is streaming, but HDT dictionary construction
+internally collects the term index needed to build the immutable artifact.
 
 A more efficient API should avoid allocating three new strings when the source
 terms can be borrowed or interned:

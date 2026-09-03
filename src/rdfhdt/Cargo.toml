@@ -1,0 +1,27 @@
+[package]
+name = "rdfhdt"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+license = "BSD-2-Clause"
+description = "Streaming N-Triples and RDF-store adapters for HDT artifacts"
+repository = "https://github.com/westurner/dsport"
+readme = "README.md"
+keywords = ["rdf", "hdt", "n-triples"]
+categories = ["compression", "parser-implementations"]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rdfhdt"
+path = "src/main.rs"
+
+[features]
+default = []
+
+[dependencies]
+clap = { workspace = true, features = ["derive"] }
+hdt = { path = "../hdt", default-features = false, features = ["nt"] }
+oxttl = "0.2.1"
+thiserror = "2"

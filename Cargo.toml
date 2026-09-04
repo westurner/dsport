@@ -55,7 +55,7 @@ futures = "0.3"
 jupyter-protocol = { path = "src/runtimed/crates/jupyter-protocol", version = "2.0.2" }
 nbformat = { path = "src/runtimed/crates/nbformat", version = "3.0.0" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["arbitrary_precision"] }
 thiserror = "2"
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
 

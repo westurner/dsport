@@ -22,8 +22,14 @@ name = "jinja2rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
+# The default build is Rust-only: it does not initialize or link Python.
+default = []
+
+# Enable the optional PyO3 compatibility module for Python callers.
+python = ["dep:pyo3"]
+
 # Enabled by maturin when building the Python extension module.
-extension-module = ["pyo3/extension-module"]
+extension-module = ["python", "pyo3/extension-module"]
 
 # Enable Sphinx-specific glue (jinja2glue.py equivalent).
 sphinx = []
@@ -54,7 +60,7 @@ django = []
 
 [dependencies]
 markupsafers = { path = "../markupsafers", features = ["minijinja"] }
-pyo3 = { workspace = true, features = ["auto-initialize"] }
+pyo3 = { workspace = true, features = ["auto-initialize"], optional = true }
 minijinja = { path = "../minijinja/minijinja", features = [
     "builtins",
     "debug",
@@ -70,7 +76,7 @@ minijinja = { path = "../minijinja/minijinja", features = [
 ] }
 minijinja-contrib = { path = "../minijinja/minijinja-contrib", features = ["pycompat"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["arbitrary_precision"] }
 serde_yaml = "0.9"
 regex = "1"
 thiserror = "2"
@@ -85,7 +91,7 @@ insta = { workspace = true }
 rstest = { workspace = true }
 mockall = { workspace = true }
 tempfile = "3"
-serde_json = "1"
+serde_json = { version = "1", features = ["arbitrary_precision"] }
 criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bin]]

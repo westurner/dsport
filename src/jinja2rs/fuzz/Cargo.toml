@@ -1,0 +1,49 @@
+[package]
+name = "jinja2rs-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[features]
+default = []
+python = ["dep:pyo3", "jinja2rs/python"]
+
+[dependencies]
+arbitrary = { version = "1.3", features = ["derive"] }
+jinja2rs = { path = "..", default-features = false }
+libfuzzer-sys = "0.4"
+pyo3 = { version = "0.29", features = ["auto-initialize"], optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+
+[workspace]
+
+[profile.release]
+debug = true
+overflow-checks = true
+debug-assertions = true
+
+[[bin]]
+name = "render"
+path = "fuzz_targets/render.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sandbox"
+path = "fuzz_targets/sandbox.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "python_bridge"
+path = "fuzz_targets/python_bridge.rs"
+test = false
+doc = false
+bench = false
+required-features = ["python"]

@@ -152,7 +152,7 @@ fn py_version() -> &'static str {
 
 /// Python extension module entry point (used by maturin).
 #[pymodule]
-fn jinja2rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn jinja2rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_version, m)?)?;
     bridge::register(m)?;
     Ok(())

@@ -1,7 +1,7 @@
 use tempfile::TempDir;
 
-use sphinxdocrs::builders::epub::EpubBuilder;
 use sphinxdocrs::builders::Builder;
+use sphinxdocrs::builders::epub::EpubBuilder;
 use sphinxdocrs::config::{ConfigVal, SphinxConfig};
 use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 
@@ -46,7 +46,9 @@ fn build_all_writes_one_epub_archive_with_documents() {
     ] {
         assert!(archive.windows(marker.len()).any(|window| window == marker));
     }
-    assert!(!archive
-        .windows(b"Reparsed title".len())
-        .any(|window| window == b"Reparsed title"));
+    assert!(
+        !archive
+            .windows(b"Reparsed title".len())
+            .any(|window| window == b"Reparsed title")
+    );
 }

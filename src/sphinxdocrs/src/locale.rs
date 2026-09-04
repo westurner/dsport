@@ -159,9 +159,7 @@ impl PoCatalog {
                 in_msgid = true;
                 in_msgstr = false;
                 in_msgstr0 = false;
-                cur_id = unescape_po_string(
-                    strip_po_quotes(line.trim_start_matches("msgid ")),
-                );
+                cur_id = unescape_po_string(strip_po_quotes(line.trim_start_matches("msgid ")));
                 continue;
             }
 
@@ -191,9 +189,8 @@ impl PoCatalog {
                 in_msgid = false;
                 in_msgstr = true;
                 in_msgstr0 = false;
-                cur_str = unescape_po_string_safe(
-                    strip_po_quotes(line.trim_start_matches("msgstr ")),
-                );
+                cur_str =
+                    unescape_po_string_safe(strip_po_quotes(line.trim_start_matches("msgstr ")));
                 continue;
             }
 

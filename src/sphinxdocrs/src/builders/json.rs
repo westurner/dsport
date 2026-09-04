@@ -543,10 +543,7 @@ impl Builder for JsonBuilder {
                         BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
                     })?;
             let title = Self::extract_title(docname, &source);
-            titles.insert(
-                docname.clone(),
-                html_escape_text(&title),
-            );
+            titles.insert(docname.clone(), html_escape_text(&title));
             sources.push(source);
         }
 
@@ -1099,9 +1096,6 @@ mod tests {
     }
     #[test]
     fn html_escape_quotes() {
-        assert_eq!(
-            html_escape_text(r#"say "hi""#),
-            "say &quot;hi&quot;"
-        );
+        assert_eq!(html_escape_text(r#"say "hi""#), "say &quot;hi&quot;");
     }
 }

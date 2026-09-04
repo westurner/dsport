@@ -67,8 +67,8 @@ use crate::builders::html::{HtmlBuilder, PathStyle};
 use crate::environment::BuildEnvironment;
 use crate::toctree::{self, TocEntry};
 use crate::util_osutil::relative_uri;
-use crate::util_uri::is_url;
 use crate::util_strypes::{html_escape_attr, html_escape_text, is_safe_html_attribute_name};
+use crate::util_uri::is_url;
 
 // ── PageState (shared, per-build) ─────────────────────────────────────────────
 
@@ -335,13 +335,7 @@ fn render_attributes(attributes: &HashMap<String, String>) -> String {
     entries
         .into_iter()
         .filter(|(key, _)| is_safe_html_attribute_name(key))
-        .map(|(key, value)| {
-            format!(
-                "{}=\"{}\"",
-                key,
-                html_escape_attr(value)
-            )
-        })
+        .map(|(key, value)| format!("{}=\"{}\"", key, html_escape_attr(value)))
         .collect::<Vec<_>>()
         .join(" ")
 }

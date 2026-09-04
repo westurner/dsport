@@ -757,9 +757,7 @@ mod tests {
 
     #[test]
     fn indented_class_docstring_matches_pygments_tokens() {
-        let tokens = PythonLexer.get_tokens(
-            "class Colors:\n    \"\"\"Colors enumerator\"\"\"\n",
-        );
+        let tokens = PythonLexer.get_tokens("class Colors:\n    \"\"\"Colors enumerator\"\"\"\n");
         assert_eq!(
             tokens,
             vec![

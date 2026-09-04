@@ -271,9 +271,7 @@ fn path_string(path: &Path) -> String {
 pub fn parse_text(log: &str) -> Vec<ErrorMessage> {
     let mut result = Vec::new();
     for raw_line in log.lines() {
-        let line = strip_escape_sequences(raw_line)
-            .trim()
-            .to_owned();
+        let line = strip_escape_sequences(raw_line).trim().to_owned();
         if let Some(error) = parse_location_line(&line) {
             result.push(error);
         } else if let Some(error) = parse_native_line(&line) {

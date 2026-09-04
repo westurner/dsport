@@ -151,10 +151,7 @@ impl HtmlBuilder {
         let page_title = if project.is_empty() {
             title_esc.clone()
         } else {
-            format!(
-                "{title_esc} &#8212; {}",
-                html_escape_text(project)
-            )
+            format!("{title_esc} &#8212; {}", html_escape_text(project))
         };
         format!(
             "<!DOCTYPE html>\n\
@@ -406,10 +403,7 @@ impl HtmlBuilder {
                             .collect();
                         format!(" ({})", links.join(", "))
                     };
-                    body.push_str(&format!(
-                        "{}{direct}\n<ul>\n",
-                        html_escape_text(&term.name)
-                    ));
+                    body.push_str(&format!("{}{direct}\n<ul>\n", html_escape_text(&term.name)));
                     for (sub, sublinks) in &term.subterms {
                         let links: Vec<String> = sublinks
                             .iter()
@@ -1387,10 +1381,7 @@ mod tests {
 
     #[test]
     fn html_escape_plain_text() {
-        assert_eq!(
-            html_escape_text("Hello World"),
-            "Hello World"
-        );
+        assert_eq!(html_escape_text("Hello World"), "Hello World");
     }
 
     #[test]

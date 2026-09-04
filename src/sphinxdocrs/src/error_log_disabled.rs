@@ -12,9 +12,8 @@ pub struct ErrorLogError;
 
 impl std::fmt::Display for ErrorLogError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(
-            "SQLite error logging is disabled; rebuild with --features sqlite-error-db",
-        )
+        formatter
+            .write_str("SQLite error logging is disabled; rebuild with --features sqlite-error-db")
     }
 }
 

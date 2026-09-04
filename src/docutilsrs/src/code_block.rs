@@ -150,11 +150,7 @@ fn long_classes(ttype: &str) -> Option<String> {
         parts.join(" ")
     };
 
-    if short.is_empty() {
-        None
-    } else {
-        Some(short)
-    }
+    if short.is_empty() { None } else { Some(short) }
 }
 
 fn merge_adjacent(spans: Vec<Span>) -> Vec<Span> {
@@ -191,14 +187,8 @@ mod tests {
     fn classes_use_pygments_short_names() {
         assert_eq!(long_classes("Token"), None);
         assert_eq!(long_classes("Token.Text"), None);
-        assert_eq!(
-            long_classes("Token.Text.Whitespace"),
-            Some("w".into())
-        );
-        assert_eq!(
-            long_classes("Token.Name.Function"),
-            Some("nf".into())
-        );
+        assert_eq!(long_classes("Token.Text.Whitespace"), Some("w".into()));
+        assert_eq!(long_classes("Token.Name.Function"), Some("nf".into()));
         assert_eq!(
             long_classes("Token.Literal.Number.Integer"),
             Some("mi".into())

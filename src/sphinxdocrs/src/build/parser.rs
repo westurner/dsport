@@ -165,13 +165,12 @@ pub fn build_parser() -> Command {
                 .help("write warnings (and errors) to given file"),
         );
     #[cfg(feature = "sqlite-error-db")]
-    let command = command
-        .arg(
-            Arg::new("error_db")
-                .long("error-db")
-                .value_name("FILE")
-                .help("record native build diagnostics in a SQLite database"),
-        );
+    let command = command.arg(
+        Arg::new("error_db")
+            .long("error-db")
+            .value_name("FILE")
+            .help("record native build diagnostics in a SQLite database"),
+    );
     command
         .arg(
             Arg::new("warningiserror")

@@ -91,10 +91,7 @@ fn search_index_entries_populated_from_env() {
 #[test]
 fn search_index_includes_resolved_toctree_labels() {
     let (src, _dt, mut env) = make_disk_env(&[
-        (
-            "index",
-            "Project\n=======\n\n.. toctree::\n\n   guide\n",
-        ),
+        ("index", "Project\n=======\n\n.. toctree::\n\n   guide\n"),
         ("guide", "Guide\n=====\n\nBody.\n"),
     ]);
     env.find_files().unwrap();

@@ -175,13 +175,9 @@ fn record_error_log(
         let Some(database) = parsed.error_db.as_deref() else {
             return;
         };
-        if let Err(error) = crate::error_log::record_native_build(
-            database,
-            command,
-            logpath,
-            warnings,
-            build_error,
-        ) {
+        if let Err(error) =
+            crate::error_log::record_native_build(database, command, logpath, warnings, build_error)
+        {
             eprintln!("sphinxdocrs: failed to record build diagnostics: {error}");
         }
     }

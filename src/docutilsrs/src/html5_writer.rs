@@ -140,7 +140,10 @@ fn emit_enter(
                         escape(caption)
                     );
                 }
-                let _ = write!(out, "<div class=\"highlight-{language} notranslate\"><div class=\"highlight\"><pre>");
+                let _ = write!(
+                    out,
+                    "<div class=\"highlight-{language} notranslate\"><div class=\"highlight\"><pre>"
+                );
                 schedule(
                     node,
                     if caption.is_some() {
@@ -689,7 +692,11 @@ mod tests {
             "<div class=\"literal-block-wrapper docutils container\"><div class=\"code-block-caption\"><span class=\"caption-text\">example.py</span></div>"
         ));
         assert!(!rendered.contains("<span class=\"n\">caption</span>"));
-        assert!(rendered.contains("<div class=\"highlight-python notranslate\"><div class=\"highlight\"><pre>"));
-        assert!(rendered.contains("<span class=\"sd\">&quot;&quot;&quot;Colors enumerator&quot;&quot;&quot;</span>"));
+        assert!(rendered.contains(
+            "<div class=\"highlight-python notranslate\"><div class=\"highlight\"><pre>"
+        ));
+        assert!(rendered.contains(
+            "<span class=\"sd\">&quot;&quot;&quot;Colors enumerator&quot;&quot;&quot;</span>"
+        ));
     }
 }

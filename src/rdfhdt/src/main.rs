@@ -7,7 +7,8 @@ use clap::{Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(
     name = "rdfhdt",
-    about = "Convert Oxigraph RDF formats and HDT artifacts"
+    about = "Convert Oxigraph RDF formats and HDT artifacts",
+    after_help = "RDF formats: jsonld, n3, nq, nt, rdf, trig, ttl (aliases, extensions, and media types are accepted).\n\nExamples:\n  # Convert Turtle to HDT and write N-Triples\n  rdfhdt export input.ttl output.hdt --input-format ttl\n  rdfhdt import output.hdt output.nt --output-format nt\n\n  # Preserve named graphs in HDTQ using annotated triples\n  rdfhdt export dataset.trig dataset.hdtq --input-format trig --output-format hdtq --annotation-mode at\n  rdfhdt import dataset.hdtq restored.nq --input-format hdtq --output-format nq"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -16,25 +17,39 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Convert an RDF input to HDT or HDTQ.
+    /// Convert an RDF input to RDFHDT or RDFHDTQ.  
+    /// 
+    /// RDF Header, Dictionary, Triples (RDFHDT) is a binary read-only compressed representation for RDF. 
+    /// RDFHDTQ is RDFHDT with Named Graph Quads per HDTQ-java.
     Export {
         /// Input RDF path, or `-` for stdin.
         input: PathBuf,
         /// Output HDT/HDTQ path, or `-` for stdout.
         output: PathBuf,
-        /// Input format name, extension, or media type.
-        #[arg(long, default_value = "nt")]
-        input_format: String,
+        /// Input RDF format: jsonld, n3, nq, nt, rdf, trig, or ttl. Aliases,
+        /// extensions, and media types are also accepted.
+        #[arg(
+            long,
+            default_value = "nt",
+            value_parser = parse_rdf_format_arg
+        )]
+        input_format: rdfhdt::RdfFormat,
         /// Output artifact: `hdt` or `hdtq`.
         #[arg(long, default_value = "hdt")]
         output_format: String,
         /// Dataset IRI written to the HDT header.
         #[arg(long, default_value = "https://example.invalid/rdfhdt-dataset")]
         base_iri: String,
-        /// Standard HDT named graph policy: `reject` or `flatten`.
+        /// Standard HDT named-graph policy. Use `--output-format hdtq` to
+        /// preserve named graphs instead. `reject` fails when a named graph is
+        /// encountered; `flatten` writes its triples and discards graph names.
+        /// The default graph is unaffected. Only applies to HDT.
         #[arg(long, default_value = "reject")]
         graph_policy: String,
-        /// HDTQ annotation mode: `ag` or `at`.
+        /// HDTQ annotation mode for `--output-format hdtq`: `ag` stores one
+        /// bitmap per graph, marking
+        /// triples in that graph; `at` stores one bitmap per triple, marking
+        /// graphs containing that triple. Only applies to HDTQ.
         #[arg(long, default_value = "ag")]
         annotation_mode: String,
     },
@@ -47,9 +62,14 @@ enum Command {
         /// Input artifact: `hdt` or `hdtq`.
         #[arg(long, default_value = "hdt")]
         input_format: String,
-        /// Output RDF format name, extension, or media type.
-        #[arg(long, default_value = "nt")]
-        output_format: String,
+        /// Output RDF format: jsonld, n3, nq, nt, rdf, trig, or ttl. Aliases,
+        /// extensions, and media types are also accepted.
+        #[arg(
+            long,
+            default_value = "nt",
+            value_parser = parse_rdf_format_arg
+        )]
+        output_format: rdfhdt::RdfFormat,
     },
 }
 
@@ -68,7 +88,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let input_size = input.metadata().ok().map(|metadata| metadata.len());
             let input = open_input(&input)?;
             let mut output = open_output(&output)?;
-            let input_format = rdfhdt::parse_rdf_format(&input_format)?;
             let stats = match output_format.to_ascii_lowercase().as_str() {
                 "hdt" => rdfhdt::rdf_to_hdt(
                     input,
@@ -104,7 +123,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             let input = open_input(&input)?;
             let mut output = open_output(&output)?;
-            let output_format = rdfhdt::parse_rdf_format(&output_format)?;
             match input_format.to_ascii_lowercase().as_str() {
                 "hdt" => rdfhdt::hdt_to_rdf(BufReader::new(input), output_format, &mut output)?,
                 "hdtq" => rdfhdt::hdtq_to_rdf(input, output_format, &mut output)?,
@@ -122,6 +140,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         stats.triple_count, stats.input_bytes, stats.output_bytes
     );
     Ok(())
+}
+
+fn parse_rdf_format_arg(value: &str) -> Result<rdfhdt::RdfFormat, String> {
+    rdfhdt::parse_rdf_format(value).map_err(|error| error.to_string())
 }
 
 fn open_input(path: &PathBuf) -> io::Result<Box<dyn io::Read>> {

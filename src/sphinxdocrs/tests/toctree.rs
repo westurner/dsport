@@ -168,7 +168,10 @@ fn inline_toctreeyml_expands_notebook_entry() {
     env.find_files().unwrap();
     env.read_all().unwrap();
 
-    assert_eq!(env.toctree_includes.get("index"), Some(&vec!["notebook".to_string()]));
+    assert_eq!(
+        env.toctree_includes.get("index"),
+        Some(&vec!["notebook".to_string()])
+    );
     let toc = toctree::global_toctree_for_doc(&env, 0);
     assert_eq!(toc.len(), 1);
     assert_eq!(toc[0].docname, "notebook");

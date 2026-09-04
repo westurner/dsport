@@ -476,9 +476,7 @@ impl BuildEnvironment {
                 self.note_toctree(root, children);
             }
             for entry in entries {
-                if let (Some(docname), Some(title)) =
-                    (yaml_docname(&entry.target), entry.title)
-                {
+                if let (Some(docname), Some(title)) = (yaml_docname(&entry.target), entry.title) {
                     self.longtitles.insert(docname, title);
                 }
             }
@@ -499,10 +497,7 @@ impl BuildEnvironment {
         }
 
         for target in targets {
-            if !target.ends_with(".ipynb")
-                || target.starts_with("/")
-                || target.contains("://")
-            {
+            if !target.ends_with(".ipynb") || target.starts_with("/") || target.contains("://") {
                 continue;
             }
             let path = self.srcdir.join(&target);
@@ -587,7 +582,10 @@ impl BuildEnvironment {
     /// writers.
     pub fn parse_source(&self, docname: &str, source: &str) -> Result<Doctree, BuildError> {
         let path = self.doc2path(docname);
-        if path.extension().is_some_and(|extension| extension == "ipynb") {
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "ipynb")
+        {
             let notebook: nbformat::v4::Notebook = serde_json::from_str(source).map_err(|e| {
                 BuildError::Other(format!("invalid notebook {}: {e}", path.display()))
             })?;
@@ -834,8 +832,7 @@ impl BuildEnvironment {
             .collect();
         for (entry, title) in scan_toctree_entries_with_titles(&scan_source) {
             if let Some(title) = title {
-                self.longtitles
-                    .insert(docname_join(docname, &entry), title);
+                self.longtitles.insert(docname_join(docname, &entry), title);
             }
         }
         if !entries.is_empty() {
@@ -1955,8 +1952,7 @@ fn yaml_toc_entries(source: &str) -> Result<Vec<YamlTocEntry>, BuildError> {
             for part in parts {
                 if let Some(part_mapping) = part.as_mapping() {
                     for key in ["chapters", "sections"] {
-                        if let Some(value) =
-                            part_mapping.get(serde_yaml::Value::String(key.into()))
+                        if let Some(value) = part_mapping.get(serde_yaml::Value::String(key.into()))
                         {
                             collect_yaml_toc_entries(value, &mut entries);
                         }
@@ -2059,9 +2055,12 @@ fn yaml_option_lines(source: &str) -> Result<Vec<String>, BuildError> {
         return Ok(Vec::new());
     };
     let mut lines = Vec::new();
-    for options in [Some(mapping), mapping
-        .get(serde_yaml::Value::String("options".into()))
-        .and_then(serde_yaml::Value::as_mapping)]
+    for options in [
+        Some(mapping),
+        mapping
+            .get(serde_yaml::Value::String("options".into()))
+            .and_then(serde_yaml::Value::as_mapping),
+    ]
     .into_iter()
     .flatten()
     {
@@ -2143,14 +2142,20 @@ fn expand_yaml_toctree_directives(source: &str, srcdir: &Path) -> Result<String,
         let toc_source = if !argument.is_empty() {
             let path = srcdir.join(argument);
             std::fs::read_to_string(&path).map_err(|e| {
-                BuildError::Other(format!("failed to read YAML toctree {}: {e}", path.display()))
+                BuildError::Other(format!(
+                    "failed to read YAML toctree {}: {e}",
+                    path.display()
+                ))
             })?
         } else if !body.trim().is_empty() {
             body
         } else {
             let path = srcdir.join("_toc.yml");
             std::fs::read_to_string(&path).map_err(|e| {
-                BuildError::Other(format!("failed to read YAML toctree {}: {e}", path.display()))
+                BuildError::Other(format!(
+                    "failed to read YAML toctree {}: {e}",
+                    path.display()
+                ))
             })?
         };
         let entries = yaml_toc_entries(&toc_source)?;
@@ -2336,9 +2341,8 @@ fn scan_toctree_entries_with_titles(source: &str) -> Vec<(String, Option<String>
                         let (target, title) = body
                             .strip_suffix('>')
                             .and_then(|body| {
-                                body.rsplit_once(" <").map(|(title, target)| {
-                                    (target, Some(title.to_string()))
-                                })
+                                body.rsplit_once(" <")
+                                    .map(|(title, target)| (target, Some(title.to_string())))
                             })
                             .unwrap_or((body, None));
                         let target = [".ipynb", ".rst", ".md", ".txt"]

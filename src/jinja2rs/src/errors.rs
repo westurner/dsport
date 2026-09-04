@@ -1,13 +1,20 @@
 //! `jinja2rs::errors` — error types mirroring `jinja2.exceptions`
 
-use pyo3::create_exception;
 use thiserror::Error;
 
-// Define custom Python exceptions that mirror jinja2 exception hierarchy
+#[cfg(feature = "python")]
+use pyo3::create_exception;
+
+#[cfg(feature = "python")]
+// Define custom Python exceptions that mirror jinja2 exception hierarchy.
 create_exception!(jinja2rs, TemplateNotFound, pyo3::exceptions::PyException);
+#[cfg(feature = "python")]
 create_exception!(jinja2rs, TemplateError, pyo3::exceptions::PyException);
+#[cfg(feature = "python")]
 create_exception!(jinja2rs, TemplateSyntaxError, TemplateError);
+#[cfg(feature = "python")]
 create_exception!(jinja2rs, UndefinedError, TemplateError);
+#[cfg(feature = "python")]
 create_exception!(jinja2rs, TemplateRuntimeError, TemplateError);
 
 /// Unified error type for jinja2rs operations.
@@ -43,6 +50,7 @@ pub enum Jinja2Error {
     Io(#[from] std::io::Error),
 }
 
+#[cfg(feature = "python")]
 impl From<Jinja2Error> for pyo3::PyErr {
     fn from(e: Jinja2Error) -> pyo3::PyErr {
         match e {

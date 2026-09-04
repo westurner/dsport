@@ -32,12 +32,39 @@ assert_eq!(tmpl.render(json!({"name": "Sphinx"})).unwrap(), "Hello, Sphinx!");
 
 | Cargo feature | Default | Description |
 |---------------|---------|-------------|
+| `python` | off | Opt-in PyO3 compatibility bridge; the Rust API does not require Python |
+| `extension-module` | off | Build the Python extension module; implies `python` |
 | `sphinx` | off | Sphinx-specific glue (`jinja2glue.py` equivalent) |
 | `sandbox` | off | Path/attribute/method sandboxing |
 | `seccomp` | off | Linux syscall filtering (requires `libseccomp`) |
 | `resource-limits` | off | `ulimit`-based memory/CPU limits |
 | `django` | off | Django template filters and app-directory loader |
 | `i18n` | off | `gettext`/`ngettext` translation support |
+
+The default build is Python-free. It uses MiniJinja directly and neither
+initializes a Python interpreter nor links the PyO3 bridge. This is the
+recommended mode for Rust applications and for the `j2rs` command-line tool:
+
+The runtime mode is also exposed as `runtime:rust` or `runtime:python` through
+`jinja2rs::features()`.
+
+```text
+cargo build -p jinja2rs --no-default-features
+cargo test -p jinja2rs --no-default-features
+```
+
+Enable the compatibility bridge only for callers that need the Python module:
+
+```text
+cargo build -p jinja2rs --features python
+```
+
+Packaging tools that build the extension should use `extension-module`, which
+also enables `python`:
+
+```text
+cargo build -p jinja2rs --features extension-module
+```
 
 
 ## Django mode

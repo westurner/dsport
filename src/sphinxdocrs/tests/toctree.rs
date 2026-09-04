@@ -118,3 +118,59 @@ fn secnumbers_numbers_documents_in_toctree_order() {
     assert_eq!(nums.get("a"), Some(&vec![1]));
     assert_eq!(nums.get("b"), Some(&vec![2]));
 }
+
+#[test]
+fn project_yaml_toc_discovers_and_resolves_notebooks() {
+    let src = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    std::fs::write(src.path().join("index.rst"), "Project docs\n============\n").unwrap();
+    std::fs::write(
+        src.path().join("_toc.yml"),
+        "root: index\nchapters:\n  - file: notebook.ipynb\n    title: Notebook chapter\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join("notebook.ipynb"),
+        r##"{"cells":[{"cell_type":"markdown","metadata":{"id":"cell-1","language":"markdown"},"source":["# Notebook chapter\n","\n","Body.\n"]}],"metadata":{},"nbformat":4,"nbformat_minor":5}"##,
+    )
+    .unwrap();
+
+    let config = SphinxConfig::new_defaults();
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let mut env = BuildEnvironment::new(config, project, src.path(), doctrees.path());
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+    assert!(env.found_docs().contains("notebook"));
+
+    let toc = toctree::global_toctree_for_doc(&env, 0);
+    assert_eq!(toc[0].docname, "notebook");
+    assert_eq!(toc[0].title, "Notebook chapter");
+}
+
+#[test]
+fn inline_toctreeyml_expands_notebook_entry() {
+    let src = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "Project docs\n============\n\n.. toctreeyml::\n\n   chapters:\n     - file: notebook.ipynb\n       title: Inline chapter\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join("notebook.ipynb"),
+        r##"{"cells":[{"cell_type":"markdown","metadata":{"id":"cell-1","language":"markdown"},"source":["# Inline chapter\n"]}],"metadata":{},"nbformat":4,"nbformat_minor":5}"##,
+    )
+    .unwrap();
+
+    let config = SphinxConfig::new_defaults();
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let mut env = BuildEnvironment::new(config, project, src.path(), doctrees.path());
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+
+    assert_eq!(env.toctree_includes.get("index"), Some(&vec!["notebook".to_string()]));
+    let toc = toctree::global_toctree_for_doc(&env, 0);
+    assert_eq!(toc.len(), 1);
+    assert_eq!(toc[0].docname, "notebook");
+    assert_eq!(toc[0].title, "Inline chapter");
+}

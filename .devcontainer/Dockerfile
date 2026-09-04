@@ -19,6 +19,8 @@ RUN --mount=type=cache,target=/var/cache/dnf,sharing=shared \
 		procps-ng tar gzip xz \
 		ripgrep jq rsync \
 		graphviz \
+		nodejs \
+		rust-std-static-wasm32-unknown-unknown \
 		\
 	&& dnf clean all
 

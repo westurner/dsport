@@ -481,7 +481,8 @@ fn py_to_configval(v: &pyo3::Bound<'_, pyo3::PyAny>) -> Option<ConfigVal> {
     if v.is_none() {
         Some(ConfigVal::Null)
     } else if let (Ok(title), Ok(url)) = (
-        v.getattr("title").and_then(|value| value.extract::<String>()),
+        v.getattr("title")
+            .and_then(|value| value.extract::<String>()),
         v.getattr("url").and_then(|value| value.extract::<String>()),
     ) {
         // Sphinx extensions commonly put named tuples such as
@@ -798,10 +799,7 @@ impl SphinxConfig {
     }
 
     /// Install HTML themes registered through `app.add_html_theme()`.
-    pub(crate) fn set_registered_themes(
-        &mut self,
-        themes: Vec<(String, std::path::PathBuf)>,
-    ) {
+    pub(crate) fn set_registered_themes(&mut self, themes: Vec<(String, std::path::PathBuf)>) {
         self.registered_themes = themes;
     }
 
@@ -859,24 +857,9 @@ impl SphinxConfig {
         add("today", Str(String::new()), Env, "Date override");
         add("today_fmt", Null, Env, "strftime format");
         add("language", Str("en".into()), Env, "Language");
-        add(
-            "epub_title",
-            Str(String::new()),
-            Env,
-            "EPUB title",
-        );
-        add(
-            "epub_author",
-            Str(String::new()),
-            Env,
-            "EPUB author",
-        );
-        add(
-            "epub_language",
-            Str(String::new()),
-            Env,
-            "EPUB language",
-        );
+        add("epub_title", Str(String::new()), Env, "EPUB title");
+        add("epub_author", Str(String::new()), Env, "EPUB author");
+        add("epub_language", Str(String::new()), Env, "EPUB language");
         add(
             "epub_uid",
             Str(String::new()),
@@ -889,18 +872,8 @@ impl SphinxConfig {
             Env,
             "EPUB description",
         );
-        add(
-            "epub_publisher",
-            Str(String::new()),
-            Env,
-            "EPUB publisher",
-        );
-        add(
-            "epub_copyright",
-            Str(String::new()),
-            Env,
-            "EPUB rights",
-        );
+        add("epub_publisher", Str(String::new()), Env, "EPUB publisher");
+        add("epub_copyright", Str(String::new()), Env, "EPUB rights");
         add(
             "epub_basename",
             Str(String::new()),
@@ -1029,12 +1002,7 @@ impl SphinxConfig {
             Env,
             "LaTeX output documents",
         );
-        add(
-            "man_pages",
-            List(vec![]),
-            Env,
-            "Man page output documents",
-        );
+        add("man_pages", List(vec![]), Env, "Man page output documents");
         add("manpages_url", Null, Env, "Manpages URL template");
         add("nitpicky", Bool(false), None, "Nitpicky mode");
         add("nitpick_ignore", List(vec![]), None, "Nitpick ignore list");
@@ -1090,6 +1058,36 @@ impl SphinxConfig {
         );
         // Extensions list
         add("extensions", List(vec![]), Env, "Extensions list");
+        add(
+            "docindex_enabled",
+            Bool(true),
+            Html,
+            "Enable the native DocIndex extension",
+        );
+        add(
+            "docindex_artifact_enabled",
+            Bool(true),
+            Html,
+            "Write the local DocIndex JSON artifact",
+        );
+        add(
+            "docindex_artifact_path",
+            Str("_static/docindex.json".into()),
+            Html,
+            "Path for the local DocIndex JSON artifact",
+        );
+        add(
+            "docindex_rdf_hdt_enabled",
+            Bool(true),
+            Html,
+            "Write the DocIndex RDF/HDT artifact",
+        );
+        add(
+            "docindex_webmcp_enabled",
+            Bool(true),
+            Html,
+            "Deprecated compatibility option; WebMCP remains enabled",
+        );
         // HTML static assets
         add(
             "html_theme",

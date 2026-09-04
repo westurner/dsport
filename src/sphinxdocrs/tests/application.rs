@@ -259,6 +259,110 @@ fn build_html_content_is_valid_html5() {
 }
 
 #[test]
+fn html_build_always_emits_webmcp_assets() {
+    let src = make_src_with_docs(&[("index", "Welcome\n=======\n\nSearchable documentation.\n")]);
+    std::fs::write(
+        src.path().join("conf.py"),
+        "docindex_webmcp_enabled = False\n",
+    )
+    .unwrap();
+    let out = tempfile::TempDir::new().unwrap();
+    let dt = tempfile::TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+
+    assert!(
+        app.extensions
+            .contains_key("sphinxdocrs::extensions::webmcp")
+    );
+    assert_eq!(
+        app.extension_sources.get("sphinxdocrs::extensions::webmcp"),
+        Some(&"rust")
+    );
+    app.build().unwrap();
+
+    assert!(out.path().join("_static/webmcp.js").exists());
+    assert!(out.path().join("webmcp.json").exists());
+    let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+    assert!(
+        html.contains("webmcp.js"),
+        "WebMCP script was not linked: {html}"
+    );
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.path().join("webmcp.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest["pages"][0]["url"], "index.html");
+}
+
+#[test]
+fn singlehtml_build_uses_manifest_anchors_and_webmcp_assets() {
+    let src = make_src_with_docs(&[
+        ("index", "Welcome\n=======\n\n.. toctree::\n\n   guide\n"),
+        ("guide", "Guide\n=====\n\nSearchable guide text.\n"),
+    ]);
+    std::fs::write(
+        src.path().join("conf.py"),
+        "docindex_webmcp_enabled = False\n",
+    )
+    .unwrap();
+    let out = tempfile::TempDir::new().unwrap();
+    let dt = tempfile::TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        src.path(),
+        out.path(),
+        dt.path(),
+        "singlehtml",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.build().unwrap();
+
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.path().join("webmcp.json")).unwrap())
+            .unwrap();
+    let urls: Vec<&str> = manifest["pages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|page| page["url"].as_str().unwrap())
+        .collect();
+    assert_eq!(urls, ["index.html#guide", "index.html#index"]);
+    let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+    assert!(html.contains("id=\"index\""));
+    assert!(html.contains("id=\"guide\""));
+    assert!(out.path().join("_static/webmcp.js").exists());
+}
+
+#[test]
+fn configured_docindex_writes_json_and_hdt_artifacts() {
+    let src = make_src_with_docs(&[("index", "Welcome\n=======\n\nSearchable documentation.\n")]);
+    std::fs::write(
+        src.path().join("conf.py"),
+        "extensions = ['sphinxdocrs::extensions::docindex']\n",
+    )
+    .unwrap();
+    let out = tempfile::TempDir::new().unwrap();
+    let dt = tempfile::TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+    assert!(
+        app.extensions
+            .contains_key("sphinxdocrs::extensions::docindex")
+    );
+    app.load_extension("sphinxdocrs::extensions::docindex")
+        .unwrap();
+    app.build().unwrap();
+
+    let artifact = out.path().join("_static/docindex.json");
+    assert!(artifact.exists());
+    assert!(out.path().join("_static/docindex.hdt").exists());
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(artifact).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 1);
+    assert!(!value["documents"].as_object().unwrap().is_empty());
+}
+
+#[test]
 fn build_html_renders_rst_content() {
     let src = make_src_with_docs(&[(
         "index",
@@ -334,8 +438,7 @@ fn build_man_honors_configured_project_output() {
     .unwrap();
     let out = tempfile::TempDir::new().unwrap();
     let dt = tempfile::TempDir::new().unwrap();
-    let mut app =
-        SphinxApp::new(src.path(), out.path(), dt.path(), "man", HashMap::new()).unwrap();
+    let mut app = SphinxApp::new(src.path(), out.path(), dt.path(), "man", HashMap::new()).unwrap();
 
     let result = app.build().unwrap();
 
@@ -350,8 +453,7 @@ fn build_man_without_configuration_writes_no_pages() {
     let src = make_src_with_docs(&[("index", "Project\n=======\n\nContent.\n")]);
     let out = tempfile::TempDir::new().unwrap();
     let dt = tempfile::TempDir::new().unwrap();
-    let mut app =
-        SphinxApp::new(src.path(), out.path(), dt.path(), "man", HashMap::new()).unwrap();
+    let mut app = SphinxApp::new(src.path(), out.path(), dt.path(), "man", HashMap::new()).unwrap();
 
     let result = app.build().unwrap();
 
@@ -369,8 +471,7 @@ fn build_man_rejects_duplicate_configured_outputs() {
     .unwrap();
     let out = tempfile::TempDir::new().unwrap();
     let dt = tempfile::TempDir::new().unwrap();
-    let mut app =
-        SphinxApp::new(src.path(), out.path(), dt.path(), "man", HashMap::new()).unwrap();
+    let mut app = SphinxApp::new(src.path(), out.path(), dt.path(), "man", HashMap::new()).unwrap();
 
     let error = app.build().unwrap_err().to_string();
 

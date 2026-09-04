@@ -35,6 +35,7 @@ use crate::builders::json::JsonBuilder;
 use crate::builders::latex::LatexBuilder;
 use crate::builders::linkcheck::LinkcheckBuilder;
 use crate::builders::manpage::ManpageBuilder;
+use crate::builders::singlehtml::SinglehtmlBuilder;
 use crate::builders::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
 use crate::environment::{
@@ -108,6 +109,10 @@ impl From<EventError> for AppError {
 /// native builder is used; otherwise the Python fallback runs.
 pub const NATIVE_BUILDER_CLASSES: &[(&str, &str)] = &[
     ("html", "sphinxdocrs::builders::html::HtmlBuilder"),
+    (
+        "singlehtml",
+        "sphinxdocrs::builders::singlehtml::SinglehtmlBuilder",
+    ),
     ("json", "sphinxdocrs::builders::json::JsonBuilder"),
     ("latex", "sphinxdocrs::builders::latex::LatexBuilder"),
     ("man", "sphinxdocrs::builders::manpage::ManpageBuilder"),
@@ -118,7 +123,7 @@ pub const NATIVE_BUILDER_CLASSES: &[(&str, &str)] = &[
 ];
 
 /// Builder names that have a native Rust implementation.
-pub const NATIVE_BUILDERS: &[&str] = &["html", "json", "latex", "man", "linkcheck"];
+pub const NATIVE_BUILDERS: &[&str] = &["html", "singlehtml", "json", "latex", "man", "linkcheck"];
 
 /// Return `true` if `builder_name` has a native Rust implementation.
 ///
@@ -161,6 +166,8 @@ pub struct SphinxApp {
     /// (`"rust"`) resolved via `docutilsrs_plugins`, or by the plain
     /// Python `setup()` (`"python"`). Diagnostic-only; not an upstream field.
     pub extension_sources: HashMap<String, &'static str>,
+    /// Names of built-in Rust extensions loaded for this application.
+    pub(crate) native_extensions: std::collections::HashSet<String>,
     py_config: SharedConfig,
     pub assets: SharedAssets,
     raw_config: SharedRawConfig,
@@ -274,6 +281,7 @@ impl SphinxApp {
             events: AppEventManager::shared(),
             extensions: HashMap::new(),
             extension_sources: HashMap::new(),
+            native_extensions: std::collections::HashSet::new(),
             py_config,
             assets,
             raw_config,
@@ -292,6 +300,9 @@ impl SphinxApp {
         // already been emitted by then.)
         for ext_name in app.config.extensions() {
             app.load_extension(&ext_name)?;
+        }
+        if matches!(app.buildername.as_str(), "html" | "singlehtml") {
+            app.load_extension("sphinxdocrs::extensions::webmcp")?;
         }
         app.verify_needs_extensions()?;
 
@@ -344,6 +355,29 @@ impl SphinxApp {
     /// `AppError::Extension` if the module cannot be imported, has no
     /// `setup` callable, or `setup(app)` raises.
     pub fn load_extension(&mut self, name: &str) -> Result<(), AppError> {
+        if crate::extensions::metadata(name).is_some() {
+            let metadata = crate::extensions::metadata(name).unwrap();
+            let canonical = metadata.name.to_string();
+            if self.native_extensions.contains(&canonical) {
+                return Ok(());
+            }
+            crate::extensions::setup(name, self)?;
+            self.native_extensions.insert(canonical.clone());
+            self.extension_sources.insert(name.to_string(), "rust");
+            Python::attach(|py| -> PyResult<()> {
+                let kwargs = pyo3::types::PyDict::new(py);
+                kwargs.set_item("version", metadata.version)?;
+                kwargs.set_item("parallel_read_safe", metadata.parallel_read_safe)?;
+                kwargs.set_item("parallel_write_safe", metadata.parallel_write_safe)?;
+                let ext_type = py.get_type::<Extension>();
+                let ext_obj = ext_type.call((name, py.None()), Some(&kwargs))?;
+                let ext: Py<Extension> = ext_obj.extract()?;
+                self.extensions.insert(name.to_string(), ext);
+                Ok(())
+            })
+            .map_err(AppError::from)?;
+            return Ok(());
+        }
         let mut version_guard_warning = None;
         let result = Python::attach(|py| -> PyResult<()> {
             let (module, setup, source): (Bound<'_, PyAny>, Bound<'_, PyAny>, &'static str) =
@@ -597,12 +631,23 @@ impl SphinxApp {
             let mut env = self.env.borrow_mut();
             env.set_events(self.events.clone());
             let assets = self.assets.borrow();
-            env.set_added_assets(assets.css_files.clone(), assets.js_files.clone());
+            let registry = self.registry.borrow();
+            let mut css_files = assets.css_files.clone();
+            css_files.extend(registry.css_files.clone());
+            let mut js_files = assets.js_files.clone();
+            js_files.extend(registry.js_files.clone());
+            env.set_added_assets(css_files, js_files);
         }
         let result = match self.buildername.as_str() {
             "html" => {
                 let builder = HtmlBuilder::new()
                     .with_external_link_class(self.config.html_add_external_link_class());
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
+                    .map_err(AppError::from)
+            }
+            "singlehtml" => {
+                let builder = SinglehtmlBuilder::new();
                 builder
                     .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
@@ -634,6 +679,9 @@ impl SphinxApp {
             other => Err(AppError::UnknownBuilder(other.into())),
         };
 
+        if result.is_ok() {
+            crate::extensions::build_finished(self)?;
+        }
         self.events.borrow_mut().emit("build-finished", &[])?;
         result
     }

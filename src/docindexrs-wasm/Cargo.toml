@@ -1,0 +1,18 @@
+[package]
+name = "docindexrs-wasm"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license = "BSD-2-Clause"
+description = "WebAssembly bindings for local DocIndex artifacts"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+docindexrs-core = { path = "../docindexrs-core" }
+serde-wasm-bindgen = "0.6"
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

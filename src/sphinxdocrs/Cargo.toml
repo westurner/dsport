@@ -70,6 +70,7 @@ clap = { workspace = true }
 jinja2rs = { path = "../jinja2rs" }
 markupsafers = { path = "../markupsafers", features = ["minijinja"] }
 docutilsrs = { path = "../docutilsrs" }
+docindexrs-native = { path = "../docindexrs-native" }
 myst-md-rs = { path = "../myst-md-rs" }
 pygmentsrs = { path = "../pygmentsrs" }
 minijinja = { path = "../minijinja/minijinja" }

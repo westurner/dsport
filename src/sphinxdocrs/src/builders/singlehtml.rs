@@ -76,7 +76,7 @@ impl Builder for SinglehtmlBuilder {
         if docname == "index" {
             String::new()
         } else if self.known_docs.borrow().contains(docname) {
-            format!("#document-{docname}")
+            format!("#{docname}")
         } else {
             format!("{docname}.html")
         }
@@ -88,10 +88,7 @@ impl Builder for SinglehtmlBuilder {
     fn build_doc(&self, docname: &str, source: &str, outdir: &Path) -> Result<(), BuildError> {
         let tree = parse_rst_with_source(source, docname);
         let (title, body) = self.inner.render_fragment_from_tree(docname, &tree);
-        let anchored = format!(
-            "<div id=\"{}\">\n{body}\n</div>",
-            html_escape_attr(docname)
-        );
+        let anchored = format!("<div id=\"{}\">\n{body}\n</div>", html_escape_attr(docname));
         let page = HtmlBuilder::render_embedded_or_wrap(
             docname,
             &title,
@@ -270,8 +267,8 @@ mod tests {
             "guide/intro".to_string(),
         ]);
 
-        assert_eq!(b.get_target_uri("about"), "#document-about");
-        assert_eq!(b.get_target_uri("guide/intro"), "#document-guide/intro");
+        assert_eq!(b.get_target_uri("about"), "#about");
+        assert_eq!(b.get_target_uri("guide/intro"), "#guide/intro");
         assert_eq!(b.get_target_uri("missing"), "missing.html");
     }
 
@@ -312,7 +309,7 @@ mod tests {
         let builder = SinglehtmlBuilder::new();
         let result = builder.build_all(src.path(), out.path(), &env).unwrap();
         assert_eq!(result.written, 2);
-        assert_eq!(builder.get_target_uri("about"), "#document-about");
+        assert_eq!(builder.get_target_uri("about"), "#about");
         assert_eq!(builder.get_target_uri("additional"), "additional.html");
         assert_eq!(builder.get_target_uri("index"), "");
         // Exactly one HTML file is produced.

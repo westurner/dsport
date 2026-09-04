@@ -1,0 +1,16 @@
+[package]
+name = "docindexrs-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license = "BSD-2-Clause"
+description = "WASM-safe document indexing and search primitives"
+
+[lib]
+name = "docindexrs_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

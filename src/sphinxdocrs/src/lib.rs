@@ -38,6 +38,7 @@ pub mod error_log;
 pub mod errors;
 pub mod events;
 pub mod extension;
+pub mod extensions;
 pub mod genindex;
 pub mod http_client;
 pub mod intersphinx;
@@ -58,8 +59,8 @@ pub mod toctree;
 pub mod util_console;
 pub mod util_docstrings;
 pub mod util_lines;
-pub mod util_md;
 pub mod util_matching;
+pub mod util_md;
 pub mod util_osutil;
 pub mod util_rst;
 pub mod util_strypes;
@@ -89,6 +90,8 @@ pub fn features() -> &'static [&'static str] {
         "project:discover",
         "extension:wrapper",
         "extension:verify_needs_extensions",
+        "extension:builtin_docindex",
+        "extension:builtin_webmcp",
         "util:matching",
         "util:console",
         "config:read_conf_py",

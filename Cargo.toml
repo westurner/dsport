@@ -2,6 +2,10 @@
 resolver = "2"
 members = [
     "src/docutilsrs",
+    "src/docindexrs-core",
+    "src/docindexrs-native",
+    "src/docindexrs-cli",
+    "src/docindexrs-wasm",
     "src/jinja2rs",
     "src/markupsafers",
     "src/mathrenderrs",

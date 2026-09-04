@@ -484,6 +484,14 @@ Required tests:
 - artifact and RDF/HDT export;
 - progress-disabled deterministic output.
 
+Browser WASM coverage is a committed part of this phase. Add a
+`wasm-bindgen-test` browser fixture that loads the shared JSON artifact and
+covers search, document lookup, pagination, and malformed-artifact rejection.
+The browser test job must compile `docindexrs-wasm` for
+`wasm32-unknown-unknown`, run with `wasm-bindgen-test` in a real browser, and
+keep the fixture artifact generated from the same core serialization API used
+by native tests.
+
 ## 10. Phase F: `sphinxdocrs::extensions::docindex`
 
 Implement the DocIndex integration only after the extension prerequisite and

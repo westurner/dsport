@@ -836,6 +836,7 @@ dependencies = [
  "clap",
  "docindexrs-core",
  "docindexrs-native",
+ "nbconvertrs",
  "serde_json",
  "serde_yaml",
  "tempfile",
@@ -855,10 +856,13 @@ name = "docindexrs-native"
 version = "0.1.0"
 dependencies = [
  "docindexrs-core",
+ "nbconvertrs",
+ "nbformat",
  "rdfhdt",
  "reqwest",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tempfile",
  "thiserror 2.0.19",
 ]
@@ -1930,6 +1934,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "574b0cd5e90ee2ba03a66d0611fc9a09c9a0c28b2ecc2dc8a181dd31a53ca5d7"
 
 [[package]]
+name = "jupyter-protocol"
+version = "2.0.2"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "uuid",
+]
+
+[[package]]
 name = "kurbo"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2258,6 +2276,31 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "tempfile",
+]
+
+[[package]]
+name = "nbconvertrs"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "nbformat",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+]
+
+[[package]]
+name = "nbformat"
+version = "3.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "insta",
+ "jupyter-protocol",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "uuid",
 ]
 
 [[package]]
@@ -3789,6 +3832,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "sha2"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4681,6 +4730,8 @@ checksum = "bf3923a6f5c4c6382e0b653c4117f48d631ea17f38ed86e2a828e6f7412f5239"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
+ "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 

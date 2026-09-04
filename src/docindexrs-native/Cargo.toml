@@ -12,6 +12,8 @@ path = "src/lib.rs"
 
 [dependencies]
 docindexrs-core = { path = "../docindexrs-core" }
+nbconvertrs = { path = "../sustainablefactory/src/transform_md" }
+nbformat = { path = "../runtimed/crates/nbformat", version = "3.0.0" }
 rdfhdt = { path = "../rdfhdt" }
 reqwest = { version = "0.11", default-features = false, features = [
 	"blocking",
@@ -20,6 +22,7 @@ reqwest = { version = "0.11", default-features = false, features = [
 ] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 thiserror = "2"
 
 [dev-dependencies]

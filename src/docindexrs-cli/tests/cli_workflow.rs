@@ -33,6 +33,7 @@ fn help_lists_the_complete_workflow() {
     for command in [
         "index-chats",
         "index-html",
+        "index-docling",
         "search",
         "status",
         "list-indices",
@@ -152,4 +153,90 @@ fn destructive_commands_require_confirmation() {
         .expect("run docindex");
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("--confirm"));
+}
+
+#[test]
+fn index_command_runs_markdown_transform_in_process() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("source");
+    let artifact = directory.path().join("index.json");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(
+        source.join("guide.md"),
+        "# Guide\n\n```rust\nfn main() {}\n```\n",
+    )
+    .unwrap();
+
+    run(docindex().args([
+        "index",
+        source.to_str().unwrap(),
+        "--output",
+        artifact.to_str().unwrap(),
+        "--transform-markdown",
+        "--transform-cell-split",
+        "m1",
+    ]));
+    let artifact_text = fs::read_to_string(artifact).unwrap();
+    assert!(artifact_text.contains("sphinx_nb"));
+    assert!(artifact_text.contains("fn main"));
+}
+
+#[test]
+fn index_docling_applies_toc_metadata_and_selection() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("docling");
+    let toc = directory.path().join("_toc.yml");
+    let artifact = directory.path().join("docling-index.json");
+    fs::create_dir_all(source.join("papers")).unwrap();
+    fs::write(
+        source.join("papers/one.json"),
+        r#"{"schema_name":"DoclingDocument","texts":[{"label":"title","text":"Paper One"},{"text":"Indexed body"}]}"#,
+    )
+    .unwrap();
+    fs::write(
+        source.join("skip.json"),
+        r#"{"schema_name":"DoclingDocument","texts":[{"text":"Skip body"}]}"#,
+    )
+    .unwrap();
+    fs::write(
+        &toc,
+        "docindex:\n  paths:\n    - path: papers/*.json\n      index: true\n      build: false\n      link: true\n      metadata:\n        tags: [paper]\n",
+    )
+    .unwrap();
+
+    run(docindex().args([
+        "index-docling",
+        "--source",
+        source.to_str().unwrap(),
+        "--toc",
+        toc.to_str().unwrap(),
+        "--output",
+        artifact.to_str().unwrap(),
+    ]));
+    let artifact_text = fs::read_to_string(artifact).unwrap();
+    assert!(artifact_text.contains("Paper One"));
+    assert!(artifact_text.contains("Indexed body"));
+    assert!(artifact_text.contains("paper"));
+    assert!(!artifact_text.contains("Skip body"));
+}
+
+#[test]
+fn literal_index_docling_flag_runs_docling_ingestion() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("document.json");
+    let artifact = directory.path().join("index.json");
+    fs::write(
+        &source,
+        r#"{"schema_name":"DoclingDocument","name":"Document","texts":[{"text":"Indexed"}]}"#,
+    )
+    .unwrap();
+
+    run(docindex().args([
+        "--index-docling",
+        "--source",
+        source.to_str().unwrap(),
+        "--output",
+        artifact.to_str().unwrap(),
+    ]));
+    assert!(fs::read_to_string(artifact).unwrap().contains("Indexed"));
 }

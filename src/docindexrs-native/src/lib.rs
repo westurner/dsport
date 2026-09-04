@@ -1,14 +1,17 @@
 //! Native DocIndex adapters: filesystem discovery and RDF/HDT artifacts.
 
 pub mod backends;
+pub mod docling;
 
 use std::path::Path;
 use std::time::Instant;
 
 use docindexrs_core::{
-    DocumentIndexer, DocumentSearcher, InMemoryIndex, IndexArtifact, IndexingStats, SearchQuery,
-    SearchResult, parse_chat_document, parse_html_document,
+    Document, DocumentIndexer, DocumentSearcher, DocumentType, InMemoryIndex, IndexArtifact,
+    IndexingStats, SearchQuery, SearchResult, parse_chat_document, parse_html_document,
 };
+use nbconvertrs::{TransformOptions, markdown_to_notebook, notebook_to_markdown};
+use nbformat::v4::Cell;
 
 #[derive(Debug, thiserror::Error)]
 pub enum NativeError {
@@ -53,14 +56,44 @@ impl NativeDocIndex {
         &mut self,
         root: impl AsRef<Path>,
     ) -> Result<IndexingStats, NativeError> {
+        self.index_directory_with_options(root, &DirectoryIndexOptions::default())
+    }
+
+    pub fn index_directory_with_options(
+        &mut self,
+        root: impl AsRef<Path>,
+        options: &DirectoryIndexOptions,
+    ) -> Result<IndexingStats, NativeError> {
         let start = Instant::now();
         let mut documents = Vec::new();
-        collect_files(root.as_ref(), &mut documents)?;
+        collect_files(root.as_ref(), &mut documents, options)?;
         let stats = self.index.add_documents(&documents);
         Ok(IndexingStats {
             duration_seconds: start.elapsed().as_secs_f64(),
             ..stats
         })
+    }
+
+    pub fn index_docling(
+        &mut self,
+        source: impl AsRef<Path>,
+        toc_path: Option<&Path>,
+    ) -> Result<IndexingStats, NativeError> {
+        let selection = toc_path
+            .map(docling::load_toc)
+            .transpose()
+            .map_err(|error| NativeError::Backend(error.to_string()))?;
+        let files = docling::collect_docling_files(source, selection.as_ref())
+            .map_err(|error| NativeError::Backend(error.to_string()))?;
+        let mut documents = Vec::new();
+        for (path, rule) in files {
+            let relative = path.to_string_lossy().replace('\\', "/");
+            documents.push(
+                docling::parse_docling_json(&std::fs::read(&path)?, relative, rule.as_ref())
+                    .map_err(|error| NativeError::Backend(error.to_string()))?,
+            );
+        }
+        Ok(self.index.add_documents(&documents))
     }
 
     pub fn search(&self, query: &SearchQuery) -> Vec<SearchResult> {
@@ -112,9 +145,16 @@ impl DocumentIndexer for NativeDocIndex {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct DirectoryIndexOptions {
+    pub transform_markdown: bool,
+    pub transform_options: TransformOptions,
+}
+
 fn collect_files(
     root: &Path,
     documents: &mut Vec<docindexrs_core::Document>,
+    options: &DirectoryIndexOptions,
 ) -> Result<(), NativeError> {
     if !root.is_dir() {
         return Ok(());
@@ -122,7 +162,7 @@ fn collect_files(
     for entry in std::fs::read_dir(root)? {
         let path = entry?.path();
         if path.is_dir() {
-            collect_files(&path, documents)?;
+            collect_files(&path, documents, options)?;
             continue;
         }
         let extension = path
@@ -142,11 +182,96 @@ fn collect_files(
                 relative.clone(),
                 Some(format!("/{relative}")),
             )),
+            "md" | "markdown" | "txt" if options.transform_markdown => {
+                let notebook = markdown_to_notebook(&text, &options.transform_options)
+                    .map_err(|error| NativeError::Backend(error.to_string()))?;
+                let content = notebook_to_markdown(&notebook);
+                let title = content
+                    .lines()
+                    .find_map(|line| line.strip_prefix("# "))
+                    .unwrap_or(&relative)
+                    .to_owned();
+                documents.push(Document {
+                    id: relative.clone(),
+                    document_type: DocumentType::SphinxNb,
+                    title,
+                    content: content.clone(),
+                    filename: relative.clone(),
+                    url: None,
+                    summary: Some(content.chars().take(240).collect()),
+                    code_snippets: Vec::new(),
+                    metadata: docindexrs_core::DocumentMetadata {
+                        source_file: relative,
+                        word_count: Some(content.split_whitespace().count()),
+                        ..Default::default()
+                    },
+                    build_id: None,
+                });
+            }
             "md" | "markdown" | "txt" => documents.extend(parse_chat_document(&text, relative)),
+            "ipynb" => documents.push(parse_notebook_document(&bytes, relative)?),
             _ => {}
         }
     }
     Ok(())
+}
+
+pub fn parse_notebook_document(
+    bytes: &[u8],
+    filename: impl Into<String>,
+) -> Result<Document, NativeError> {
+    let filename = filename.into();
+    let json = std::str::from_utf8(bytes)
+        .map_err(|error| NativeError::Backend(format!("invalid UTF-8 notebook: {error}")))?;
+    let parsed =
+        nbformat::parse_notebook(json).map_err(|error| NativeError::Backend(error.to_string()))?;
+    let notebook = match parsed {
+        nbformat::Notebook::V4(notebook) => notebook,
+        nbformat::Notebook::V4QuirksMode(quirks) => quirks.repair(),
+        nbformat::Notebook::Legacy(notebook) => nbformat::upgrade_legacy_notebook(notebook)
+            .map_err(|error| NativeError::Backend(error.to_string()))?,
+        nbformat::Notebook::V3(notebook) => nbformat::upgrade_v3_notebook(notebook)
+            .map_err(|error| NativeError::Backend(error.to_string()))?,
+        _ => {
+            return Err(NativeError::Backend("unsupported notebook variant".into()));
+        }
+    };
+    let content = notebook
+        .cells
+        .iter()
+        .filter_map(|cell| match cell {
+            Cell::Markdown { source, .. } | Cell::Code { source, .. } => Some(source.concat()),
+            Cell::Raw { .. } => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let title = notebook
+        .cells
+        .iter()
+        .flat_map(|cell| cell.source().iter())
+        .find_map(|line| {
+            line.strip_prefix("# ")
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+        })
+        .unwrap_or(&filename)
+        .to_owned();
+    Ok(Document {
+        id: filename.clone(),
+        document_type: DocumentType::SphinxNb,
+        title,
+        content: content.clone(),
+        filename: filename.clone(),
+        url: None,
+        summary: Some(content.chars().take(240).collect()),
+        code_snippets: Vec::new(),
+        metadata: docindexrs_core::DocumentMetadata {
+            source_file: filename,
+            word_count: Some(content.split_whitespace().count()),
+            ..Default::default()
+        },
+        build_id: None,
+    })
 }
 
 fn escape_iri(value: &str) -> String {
@@ -201,5 +326,48 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn transforms_markdown_in_process_before_indexing() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("guide.md"),
+            "# Guide\n\n```rust\nfn main() {}\n```\n",
+        )
+        .unwrap();
+        let mut index = NativeDocIndex::new();
+        let stats = index
+            .index_directory_with_options(
+                root.path(),
+                &DirectoryIndexOptions {
+                    transform_markdown: true,
+                    transform_options: TransformOptions {
+                        cell_split: Some("m1".into()),
+                    },
+                },
+            )
+            .unwrap();
+        assert_eq!(stats.indexed_documents, 1);
+        let document = index.index().documents().next().unwrap();
+        assert_eq!(document.document_type, DocumentType::SphinxNb);
+        assert!(document.content.contains("fn main"));
+    }
+
+    #[test]
+    fn indexes_existing_notebook_directly() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("guide.ipynb"),
+            br##"{"nbformat":4,"nbformat_minor":5,"metadata":{},"cells":[{"cell_type":"markdown","metadata":{},"source":["# Guide\n","\n","Notebook body"]},{"cell_type":"code","execution_count":null,"metadata":{},"outputs":[],"source":["print(1)"]}]}"##,
+        )
+        .unwrap();
+        let mut index = NativeDocIndex::new();
+        let stats = index.index_directory(root.path()).unwrap();
+        let document = index.index().get("guide.ipynb").unwrap();
+        assert_eq!(stats.indexed_documents, 1);
+        assert_eq!(document.title, "Guide");
+        assert!(document.content.contains("Notebook body"));
+        assert!(document.content.contains("print(1)"));
     }
 }

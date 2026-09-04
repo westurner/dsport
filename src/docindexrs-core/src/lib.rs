@@ -21,6 +21,7 @@ pub enum DocumentType {
     SphinxMd,
     SphinxNb,
     SphinxHtml,
+    Docling,
     Json,
 }
 

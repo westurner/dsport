@@ -6,6 +6,7 @@ members = [
     "src/docindexrs-native",
     "src/docindexrs-cli",
     "src/docindexrs-wasm",
+    "src/sustainablefactory/src/transform_md",
     "src/jinja2rs",
     "src/markupsafers",
     "src/mathrenderrs",
@@ -46,6 +47,17 @@ rvcr = "0.2"
 arbitrary = { version = "1.3", features = ["derive"] }
 libfuzzer-sys = "0.4"
 criterion = { version = "0.8", features = ["html_reports"] }
+anyhow = "1"
+async-trait = "0.1.68"
+bytes = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }
+futures = "0.3"
+jupyter-protocol = { path = "src/runtimed/crates/jupyter-protocol", version = "2.0.2" }
+nbformat = { path = "src/runtimed/crates/nbformat", version = "3.0.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v4", "v5"] }
 
 [profile.release]
 lto = "thin"

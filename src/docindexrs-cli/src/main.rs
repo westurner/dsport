@@ -4,11 +4,12 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use docindexrs_core::{DocumentIndexer, DocumentType, IndexSettings, SearchQuery};
-use docindexrs_native::NativeDocIndex;
 use docindexrs_native::backends::{
     Backend, BackendIndexInfo, MeilisearchBackend, MeilisearchConfig, MultiBackend, OxiRsBackend,
     OxiRsConfig,
 };
+use docindexrs_native::{DirectoryIndexOptions, NativeDocIndex};
+use nbconvertrs::TransformOptions;
 use serde_json::Value;
 
 #[derive(Debug, Parser)]
@@ -24,8 +25,21 @@ struct Args {
     api_key: Option<String>,
     #[arg(long, global = true)]
     oxirs_storage_path: Option<PathBuf>,
+    /// Use the top-level `--source` form for Docling ingestion.
+    #[arg(long, requires = "index_docling")]
+    source: Option<PathBuf>,
+    #[arg(long, requires = "index_docling")]
+    toc: Option<PathBuf>,
+    #[arg(long, default_value = "all", requires = "index_docling")]
+    index: String,
+    #[arg(long, requires = "index_docling")]
+    output: Option<PathBuf>,
+    #[arg(long, default_value_t = 1000, requires = "index_docling")]
+    batch_size: usize,
+    #[arg(long)]
+    index_docling: bool,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Clone)]
@@ -44,6 +58,10 @@ enum Command {
         directory: PathBuf,
         #[arg(short, long)]
         output: PathBuf,
+        #[arg(long)]
+        transform_markdown: bool,
+        #[arg(long)]
+        transform_cell_split: Option<String>,
     },
     /// Index chat files into a configured backend.
     IndexChats {
@@ -55,6 +73,10 @@ enum Command {
         output: Option<PathBuf>,
         #[arg(long, default_value_t = 1000)]
         batch_size: usize,
+        #[arg(long)]
+        transform_markdown: bool,
+        #[arg(long)]
+        transform_cell_split: Option<String>,
     },
     /// Index generated Sphinx HTML into a configured backend.
     IndexHtml {
@@ -68,6 +90,10 @@ enum Command {
         headings: String,
         #[arg(long)]
         exclude: Vec<String>,
+        #[arg(long)]
+        transform_markdown: bool,
+        #[arg(long)]
+        transform_cell_split: Option<String>,
     },
     /// Backward-compatible non-atomic HTML indexing command.
     IndexHtmlLegacy {
@@ -77,6 +103,10 @@ enum Command {
         index: String,
         #[arg(long)]
         output: Option<PathBuf>,
+        #[arg(long)]
+        transform_markdown: bool,
+        #[arg(long)]
+        transform_cell_split: Option<String>,
     },
     /// Search an artifact using `search ARTIFACT QUERY`, or a backend using `search QUERY`.
     Search {
@@ -158,6 +188,19 @@ enum Command {
     },
     /// Convert an artifact to an RDF-HDT file.
     ExportHdt { artifact: PathBuf, output: PathBuf },
+    /// Index DoclingDocument JSON, optionally selected and annotated by _toc.yml.
+    IndexDocling {
+        #[arg(long)]
+        source: PathBuf,
+        #[arg(long)]
+        toc: Option<PathBuf>,
+        #[arg(long, default_value = "all")]
+        index: String,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long, default_value_t = 1000)]
+        batch_size: usize,
+    },
 }
 
 fn backend(options: &BackendOptions) -> Result<Box<dyn Backend>, Box<dyn std::error::Error>> {
@@ -193,9 +236,10 @@ fn backend(options: &BackendOptions) -> Result<Box<dyn Backend>, Box<dyn std::er
 
 fn read_documents(
     source: &Path,
+    options: &DirectoryIndexOptions,
 ) -> Result<(Vec<docindexrs_core::Document>, usize), Box<dyn std::error::Error>> {
     let mut index = NativeDocIndex::new();
-    let stats = index.index_directory(source)?;
+    let stats = index.index_directory_with_options(source, options)?;
     Ok((
         index.index().documents().cloned().collect(),
         stats.indexed_documents,
@@ -285,6 +329,22 @@ fn parse_document_type(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    let command = match (args.index_docling, args.command) {
+        (true, None) => Command::IndexDocling {
+            source: args
+                .source
+                .ok_or("--source is required with --index-docling")?,
+            toc: args.toc,
+            index: args.index,
+            output: args.output,
+            batch_size: args.batch_size,
+        },
+        (true, Some(_)) => {
+            return Err("--index-docling cannot be combined with a subcommand".into());
+        }
+        (false, Some(command)) => command,
+        (false, None) => return Err("provide a subcommand".into()),
+    };
     let backend_options = BackendOptions {
         backend: args.backend.clone(),
         host: args.host.clone(),
@@ -292,10 +352,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: args.api_key.clone(),
         oxirs_storage_path: args.oxirs_storage_path.clone(),
     };
-    match args.command {
-        Command::Index { directory, output } => {
+    match command {
+        Command::Index {
+            directory,
+            output,
+            transform_markdown,
+            transform_cell_split,
+        } => {
             let mut index = NativeDocIndex::new();
-            let stats = index.index_directory(directory)?;
+            let stats = index.index_directory_with_options(
+                directory,
+                &DirectoryIndexOptions {
+                    transform_markdown,
+                    transform_options: TransformOptions {
+                        cell_split: transform_cell_split,
+                    },
+                },
+            )?;
             index.write_artifact(output)?;
             write_stats(&stats);
         }
@@ -304,8 +377,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             index: index_name,
             output,
             batch_size,
+            transform_markdown,
+            transform_cell_split,
         } => {
-            let (documents, count) = read_documents(&source)?;
+            let (documents, count) = read_documents(
+                &source,
+                &DirectoryIndexOptions {
+                    transform_markdown,
+                    transform_options: TransformOptions {
+                        cell_split: transform_cell_split,
+                    },
+                },
+            )?;
             let mut selected = backend(&backend_options)?;
             selected.create_or_update_index(&index_name, &IndexSettings::default())?;
             let stats = selected.add_documents(&index_name, &documents, batch_size)?;
@@ -323,13 +406,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             output,
             headings: _,
             exclude: _,
+            transform_markdown,
+            transform_cell_split,
         }
         | Command::IndexHtmlLegacy {
             source,
             index: index_name,
             output,
+            transform_markdown,
+            transform_cell_split,
         } => {
-            let (documents, count) = read_documents(&source)?;
+            let (documents, count) = read_documents(
+                &source,
+                &DirectoryIndexOptions {
+                    transform_markdown,
+                    transform_options: TransformOptions {
+                        cell_split: transform_cell_split,
+                    },
+                },
+            )?;
             let mut selected = backend(&backend_options)?;
             selected.create_or_update_index(&index_name, &IndexSettings::default())?;
             let stats = selected.add_documents(&index_name, &documents, 1000)?;
@@ -476,6 +571,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::ExportHdt { artifact, output } => {
             NativeDocIndex::read_artifact(artifact)?.write_hdt(output)?;
+        }
+        Command::IndexDocling {
+            source,
+            toc,
+            index: index_name,
+            output,
+            batch_size,
+        } => {
+            let mut native = NativeDocIndex::new();
+            let stats = native.index_docling(&source, toc.as_deref())?;
+            let documents = native.index().documents().cloned().collect::<Vec<_>>();
+            let mut selected = backend(&backend_options)?;
+            selected.create_or_update_index(&index_name, &IndexSettings::default())?;
+            let backend_stats = selected.add_documents(&index_name, &documents, batch_size)?;
+            if let Some(output) = output {
+                native.write_artifact(output)?;
+            }
+            println!("discovered {} documents", stats.total_documents);
+            write_stats(&backend_stats);
         }
     }
     Ok(())

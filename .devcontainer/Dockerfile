@@ -21,6 +21,7 @@ RUN --mount=type=cache,target=/var/cache/dnf,sharing=shared \
 		graphviz \
 		nodejs \
 		rust-std-static-wasm32-unknown-unknown \
+		pandoc \
 		\
 	&& dnf clean all
 

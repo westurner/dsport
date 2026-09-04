@@ -17,9 +17,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Convert an RDF input to RDFHDT or RDFHDTQ.  
-    /// 
-    /// RDF Header, Dictionary, Triples (RDFHDT) is a binary read-only compressed representation for RDF. 
+    /// Convert an RDF input to RDFHDT or RDFHDTQ.
+    ///
+    /// RDF Header, Dictionary, Triples (RDFHDT) is a binary read-only compressed representation for RDF.
     /// RDFHDTQ is RDFHDT with Named Graph Quads per HDTQ-java.
     Export {
         /// Input RDF path, or `-` for stdin.
@@ -43,7 +43,8 @@ enum Command {
         /// Standard HDT named-graph policy. Use `--output-format hdtq` to
         /// preserve named graphs instead. `reject` fails when a named graph is
         /// encountered; `flatten` writes its triples and discards graph names.
-        /// The default graph is unaffected. Only applies to HDT.
+        /// The default graph is unaffected. Only applies to HDT; there is no
+        /// `store` value because named graphs are preserved by selecting HDTQ.
         #[arg(long, default_value = "reject")]
         graph_policy: String,
         /// HDTQ annotation mode for `--output-format hdtq`: `ag` stores one

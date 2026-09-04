@@ -17,8 +17,9 @@ The reusable bridge portion is implemented in [rdfhdt](../src/rdfhdt/):
   bitmaps.
 - The `rdfhdt` CLI supports format selection, HDT/HDTQ selection, annotation
   mode selection, and file paths or stdin/stdout for `export` and `import`.
-- Twelve focused Rust tests cover all supported RDF formats, term round-tripping,
-  malformed input, graph policies, HDTQ graph preservation, and bitmap checksums.
+- Seventeen focused Rust tests cover all supported RDF formats, term
+  round-tripping, malformed input, graph policies, HDTQ graph preservation,
+  bitmap checksums, CLI stdin/stdout behavior, and rendered help text.
 
 This slice uses the local `hdt-rs` fork's public `Hdt::from_triples` API. The
 concrete DocIndex backend, Sphinx asset hook, Python capability detection, and

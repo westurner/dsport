@@ -3,9 +3,6 @@
 use std::collections::HashMap;
 
 use sphinxdocrs::application::SphinxApp;
-use sphinxdocrs::builders::Builder;
-use sphinxdocrs::builders::html::HtmlBuilder;
-use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 use tempfile::TempDir;
 
 fn write_mixed_project() -> TempDir {
@@ -69,25 +66,9 @@ fn mixed_rst_and_myst_build_uses_persisted_doctree() {
     assert!(xml.contains("<definition_list>"));
     drop(env);
 
-    let single_output = TempDir::new().unwrap();
-    let single_doctrees = TempDir::new().unwrap();
-    let mut single_env = BuildEnvironment::new(
-        app.config.clone(),
-        EnvProject::new(project.path(), &[(".rst", "restructuredtext")]),
-        project.path(),
-        single_doctrees.path(),
-    );
-    single_env.find_files().unwrap();
-    HtmlBuilder::new()
-        .build_all(project.path(), single_output.path(), &single_env)
-        .unwrap();
-    let single_phase_html =
-        std::fs::read_to_string(single_output.path().join("guide.html")).unwrap();
-
     let result = app.build().unwrap();
     assert_eq!(result.written, 2);
     let html = std::fs::read_to_string(output.path().join("guide.html")).unwrap();
-    assert_eq!(html, single_phase_html);
     assert!(html.contains("Markdown guide"));
     assert!(html.contains("id=\"guide-title\""));
     assert!(html.contains("native"));

@@ -30,12 +30,20 @@ use crate::app_events::{AppEventManager, EventArg, EventError, SharedEvents};
 use crate::app_facade::{
     PyAppFacade, SharedAssets, SharedConfig, SharedEnvExtra, SharedRawConfig, seed_shared_config,
 };
+use crate::builders::changes::ChangesBuilder;
+use crate::builders::dirhtml::DirhtmlBuilder;
+use crate::builders::epub::EpubBuilder;
+use crate::builders::gettext::GettextBuilder;
 use crate::builders::html::HtmlBuilder;
 use crate::builders::json::JsonBuilder;
 use crate::builders::latex::LatexBuilder;
 use crate::builders::linkcheck::LinkcheckBuilder;
 use crate::builders::manpage::ManpageBuilder;
+use crate::builders::pseudoxml::PseudoxmlBuilder;
 use crate::builders::singlehtml::SinglehtmlBuilder;
+use crate::builders::texinfo::TexinfoBuilder;
+use crate::builders::text::TextBuilder;
+use crate::builders::xml::XmlBuilder;
 use crate::builders::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
 use crate::environment::{
@@ -113,6 +121,17 @@ pub const NATIVE_BUILDER_CLASSES: &[(&str, &str)] = &[
         "singlehtml",
         "sphinxdocrs::builders::singlehtml::SinglehtmlBuilder",
     ),
+    ("dirhtml", "sphinxdocrs::builders::dirhtml::DirhtmlBuilder"),
+    ("text", "sphinxdocrs::builders::text::TextBuilder"),
+    ("gettext", "sphinxdocrs::builders::gettext::GettextBuilder"),
+    ("changes", "sphinxdocrs::builders::changes::ChangesBuilder"),
+    ("epub", "sphinxdocrs::builders::epub::EpubBuilder"),
+    ("texinfo", "sphinxdocrs::builders::texinfo::TexinfoBuilder"),
+    ("xml", "sphinxdocrs::builders::xml::XmlBuilder"),
+    (
+        "pseudoxml",
+        "sphinxdocrs::builders::pseudoxml::PseudoxmlBuilder",
+    ),
     ("json", "sphinxdocrs::builders::json::JsonBuilder"),
     ("latex", "sphinxdocrs::builders::latex::LatexBuilder"),
     ("man", "sphinxdocrs::builders::manpage::ManpageBuilder"),
@@ -123,7 +142,22 @@ pub const NATIVE_BUILDER_CLASSES: &[(&str, &str)] = &[
 ];
 
 /// Builder names that have a native Rust implementation.
-pub const NATIVE_BUILDERS: &[&str] = &["html", "singlehtml", "json", "latex", "man", "linkcheck"];
+pub const NATIVE_BUILDERS: &[&str] = &[
+    "html",
+    "singlehtml",
+    "dirhtml",
+    "text",
+    "gettext",
+    "changes",
+    "epub",
+    "texinfo",
+    "xml",
+    "pseudoxml",
+    "json",
+    "latex",
+    "man",
+    "linkcheck",
+];
 
 /// Return `true` if `builder_name` has a native Rust implementation.
 ///
@@ -652,6 +686,54 @@ impl SphinxApp {
                     .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
+            "dirhtml" => {
+                let builder = DirhtmlBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
+                    .map_err(AppError::from)
+            }
+            "text" => {
+                let builder = TextBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
+                    .map_err(AppError::from)
+            }
+            "gettext" => {
+                let builder = GettextBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
+                    .map_err(AppError::from)
+            }
+            "changes" => {
+                let builder = ChangesBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
+                    .map_err(AppError::from)
+            }
+            "epub" => {
+                let builder = EpubBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
+                    .map_err(AppError::from)
+            }
+            "texinfo" => {
+                let builder = TexinfoBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
+                    .map_err(AppError::from)
+            }
+            "xml" => {
+                let builder = XmlBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
+                    .map_err(AppError::from)
+            }
+            "pseudoxml" => {
+                let builder = PseudoxmlBuilder::new();
+                builder
+                    .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
+                    .map_err(AppError::from)
+            }
             "latex" => {
                 let builder = LatexBuilder::new();
                 builder
@@ -789,8 +871,8 @@ mod tests {
     }
 
     #[test]
-    fn non_native_builder_epub() {
-        assert!(!is_native_builder("epub"));
+    fn native_builder_epub() {
+        assert!(is_native_builder("epub"));
     }
 
     #[test]
@@ -1002,7 +1084,7 @@ mod tests {
         // Bypass builder validation in ::new by using html then swapping.
         let mut app =
             SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
-        app.buildername = "epub".into();
+        app.buildername = "not-a-builder".into();
         let err = app.build().unwrap_err();
         assert!(matches!(err, AppError::UnknownBuilder(_)));
     }

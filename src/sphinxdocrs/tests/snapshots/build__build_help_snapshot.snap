@@ -29,7 +29,6 @@ Options:
       --color                     do emit colored output (default: auto-detect)
   -N, --no-color                  do not emit colored output
   -w, --warning-file <FILE>       write warnings (and errors) to given file
-      --error-db <FILE>           record native build diagnostics in a SQLite database
   -W, --fail-on-warning           turn warnings into errors
   -T, --show-traceback            show full traceback on exception
   -P, --pdb                       run Pdb on exception

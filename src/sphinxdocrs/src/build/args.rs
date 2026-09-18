@@ -402,4 +402,107 @@ mod tests {
     fn color_yes() {
         assert_eq!(parse_color(true, false), "yes");
     }
+
+    #[test]
+    fn parse_args_covers_command_line_and_console_flags() {
+        let argv = [
+            "-b",
+            "dirhtml",
+            "-j",
+            "auto",
+            "-E",
+            "-d",
+            "/tmp/doctrees",
+            "-c",
+            "/tmp/conf",
+            "-C",
+            "-D",
+            "language=fr",
+            "-A",
+            "count=42",
+            "-t",
+            "draft",
+            "-n",
+            "-v",
+            "-v",
+            "-q",
+            "-Q",
+            "-N",
+            "-w",
+            "/tmp/warnings.txt",
+            "-W",
+            "--keep-going",
+            "-T",
+            "-P",
+            "--exception-on-warning",
+            "--scan-requirements",
+            "src",
+            "out",
+            "guide/index.rst",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+
+        let parsed = parse_args(&argv).unwrap();
+        assert_eq!(parsed.builder, "dirhtml");
+        assert_eq!(parsed.jobs, num_cpus::get());
+        assert!(!parsed.force_all);
+        assert!(parsed.freshenv);
+        assert_eq!(parsed.doctreedir, PathBuf::from("/tmp/doctrees"));
+        assert_eq!(parsed.confdir, None);
+        assert!(parsed.noconfig);
+        assert_eq!(parsed.tags, vec!["draft"]);
+        assert_eq!(parsed.verbosity, 2);
+        assert!(parsed.quiet);
+        assert!(parsed.really_quiet);
+        assert_eq!(parsed.color, "no");
+        assert_eq!(parsed.warnfile, Some(PathBuf::from("/tmp/warnings.txt")));
+        assert!(parsed.warningiserror);
+        assert!(parsed.keep_going);
+        assert!(parsed.traceback);
+        assert!(parsed.pdb);
+        assert!(parsed.exception_on_warning);
+        assert!(parsed.scan_requirements);
+        assert_eq!(parsed.filenames, vec!["guide/index.rst"]);
+        assert_eq!(
+            parsed.confoverrides["language"],
+            ConfValue::Str("fr".into())
+        );
+        assert_eq!(
+            parsed.confoverrides["html_context.count"],
+            ConfValue::Int(42)
+        );
+
+        let force_args = vec!["-a".to_owned(), "src".to_owned(), "out".to_owned()];
+        assert!(parse_args(&force_args).unwrap().force_all);
+
+        let explicit_conf = vec![
+            "-c".to_owned(),
+            "/tmp/conf".to_owned(),
+            "src".to_owned(),
+            "out".to_owned(),
+        ];
+        assert_eq!(
+            parse_args(&explicit_conf).unwrap().confdir,
+            Some(PathBuf::from("/tmp/conf"))
+        );
+    }
+
+    #[test]
+    fn parse_args_rejects_missing_required_positionals_and_conflicting_colors() {
+        let missing_output = vec!["src".to_owned()];
+        assert!(matches!(
+            parse_args(&missing_output),
+            Err(ParseError::Clap(_))
+        ));
+
+        let conflicting = vec![
+            "--color".to_owned(),
+            "--no-color".to_owned(),
+            "src".to_owned(),
+            "out".to_owned(),
+        ];
+        assert!(matches!(parse_args(&conflicting), Err(ParseError::Clap(_))));
+    }
 }

@@ -99,12 +99,6 @@ impl Runner for NativeMakeRunner {
             .collect::<Vec<_>>()
             .join(" ");
 
-        if !logging.suppress_status {
-            eprintln!(
-                "sphinxdocrs: make mode: running SphinxApp (builder={})",
-                parsed.builder
-            );
-        }
         match SphinxApp::new(
             &parsed.sourcedir,
             &parsed.outputdir,

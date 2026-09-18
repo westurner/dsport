@@ -1655,7 +1655,12 @@ impl BuildEnvironment {
             .found_docs()
             .iter()
             .filter(|d| d.as_str() != root_doc && !included.contains(d.as_str()))
-            .map(|d| format!("{d}: document isn't included in any toctree"))
+            .map(|d| {
+                format!(
+                    "{}: WARNING: document isn't included in any toctree [toc.not_included]",
+                    self.doc2path(d).display()
+                )
+            })
             .collect();
         warnings.sort();
         warnings

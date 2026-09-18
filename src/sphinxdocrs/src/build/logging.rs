@@ -53,7 +53,11 @@ pub fn parse_logging(
 
 /// Format one warning exactly once for terminal and warning-file consumers.
 pub fn format_warning(warning: &str, color: bool) -> String {
-    let line = format!("WARNING: {warning}");
+    let line = if warning.starts_with("WARNING:") || warning.contains(": WARNING:") {
+        warning.to_owned()
+    } else {
+        format!("WARNING: {warning}")
+    };
     if color {
         crate::util_console::wrap("91", &line)
     } else {

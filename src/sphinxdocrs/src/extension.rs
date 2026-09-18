@@ -187,3 +187,120 @@ pub fn py_verify_needs_extensions<'py>(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn extension_constructor_pops_metadata_and_applies_defaults() {
+        Python::attach(|py| -> PyResult<()> {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("version", "1.2")?;
+            kwargs.set_item("parallel_read_safe", true)?;
+            kwargs.set_item("parallel_write_safe", false)?;
+            kwargs.set_item("custom", "value")?;
+            let extension = Extension::new(
+                py,
+                "demo".into_pyobject(py)?.into_any().unbind(),
+                py.None(),
+                Some(kwargs),
+            )?;
+
+            assert_eq!(extension.version.bind(py).extract::<&str>()?, "1.2");
+            assert!(extension.parallel_read_safe.bind(py).extract::<bool>()?);
+            assert!(!extension.parallel_write_safe.bind(py).extract::<bool>()?);
+            assert!(extension.metadata.bind(py).contains("custom")?);
+            assert!(!extension.metadata.bind(py).contains("version")?);
+            assert_eq!(extension.__repr__(py)?, "<Extension demo>");
+
+            let defaults = Extension::new(
+                py,
+                "defaults".into_pyobject(py)?.into_any().unbind(),
+                py.None(),
+                None,
+            )?;
+            assert_eq!(
+                defaults.version.bind(py).extract::<&str>()?,
+                UNKNOWN_VERSION
+            );
+            assert!(defaults.parallel_read_safe.bind(py).is_none());
+            assert!(defaults.parallel_write_safe.bind(py).extract::<bool>()?);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn verify_needs_extensions_covers_missing_valid_and_old_versions() {
+        Python::attach(|py| -> PyResult<()> {
+            let app = py.eval(&CString::new("type('App', (), {})()").unwrap(), None, None)?;
+            let extensions = PyDict::new(py);
+            app.setattr("extensions", &extensions)?;
+            let config = py.eval(
+                &CString::new("type('Config', (), {})()").unwrap(),
+                None,
+                None,
+            )?;
+            let needs = PyDict::new(py);
+            needs.set_item("missing", "1.0")?;
+            config.setattr("needs_extensions", needs)?;
+            assert!(
+                py_verify_needs_extensions(py, app.clone().into_any(), config.clone().into_any())
+                    .is_ok()
+            );
+
+            let loaded = py.eval(
+                &CString::new("type('Ext', (), {'version': '2.0'})()").unwrap(),
+                None,
+                None,
+            )?;
+            extensions.set_item("demo", loaded)?;
+            let needs = PyDict::new(py);
+            needs.set_item("demo", "1.0")?;
+            config.setattr("needs_extensions", needs)?;
+            assert!(
+                py_verify_needs_extensions(py, app.clone().into_any(), config.clone().into_any())
+                    .is_ok()
+            );
+
+            let needs = PyDict::new(py);
+            needs.set_item("demo", "3.0")?;
+            config.setattr("needs_extensions", needs)?;
+            assert!(
+                py_verify_needs_extensions(py, app.clone().into_any(), config.clone().into_any())
+                    .is_err()
+            );
+
+            let unknown = py.eval(
+                &CString::new("type('Ext', (), {'version': 'unknown version'})()").unwrap(),
+                None,
+                None,
+            )?;
+            extensions.set_item("unknown", unknown)?;
+            let needs = PyDict::new(py);
+            needs.set_item("unknown", "1.0")?;
+            config.setattr("needs_extensions", needs)?;
+            assert!(py_verify_needs_extensions(py, app.into_any(), config.into_any()).is_err());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn verify_needs_extensions_none_is_noop() {
+        Python::attach(|py| -> PyResult<()> {
+            let app = py.eval(&CString::new("type('App', (), {})()").unwrap(), None, None)?;
+            let config = py.eval(
+                &CString::new("type('Config', (), {})()").unwrap(),
+                None,
+                None,
+            )?;
+            config.setattr("needs_extensions", py.None())?;
+            py_verify_needs_extensions(py, app.into_any(), config.into_any())?;
+            Ok(())
+        })
+        .unwrap();
+    }
+}

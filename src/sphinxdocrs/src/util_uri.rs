@@ -322,8 +322,15 @@ fn percent_decode_str(s: &str) -> String {
         if b == b'+' {
             bytes.push(b' ');
         } else if b == b'%' {
-            let hi = chars.next().unwrap_or(b'%');
-            let lo = chars.next().unwrap_or(b'0');
+            let Some(hi) = chars.next() else {
+                bytes.push(b'%');
+                break;
+            };
+            let Some(lo) = chars.next() else {
+                bytes.push(b'%');
+                bytes.push(hi);
+                break;
+            };
             if let (Some(h), Some(l)) = (hex_val(hi), hex_val(lo)) {
                 bytes.push((h << 4) | l);
             } else {
@@ -448,5 +455,61 @@ mod tests {
         let uri = "https://example.com/page#section";
         let encoded = encode_uri(uri);
         assert!(encoded.ends_with("#section"), "got: {encoded}");
+    }
+
+    #[test]
+    fn encode_uri_relative_path_and_space() {
+        assert_eq!(encode_uri("docs/a file.rst"), "docs/a%20file.rst");
+    }
+
+    #[test]
+    fn encode_uri_query_normalizes_spaces_and_preserves_bare_pairs() {
+        assert_eq!(
+            encode_uri("https://example.com/a b?q=hello+world&flag#frag"),
+            "https://example.com/a%20b?q=hello+world&flag#frag"
+        );
+    }
+
+    #[test]
+    fn encode_uri_query_reencodes_invalid_percent_sequences() {
+        assert_eq!(
+            encode_uri("https://example.com/?q=%ZZ&short=%"),
+            "https://example.com/?q=%25ZZ&short=%25"
+        );
+    }
+
+    #[test]
+    fn encode_uri_idna_encodes_unicode_host_and_preserves_port() {
+        assert_eq!(
+            encode_uri("https://münich.example:443/"),
+            "https://xn--mnich-kva.example:443/"
+        );
+        assert!(
+            encode_uri("https://münich.example:abc/")
+                .starts_with("https://xn--mnich-kva.example:abc/")
+        );
+        assert!(encode_uri("https://例え.テスト/").starts_with("https://xn--r8jz45g.xn--zckzah/"));
+    }
+
+    #[test]
+    fn query_and_path_helpers_cover_empty_and_hex_edges() {
+        assert_eq!(encode_query(""), "");
+        assert_eq!(percent_decode_str("%41+%ff%"), "A �%");
+        assert_eq!(percent_decode_str("%A"), "%A");
+        assert_eq!(hex_val(b'0'), Some(0));
+        assert_eq!(hex_val(b'9'), Some(9));
+        assert_eq!(hex_val(b'a'), Some(10));
+        assert_eq!(hex_val(b'F'), Some(15));
+        assert_eq!(hex_val(b'g'), None);
+        assert_eq!(percent_encode_query_value("a b/c"), "a+b%2Fc");
+    }
+
+    #[test]
+    fn punycode_covers_basic_only_and_large_codepoint_paths() {
+        assert_eq!(punycode_encode("abc"), "abc-");
+        let _ = punycode_encode("😀");
+        let _ = punycode_encode("a😀");
+        let _ = punycode_encode("a\u{80}");
+        let _ = punycode_encode("\u{10ffff}");
     }
 }

@@ -364,4 +364,66 @@ mod tests {
         assert!(m.is_match("world.py"));
         assert!(m.is_match("subdir/world.py"));
     }
+
+    #[test]
+    fn translate_character_class_edges() {
+        let negated = Regex::new(&format!("^{}", translate_pattern("[!x].rst"))).unwrap();
+        assert!(negated.is_match("a.rst"));
+        assert!(!negated.is_match("x.rst"));
+
+        let caret = Regex::new(&format!("^{}", translate_pattern("[^x].rst"))).unwrap();
+        assert!(caret.is_match("^.rst"));
+        assert!(caret.is_match("x.rst"));
+        assert!(!caret.is_match("a.rst"));
+
+        let closing_bracket = Regex::new(&format!("^{}", translate_pattern("[]a].rst"))).unwrap();
+        assert!(closing_bracket.is_match("].rst"));
+        assert!(closing_bracket.is_match("a.rst"));
+    }
+
+    #[test]
+    fn translate_unterminated_class_and_special_characters() {
+        let literal = Regex::new(&format!("^{}", translate_pattern("name[abc"))).unwrap();
+        assert!(literal.is_match("name[abc"));
+
+        let escaped = Regex::new(&format!("^{}", translate_pattern("a.b+"))).unwrap();
+        assert!(escaped.is_match("a.b+"));
+        assert!(!escaped.is_match("axb+"));
+    }
+
+    #[test]
+    fn matcher_canonicalizes_windows_separators() {
+        let matcher = Matcher::new(&["docs/*.rst".to_string()]).unwrap();
+        assert!(matcher.is_match(r"docs\index.rst"));
+        assert!(!matcher.is_match("other/index.rst"));
+    }
+
+    #[test]
+    fn matching_files_filters_sorted_files_and_excluded_directories() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("nested")).unwrap();
+        std::fs::create_dir(root.path().join("excluded")).unwrap();
+        std::fs::write(root.path().join("z.rst"), "").unwrap();
+        std::fs::write(root.path().join("a.rst"), "").unwrap();
+        std::fs::write(root.path().join("nested/b.rst"), "").unwrap();
+        std::fs::write(root.path().join("excluded/c.rst"), "").unwrap();
+
+        let files = get_matching_files(
+            root.path(),
+            &["**".to_string()],
+            &["excluded".to_string(), "nested/b.rst".to_string()],
+        )
+        .unwrap();
+        assert_eq!(files, vec!["a.rst", "z.rst"]);
+    }
+
+    #[test]
+    fn matching_files_missing_root_is_empty() {
+        let missing = Path::new("/tmp/sphinxdocrs-missing-matcher-root");
+        assert!(
+            get_matching_files(missing, &["**".to_string()], &[])
+                .unwrap()
+                .is_empty()
+        );
+    }
 }

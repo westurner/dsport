@@ -180,11 +180,23 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 mod tests {
     use super::*;
 
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
     #[test]
     fn wrap_matches_upstream_shape() {
+        let _guard = TEST_LOCK.lock().unwrap();
         // Reset state in case other tests toggled it.
         *COLOURING_DISABLED.lock().unwrap() = false;
         assert_eq!(wrap("91", "x"), "\x1b[91mx\x1b[39;49;00m");
+    }
+
+    #[test]
+    fn disabled_colouring_returns_plain_text() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        *COLOURING_DISABLED.lock().unwrap() = true;
+        assert_eq!(wrap("91", "x"), "x");
+        assert_eq!(colourise("red", "x").unwrap(), "x");
+        *COLOURING_DISABLED.lock().unwrap() = false;
     }
 
     #[test]
@@ -196,6 +208,8 @@ mod tests {
     #[test]
     fn terminal_safe_replaces_non_ascii() {
         assert_eq!(terminal_safe("café"), "caf\\xe9");
+        assert_eq!(terminal_safe("€"), "\\u20ac");
+        assert_eq!(terminal_safe("😀"), "\\U0001f600");
     }
 
     #[test]
@@ -217,6 +231,37 @@ mod tests {
     }
 
     #[test]
+    fn env_logic_no_colour_takes_precedence_over_force() {
+        let env = |k: &str| match k {
+            "NO_COLOUR" | "FORCE_COLOR" => Some("1".to_string()),
+            _ => None,
+        };
+        assert!(!terminal_supports_colour_from_env(env));
+    }
+
+    #[test]
+    fn env_logic_ci_true_and_one_enable_colour() {
+        for value in ["true", "1"] {
+            let env = |k: &str| (k == "CI").then(|| value.to_string());
+            assert!(terminal_supports_colour_from_env(env));
+        }
+    }
+
+    #[test]
+    fn env_logic_noninteractive_and_colour_terminal() {
+        let ci_false = |k: &str| (k == "CI").then(|| "false".to_string());
+        assert!(!terminal_supports_colour_from_env(ci_false));
+
+        let colour_terminal = |k: &str| (k == "TERM").then(|| "xterm-256color".to_string());
+        assert!(terminal_supports_colour_from_env(colour_terminal));
+    }
+
+    #[test]
+    fn env_logic_missing_term_is_not_colour_capable() {
+        assert!(!terminal_supports_colour_from_env(|_| None));
+    }
+
+    #[test]
     fn env_logic_dumb_term() {
         let env = |k: &str| (k == "TERM").then(|| "dumb".to_string());
         assert!(!terminal_supports_colour_from_env(env));
@@ -224,6 +269,7 @@ mod tests {
 
     #[test]
     fn colourise_unknown_errors() {
+        let _guard = TEST_LOCK.lock().unwrap();
         *COLOURING_DISABLED.lock().unwrap() = false;
         assert!(colourise("not_a_colour", "x").is_err());
     }

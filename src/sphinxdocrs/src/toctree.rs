@@ -238,4 +238,38 @@ mod tests {
         env.note_toctree("index", vec!["a".to_string()]);
         assert!(secnumbers(&env).is_empty());
     }
+
+    #[test]
+    fn resolve_from_entries_prefers_longtitles_and_respects_depth() {
+        let mut env = make_env();
+        env.note_toctree("guide", vec!["guide/intro".to_string()]);
+        env.set_title("guide", "Short guide");
+        env.longtitles
+            .insert("guide".to_string(), "The complete guide".to_string());
+
+        let shallow = resolve_from_entries(&env, &["guide".to_string()], 1);
+        assert_eq!(shallow[0].title, "The complete guide");
+        assert!(shallow[0].children.is_empty());
+
+        let deep = resolve_from_entries(&env, &["guide".to_string()], 0);
+        assert_eq!(deep[0].children[0].docname, "guide/intro");
+    }
+
+    #[test]
+    fn resolve_from_entries_uses_entry_name_without_title() {
+        let env = make_env();
+        let toc = resolve_from_entries(&env, &["orphan".to_string()], 0);
+        assert_eq!(toc[0].title, "orphan");
+    }
+
+    #[test]
+    fn nested_cycle_stops_at_repeated_document() {
+        let mut env = make_env();
+        env.note_toctree("index", vec!["guide".to_string()]);
+        env.note_toctree("guide", vec!["details".to_string()]);
+        env.note_toctree("details", vec!["guide".to_string()]);
+
+        let toc = resolve(&env, "index", 0);
+        assert_eq!(toc[0].children[0].children[0].children.len(), 0);
+    }
 }

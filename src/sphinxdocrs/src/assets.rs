@@ -185,3 +185,49 @@ pub fn py_fetch_with_integrity(
     d.set_item("algo", algo.name())?;
     Ok(d.into())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sri_algorithm_names_and_parser_cover_all_choices() {
+        assert_eq!(SriAlgo::Sha256.name(), "sha256");
+        assert_eq!(SriAlgo::Sha384.name(), "sha384");
+        assert_eq!(SriAlgo::Sha512.name(), "sha512");
+        assert_eq!(SriAlgo::from_name("sha256"), Some(SriAlgo::Sha256));
+        assert_eq!(SriAlgo::from_name("sha384"), Some(SriAlgo::Sha384));
+        assert_eq!(SriAlgo::from_name("sha512"), Some(SriAlgo::Sha512));
+        assert_eq!(SriAlgo::from_name("md5"), None);
+        assert_eq!(parse_algo(None).unwrap(), DEFAULT_SRI_ALGO);
+        assert_eq!(parse_algo(Some("sha256")).unwrap(), SriAlgo::Sha256);
+        assert!(parse_algo(Some("md5")).is_err());
+    }
+
+    #[test]
+    fn cache_path_uses_asset_fallback_for_empty_basename() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = cache_path_for(temp.path(), "https://cdn.example/??#fragment").unwrap();
+        assert_eq!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some("asset")
+        );
+    }
+
+    #[test]
+    fn fetch_and_cache_returns_existing_file_without_network() {
+        let temp = tempfile::tempdir().unwrap();
+        let url = "file:///source/asset.js";
+        let expected = cache_path_for(temp.path(), url).unwrap();
+        std::fs::create_dir_all(expected.parent().unwrap()).unwrap();
+        std::fs::write(&expected, b"cached").unwrap();
+        assert_eq!(fetch_and_cache(url, temp.path()).unwrap(), expected);
+    }
+
+    #[test]
+    fn sri_hash_file_reports_missing_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let error = sri_hash_file(&temp.path().join("missing.js"), SriAlgo::Sha256).unwrap_err();
+        assert!(error.to_string().contains("read"));
+    }
+}

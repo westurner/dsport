@@ -8,14 +8,16 @@ by `src/sphinxdocrs/tests/`.
 
 Measured on 2026-09-18:
 
-- `cargo test -p sphinxdocrs --all-targets`: 787 tests passed.
-- Library-only LLVM branch coverage: 59.89% branches, 73.31% lines after the
-  utility/toctree tranche.
+- `cargo test -p sphinxdocrs --all-targets`: 804 tests passed in the latest
+  clean run.
+- Library-only LLVM branch coverage: 60.96% branches, 74.55% lines after the
+  utility, console, assets, EventManager, and warning-parity tranches.
 - The last completed all-target LLVM report measured 68.13% branches and
   86.11% lines; the all-target report is expensive and includes integration
   binaries, so library and all-target measurements must both remain visible.
-- Recent focused results: `toctree` 100% branches, `util_uri` 97%+,
-  `util_matching` 83%+, and `util_console` 75%.
+- Recent focused results: `toctree` 100% branches, `events` 100%,
+  `util_display` 100%, `util_uri` 97%+, `util_matching` 83%+,
+  `util_console` 75%, and `assets` 50%.
 - Existing external HTML parity remains a separate contract: 10/14 cases pass,
   with five documented theme/tree residuals.
 
@@ -208,6 +210,14 @@ matrix:
 - build warnings and native errors normalize to the same `WARNING:`/`ERROR:`
   prefixes and location shape as Python.
 
+Progress: native logging now carries parsed verbosity/color modes, formats
+ANSI-aware warning lines, writes ANSI-free full warning lines, shares a build
+success formatter between direct and make mode, and formats orphan warnings as
+`<source>: WARNING: ... [toc.not_included]`. The make-mode startup banner was
+removed as native-only noise. Remaining C2 work is status-iterator wiring into
+real build progress, warning type/location coverage beyond orphan warnings,
+and subprocess assertions for `-q`, `-Q`, `-w`, and `-W`.
+
 ### P3: CLI and make-mode parity
 
 Port the option-placement and failure cases from `test_command_line.py` into
@@ -248,6 +258,12 @@ Define near parity as:
 
 Run the gate against the upstream fixtures used by `parity.rs`, then update the
 normalized log snapshots only after structured assertions pass.
+
+Current console progress: the normalized HTML stderr parity test passes after
+the orphan-warning and startup-banner fixes. Native output still intentionally
+retains the `Build succeeded: <N> file(s) written.` completion line, which is
+covered by a native assertion and remains the next decision point for exact
+Python stderr parity.
 
 ## Execution order and commits
 

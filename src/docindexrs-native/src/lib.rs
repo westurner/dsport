@@ -227,7 +227,7 @@ pub fn parse_notebook_document(
         nbformat::parse_notebook(json).map_err(|error| NativeError::Backend(error.to_string()))?;
     let notebook = match parsed {
         nbformat::Notebook::V4(notebook) => notebook,
-        nbformat::Notebook::V4QuirksMode(quirks) => quirks.repair(),
+        nbformat::Notebook::V4NonConformant(violations) => violations.repair(),
         nbformat::Notebook::Legacy(notebook) => nbformat::upgrade_legacy_notebook(notebook)
             .map_err(|error| NativeError::Backend(error.to_string()))?,
         nbformat::Notebook::V3(notebook) => nbformat::upgrade_v3_notebook(notebook)

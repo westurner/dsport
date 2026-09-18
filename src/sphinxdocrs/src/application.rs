@@ -1095,4 +1095,63 @@ mod tests {
     fn native_builders_includes_html() {
         assert!(NATIVE_BUILDERS.contains(&"html"));
     }
+
+    // ── AppError Display / From conversions ───────────────────────────────────
+
+    #[test]
+    fn app_error_display_covers_every_variant() {
+        assert_eq!(
+            AppError::InvalidPath("bad path".to_string()).to_string(),
+            "ApplicationError: bad path"
+        );
+        assert_eq!(
+            AppError::UnknownBuilder("weird".to_string()).to_string(),
+            "unknown builder: weird"
+        );
+        let build_err: AppError = BuildError::Other("boom".to_string()).into();
+        assert_eq!(build_err.to_string(), "build error: boom");
+        let io_err: AppError = std::io::Error::other("oops").into();
+        assert_eq!(io_err.to_string(), "I/O error: oops");
+        let event_err: AppError = EventError("listener failed".to_string()).into();
+        assert_eq!(event_err.to_string(), "ExtensionError: listener failed");
+        Python::attach(|py| {
+            let py_err = pyo3::exceptions::PyValueError::new_err("bad value");
+            let app_err: AppError = py_err.into();
+            assert!(matches!(app_err, AppError::Extension(_)));
+            let _ = py;
+        });
+    }
+
+    #[test]
+    fn sphinx_app_debug_fmt_includes_key_fields() {
+        let src = make_src();
+        let out = TempDir::new().unwrap();
+        let dt = TempDir::new().unwrap();
+        let app =
+            SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+        let debug = format!("{app:?}");
+        assert!(debug.contains("SphinxApp"));
+        assert!(debug.contains("html"));
+    }
+
+    #[test]
+    fn new_outdir_is_a_file_errors() {
+        let src = make_src();
+        let dt = TempDir::new().unwrap();
+        let parent = TempDir::new().unwrap();
+        let outdir_as_file = parent.path().join("not_a_dir");
+        std::fs::write(&outdir_as_file, b"not a directory").unwrap();
+        let err = SphinxApp::new(
+            src.path(),
+            &outdir_as_file,
+            dt.path(),
+            "html",
+            HashMap::new(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, AppError::InvalidPath(_)),
+            "expected InvalidPath, got {err}"
+        );
+    }
 }

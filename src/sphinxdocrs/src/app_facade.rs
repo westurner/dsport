@@ -1344,3 +1344,791 @@ impl PyAppFacade {
     /// since this port has no upstream Sphinx version to compare against.
     fn require_sphinx(&self, _version_info: &Bound<'_, PyAny>) {}
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_events::AppEventManager;
+    use crate::config::SphinxConfig;
+    use crate::environment::{BuildEnvironment, EnvProject};
+    use crate::registry::SphinxComponentRegistry;
+    use std::collections::HashSet;
+    use std::ffi::CString;
+
+    fn make_env() -> crate::environment::SharedEnv {
+        let config = SphinxConfig::new_defaults();
+        let project = EnvProject::new("/tmp/src", &[(".rst", "restructuredtext")]);
+        Rc::new(RefCell::new(BuildEnvironment::new(
+            config,
+            project,
+            "/tmp/src",
+            "/tmp/doctrees",
+        )))
+    }
+
+    fn make_facade() -> PyAppFacade {
+        make_facade_with_raw(HashMap::new())
+    }
+
+    fn make_facade_with_raw(raw: HashMap<String, ConfigVal>) -> PyAppFacade {
+        PyAppFacade::new(
+            AppEventManager::shared(),
+            Rc::new(RefCell::new(HashMap::new())),
+            Rc::new(RefCell::new(AssetAccumulator::default())),
+            Rc::new(RefCell::new(SphinxComponentRegistry::new())),
+            make_env(),
+            Rc::new(raw),
+            Rc::new(RefCell::new(HashMap::new())),
+        )
+    }
+
+    fn py_def<'py>(py: Python<'py>, name: &str, body: &str) -> Py<PyAny> {
+        let globals = PyDict::new(py);
+        let code = CString::new(format!("def {name}(*args):\n    {body}\n")).unwrap();
+        py.run(&code, Some(&globals), None).unwrap();
+        globals.get_item(name).unwrap().unwrap().unbind()
+    }
+
+    #[test]
+    fn py_err_to_event_error_formats_handler_and_message() {
+        Python::attach(|py| {
+            let callback = py_def(py, "boom", "raise ValueError('x')");
+            let err = callback.bind(py).call0().unwrap_err();
+            let event_err = py_err_to_event_error(py, "myevent", &callback, err);
+            assert!(event_err.0.contains("myevent"));
+            assert!(event_err.0.contains("threw an exception"));
+        });
+    }
+
+    #[test]
+    fn event_arg_to_py_converts_every_variant() {
+        Python::attach(|py| {
+            assert!(event_arg_to_py(py, &EventArg::None).unwrap().is_none(py));
+            assert_eq!(
+                event_arg_to_py(py, &EventArg::Str("hi".into()))
+                    .unwrap()
+                    .extract::<String>(py)
+                    .unwrap(),
+                "hi"
+            );
+            let list = event_arg_to_py(py, &EventArg::StrList(vec!["a".into(), "b".into()]))
+                .unwrap();
+            assert_eq!(
+                list.extract::<Vec<String>>(py).unwrap(),
+                vec!["a".to_string(), "b".to_string()]
+            );
+            let tree = docutilsrs::doctree::Doctree::new_document("src.rst");
+            let doctree_obj = event_arg_to_py(py, &EventArg::Doctree(tree)).unwrap();
+            assert!(doctree_obj.bind(py).cast::<PyDoctree>().is_ok());
+
+            let page_context = EventArg::HtmlPageContext {
+                pagename: "index".into(),
+                templatename: "page.html".into(),
+                context: Rc::new(RefCell::new(Default::default())),
+                doctree: None,
+            };
+            assert!(event_arg_to_py(py, &page_context).is_err());
+        });
+    }
+
+    #[test]
+    fn json_value_to_py_converts_every_variant() {
+        Python::attach(|py| {
+            assert!(json_value_to_py(py, &serde_json::Value::Null)
+                .unwrap()
+                .is_none(py));
+            assert!(json_value_to_py(py, &serde_json::json!(true))
+                .unwrap()
+                .extract::<bool>(py)
+                .unwrap());
+            assert_eq!(
+                json_value_to_py(py, &serde_json::json!(7))
+                    .unwrap()
+                    .extract::<i64>(py)
+                    .unwrap(),
+                7
+            );
+            assert!(
+                (json_value_to_py(py, &serde_json::json!(1.5))
+                    .unwrap()
+                    .extract::<f64>(py)
+                    .unwrap()
+                    - 1.5)
+                    .abs()
+                    < f64::EPSILON
+            );
+            assert_eq!(
+                json_value_to_py(py, &serde_json::json!("s"))
+                    .unwrap()
+                    .extract::<String>(py)
+                    .unwrap(),
+                "s"
+            );
+            let arr = json_value_to_py(py, &serde_json::json!([1, "two"])).unwrap();
+            assert_eq!(arr.bind(py).len().unwrap(), 2);
+            let obj = json_value_to_py(py, &serde_json::json!({"k": "v"})).unwrap();
+            assert_eq!(
+                obj.bind(py)
+                    .get_item("k")
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "v"
+            );
+        });
+    }
+
+    #[test]
+    fn configval_to_py_converts_every_variant() {
+        Python::attach(|py| {
+            assert!(configval_to_py(py, &ConfigVal::Null).unwrap().is_none(py));
+            assert!(configval_to_py(py, &ConfigVal::Bool(true))
+                .unwrap()
+                .extract::<bool>(py)
+                .unwrap());
+            assert_eq!(
+                configval_to_py(py, &ConfigVal::Int(3))
+                    .unwrap()
+                    .extract::<i64>(py)
+                    .unwrap(),
+                3
+            );
+            assert!(
+                (configval_to_py(py, &ConfigVal::Float(2.5))
+                    .unwrap()
+                    .extract::<f64>(py)
+                    .unwrap()
+                    - 2.5)
+                    .abs()
+                    < f64::EPSILON
+            );
+            assert_eq!(
+                configval_to_py(py, &ConfigVal::Str("x".into()))
+                    .unwrap()
+                    .extract::<String>(py)
+                    .unwrap(),
+                "x"
+            );
+            let list = configval_to_py(
+                py,
+                &ConfigVal::List(vec![ConfigVal::Int(1), ConfigVal::Str("a".into())]),
+            )
+            .unwrap();
+            assert_eq!(list.bind(py).len().unwrap(), 2);
+            let map = configval_to_py(
+                py,
+                &ConfigVal::Map(vec![("k".to_string(), ConfigVal::Bool(false))]),
+            )
+            .unwrap();
+            assert!(!map
+                .bind(py)
+                .get_item("k")
+                .unwrap()
+                .extract::<bool>()
+                .unwrap());
+        });
+    }
+
+    #[test]
+    fn seed_shared_config_populates_from_sphinx_config() {
+        Python::attach(|py| {
+            let config = SphinxConfig::new_defaults();
+            let shared = seed_shared_config(py, &config);
+            assert!(!shared.borrow().is_empty());
+        });
+    }
+
+    #[test]
+    fn config_facade_getattr_setattr_contains() {
+        Python::attach(|py| {
+            let store: SharedConfig = Rc::new(RefCell::new(HashMap::new()));
+            let facade = PyConfigFacade::new(store.clone());
+            assert!(facade.__getattr__(py, "missing").is_none(py));
+            assert!(!facade.__contains__("missing"));
+            facade.__setattr__("project".to_string(), "MyProj".into_pyobject(py).unwrap().into_any().unbind());
+            assert!(facade.__contains__("project"));
+            assert_eq!(
+                facade.__getattr__(py, "project").extract::<String>(py).unwrap(),
+                "MyProj"
+            );
+        });
+    }
+
+    #[test]
+    fn kwargs_to_attrs_handles_missing_and_present_and_non_string_keys() {
+        Python::attach(|py| {
+            assert!(kwargs_to_attrs(None).is_empty());
+            let dict = PyDict::new(py);
+            dict.set_item("integrity", "sha256-xyz").unwrap();
+            dict.set_item(1, "skip-me").unwrap();
+            let attrs = kwargs_to_attrs(Some(&dict));
+            assert_eq!(attrs.get("integrity").unwrap(), "sha256-xyz");
+            assert_eq!(attrs.len(), 1);
+        });
+    }
+
+    #[test]
+    fn py_args_to_event_args_converts_none_and_values() {
+        Python::attach(|py| {
+            let tuple = PyTuple::new(py, [py.None(), 5i64.into_pyobject(py).unwrap().into_any().unbind()]).unwrap();
+            let args = py_args_to_event_args(&tuple).unwrap();
+            assert_eq!(args.len(), 2);
+            assert!(matches!(args[0], EventArg::None));
+            assert!(matches!(&args[1], EventArg::Str(s) if s == "5"));
+        });
+    }
+
+    #[test]
+    fn events_facade_emit_add_event_and_firstresult() {
+        Python::attach(|py| {
+            let events = AppEventManager::shared();
+            let facade = PyEventsFacade::new(events.clone());
+            facade.add_event("custom").unwrap();
+            let seen = Rc::new(RefCell::new(false));
+            let seen_clone = seen.clone();
+            events.borrow_mut().connect("custom", 0, move |_| {
+                *seen_clone.borrow_mut() = true;
+                Ok(())
+            });
+            let args = PyTuple::empty(py);
+            let result = facade.emit("custom", &args).unwrap();
+            assert!(result.is_empty());
+            assert!(*seen.borrow());
+            let none = facade.emit_firstresult(py, "custom", &args).unwrap();
+            assert!(none.is_none(py));
+        });
+    }
+
+    #[test]
+    fn builder_facade_reports_name_and_format() {
+        for (name, expected_format) in [
+            ("html", "html"),
+            ("dirhtml", "html"),
+            ("singlehtml", "html"),
+            ("latex", "latex"),
+        ] {
+            let facade = PyBuilderFacade::new(name.to_string());
+            assert_eq!(facade.name(), name);
+            assert_eq!(facade.format(), expected_format);
+        }
+    }
+
+    #[test]
+    fn app_facade_basic_getters_without_builder() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            assert!(facade.config(py).is_ok());
+            assert!(facade.env(py).is_ok());
+            assert!(facade.srcdir(py).is_ok());
+            assert!(facade.doctreedir(py).is_ok());
+            // No `with_builder` call: falls back to doctreedir.
+            assert!(facade.outdir(py).is_ok());
+            assert_eq!(facade.builder(py).unwrap().borrow(py).name(), "");
+            assert!(facade.events(py).is_ok());
+        });
+    }
+
+    #[test]
+    fn app_facade_with_builder_reports_outdir_and_buildername() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            let facade = PyAppFacade::with_builder(
+                facade,
+                std::rc::Rc::new(std::path::PathBuf::from("/tmp/out")),
+                std::rc::Rc::new("html".to_string()),
+            );
+            assert!(facade.outdir(py).is_ok());
+            assert_eq!(facade.builder(py).unwrap().borrow(py).name(), "html");
+        });
+    }
+
+    #[test]
+    fn add_config_value_prefers_existing_then_raw_then_default() {
+        Python::attach(|py| {
+            // Case 1: name already present -> no-op, existing value kept.
+            let facade = make_facade();
+            facade.config.borrow_mut().insert(
+                "already".to_string(),
+                "existing".into_pyobject(py).unwrap().into_any().unbind(),
+            );
+            facade
+                .add_config_value(py, "already".to_string(), py.None(), None, None)
+                .unwrap();
+            assert_eq!(
+                facade
+                    .config
+                    .borrow()
+                    .get("already")
+                    .unwrap()
+                    .extract::<String>(py)
+                    .unwrap(),
+                "existing"
+            );
+
+            // Case 2: name absent, raw_config has a value -> raw wins.
+            let mut raw = HashMap::new();
+            raw.insert("from_conf".to_string(), ConfigVal::Bool(false));
+            let facade = make_facade_with_raw(raw);
+            facade
+                .add_config_value(
+                    py,
+                    "from_conf".to_string(),
+                    true.into_pyobject(py).unwrap().to_owned().into_any().unbind(),
+                    None,
+                    None,
+                )
+                .unwrap();
+            assert!(!facade
+                .config
+                .borrow()
+                .get("from_conf")
+                .unwrap()
+                .extract::<bool>(py)
+                .unwrap());
+
+            // Case 3: name absent, no raw value -> default is used.
+            let facade = make_facade();
+            facade
+                .add_config_value(
+                    py,
+                    "brand_new".to_string(),
+                    "default-val".into_pyobject(py).unwrap().into_any().unbind(),
+                    None,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(
+                facade
+                    .config
+                    .borrow()
+                    .get("brand_new")
+                    .unwrap()
+                    .extract::<String>(py)
+                    .unwrap(),
+                "default-val"
+            );
+        });
+    }
+
+    #[test]
+    fn add_directive_and_add_role_register_callable_and_non_callable() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            let empty_args = PyTuple::empty(py);
+            let callable = py_def(py, "my_directive", "return 'ok'");
+            facade
+                .add_directive(
+                    "mydirective".to_string(),
+                    callable.bind(py).clone(),
+                    &empty_args,
+                    None,
+                )
+                .unwrap();
+            assert!(facade.registry.borrow().has_directive("mydirective"));
+
+            // Non-callable class-like object (falls back to repr()).
+            let non_callable = 42i64.into_pyobject(py).unwrap().into_any();
+            facade
+                .add_directive("otherdirective".to_string(), non_callable, &empty_args, None)
+                .unwrap();
+            assert!(facade.registry.borrow().has_directive("otherdirective"));
+
+            let role_callable = py_def(py, "my_role", "return 'ok'");
+            facade
+                .add_role(
+                    "myrole".to_string(),
+                    role_callable.bind(py).clone(),
+                    &empty_args,
+                    None,
+                )
+                .unwrap();
+            assert!(facade.registry.borrow().has_role("myrole"));
+        });
+    }
+
+    #[test]
+    fn add_object_type_domain_theme_and_builder_register_bookkeeping() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            let empty_args = PyTuple::empty(py);
+            facade
+                .add_object_type(
+                    "confval".to_string(),
+                    "confval".to_string(),
+                    &empty_args,
+                    None,
+                )
+                .unwrap();
+
+            let globals = PyDict::new(py);
+            let code = CString::new(
+                "class MyDomain:\n    name = 'mydomain'\n",
+            )
+            .unwrap();
+            py.run(&code, Some(&globals), None).unwrap();
+            let domain_cls = globals.get_item("MyDomain").unwrap().unwrap();
+            let domain_instance = domain_cls.call0().unwrap();
+            facade
+                .add_domain(domain_instance, &empty_args, None)
+                .unwrap();
+            assert!(facade.registry.borrow().has_domain("mydomain"));
+
+            facade.add_html_theme("mytheme".to_string(), "/tmp/theme".to_string());
+
+            let builder_globals = PyDict::new(py);
+            let builder_code = CString::new(
+                "class MyBuilder:\n    name = 'mybuilder'\n",
+            )
+            .unwrap();
+            py.run(&builder_code, Some(&builder_globals), None)
+                .unwrap();
+            let builder_cls = builder_globals.get_item("MyBuilder").unwrap().unwrap();
+            let builder_instance = builder_cls.call0().unwrap();
+            facade
+                .add_builder(builder_instance, &empty_args, None)
+                .unwrap();
+            assert!(facade.registry.borrow().has_builder("mybuilder"));
+        });
+    }
+
+    #[test]
+    fn add_node_registers_pair_single_and_skips_invalid_and_override() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            let empty_args = PyTuple::empty(py);
+            let globals = PyDict::new(py);
+            let code = CString::new(
+                "class MyNode:\n    pass\ndef visit(attrs):\n    return ''\ndef depart(attrs):\n    return ''\n",
+            )
+            .unwrap();
+            py.run(&code, Some(&globals), None).unwrap();
+            let node_cls = globals.get_item("MyNode").unwrap().unwrap();
+            let visit = globals.get_item("visit").unwrap().unwrap();
+            let depart = globals.get_item("depart").unwrap().unwrap();
+
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("html", PyTuple::new(py, [&visit, &depart]).unwrap())
+                .unwrap();
+            kwargs.set_item("text", &visit).unwrap();
+            kwargs
+                .set_item("bogus", PyTuple::new(py, [&visit, &depart, &visit]).unwrap())
+                .unwrap();
+            kwargs.set_item("override", true).unwrap();
+            kwargs.set_item("nothing", py.None()).unwrap();
+
+            facade
+                .add_node(node_cls.clone(), &empty_args, Some(kwargs))
+                .unwrap();
+            let registry = facade.registry.borrow();
+            let formats = registry.get_node_formats("MyNode").unwrap();
+            assert!(formats.contains(&"html".to_string()));
+            assert!(formats.contains(&"text".to_string()));
+            assert!(!formats.contains(&"bogus".to_string()));
+            assert!(!formats.contains(&"override".to_string()));
+            assert!(!formats.contains(&"nothing".to_string()));
+            drop(registry);
+
+            // No kwargs at all -> early return, no panic.
+            facade.add_node(node_cls, &empty_args, None).unwrap();
+        });
+    }
+
+    #[test]
+    fn add_post_transform_records_class_name() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            let globals = PyDict::new(py);
+            let code = CString::new("class MyTransform:\n    pass\n").unwrap();
+            py.run(&code, Some(&globals), None).unwrap();
+            let cls = globals.get_item("MyTransform").unwrap().unwrap();
+            facade.add_post_transform(cls).unwrap();
+        });
+    }
+
+    #[test]
+    fn add_css_and_js_file_variants() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            facade.add_css_file("style.css".to_string(), 500, None);
+            assert_eq!(facade.assets.borrow().css_files.len(), 1);
+
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("integrity", "abc").unwrap();
+            facade.add_css_file("other.css".to_string(), 200, Some(kwargs));
+            assert_eq!(facade.assets.borrow().css_files.len(), 2);
+
+            // filename = None -> not recorded.
+            facade.add_js_file(None, 500, None, None);
+            assert!(facade.assets.borrow().js_files.is_empty());
+
+            facade.add_js_file(
+                Some("script.js".to_string()),
+                500,
+                Some("async".to_string()),
+                None,
+            );
+            assert_eq!(facade.assets.borrow().js_files.len(), 1);
+        });
+    }
+
+    #[test]
+    fn autodocumenter_setup_extension_and_require_sphinx_are_noops() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            let empty_args = PyTuple::empty(py);
+            facade.add_autodocumenter(&empty_args, None);
+            facade.setup_extension(&empty_args, None);
+            facade.require_sphinx(&py.None().into_bound(py));
+        });
+    }
+
+    #[test]
+    fn connect_and_disconnect_dispatch_and_remove_listener() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            let globals = PyDict::new(py);
+            let code = CString::new(
+                "APP_CALLS = []\ndef handler(app, *args):\n    APP_CALLS.append(1)\n",
+            )
+            .unwrap();
+            py.run(&code, Some(&globals), None).unwrap();
+            let handler = globals.get_item("handler").unwrap().unwrap().unbind();
+
+            let id = facade.connect("doctree-resolved", handler, 500).unwrap();
+            facade
+                .events
+                .borrow_mut()
+                .emit("doctree-resolved", &[EventArg::Str("index".to_string())])
+                .unwrap();
+            assert_eq!(
+                globals
+                    .get_item("APP_CALLS")
+                    .unwrap()
+                    .unwrap()
+                    .extract::<Vec<i64>>()
+                    .unwrap()
+                    .len(),
+                1
+            );
+
+            facade.disconnect(id).unwrap();
+            facade
+                .events
+                .borrow_mut()
+                .emit("doctree-resolved", &[EventArg::Str("index".to_string())])
+                .unwrap();
+            assert_eq!(
+                globals
+                    .get_item("APP_CALLS")
+                    .unwrap()
+                    .unwrap()
+                    .extract::<Vec<i64>>()
+                    .unwrap()
+                    .len(),
+                1
+            );
+        });
+    }
+
+    #[test]
+    fn connect_config_inited_passes_second_config_argument() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            let globals = PyDict::new(py);
+            let code = CString::new(
+                "SEEN = []\ndef handler(app, config):\n    SEEN.append(config.__class__.__name__)\n",
+            )
+            .unwrap();
+            py.run(&code, Some(&globals), None).unwrap();
+            let handler = globals.get_item("handler").unwrap().unwrap().unbind();
+            facade.connect("config-inited", handler, 500).unwrap();
+            facade
+                .events
+                .borrow_mut()
+                .emit("config-inited", &[])
+                .unwrap();
+            let seen = globals
+                .get_item("SEEN")
+                .unwrap()
+                .unwrap()
+                .extract::<Vec<String>>()
+                .unwrap();
+            assert_eq!(seen, vec!["_ConfigFacade".to_string()]);
+        });
+    }
+
+    #[test]
+    fn connect_html_page_context_expands_and_writes_back_context() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            let globals = PyDict::new(py);
+            let code = CString::new(
+                "def handler(app, pagename, templatename, context, doctree):\n    context['injected'] = 'yes'\n",
+            )
+            .unwrap();
+            py.run(&code, Some(&globals), None).unwrap();
+            let handler = globals.get_item("handler").unwrap().unwrap().unbind();
+            facade
+                .connect("html-page-context", handler, 500)
+                .unwrap();
+
+            let context = Rc::new(RefCell::new(std::collections::BTreeMap::new()));
+            facade
+                .events
+                .borrow_mut()
+                .emit(
+                    "html-page-context",
+                    &[EventArg::HtmlPageContext {
+                        pagename: "index".to_string(),
+                        templatename: "page.html".to_string(),
+                        context: context.clone(),
+                        doctree: None,
+                    }],
+                )
+                .unwrap();
+            assert_eq!(
+                context.borrow().get("injected"),
+                Some(&serde_json::Value::String("yes".to_string()))
+            );
+        });
+    }
+
+    #[test]
+    fn connect_wraps_callback_exception_as_event_error() {
+        Python::attach(|py| {
+            let facade = make_facade();
+            let handler = py_def(py, "boom_handler", "raise ValueError('boom')");
+            facade.connect("build-finished", handler, 500).unwrap();
+            let result = facade.events.borrow_mut().emit("build-finished", &[]);
+            assert!(result.is_err());
+        });
+    }
+
+    #[test]
+    fn env_facade_getters_and_setters_cover_all_fields() {
+        Python::attach(|py| {
+            let env = make_env();
+            {
+                let mut e = env.borrow_mut();
+                e.project
+                    .docname_to_path
+                    .insert("index".to_string(), "index.rst".to_string());
+                e.all_docs.insert("index".to_string(), 100);
+                e.titles.insert("index".to_string(), "Title".to_string());
+                e.longtitles
+                    .insert("index".to_string(), "Long Title".to_string());
+                e.metadata.insert(
+                    "index".to_string(),
+                    HashMap::from([("author".to_string(), "me".to_string())]),
+                );
+                e.domaindata.insert(
+                    "std".to_string(),
+                    HashMap::from([("k".to_string(), "v".to_string())]),
+                );
+                e.dependencies
+                    .insert("index".to_string(), HashSet::from(["dep.txt".to_string()]));
+            }
+            let extra: SharedEnvExtra = Rc::new(RefCell::new(HashMap::new()));
+            let facade = PyEnvFacade::new(env.clone(), extra);
+
+            assert!(facade
+                .found_docs(py)
+                .unwrap()
+                .contains(py.None())
+                .is_ok());
+            assert_eq!(facade.all_docs(py).unwrap().len(), 1);
+            assert_eq!(facade.titles(py).unwrap().len(), 1);
+            assert_eq!(facade.longtitles(py).unwrap().len(), 1);
+            assert!(facade.srcdir(py).is_ok());
+            assert!(facade.doctreedir(py).is_ok());
+
+            // doc2path: present in docname_to_path.
+            let path = facade.doc2path(py, "index", true).unwrap();
+            assert!(path
+                .bind(py)
+                .str()
+                .unwrap()
+                .to_string()
+                .ends_with("index.rst"));
+
+            // doc2path: fallback path (docname not registered).
+            let fallback = facade.doc2path(py, "missing", false).unwrap();
+            assert!(fallback.bind(py).str().unwrap().to_string().ends_with(".rst"));
+
+            assert_eq!(
+                facade
+                    .metadata(py, "index")
+                    .unwrap()
+                    .get_item("author")
+                    .unwrap()
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "me"
+            );
+            assert!(facade.metadata(py, "missing").unwrap().is_empty());
+
+            assert_eq!(
+                facade
+                    .get_domaindata(py, "std")
+                    .unwrap()
+                    .get_item("k")
+                    .unwrap()
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "v"
+            );
+            assert!(facade.get_domaindata(py, "missing").unwrap().is_empty());
+
+            assert!(facade.get_temp_data("missing").unwrap().is_none());
+            facade
+                .set_temp_data(py, "key".to_string(), "value".into_pyobject(py).unwrap().into_any().unbind())
+                .unwrap();
+            assert_eq!(facade.get_temp_data("key").unwrap().unwrap(), "value");
+
+            assert!(facade.get_ref_context("missing").unwrap().is_none());
+            facade
+                .set_ref_context(py, "mod".to_string(), "mymod".into_pyobject(py).unwrap().into_any().unbind())
+                .unwrap();
+            assert_eq!(facade.get_ref_context("mod").unwrap().unwrap(), "mymod");
+
+            assert_eq!(facade.dependencies("index").unwrap(), vec!["dep.txt".to_string()]);
+            facade.note_dependency("index", "extra.txt").unwrap();
+            assert_eq!(
+                facade.dependencies("index").unwrap(),
+                vec!["dep.txt".to_string(), "extra.txt".to_string()]
+            );
+
+            // __getattr__/__setattr__ fallback to `extra`.
+            assert!(facade.__getattr__(py, "custom_attr").is_err());
+            facade
+                .__setattr__("custom_attr".to_string(), 1i64.into_pyobject(py).unwrap().into_any().unbind());
+            assert_eq!(
+                facade
+                    .__getattr__(py, "custom_attr")
+                    .unwrap()
+                    .extract::<i64>(py)
+                    .unwrap(),
+                1
+            );
+        });
+    }
+
+    #[test]
+    fn borrow_env_mut_or_err_surfaces_conflicting_borrow_as_python_error() {
+        Python::attach(|py| {
+            let env = make_env();
+            let extra: SharedEnvExtra = Rc::new(RefCell::new(HashMap::new()));
+            let facade = PyEnvFacade::new(env.clone(), extra);
+            let _held = env.borrow(); // held for the whole call below
+            let result = facade.set_temp_data(
+                py,
+                "key".to_string(),
+                "value".into_pyobject(py).unwrap().into_any().unbind(),
+            );
+            assert!(result.is_err());
+        });
+    }
+}

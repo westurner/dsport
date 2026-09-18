@@ -13,6 +13,11 @@ Measured on 2026-09-18:
 - Library-only LLVM branch coverage: 63.25% branches, 76.35% lines after the
   utility, console, assets, EventManager, warning-parity, make-mode, parser,
   configuration, environment, extension, Project, and docindex tranches.
+
+Updated 2026-09-19 after the `app_facade.rs`/`application.rs`/`config.rs`/
+`environment.rs` tranches described in the branch map below: library-only
+branch coverage is 68.19% (788/2477 missed), with 906 lib tests passing
+(`cargo test -p sphinxdocrs --lib`).
 - The last completed all-target LLVM report measured 68.13% branches and
   86.11% lines; the all-target report is expensive and includes integration
   binaries, so library and all-target measurements must both remain visible.
@@ -321,8 +326,8 @@ execution order. `missed/total` is authoritative; percentages are rounded.
 
 | Module | Missed/total | Branch % | Upstream coverage source |
 | --- | ---: | ---: | --- |
-| `environment.rs` | 165/278 | 41% | `test_environment/test_environment.py`, `test_environment_toctree.py`, `test_environment_record_dependencies.py` |
-| `config.rs` | 103/172 | 40% | `test_config/test_config.py`, `test_config/test_copyright.py` |
+| `environment.rs` | 107/278 | 62% | `test_environment/test_environment.py`, `test_environment_toctree.py`, `test_environment_record_dependencies.py` (updated 2026-09-19: added a `yaml_and_scan_helper_tests` module covering `yaml_toc_entries`/`collect_yaml_toc_entries`/`yaml_docname`/`yaml_toc_root_and_children`/`yaml_option_lines`/`dedent_yaml`/`expand_yaml_toctree_directives`/`sanitize_docname`/`strip_opaque_literal_blocks`/`scan_toctree_entries(_with_titles)`/`scan_include_entries`/`mtime_micros`; remaining misses are concentrated in `read_all_impl`/`resolve_xref_nodes`/`resolve_toctree_nodes`'s larger PyO3-adjacent branches) |
+| `config.rs` | 88/198 | 56% | `test_config/test_config.py`, `test_config/test_copyright.py` (updated 2026-09-19: added a `raw_config_from_conf_py_tests` module covering `raw_config_from_conf_py`'s per-key conversions, `intersphinx_mapping`/`source_suffix`/`needs_extensions` shapes, the generic fallback pass (including named-tuple-shaped objects and module/callable skipping), `conf_py_setup`, and `RebuildKind::from_str`; remaining misses are concentrated in `SphinxConfig`'s larger accessor/typed-override branches) |
 | `builders/html.rs` | 53/126 | 58% | `test_builders/test_build_html*.py`, `test_build_html_assets.py`, `test_build_html_toctree.py`, `test_build_warnings.py` |
 | `builders/json.rs` | 51/84 | 39% | `test_builders/test_build.py`, JSON parity fixtures |
 | `builders/linkcheck.rs` | 50/62 | 19% | `test_builders/test_build_linkcheck.py`, HTTP/logging tests |

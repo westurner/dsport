@@ -326,16 +326,16 @@ execution order. `missed/total` is authoritative; percentages are rounded.
 | `builders/html.rs` | 53/126 | 58% | `test_builders/test_build_html*.py`, `test_build_html_assets.py`, `test_build_html_toctree.py`, `test_build_warnings.py` |
 | `builders/json.rs` | 51/84 | 39% | `test_builders/test_build.py`, JSON parity fixtures |
 | `builders/linkcheck.rs` | 50/62 | 19% | `test_builders/test_build_linkcheck.py`, HTTP/logging tests |
-| `app_facade.rs` | 45/46 | 2% | `test_application.py`, `test_events.py`, extension tests |
+| `app_facade.rs` | 7/48 | 85% | `test_application.py`, `test_events.py`, extension tests (updated 2026-09-19: added ~25 native unit tests covering config/env facades, event dispatch/connect, node/directive/role/domain/theme/builder registration, and error conversion; remaining misses are defensive `map_err` arms on effectively-infallible PyO3 conversions and the `doctree: Some(_)` arm of `HtmlPageContext`) |
 | `theme_render.rs` | 42/138 | 70% | `test_theming/*`, `test_build_html_5_output.py`, parity fixtures |
 | `domains/scan.rs` | 40/148 | 73% | `test_domains/*`, `test_environment_toctree.py` |
 | `autodoc.rs` | 34/122 | 72% | `test_ext_autodoc/*.py` |
-| `application.rs` | 32/52 | 38% | `test_application.py`, `test_extension.py` |
+| `application.rs` | 32/52 | 38% | `test_application.py`, `test_extension.py` (checked 2026-09-19: added `AppError` Display/From and `SphinxApp` Debug/outdir-is-a-file tests, which raised line/region coverage but did not touch the still-missing branches, which are concentrated in `load_extension`'s Rust-equivalent/version-guard/Python-fallback logic (~396-611) and `sync_registered_themes` (~684-840, 1061-1062)) |
 | `http_client.rs` | 18/24 | 25% | linkcheck/intersphinx HTTP tests |
 | `make_mode.rs` | 16/39 | 59% | `test_command_line.py`, make-mode tests |
 | `builders/latex.rs` | 16/38 | 58% | `test_builders/test_build_latex.py` |
 | `util_strypes.rs` | 16/76 | 79% | `test_util/test_util_rst.py`, writer tests |
-| `extensions/docindex.rs` | 12/12 | 0% | extension/inventory tests |
+| `extensions/docindex.rs` | 1/12 | 92% | extension/inventory tests (this row was stale: the file already has 5 tests covering setup, builder/feature skips, artifact path resolution, artifact/HDT toggles, and both HTML-family builders; remaining branch is the external indexer error path) |
 | `search.rs` | 12/52 | 77% | `test_search.py`, HTML toctree tests |
 | `builders/manpage.rs` | 11/12 | 8% | `test_builders/test_build_manpage.py` |
 | `locale.rs` | 11/62 | 82% | `test_intl/test_locale.py`, `test_intl/test_intl.py` |

@@ -378,6 +378,15 @@ mod tests {
         );
     }
 
+    #[test]
+    fn clean_non_directory_is_error() {
+        let tmp = TempDir::new().unwrap();
+        let build = tmp.path().join("build");
+        std::fs::write(&build, b"not a directory").unwrap();
+        let m = MakeMode::new(tmp.path().join("src"), &build, vec![]);
+        assert_eq!(m.build_clean(), 1);
+    }
+
     // ── run_generic_build ─────────────────────────────────────────────────
 
     #[test]
@@ -400,6 +409,69 @@ mod tests {
 
         let m = MakeMode::new(&src, &build, vec![]);
         m.run_generic_build("html", None, &mock);
+    }
+
+    #[test]
+    fn run_generic_build_appends_paper_override() {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = LOCK.lock().unwrap();
+        unsafe { std::env::set_var("PAPER", "a4") };
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        let build = tmp.path().join("build");
+        std::fs::create_dir_all(&src).unwrap();
+
+        let mut mock = MockRunner::new();
+        mock.expect_run()
+            .withf(|_, args, _| args.contains(&"latex_elements.papersize=a4paper".to_owned()))
+            .returning(|_, _, _| Ok(0));
+        let m = MakeMode::new(&src, &build, vec![]);
+        assert_eq!(m.run_generic_build("latex", None, &mock), 0);
+        unsafe { std::env::remove_var("PAPER") };
+    }
+
+    #[test]
+    fn run_generic_build_runner_error_returns_one() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut mock = MockRunner::new();
+        mock.expect_run()
+            .returning(|_, _, _| Err(std::io::Error::other("runner failed")));
+        let m = make_mode_in(&tmp);
+        assert_eq!(m.run_generic_build("html", None, &mock), 1);
+    }
+
+    #[test]
+    fn dispatch_latexpdf_runs_build_then_make() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut mock = MockRunner::new();
+        mock.expect_run().times(2).returning(|program, _, _| {
+            if program == "sphinx-build" {
+                Ok(0)
+            } else {
+                Ok(0)
+            }
+        });
+        assert_eq!(make_mode_in(&tmp).dispatch("latexpdf", &mock), 0);
+    }
+
+    #[test]
+    fn dispatch_latexpdf_propagates_make_failure() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut mock = MockRunner::new();
+        mock.expect_run().times(2).returning(|program, _, _| {
+            if program == "sphinx-build" {
+                Ok(0)
+            } else {
+                Err(std::io::Error::other("make failed"))
+            }
+        });
+        assert_eq!(make_mode_in(&tmp).dispatch("latexpdf", &mock), 1);
     }
 
     // ── run_make_mode ─────────────────────────────────────────────────────

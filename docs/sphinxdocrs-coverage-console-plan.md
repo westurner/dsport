@@ -8,16 +8,17 @@ by `src/sphinxdocrs/tests/`.
 
 Measured on 2026-09-18:
 
-- `cargo test -p sphinxdocrs --all-targets`: 804 tests passed in the latest
+- `cargo test -p sphinxdocrs --all-targets`: 809 tests passed in the latest
   clean run.
-- Library-only LLVM branch coverage: 60.96% branches, 74.55% lines after the
-  utility, console, assets, EventManager, and warning-parity tranches.
+- Library-only LLVM branch coverage: 61.18% branches, 74.74% lines after the
+  utility, console, assets, EventManager, warning-parity, and make-mode
+  tranches.
 - The last completed all-target LLVM report measured 68.13% branches and
   86.11% lines; the all-target report is expensive and includes integration
   binaries, so library and all-target measurements must both remain visible.
 - Recent focused results: `toctree` 100% branches, `events` 100%,
   `util_display` 100%, `util_uri` 97%+, `util_matching` 83%+,
-  `util_console` 75%, and `assets` 50%.
+  `util_console` 75%, `assets` 50%, and `make_mode` 59%.
 - Existing external HTML parity remains a separate contract: 10/14 cases pass,
   with five documented theme/tree residuals.
 
@@ -217,6 +218,11 @@ success formatter between direct and make mode, and formats orphan warnings as
 removed as native-only noise. Remaining C2 work is status-iterator wiring into
 real build progress, warning type/location coverage beyond orphan warnings,
 and subprocess assertions for `-q`, `-Q`, `-w`, and `-W`.
+
+Make-mode coverage now exercises clean safety errors, `PAPER` injection,
+runner I/O failures, and the `latexpdf` build/make dispatch using injected
+runners. Remaining C2 work is the direct parser/error matrix and subprocess
+coverage for the quiet/warning options.
 
 ### P3: CLI and make-mode parity
 

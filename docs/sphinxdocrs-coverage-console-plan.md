@@ -8,18 +8,18 @@ by `src/sphinxdocrs/tests/`.
 
 Measured on 2026-09-18:
 
-- `cargo test -p sphinxdocrs --all-targets`: 818 tests passed in the latest
+- `cargo test -p sphinxdocrs --all-targets`: 821 tests passed in the latest
   clean run.
-- Library-only LLVM branch coverage: 61.94% branches, 75.23% lines after the
+- Library-only LLVM branch coverage: 62.35% branches, 75.57% lines after the
   utility, console, assets, EventManager, warning-parity, make-mode, parser,
-  configuration, and environment tranches.
+  configuration, environment, and extension tranches.
 - The last completed all-target LLVM report measured 68.13% branches and
   86.11% lines; the all-target report is expensive and includes integration
   binaries, so library and all-target measurements must both remain visible.
 - Recent focused results: `toctree` 100% branches, `events` 100%,
   `util_display` 100%, `util_uri` 97%+, `util_matching` 83%+,
   `util_console` 75%, `assets` 50%, `make_mode` 59%, `build/args.rs` 91.67%,
-  `config.rs` 40%, and `environment.rs` 40.65%.
+  `config.rs` 40%, `environment.rs` 40.65%, and `extension.rs` 83.33%.
 - Existing external HTML parity remains a separate contract: 10/14 cases pass,
   with five documented theme/tree residuals.
 
@@ -236,6 +236,11 @@ unknown parser rejection, doctree path traversal rejection, and corrupt
 doctree detection. The remaining environment gap is concentrated in domain
 resolution, notebook/YAML registration, incremental persistence, and eventful
 read/write lifecycle branches.
+
+Extension coverage now exercises metadata defaults and mutation, missing
+required extensions, valid and too-old versions, unknown-version failures, and
+the no-op `needs_extensions = None` path. The remaining C3 gap is concentrated
+in application/facade/config lifecycle branches and domain/event integration.
 
 ### P3: CLI and make-mode parity
 

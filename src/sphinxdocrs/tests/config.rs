@@ -116,6 +116,55 @@ fn syntax_error_in_conf_is_config_error() {
     assert!(msg.contains("conf.py failed"), "msg: {msg}");
 }
 
+#[test]
+fn raw_config_reads_nested_and_typed_conf_values() {
+    let path = write_conf(
+        "raw_typed",
+        r#"
+extensions = ['sphinx.ext.mathjax']
+project = 'Raw project'
+html_static_path = ['_static']
+source_suffix = {'.rst': 'restructuredtext', '.md': 'myst'}
+needs_extensions = {'sphinx.ext.mathjax': '1.0'}
+intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
+html_theme_options = {'toc_title': 'Contents', 'nested': {'enabled': True}}
+custom_int = 4
+custom_float = 1.5
+custom_bool = True
+custom_none = None
+custom_tuple = ('a', 2)
+"#,
+    );
+    let raw = raw_config_from_conf_py(&path).unwrap();
+    assert!(matches!(raw.get("extensions"), Some(ConfigVal::List(_))));
+    assert_eq!(
+        raw.get("project"),
+        Some(&ConfigVal::Str("Raw project".into()))
+    );
+    assert!(matches!(
+        raw.get("html_static_path"),
+        Some(ConfigVal::List(_))
+    ));
+    assert!(matches!(raw.get("source_suffix"), Some(ConfigVal::Map(_))));
+    assert!(matches!(
+        raw.get("needs_extensions"),
+        Some(ConfigVal::Map(_))
+    ));
+    assert!(matches!(
+        raw.get("intersphinx_mapping"),
+        Some(ConfigVal::Map(_))
+    ));
+    assert!(matches!(
+        raw.get("html_theme_options"),
+        Some(ConfigVal::Map(_))
+    ));
+    assert_eq!(raw.get("custom_int"), Some(&ConfigVal::Int(4)));
+    assert_eq!(raw.get("custom_float"), Some(&ConfigVal::Float(1.5)));
+    assert_eq!(raw.get("custom_bool"), Some(&ConfigVal::Bool(true)));
+    assert_eq!(raw.get("custom_none"), Some(&ConfigVal::Null));
+    assert!(matches!(raw.get("custom_tuple"), Some(ConfigVal::List(_))));
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // SphinxConfig — full Config port tests
 // Mirrors sphinx/tests/test_config/test_config.py

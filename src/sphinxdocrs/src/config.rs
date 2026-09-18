@@ -1961,6 +1961,7 @@ impl SphinxConfig {
 #[cfg(test)]
 mod sphinx_config_tests {
     use super::*;
+    use std::ffi::CString;
 
     #[test]
     fn defaults_project() {
@@ -2200,6 +2201,46 @@ mod sphinx_config_tests {
         assert_eq!(ConfigVal::Null.as_int(), None);
         assert!(ConfigVal::Null.as_list().is_none());
         assert!(ConfigVal::Null.as_map().is_none());
+    }
+
+    #[test]
+    fn python_config_value_conversion_covers_supported_shapes() {
+        Python::attach(|py| -> PyResult<()> {
+            let named = py.eval(
+                &CString::new(
+                    "type('Link', (), {'title': 'Docs', 'url': 'https://example.test'})()",
+                )
+                .unwrap(),
+                None,
+                None,
+            )?;
+            assert!(matches!(py_to_configval(&named), Some(ConfigVal::Map(_))));
+
+            for (source, expected) in [
+                ("None", ConfigVal::Null),
+                ("True", ConfigVal::Bool(true)),
+                ("7", ConfigVal::Int(7)),
+                ("1.5", ConfigVal::Float(1.5)),
+                ("'text'", ConfigVal::Str("text".into())),
+            ] {
+                let value = py.eval(&CString::new(source).unwrap(), None, None)?;
+                assert_eq!(py_to_configval(&value), Some(expected));
+            }
+
+            let list = py.eval(&CString::new("[1, 'two']").unwrap(), None, None)?;
+            assert!(matches!(py_to_configval(&list), Some(ConfigVal::List(_))));
+            let tuple = py.eval(&CString::new("(1, 'two')").unwrap(), None, None)?;
+            assert!(matches!(py_to_configval(&tuple), Some(ConfigVal::List(_))));
+            let dict = py.eval(&CString::new("{'key': 1}").unwrap(), None, None)?;
+            assert!(matches!(py_to_configval(&dict), Some(ConfigVal::Map(_))));
+
+            let invalid = py.eval(&CString::new("[object()]").unwrap(), None, None)?;
+            assert!(py_to_configval(&invalid).is_none());
+            let invalid_key = py.eval(&CString::new("{1: 'value'}").unwrap(), None, None)?;
+            assert!(py_to_configval(&invalid_key).is_none());
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]

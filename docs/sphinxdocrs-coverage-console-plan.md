@@ -8,19 +8,19 @@ by `src/sphinxdocrs/tests/`.
 
 Measured on 2026-09-18:
 
-- `cargo test -p sphinxdocrs --all-targets`: 824 tests passed in the latest
+- `cargo test -p sphinxdocrs --all-targets`: 829 tests passed in the latest
   clean run.
-- Library-only LLVM branch coverage: 62.80% branches, 76.07% lines after the
+- Library-only LLVM branch coverage: 63.25% branches, 76.35% lines after the
   utility, console, assets, EventManager, warning-parity, make-mode, parser,
-  configuration, environment, extension, and Project tranches.
+  configuration, environment, extension, Project, and docindex tranches.
 - The last completed all-target LLVM report measured 68.13% branches and
   86.11% lines; the all-target report is expensive and includes integration
   binaries, so library and all-target measurements must both remain visible.
 - Recent focused results: `toctree` 100% branches, `events` 100%,
   `util_display` 100%, `util_uri` 97%+, `util_matching` 83%+,
   `util_console` 75%, `assets` 50%, `make_mode` 59%, `build/args.rs` 91.67%,
-  `config.rs` 40%, `environment.rs` 40.65%, `extension.rs` 83.33%, and
-  `project.rs` 78.57%.
+  `config.rs` 40%, `environment.rs` 40.65%, `extension.rs` 83.33%,
+  `project.rs` 78.57%, and `extensions/docindex.rs` 91.67%.
 - Existing external HTML parity remains a separate contract: 10/14 cases pass,
   with five documented theme/tree residuals.
 
@@ -247,6 +247,11 @@ Project coverage now exercises PyO3 constructor iterables, getters, discovery
 include/exclude filters, pathlike and absolute path conversion, recorded paths,
 and fallback `doc2path` behavior. Remaining C3 gaps are concentrated in the
 application/facade lifecycle and larger environment/domain integrations.
+
+Docindex coverage now exercises setup, builder/feature skips, artifact path
+resolution, artifact/HDT toggles, and both HTML-family builders. Its remaining
+branch is the external indexer error path and belongs in the later integration
+error-injection sweep.
 
 ### P3: CLI and make-mode parity
 

@@ -71,3 +71,79 @@ pub fn build_finished(app: &SphinxApp) -> Result<(), AppError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ConfigVal;
+    use std::collections::HashMap;
+
+    fn app(builder: &str) -> (tempfile::TempDir, tempfile::TempDir, SphinxApp) {
+        let src = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let doctrees = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("index.rst"), "Index\n=====\n").unwrap();
+        let app = SphinxApp::new(
+            src.path(),
+            out.path(),
+            doctrees.path(),
+            builder,
+            HashMap::new(),
+        )
+        .unwrap();
+        (src, out, app)
+    }
+
+    #[test]
+    fn setup_is_a_successful_noop() {
+        let (_src, _out, mut app) = app("html");
+        setup(&mut app).unwrap();
+    }
+
+    #[test]
+    fn build_finished_skips_non_html_and_disabled_index() {
+        let (_src, _out, latex_app) = app("latex");
+        build_finished(&latex_app).unwrap();
+
+        let (_src, _out, mut app) = app("html");
+        app.config.set("docindex_enabled", ConfigVal::Bool(false));
+        build_finished(&app).unwrap();
+    }
+
+    #[test]
+    fn build_finished_writes_relative_artifact_and_hdt() {
+        let (_src, out, mut app) = app("html");
+        app.config.set(
+            "docindex_artifact_path",
+            ConfigVal::Str("metadata/index.json".into()),
+        );
+        build_finished(&app).unwrap();
+        assert!(out.path().join("metadata/index.json").is_file());
+        assert!(out.path().join("_static/docindex.hdt").is_file());
+    }
+
+    #[test]
+    fn build_finished_writes_absolute_artifact_without_hdt() {
+        let (_src, out, mut app) = app("singlehtml");
+        let artifact = out.path().join("absolute.json");
+        app.config.set(
+            "docindex_artifact_path",
+            ConfigVal::Str(artifact.to_string_lossy().into_owned()),
+        );
+        app.config
+            .set("docindex_rdf_hdt_enabled", ConfigVal::Bool(false));
+        build_finished(&app).unwrap();
+        assert!(artifact.is_file());
+        assert!(!out.path().join("_static/docindex.hdt").exists());
+    }
+
+    #[test]
+    fn build_finished_can_disable_artifact_but_keep_hdt() {
+        let (_src, out, mut app) = app("html");
+        app.config
+            .set("docindex_artifact_enabled", ConfigVal::Bool(false));
+        build_finished(&app).unwrap();
+        assert!(!out.path().join("_static/docindex.json").exists());
+        assert!(out.path().join("_static/docindex.hdt").is_file());
+    }
+}

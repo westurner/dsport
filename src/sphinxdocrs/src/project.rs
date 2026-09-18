@@ -187,3 +187,92 @@ fn path_to_posix(p: &Path) -> String {
     // every platform.
     p.to_string_lossy().replace('\\', "/")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pyo3::types::{PyList, PyString};
+
+    #[test]
+    fn project_constructor_getters_and_fallback_doc2path() {
+        Python::attach(|py| -> PyResult<()> {
+            let suffixes = PyList::new(py, [".rst", ".md"])?;
+            let project = Project::new(
+                "/tmp/project".into_pyobject(py)?.unbind().into(),
+                suffixes.into_any(),
+            )?;
+            assert_eq!(project.srcdir(), "/tmp/project");
+            assert_eq!(project.source_suffix(), vec![".rst", ".md"]);
+            assert_eq!(project.doc2path("guide", false)?, "guide.rst");
+            assert_eq!(project.doc2path("guide", true)?, "/tmp/project/guide.rst");
+            assert!(project.docnames(py)?.is_empty());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn project_discover_and_path_conversion_cover_recorded_files() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join("guide")).unwrap();
+        std::fs::create_dir_all(temp.path().join("_sources")).unwrap();
+        std::fs::write(temp.path().join("index.rst"), "").unwrap();
+        std::fs::write(temp.path().join("guide/intro.md"), "").unwrap();
+        std::fs::write(temp.path().join("_sources/ignored.rst"), "").unwrap();
+
+        Python::attach(|py| -> PyResult<()> {
+            let suffixes = PyList::new(py, [".rst", ".md"])?;
+            let project = Project::new(
+                temp.path()
+                    .to_string_lossy()
+                    .into_pyobject(py)?
+                    .unbind()
+                    .into(),
+                suffixes.into_any(),
+            )?;
+            let docs = project.discover(py, Some(vec!["_sources/**".into()]), None)?;
+            assert!(docs.contains("index")?);
+            assert!(docs.contains("guide/intro")?);
+            assert!(!docs.contains("_sources/ignored")?);
+
+            let absolute = temp.path().join("guide/intro.md");
+            assert_eq!(
+                project.path2doc(absolute.into_pyobject(py)?.unbind(), py)?,
+                Some("guide/intro".into())
+            );
+            assert_eq!(
+                project.path2doc(PyString::new(py, "missing.rst").unbind().into(), py)?,
+                Some("missing".into())
+            );
+            assert_eq!(project.doc2path("guide/intro", false)?, "guide/intro.md");
+            assert!(project.doc2path("missing", true)?.ends_with("missing.rst"));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn project_discover_honors_include_and_exclude_patterns() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join("guide")).unwrap();
+        std::fs::write(temp.path().join("index.rst"), "").unwrap();
+        std::fs::write(temp.path().join("guide/intro.rst"), "").unwrap();
+
+        Python::attach(|py| -> PyResult<()> {
+            let suffixes = PyList::new(py, [".rst"])?;
+            let project = Project::new(
+                temp.path()
+                    .to_string_lossy()
+                    .into_pyobject(py)?
+                    .unbind()
+                    .into(),
+                suffixes.into_any(),
+            )?;
+            let docs = project.discover(py, Some(vec!["guide/**".into()]), None)?;
+            assert!(docs.contains("index")?);
+            assert!(!docs.contains("guide/intro")?);
+            Ok(())
+        })
+        .unwrap();
+    }
+}

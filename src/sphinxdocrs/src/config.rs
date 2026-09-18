@@ -2162,9 +2162,83 @@ mod sphinx_config_tests {
     }
 
     #[test]
+    fn config_val_coerce_bool_and_list_edges() {
+        assert_eq!(
+            ConfigVal::coerce_override(&ConfigVal::Bool(false), "0"),
+            Ok(ConfigVal::Bool(false))
+        );
+        assert_eq!(
+            ConfigVal::coerce_override(&ConfigVal::Bool(false), "1"),
+            Ok(ConfigVal::Bool(true))
+        );
+        assert!(ConfigVal::coerce_override(&ConfigVal::Bool(false), "yes").is_err());
+        assert_eq!(
+            ConfigVal::coerce_override(&ConfigVal::List(vec![]), " a, b ,, c "),
+            Ok(ConfigVal::List(vec![
+                ConfigVal::Str("a".into()),
+                ConfigVal::Str("b".into()),
+                ConfigVal::Str(String::new()),
+                ConfigVal::Str("c".into()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn config_val_accessors_and_display_cover_nested_values() {
+        let map = ConfigVal::Map(vec![("key".into(), ConfigVal::Int(1))]);
+        let list = ConfigVal::List(vec![ConfigVal::Str("x".into())]);
+        assert_eq!(ConfigVal::Str("x".into()).as_str(), Some("x"));
+        assert_eq!(ConfigVal::Bool(true).as_bool(), Some(true));
+        assert_eq!(ConfigVal::Int(7).as_int(), Some(7));
+        assert_eq!(list.as_list().unwrap().len(), 1);
+        assert_eq!(map.as_map().unwrap().len(), 1);
+        assert_eq!(ConfigVal::Float(1.5).display(), "1.5");
+        assert_eq!(list.display(), "[x]");
+        assert_eq!(map.display(), "{\"key\": 1}");
+        assert_eq!(ConfigVal::Null.as_str(), None);
+        assert_eq!(ConfigVal::Null.as_bool(), None);
+        assert_eq!(ConfigVal::Null.as_int(), None);
+        assert!(ConfigVal::Null.as_list().is_none());
+        assert!(ConfigVal::Null.as_map().is_none());
+    }
+
+    #[test]
     fn config_val_display_bool() {
         assert_eq!(ConfigVal::Bool(true).display(), "True");
         assert_eq!(ConfigVal::Bool(false).display(), "False");
+    }
+
+    #[test]
+    fn source_suffix_accepts_string_list_and_map_values() {
+        let mut raw = HashMap::new();
+        raw.insert("source_suffix".into(), ConfigVal::Str(".md".into()));
+        let cfg = SphinxConfig::new(raw, HashMap::new());
+        assert_eq!(
+            cfg.source_suffix().get(".md").map(String::as_str),
+            Some("restructuredtext")
+        );
+
+        let mut raw = HashMap::new();
+        raw.insert(
+            "source_suffix".into(),
+            ConfigVal::List(vec![ConfigVal::Str(".txt".into())]),
+        );
+        let cfg = SphinxConfig::new(raw, HashMap::new());
+        assert_eq!(
+            cfg.source_suffix().get(".txt").map(String::as_str),
+            Some("restructuredtext")
+        );
+
+        let mut raw = HashMap::new();
+        raw.insert(
+            "source_suffix".into(),
+            ConfigVal::Map(vec![(".md".into(), ConfigVal::Str("myst".into()))]),
+        );
+        let cfg = SphinxConfig::new(raw, HashMap::new());
+        assert_eq!(
+            cfg.source_suffix().get(".md").map(String::as_str),
+            Some("myst")
+        );
     }
 
     #[test]

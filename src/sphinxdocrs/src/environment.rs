@@ -2975,3 +2975,295 @@ mod tests {
         assert!(error.contains("corrupt doctree"));
     }
 }
+
+#[cfg(test)]
+mod yaml_and_scan_helper_tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_docname_rejects_empty_and_traversal_and_absolute() {
+        assert!(sanitize_docname("index").is_ok());
+        assert!(sanitize_docname("guide/intro").is_ok());
+        assert!(sanitize_docname("").is_err());
+        assert!(sanitize_docname("guide/../etc").is_err());
+        assert!(sanitize_docname("/etc/passwd").is_err());
+        assert!(sanitize_docname("guide//intro").is_err());
+    }
+
+    #[test]
+    fn mtime_micros_returns_none_for_missing_file() {
+        assert!(mtime_micros(Path::new("/no/such/file/anywhere")).is_none());
+    }
+
+    #[test]
+    fn mtime_micros_returns_some_for_existing_file() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        assert!(mtime_micros(tmp.path()).is_some());
+    }
+
+    #[test]
+    fn yaml_toc_entries_reads_root_chapters_sections_and_parts() {
+        let src = r#"
+root: intro
+chapters:
+  - guide
+  - file: reference
+    sections:
+      - reference/api
+parts:
+  - caption: Part One
+    chapters:
+      - part1/ch1
+"#;
+        let entries = yaml_toc_entries(src).unwrap();
+        let targets: Vec<&str> = entries.iter().map(|e| e.target.as_str()).collect();
+        assert!(targets.contains(&"intro"));
+        assert!(targets.contains(&"guide"));
+        assert!(targets.contains(&"reference"));
+        assert!(targets.contains(&"reference/api"));
+        assert!(targets.contains(&"part1/ch1"));
+    }
+
+    #[test]
+    fn yaml_toc_entries_requires_mapping() {
+        let err = yaml_toc_entries("- just\n- a\n- list\n").unwrap_err();
+        assert!(err.to_string().contains("must be a mapping"));
+    }
+
+    #[test]
+    fn yaml_toc_entries_rejects_invalid_yaml() {
+        let err = yaml_toc_entries("chapters: [unterminated\n").unwrap_err();
+        assert!(err.to_string().contains("invalid YAML toctree"));
+    }
+
+    #[test]
+    fn collect_yaml_toc_entries_skips_build_false_and_reads_title_and_subsections() {
+        let src = r#"
+root: index
+sections:
+  - file: skip-me
+    build: false
+  - file: keep-me
+    title: Keep Me
+    subsections:
+      - nested/page
+"#;
+        let entries = yaml_toc_entries(src).unwrap();
+        let targets: Vec<&str> = entries.iter().map(|e| e.target.as_str()).collect();
+        assert!(!targets.contains(&"skip-me"));
+        assert!(targets.contains(&"keep-me"));
+        assert!(targets.contains(&"nested/page"));
+        let keep = entries.iter().find(|e| e.target == "keep-me").unwrap();
+        assert_eq!(keep.title.as_deref(), Some("Keep Me"));
+    }
+
+    #[test]
+    fn collect_yaml_toc_entries_prefers_file_over_url() {
+        let src = "root: index\nsections:\n  - file: from-file\n    url: from-url\n";
+        let entries = yaml_toc_entries(src).unwrap();
+        assert!(entries.iter().any(|e| e.target == "from-file"));
+        assert!(!entries.iter().any(|e| e.target == "from-url"));
+    }
+
+    #[test]
+    fn collect_yaml_toc_entries_uses_url_when_file_absent() {
+        let src = "root: index\nsections:\n  - url: from-url\n";
+        let entries = yaml_toc_entries(src).unwrap();
+        assert!(entries.iter().any(|e| e.target == "from-url"));
+    }
+
+    #[test]
+    fn collect_yaml_toc_entries_ignores_mapping_without_file_or_url() {
+        let src = "root: index\nsections:\n  - title: No target here\n";
+        let entries = yaml_toc_entries(src).unwrap();
+        assert_eq!(entries.len(), 1); // just the root
+    }
+
+    #[test]
+    fn yaml_docname_strips_known_suffixes_and_dot_slash() {
+        assert_eq!(yaml_docname("./guide.rst").as_deref(), Some("guide"));
+        assert_eq!(yaml_docname("guide.md").as_deref(), Some("guide"));
+        assert_eq!(yaml_docname("guide.ipynb").as_deref(), Some("guide"));
+        assert_eq!(yaml_docname("guide.txt").as_deref(), Some("guide"));
+        assert_eq!(yaml_docname("guide").as_deref(), Some("guide"));
+    }
+
+    #[test]
+    fn yaml_docname_rejects_absolute_and_external_targets() {
+        assert_eq!(yaml_docname("/etc/passwd"), None);
+        assert_eq!(yaml_docname("https://example.org/page"), None);
+    }
+
+    #[test]
+    fn yaml_toc_root_and_children_uses_explicit_root() {
+        let src = "root: intro\nchapters:\n  - guide\n  - reference\n";
+        let (root, children) = yaml_toc_root_and_children(src, "fallback").unwrap().unwrap();
+        assert_eq!(root, "intro");
+        assert_eq!(children, vec!["guide".to_string(), "reference".to_string()]);
+    }
+
+    #[test]
+    fn yaml_toc_root_and_children_falls_back_to_default_root_without_root_key() {
+        let src = "chapters:\n  - guide\n  - reference\n";
+        let (root, children) = yaml_toc_root_and_children(src, "fallback").unwrap().unwrap();
+        assert_eq!(root, "fallback");
+        assert_eq!(children, vec!["guide".to_string(), "reference".to_string()]);
+    }
+
+    #[test]
+    fn yaml_toc_root_and_children_returns_none_for_empty_toc() {
+        assert!(yaml_toc_root_and_children("chapters: []\n", "fallback")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn yaml_toc_root_and_children_returns_none_when_root_entry_is_external() {
+        let src = "root: https://example.org\nchapters:\n  - guide\n";
+        assert!(yaml_toc_root_and_children(src, "fallback").unwrap().is_none());
+    }
+
+    #[test]
+    fn yaml_option_lines_reads_top_level_and_nested_options_block() {
+        let src = r#"
+root: index
+maxdepth: 2
+caption: My Caption
+glob: true
+hidden: false
+options:
+  numbered: true
+  titlesonly: true
+"#;
+        let lines = yaml_option_lines(src).unwrap();
+        assert!(lines.contains(&":maxdepth: 2".to_string()));
+        assert!(lines.contains(&":caption: My Caption".to_string()));
+        assert!(lines.contains(&":glob:".to_string()));
+        assert!(!lines.iter().any(|l| l.starts_with(":hidden")));
+        assert!(lines.contains(&":numbered:".to_string()));
+        assert!(lines.contains(&":titlesonly:".to_string()));
+    }
+
+    #[test]
+    fn yaml_option_lines_returns_empty_for_non_mapping() {
+        assert_eq!(yaml_option_lines("- a\n- b\n").unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn dedent_yaml_uses_minimum_indent_and_ignores_blank_lines() {
+        let lines = vec!["    root: index", "", "    chapters:", "      - guide"];
+        let out = dedent_yaml(&lines);
+        assert_eq!(out, "root: index\n\nchapters:\n  - guide");
+    }
+
+    #[test]
+    fn dedent_yaml_handles_all_blank_lines() {
+        assert_eq!(dedent_yaml(&["", "  ", ""]), "\n  \n");
+    }
+
+    #[test]
+    fn expand_yaml_toctree_directives_reads_referenced_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("_toc.yml"),
+            "root: index\nchapters:\n  - guide\n",
+        )
+        .unwrap();
+        let source = ".. toctreeyml::\n";
+        let expanded = expand_yaml_toctree_directives(source, tmp.path()).unwrap();
+        assert!(expanded.contains(".. toctree::"));
+        assert!(expanded.contains("guide"));
+    }
+
+    #[test]
+    fn expand_yaml_toctree_directives_reads_named_argument_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("custom.yml"),
+            "root: index\nchapters:\n  - guide\n",
+        )
+        .unwrap();
+        let source = ".. toctreeyaml:: custom.yml\n";
+        let expanded = expand_yaml_toctree_directives(source, tmp.path()).unwrap();
+        assert!(expanded.contains("guide"));
+    }
+
+    #[test]
+    fn expand_yaml_toctree_directives_uses_inline_body_with_titles() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let source = ".. toctreeyml::\n\n   root: index\n   chapters:\n     - title: Guide Title\n       file: guide\n";
+        let expanded = expand_yaml_toctree_directives(source, tmp.path()).unwrap();
+        assert!(expanded.contains("Guide Title <guide>"));
+    }
+
+    #[test]
+    fn expand_yaml_toctree_directives_errors_when_referenced_file_missing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let source = ".. toctreeyml:: missing.yml\n";
+        let err = expand_yaml_toctree_directives(source, tmp.path()).unwrap_err();
+        assert!(err.to_string().contains("failed to read YAML toctree"));
+    }
+
+    #[test]
+    fn expand_yaml_toctree_directives_passes_through_non_directive_lines() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let source = "Some text\n\nMore text\n";
+        let expanded = expand_yaml_toctree_directives(source, tmp.path()).unwrap();
+        assert_eq!(expanded, source);
+    }
+
+    #[test]
+    fn strip_opaque_literal_blocks_blanks_code_block_body_but_keeps_directive_line() {
+        let source = "before\n\n.. code-block:: rst\n\n   .. toctree::\n      hidden\n\nafter\n";
+        let stripped = strip_opaque_literal_blocks(source);
+        assert!(stripped.contains(".. code-block:: rst"));
+        assert!(!stripped.contains("hidden"));
+        assert!(stripped.contains("before"));
+        assert!(stripped.contains("after"));
+    }
+
+    #[test]
+    fn strip_opaque_literal_blocks_handles_plain_literal_marker() {
+        let source = "Example::\n\n   .. toctree::\n      fake-entry\n\nafter\n";
+        let stripped = strip_opaque_literal_blocks(source);
+        assert!(!stripped.contains("fake-entry"));
+        assert!(stripped.contains("after"));
+    }
+
+    #[test]
+    fn strip_opaque_literal_blocks_ignores_non_opaque_directives() {
+        let source = ".. note::\n\n   still here\n";
+        let stripped = strip_opaque_literal_blocks(source);
+        assert!(stripped.contains("still here"));
+    }
+
+    #[test]
+    fn scan_toctree_entries_with_titles_strips_suffixes_and_explicit_titles() {
+        let source = ".. toctree::\n   :maxdepth: 2\n\n   guide.rst\n   Custom Title <reference.md>\n";
+        let entries = scan_toctree_entries_with_titles(source);
+        assert_eq!(entries[0], ("guide".to_string(), None));
+        assert_eq!(
+            entries[1],
+            ("reference".to_string(), Some("Custom Title".to_string()))
+        );
+        assert_eq!(scan_toctree_entries(source), vec!["guide", "reference"]);
+    }
+
+    #[test]
+    fn scan_toctree_entries_stops_at_dedented_line() {
+        let source = ".. toctree::\n\n   guide\n\nnot-an-entry\n";
+        assert_eq!(scan_toctree_entries(source), vec!["guide"]);
+    }
+
+    #[test]
+    fn scan_include_entries_extracts_paths_and_ignores_unrelated_lines() {
+        let source = "text\n.. include:: shared/header.rst\nmore text\n   .. include::  shared/footer.rst  \n";
+        let entries = scan_include_entries(source);
+        assert_eq!(entries, vec!["shared/header.rst", "shared/footer.rst"]);
+    }
+
+    #[test]
+    fn scan_include_entries_returns_empty_when_none_present() {
+        assert!(scan_include_entries("just some text\n").is_empty());
+    }
+}

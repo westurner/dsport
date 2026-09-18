@@ -2303,3 +2303,316 @@ mod sphinx_config_tests {
         assert!(exts.contains(&"sphinx.ext.mathjax".to_string()));
     }
 }
+
+#[cfg(test)]
+mod raw_config_from_conf_py_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn write_conf(body: &str) -> (TempDir, std::path::PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("conf.py");
+        std::fs::write(&path, body).unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn reads_extensions_and_scalar_options() {
+        let (_dir, path) = write_conf(
+            r#"
+extensions = ["sphinx.ext.autodoc", "sphinx.ext.mathjax"]
+project = "My Project"
+author = "Author Name"
+copyright = "2026, Author Name"
+version = "1.0"
+release = "1.0.0"
+language = "en"
+master_doc = "index"
+root_doc = "index"
+source_encoding = "utf-8-sig"
+html_theme = "alabaster"
+html_title = "My Docs"
+html_short_title = "Docs"
+"#,
+        );
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        assert_eq!(
+            raw["extensions"],
+            ConfigVal::List(vec![
+                ConfigVal::Str("sphinx.ext.autodoc".into()),
+                ConfigVal::Str("sphinx.ext.mathjax".into()),
+            ])
+        );
+        for (key, expected) in [
+            ("project", "My Project"),
+            ("author", "Author Name"),
+            ("copyright", "2026, Author Name"),
+            ("version", "1.0"),
+            ("release", "1.0.0"),
+            ("language", "en"),
+            ("master_doc", "index"),
+            ("root_doc", "index"),
+            ("source_encoding", "utf-8-sig"),
+            ("html_theme", "alabaster"),
+            ("html_title", "My Docs"),
+            ("html_short_title", "Docs"),
+        ] {
+            assert_eq!(raw[key].as_str(), Some(expected), "key {key}");
+        }
+    }
+
+    #[test]
+    fn reads_list_of_strings_options() {
+        let (_dir, path) = write_conf(
+            r#"
+html_static_path = ["_static", "_more_static"]
+html_extra_path = ["_extra"]
+templates_path = ["_templates"]
+html_theme_path = ["_themes"]
+"#,
+        );
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        assert_eq!(
+            raw["html_static_path"],
+            ConfigVal::List(vec![
+                ConfigVal::Str("_static".into()),
+                ConfigVal::Str("_more_static".into()),
+            ])
+        );
+        assert_eq!(
+            raw["html_extra_path"],
+            ConfigVal::List(vec![ConfigVal::Str("_extra".into())])
+        );
+        assert_eq!(
+            raw["templates_path"],
+            ConfigVal::List(vec![ConfigVal::Str("_templates".into())])
+        );
+        assert_eq!(
+            raw["html_theme_path"],
+            ConfigVal::List(vec![ConfigVal::Str("_themes".into())])
+        );
+    }
+
+    #[test]
+    fn reads_latex_documents_and_man_pages_as_nested_lists() {
+        let (_dir, path) = write_conf(
+            r#"
+latex_documents = [("index", "proj.tex", "Project", "Author", "manual")]
+man_pages = [("index", "proj", "Project docs", ["Author"], 1)]
+"#,
+        );
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        let ConfigVal::List(docs) = &raw["latex_documents"] else {
+            panic!("expected List");
+        };
+        assert_eq!(docs.len(), 1);
+        let ConfigVal::List(entry) = &docs[0] else {
+            panic!("expected nested List for tuple");
+        };
+        assert_eq!(entry[0].as_str(), Some("index"));
+        assert_eq!(entry[4].as_str(), Some("manual"));
+
+        let ConfigVal::List(pages) = &raw["man_pages"] else {
+            panic!("expected List");
+        };
+        let ConfigVal::List(page_entry) = &pages[0] else {
+            panic!("expected nested List for tuple");
+        };
+        assert_eq!(page_entry[1].as_str(), Some("proj"));
+    }
+
+    #[test]
+    fn reads_intersphinx_mapping_and_skips_invalid_entries() {
+        let (_dir, path) = write_conf(
+            r#"
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+    "numpy": ("https://numpy.org/doc/stable", "objects.inv"),
+    123: ("https://bad-key.example", None),
+}
+"#,
+        );
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        let ConfigVal::Map(mapping) = &raw["intersphinx_mapping"] else {
+            panic!("expected Map");
+        };
+        // Non-string keys are skipped; entries are sorted by name.
+        assert_eq!(mapping.len(), 2);
+        assert_eq!(mapping[0].0, "numpy");
+        assert_eq!(mapping[1].0, "python");
+        let ConfigVal::List(python_entry) = &mapping[1].1 else {
+            panic!("expected List [url, inv]");
+        };
+        assert_eq!(python_entry[0].as_str(), Some("https://docs.python.org/3"));
+        assert_eq!(python_entry[1], ConfigVal::Null);
+    }
+
+    #[test]
+    fn source_suffix_dict_form() {
+        let (_dir, path) = write_conf(r#"source_suffix = {".rst": "restructuredtext", ".md": "markdown"}"#);
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        let ConfigVal::Map(pairs) = &raw["source_suffix"] else {
+            panic!("expected Map");
+        };
+        assert!(pairs
+            .iter()
+            .any(|(k, v)| k == ".rst" && v.as_str() == Some("restructuredtext")));
+    }
+
+    #[test]
+    fn source_suffix_string_form() {
+        let (_dir, path) = write_conf(r#"source_suffix = ".rst""#);
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        assert_eq!(raw["source_suffix"].as_str(), Some(".rst"));
+    }
+
+    #[test]
+    fn source_suffix_list_form() {
+        let (_dir, path) = write_conf(r#"source_suffix = [".rst", ".md"]"#);
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        assert_eq!(
+            raw["source_suffix"],
+            ConfigVal::List(vec![ConfigVal::Str(".rst".into()), ConfigVal::Str(".md".into())])
+        );
+    }
+
+    #[test]
+    fn reads_needs_extensions() {
+        let (_dir, path) = write_conf(r#"needs_extensions = {"sphinx.ext.autodoc": "1.0"}"#);
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        let ConfigVal::Map(pairs) = &raw["needs_extensions"] else {
+            panic!("expected Map");
+        };
+        assert_eq!(pairs[0], ("sphinx.ext.autodoc".to_string(), ConfigVal::Str("1.0".into())));
+    }
+
+    #[test]
+    fn generic_fallback_keeps_data_but_skips_modules_and_callables() {
+        let (_dir, path) = write_conf(
+            r#"
+import os
+autosummary_generate = False
+nested = {"a": [1, 2, {"b": True}]}
+def my_setup(app):
+    pass
+"#,
+        );
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        assert_eq!(raw["autosummary_generate"], ConfigVal::Bool(false));
+        assert_eq!(
+            raw["nested"],
+            ConfigVal::Map(vec![(
+                "a".into(),
+                ConfigVal::List(vec![
+                    ConfigVal::Int(1),
+                    ConfigVal::Int(2),
+                    ConfigVal::Map(vec![("b".into(), ConfigVal::Bool(true))]),
+                ])
+            )])
+        );
+        assert!(!raw.contains_key("os"));
+        assert!(!raw.contains_key("my_setup"));
+        assert!(!raw.contains_key("__file__"));
+        assert!(!raw.contains_key("__builtins__"));
+    }
+
+    #[test]
+    fn generic_fallback_preserves_named_tuple_title_url_shape() {
+        let (_dir, path) = write_conf(
+            r#"
+class Link:
+    def __init__(self, title, url):
+        self.title = title
+        self.url = url
+
+html_context = {"links": [Link("Home", "https://example.org")]}
+"#,
+        );
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        let ConfigVal::Map(ctx) = &raw["html_context"] else {
+            panic!("expected Map");
+        };
+        let ConfigVal::List(links) = &ctx[0].1 else {
+            panic!("expected List");
+        };
+        let ConfigVal::Map(link) = &links[0] else {
+            panic!("expected Map for Link named-tuple-like object");
+        };
+        assert_eq!(link[0], ("title".to_string(), ConfigVal::Str("Home".into())));
+        assert_eq!(
+            link[1],
+            ("url".to_string(), ConfigVal::Str("https://example.org".into()))
+        );
+    }
+
+    #[test]
+    fn errors_on_missing_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("does_not_exist.py");
+        let err = raw_config_from_conf_py(&path).unwrap_err();
+        Python::attach(|py| {
+            assert!(err.value(py).to_string().contains("cannot read"));
+        });
+    }
+
+    #[test]
+    fn errors_on_python_exception() {
+        let (_dir, path) = write_conf("raise ValueError('boom')");
+        let err = raw_config_from_conf_py(&path).unwrap_err();
+        Python::attach(|py| {
+            assert!(err.value(py).to_string().contains("conf.py failed"));
+        });
+    }
+
+    #[test]
+    fn conf_py_setup_returns_callable_when_defined() {
+        let (_dir, path) = write_conf(
+            r#"
+def setup(app):
+    app.custom_setup_called = True
+"#,
+        );
+        let setup = conf_py_setup(&path).unwrap();
+        assert!(setup.is_some());
+        Python::attach(|py| {
+            assert!(setup.unwrap().bind(py).hasattr("__call__").unwrap());
+        });
+    }
+
+    #[test]
+    fn conf_py_setup_returns_none_when_absent() {
+        let (_dir, path) = write_conf("project = 'No Setup Here'");
+        assert!(conf_py_setup(&path).unwrap().is_none());
+    }
+
+    #[test]
+    fn conf_py_setup_returns_none_when_setup_is_not_callable() {
+        let (_dir, path) = write_conf("setup = 42");
+        assert!(conf_py_setup(&path).unwrap().is_none());
+    }
+
+    #[test]
+    fn rebuild_kind_from_str_covers_every_variant() {
+        use std::str::FromStr;
+        assert_eq!(RebuildKind::from_str("env").unwrap(), RebuildKind::Env);
+        assert_eq!(RebuildKind::from_str("epub").unwrap(), RebuildKind::Epub);
+        assert_eq!(RebuildKind::from_str("gettext").unwrap(), RebuildKind::Gettext);
+        assert_eq!(RebuildKind::from_str("html").unwrap(), RebuildKind::Html);
+        assert_eq!(RebuildKind::from_str("unknown").unwrap(), RebuildKind::None);
+        assert_eq!(RebuildKind::from_str("").unwrap(), RebuildKind::None);
+    }
+
+    #[test]
+    fn rebuild_kind_as_str_round_trips() {
+        for kind in [
+            RebuildKind::None,
+            RebuildKind::Env,
+            RebuildKind::Epub,
+            RebuildKind::Gettext,
+            RebuildKind::Html,
+        ] {
+            use std::str::FromStr;
+            assert_eq!(RebuildKind::from_str(kind.as_str()).unwrap(), kind);
+        }
+    }
+}

@@ -6,28 +6,28 @@ This plan covers hand-written Rust production code in `src/sphinxdocrs`, with
 upstream behavior traced from `src/sphinx/tests/` and native behavior verified
 by `src/sphinxdocrs/tests/`.
 
-Measured on 2026-09-18:
+- Measured on 2026-09-18:
+  - `cargo test -p sphinxdocrs --all-targets`: 829 tests passed in the latest
+    clean run.
+  - Library-only LLVM branch coverage: 63.25% branches, 76.35% lines after the
+    utility, console, assets, EventManager, warning-parity, make-mode, parser,
+    configuration, environment, extension, Project, and docindex tranches.
 
-- `cargo test -p sphinxdocrs --all-targets`: 829 tests passed in the latest
-  clean run.
-- Library-only LLVM branch coverage: 63.25% branches, 76.35% lines after the
-  utility, console, assets, EventManager, warning-parity, make-mode, parser,
-  configuration, environment, extension, Project, and docindex tranches.
-
-Updated 2026-09-19 after the `app_facade.rs`/`application.rs`/`config.rs`/
-`environment.rs` tranches described in the branch map below: library-only
-branch coverage is 68.19% (788/2477 missed), with 906 lib tests passing
-(`cargo test -p sphinxdocrs --lib`).
-- The last completed all-target LLVM report measured 68.13% branches and
-  86.11% lines; the all-target report is expensive and includes integration
-  binaries, so library and all-target measurements must both remain visible.
-- Recent focused results: `toctree` 100% branches, `events` 100%,
-  `util_display` 100%, `util_uri` 97%+, `util_matching` 83%+,
-  `util_console` 75%, `assets` 50%, `make_mode` 59%, `build/args.rs` 91.67%,
-  `config.rs` 40%, `environment.rs` 40.65%, `extension.rs` 83.33%,
-  `project.rs` 78.57%, and `extensions/docindex.rs` 91.67%.
-- Existing external HTML parity remains a separate contract: 10/14 cases pass,
-  with five documented theme/tree residuals.
+  - The last completed all-target LLVM report measured 68.13% branches and
+    86.11% lines; the all-target report is expensive and includes integration
+    binaries, so library and all-target measurements must both remain visible.
+  - Recent focused results: `toctree` 100% branches, `events` 100%,
+    `util_display` 100%, `util_uri` 97%+, `util_matching` 83%+,
+    `util_console` 75%, `assets` 50%, `make_mode` 59%, `build/args.rs` 91.67%,
+    `config.rs` 40%, `environment.rs` 40.65%, `extension.rs` 83.33%,
+    `project.rs` 78.57%, and `extensions/docindex.rs` 91.67%.
+  - Existing external HTML parity remains a separate contract: 10/14 cases pass,
+    with five documented theme/tree residuals.
+- Measured on 2026-09-19:
+  - after the `app_facade.rs`/`application.rs`/`config.rs`/
+    `environment.rs` tranches described in the branch map below:
+    library-only branch coverage is 68.19% (788/2477 missed),
+    with 906 lib tests passing (`cargo test -p sphinxdocrs --lib`).
 
 The 100% target means every reachable branch in hand-written native runtime
 code covered by the selected package targets. Generated lexer/template data,

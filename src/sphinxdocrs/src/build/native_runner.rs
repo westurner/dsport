@@ -91,6 +91,8 @@ impl Runner for NativeMakeRunner {
             parsed.quiet,
             parsed.really_quiet,
             parsed.warnfile.clone(),
+            parsed.verbosity,
+            &parsed.color,
         );
         let command = std::iter::once("sphinx-build".to_owned())
             .chain(args.iter().cloned())
@@ -136,7 +138,7 @@ impl Runner for NativeMakeRunner {
                             None,
                         );
                         if !logging.suppress_status {
-                            eprintln!("Build succeeded: {} file(s) written.", result.written);
+                            eprintln!("{}", crate::util_display::build_succeeded(result.written));
                         }
                         Ok(crate::build::logging::finish_build(
                             &app.warnings,

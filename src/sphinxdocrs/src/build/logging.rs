@@ -22,14 +22,42 @@ pub struct LoggingConfig {
     pub suppress_warnings: bool,
     /// Path to the warning file (`-w FILE`), if requested.
     pub warnfile: Option<PathBuf>,
+    /// Verbosity level (`-v` repetitions), retained for status formatting.
+    pub verbosity: u8,
+    /// Whether terminal warning output should use ANSI colors.
+    pub color: bool,
 }
 
 /// Mirrors `_parse_logging`.
-pub fn parse_logging(quiet: bool, really_quiet: bool, warnfile: Option<PathBuf>) -> LoggingConfig {
+pub fn parse_logging(
+    quiet: bool,
+    really_quiet: bool,
+    warnfile: Option<PathBuf>,
+    verbosity: u8,
+    color: &str,
+) -> LoggingConfig {
     LoggingConfig {
         suppress_status: quiet || really_quiet,
         suppress_warnings: really_quiet,
         warnfile,
+        verbosity,
+        color: match color {
+            "yes" => true,
+            "no" => false,
+            _ => crate::util_console::terminal_supports_colour_from_env(|key| {
+                std::env::var(key).ok()
+            }),
+        },
+    }
+}
+
+/// Format one warning exactly once for terminal and warning-file consumers.
+pub fn format_warning(warning: &str, color: bool) -> String {
+    let line = format!("WARNING: {warning}");
+    if color {
+        crate::util_console::wrap("91", &line)
+    } else {
+        line
     }
 }
 
@@ -57,13 +85,13 @@ pub fn parse_logging(quiet: bool, really_quiet: bool, warnfile: Option<PathBuf>)
 pub fn finish_build(warnings: &[String], config: &LoggingConfig, warningiserror: bool) -> i32 {
     if !config.suppress_warnings {
         for w in warnings {
-            eprintln!("WARNING: {w}");
+            eprintln!("{}", format_warning(w, config.color));
         }
     }
     if let Some(path) = &config.warnfile {
         let mut stripped = String::new();
         for w in warnings {
-            stripped.push_str(&strip_escape_sequences(w));
+            stripped.push_str(&strip_escape_sequences(&format_warning(w, config.color)));
             stripped.push('\n');
         }
         if let Err(e) = std::fs::write(path, stripped) {
@@ -86,42 +114,42 @@ mod tests {
 
     #[test]
     fn quiet_suppresses_status_only() {
-        let l = parse_logging(true, false, None);
+        let l = parse_logging(true, false, None, 0, "auto");
         assert!(l.suppress_status);
         assert!(!l.suppress_warnings);
     }
 
     #[test]
     fn really_quiet_suppresses_both() {
-        let l = parse_logging(true, true, None);
+        let l = parse_logging(true, true, None, 0, "auto");
         assert!(l.suppress_status);
         assert!(l.suppress_warnings);
     }
 
     #[test]
     fn default_no_suppression() {
-        let l = parse_logging(false, false, None);
+        let l = parse_logging(false, false, None, 0, "no");
         assert!(!l.suppress_status);
         assert!(!l.suppress_warnings);
     }
 
     #[test]
     fn finish_build_exits_zero_without_warningiserror() {
-        let config = parse_logging(false, false, None);
+        let config = parse_logging(false, false, None, 0, "no");
         let code = finish_build(&["a warning".to_string()], &config, false);
         assert_eq!(code, 0);
     }
 
     #[test]
     fn finish_build_exits_nonzero_with_warningiserror_and_warnings() {
-        let config = parse_logging(false, false, None);
+        let config = parse_logging(false, false, None, 0, "no");
         let code = finish_build(&["a warning".to_string()], &config, true);
         assert_eq!(code, 1);
     }
 
     #[test]
     fn finish_build_exits_zero_with_warningiserror_and_no_warnings() {
-        let config = parse_logging(false, false, None);
+        let config = parse_logging(false, false, None, 0, "no");
         let code = finish_build(&[], &config, true);
         assert_eq!(code, 0);
     }
@@ -130,13 +158,22 @@ mod tests {
     fn finish_build_writes_stripped_warnfile() {
         let tmp = tempfile::TempDir::new().unwrap();
         let path = tmp.path().join("warnings.txt");
-        let config = parse_logging(false, false, Some(path.clone()));
+        let config = parse_logging(false, false, Some(path.clone()), 0, "yes");
         finish_build(
             &["\x1b[91mred warning\x1b[39;49;00m".to_string()],
             &config,
             false,
         );
         let contents = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(contents, "red warning\n");
+        assert_eq!(contents, "WARNING: red warning\n");
+    }
+
+    #[test]
+    fn warning_format_respects_color_mode() {
+        assert_eq!(format_warning("message", false), "WARNING: message");
+        assert_eq!(
+            format_warning("message", true),
+            "\x1b[91mWARNING: message\x1b[39;49;00m"
+        );
     }
 }

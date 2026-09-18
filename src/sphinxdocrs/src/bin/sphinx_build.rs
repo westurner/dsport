@@ -82,7 +82,13 @@ fn main() {
 
         // H8c: -q/-Q/-w FILE resolved once, consulted for every status/
         // warning line and the final warn-file write below.
-        let logging = parse_logging(parsed.quiet, parsed.really_quiet, parsed.warnfile.clone());
+        let logging = parse_logging(
+            parsed.quiet,
+            parsed.really_quiet,
+            parsed.warnfile.clone(),
+            parsed.verbosity,
+            &parsed.color,
+        );
 
         if !logging.suppress_status {
             eprintln!("sphinxdocrs: running SphinxApp::new");
@@ -114,7 +120,10 @@ fn main() {
                             None,
                         );
                         if !logging.suppress_status {
-                            eprintln!("Build succeeded: {} file(s) written.", result.written);
+                            eprintln!(
+                                "{}",
+                                sphinxdocrs::util_display::build_succeeded(result.written)
+                            );
                         }
                         let code = finish_build(&app.warnings, &logging, parsed.warningiserror);
                         std::process::exit(code);

@@ -57,6 +57,7 @@ pub mod theme_render;
 pub mod theme_static;
 pub mod toctree;
 pub mod util_console;
+pub mod util_display;
 pub mod util_docstrings;
 pub mod util_lines;
 pub mod util_matching;

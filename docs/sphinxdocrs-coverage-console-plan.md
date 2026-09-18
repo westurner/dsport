@@ -307,3 +307,97 @@ Python stderr parity.
 
 Keep each tranche independently testable and committed. Do not stage unrelated
 submodule, generated, or devcontainer changes already present in the worktree.
+
+## Complete branch map (2026-09-18)
+
+This is the complete nonzero-branch inventory from the library-only LLVM
+report. Entries are ordered by missed branches, so the table is also the
+execution order. `missed/total` is authoritative; percentages are rounded.
+
+| Module | Missed/total | Branch % | Upstream coverage source |
+| --- | ---: | ---: | --- |
+| `environment.rs` | 165/278 | 41% | `test_environment/test_environment.py`, `test_environment_toctree.py`, `test_environment_record_dependencies.py` |
+| `config.rs` | 103/172 | 40% | `test_config/test_config.py`, `test_config/test_copyright.py` |
+| `builders/html.rs` | 53/126 | 58% | `test_builders/test_build_html*.py`, `test_build_html_assets.py`, `test_build_html_toctree.py`, `test_build_warnings.py` |
+| `builders/json.rs` | 51/84 | 39% | `test_builders/test_build.py`, JSON parity fixtures |
+| `builders/linkcheck.rs` | 50/62 | 19% | `test_builders/test_build_linkcheck.py`, HTTP/logging tests |
+| `app_facade.rs` | 45/46 | 2% | `test_application.py`, `test_events.py`, extension tests |
+| `theme_render.rs` | 42/138 | 70% | `test_theming/*`, `test_build_html_5_output.py`, parity fixtures |
+| `domains/scan.rs` | 40/148 | 73% | `test_domains/*`, `test_environment_toctree.py` |
+| `autodoc.rs` | 34/122 | 72% | `test_ext_autodoc/*.py` |
+| `application.rs` | 32/52 | 38% | `test_application.py`, `test_extension.py` |
+| `http_client.rs` | 18/24 | 25% | linkcheck/intersphinx HTTP tests |
+| `make_mode.rs` | 16/39 | 59% | `test_command_line.py`, make-mode tests |
+| `builders/latex.rs` | 16/38 | 58% | `test_builders/test_build_latex.py` |
+| `util_strypes.rs` | 16/76 | 79% | `test_util/test_util_rst.py`, writer tests |
+| `extensions/docindex.rs` | 12/12 | 0% | extension/inventory tests |
+| `search.rs` | 12/52 | 77% | `test_search.py`, HTML toctree tests |
+| `builders/manpage.rs` | 11/12 | 8% | `test_builders/test_build_manpage.py` |
+| `locale.rs` | 11/62 | 82% | `test_intl/test_locale.py`, `test_intl/test_intl.py` |
+| `quickstart/validate.rs` | 11/20 | 45% | `test_quickstart.py` |
+| `autodoc_runtime.rs` | 10/52 | 81% | `test_ext_autodoc/test_ext_autodoc_importer.py` |
+| `intl.rs` | 10/64 | 84% | `test_intl/test_catalogs.py`, `test_intl/test_intl.py` |
+| `theme_static.rs` | 10/26 | 62% | `test_theming/*`, `test_build_html_assets.py` |
+| `util_matching.rs` | 9/54 | 83% | `test_util/test_util_matching.py` |
+| `domains/py_sig.rs` | 7/20 | 65% | `test_domains/test_domain_py*.py` |
+| `intersphinx.rs` | 7/36 | 81% | `test_ext_intersphinx/*.py` |
+| `quickstart/parser.rs` | 7/26 | 73% | `test_quickstart.py` |
+| `util_console.rs` | 7/28 | 75% | `test__cli/test__cli_util_errors.py`, `test_util_display.py` |
+| `autogen/generate.rs` | 6/26 | 77% | autosummary/apidoc tests |
+| `build/native_runner.rs` | 6/10 | 40% | `test_command_line.py`, build lifecycle tests |
+| `builders/changes.rs` | 6/20 | 70% | `test_builders/test_build_changes.py` |
+| `extensions/webmcp.rs` | 6/10 | 40% | native WebMCP contract tests |
+| `util_docstrings.rs` | 5/32 | 84% | `test_util/test_util_docstrings.py` |
+| `util_rst.rs` | 5/18 | 72% | `test_util/test_util_rst.py` |
+| `autogen/scan.rs` | 4/26 | 85% | autosummary/apidoc tests |
+| `build/logging.rs` | 4/18 | 78% | `test_util/test_util_logging.py`, `test_build_warnings.py` |
+| `builders/gettext.rs` | 4/14 | 71% | `test_builders/test_build_gettext.py` |
+| `builders/singlehtml.rs` | 4/16 | 75% | `test_builders/test_build_html*.py` |
+| `cli/io.rs` | 4/8 | 50% | `test_command_line.py` |
+| `domains/py_domain.rs` | 4/12 | 67% | `test_domains/test_domain_py*.py` |
+| `domains/std_domain.rs` | 4/12 | 67% | `test_domains/test_domain_std.py` |
+| `addnodes.rs` | 3/10 | 70% | `test_addnodes.py` |
+| `assets.rs` | 3/6 | 50% | asset/integrity tests |
+| `builders/texinfo.rs` | 3/4 | 25% | `test_builders/test_build_texinfo.py` |
+| `domains/js_domain.rs` | 3/12 | 75% | `test_domains/test_domain_js.py` |
+| `project.rs` | 3/14 | 79% | `test_project.py`, `test_util/test_util_matching.py` |
+| `quickstart/generate.rs` | 3/16 | 81% | `test_quickstart.py` |
+| `util_lines.rs` | 3/20 | 85% | `test_util/test_util_lines.py` |
+| `versioning.rs` | 3/28 | 89% | `test_versioning.py` |
+| `build/args.rs` | 2/24 | 92% | `test_command_line.py` |
+| `builders/epub.rs` | 2/4 | 50% | `test_builders/test_build_epub.py` |
+| `builders/pseudoxml.rs` | 2/4 | 50% | writer tests |
+| `builders/text.rs` | 2/4 | 50% | `test_builders/test_build_text.py` |
+| `builders/xml.rs` | 2/4 | 50% | XML writer tests |
+| `extension.rs` | 2/12 | 83% | `test_extensions/test_extension.py`, `test_events.py` |
+| `genindex.rs` | 2/4 | 50% | HTML builder tests |
+| `registry.rs` | 2/16 | 88% | `test_application.py`, extension tests |
+| `apidoc/parser.rs` | 1/6 | 83% | `test_extensions/test_ext_apidoc.py` |
+| `autogen/templates.rs` | 1/2 | 50% | autosummary templates |
+| `extensions/mod.rs` | 1/4 | 75% | extension loading tests |
+| `util_uri.rs` | 1/66 | 98% | `test_util/test_util_uri.py` |
+
+Modules with zero branch points remain in the line/error test inventory but do
+not affect branch gates. Generated/static template data, platform-exclusive
+wrappers, and unavailable FFI branches require an explicit policy entry rather
+than a blanket exclusion.
+
+## Upstream-to-native execution backlog
+
+1. **Application boundary:** `app_facade.rs`, `application.rs`, and
+  `extensions/docindex.rs` from `test_application.py`, `test_events.py`, and
+  extension tests. Cover lifecycle event ordering, Python callback argument
+  conversion, extension load failures, registered assets, and docindex setup.
+2. **Environment/config completion:** remaining `environment.rs` and
+  `config.rs` branches from `test_environment*` and `test_config/test_config.py`:
+  YAML/notebook registration, incremental persistence, dependency changes,
+  config status transitions, typed override failures, and eventful reads.
+3. **Builder branch sweep:** JSON, HTML fallback/theme errors, linkcheck,
+  manpage, LaTeX, and text/XML/pseudo-XML from their `test_builders` files;
+  use temporary files and wiremock instead of broad docs builds.
+4. **Domain/search/theme sweep:** `domains/scan.rs`, `theme_render.rs`,
+  `autodoc.rs`, `autodoc_runtime.rs`, `search.rs`, locale/intl, and
+  intersphinx from the matching domain/extension/util suites.
+5. **Tail and policy:** close every 1-10 missed-branch module, classify
+  unreachable/FFI/platform-only branches, and add ratcheted branch gates at
+  70%, 80%, 90%, 95%, and finally 100%.

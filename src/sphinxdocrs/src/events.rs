@@ -274,3 +274,147 @@ fn is_instance_of_any(py: Python<'_>, err: &PyErr, types: &Bound<'_, PyTuple>) -
     }
     Ok(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pyo3::types::PyDict;
+    use std::ffi::CString;
+
+    fn callback<'py>(py: Python<'py>, source: &str, name: &str) -> PyResult<Py<PyAny>> {
+        let globals = PyDict::new(py);
+        let code = CString::new(format!("def {name}(app, *args):\n    {source}\n")).unwrap();
+        py.run(&code, Some(&globals), None)?;
+        Ok(globals.get_item(name)?.unwrap().unbind())
+    }
+
+    #[test]
+    fn registration_and_listener_bookkeeping_match_upstream() {
+        Python::attach(|py| -> PyResult<()> {
+            let manager = EventManager::new(py.None());
+            manager.add(py, "custom")?;
+            assert!(manager.add(py, "custom").is_err());
+            assert!(manager.connect("missing", py.None(), 0).is_err());
+
+            let first = manager.connect("custom", py.None(), 0)?;
+            let second = manager.connect("custom", py.None(), 0)?;
+            assert_eq!(manager.listener_count()?, 2);
+            manager.disconnect(first)?;
+            assert_eq!(manager.listener_count()?, 1);
+            manager.disconnect(second)?;
+            assert_eq!(manager.listener_count()?, 0);
+
+            let known = manager.known_events(py)?;
+            assert!(
+                known
+                    .iter()
+                    .any(|value| value.extract::<&str>().ok() == Some("custom"))
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn emit_orders_by_priority_and_firstresult_skips_none() {
+        Python::attach(|py| -> PyResult<()> {
+            let manager = EventManager::new(py.None());
+            manager.add(py, "custom")?;
+            let low = callback(py, "return 'low'", "low")?;
+            let high = callback(py, "return 'high'", "high")?;
+            manager.connect("custom", high, 20)?;
+            manager.connect("custom", low, 10)?;
+            let args = PyTuple::new(py, ["extra"])?;
+            let values = manager.emit(py, "custom", &args, None)?;
+            assert_eq!(values.len(), 2);
+            assert_eq!(values.get_item(0)?.extract::<&str>()?, "low");
+            assert_eq!(values.get_item(1)?.extract::<&str>()?, "high");
+            assert_eq!(
+                manager
+                    .emit_firstresult(py, "custom", &args, None)?
+                    .unwrap()
+                    .extract::<&str>(py)?,
+                "low"
+            );
+
+            let none_manager = EventManager::new(py.None());
+            none_manager.add(py, "none")?;
+            let none_callback = callback(py, "return None", "none_callback")?;
+            none_manager.connect("none", none_callback, 0)?;
+            assert!(
+                none_manager
+                    .emit_firstresult(py, "none", &args, None)?
+                    .is_none()
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn emit_rejects_unknown_event() {
+        Python::attach(|py| -> PyResult<()> {
+            let manager = EventManager::new(py.None());
+            let args = PyTuple::empty(py);
+            assert!(manager.emit(py, "missing", &args, None).is_err());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn emit_wraps_exceptions_and_allows_configured_passthrough() {
+        Python::attach(|py| -> PyResult<()> {
+            let manager = EventManager::new(py.None());
+            manager.add(py, "custom")?;
+            let broken = callback(py, "raise ValueError('boom')", "broken")?;
+            manager.connect("custom", broken, 0)?;
+            let args = PyTuple::empty(py);
+            assert!(manager.emit(py, "custom", &args, None).is_err());
+
+            let allowed = PyTuple::new(py, [py.get_type::<pyo3::exceptions::PyValueError>()])?;
+            let manager = EventManager::new(py.None());
+            manager.add(py, "custom")?;
+            let allowed_callback = callback(py, "raise ValueError('boom')", "allowed")?;
+            manager.connect("custom", allowed_callback, 0)?;
+            assert!(manager.emit(py, "custom", &args, Some(allowed)).is_err());
+
+            let mismatched = PyTuple::new(py, [py.get_type::<pyo3::exceptions::PyTypeError>()])?;
+            let manager = EventManager::new(py.None());
+            manager.add(py, "custom")?;
+            let callback = callback(py, "raise ValueError('boom')", "mismatched")?;
+            manager.connect("custom", callback, 0)?;
+            assert!(manager.emit(py, "custom", &args, Some(mismatched)).is_err());
+
+            let globals = PyDict::new(py);
+            globals.set_item("SphinxError", py.get_type::<SphinxError>())?;
+            let code =
+                CString::new("def sphinx_error(app):\n    raise SphinxError('boom')\n").unwrap();
+            py.run(&code, Some(&globals), None)?;
+            let sphinx_error = globals.get_item("sphinx_error")?.unwrap().unbind();
+            let manager = EventManager::new(py.None());
+            manager.add(py, "custom")?;
+            manager.connect("custom", sphinx_error, 0)?;
+            assert!(manager.emit(py, "custom", &args, None).is_err());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn pdb_mode_returns_original_exception() {
+        Python::attach(|py| -> PyResult<()> {
+            let code = CString::new("type('App', (), {'pdb': True})()").unwrap();
+            let app = py.eval(&code, None, None)?.unbind();
+            let manager = EventManager::new(app);
+            manager.add(py, "custom")?;
+            let callback = callback(py, "raise ValueError('boom')", "pdb_broken")?;
+            manager.connect("custom", callback, 0)?;
+            let args = PyTuple::empty(py);
+            let error = manager.emit(py, "custom", &args, None).unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            Ok(())
+        })
+        .unwrap();
+    }
+}

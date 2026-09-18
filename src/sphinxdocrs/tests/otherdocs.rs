@@ -330,6 +330,90 @@ fn build_otherdocs_parity(#[case] docs_rel: &str, #[case] builder: &str) {
     insta::assert_yaml_snapshot!(format!("{snap_base}_rust_tree"), rs_tree.clone());
 }
 
+/// The real Alabaster template provides a viewport tag, and Sphinx also adds
+/// its default viewport metadata. Both tags are present in upstream output.
+#[test]
+fn docs_html_keeps_sphinx_default_viewport_metadata() {
+    let docs_root = workspace_docs_path("docs");
+    if !qualifies(&docs_root) || !has_program("make") || !has_program("sphinx-build") {
+        eprintln!("SKIP docs viewport metadata: required docs tooling is unavailable");
+        return;
+    }
+
+    let workspace_root = workspace_docs_path("");
+    if let Some(msg) = check_missing_deps_for_skip(&docs_root, &workspace_root) {
+        eprintln!("SKIP docs viewport metadata: missing Python dependencies\n{msg}");
+        return;
+    }
+
+    let rs_out = TempDir::new().expect("create rs_out tempdir");
+    let (rs_code, rs_stderr) = sphinx_make_build(
+        &docs_root,
+        env!("CARGO_BIN_EXE_sphinx-build-rs"),
+        "html",
+        rs_out.path(),
+    );
+    assert_eq!(rs_code, 0, "Rust docs build failed:\n{rs_stderr}");
+
+    let html_path = rs_out.path().join("html/index.html");
+    let html = std::fs::read_to_string(&html_path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", html_path.display()));
+    assert_eq!(
+        html.matches(r#"name="viewport""#).count(),
+        2,
+        "upstream emits the theme viewport and Sphinx's default viewport"
+    );
+    assert!(
+        html.contains("initial-scale=1\" />\n\n    <title>"),
+        "default viewport metadata preserves the theme head spacing"
+    );
+    assert!(
+        html.contains("Alabaster 1.0.0"),
+        "Alabaster's html-page-context hook provides its package version"
+    );
+    assert!(
+        html.contains("<title>DSPort documentation &#8212; DSPort 0.1.0 documentation</title>"),
+        "the page title comes from the preserved document section title"
+    );
+    assert!(
+        html.contains("<section id=\"dsport-documentation\">")
+            && html.contains("class=\"headerlink\""),
+        "Sphinx preserves the document's top-level section and header link"
+    );
+    assert!(
+        html.contains("<code class=\"docutils literal notranslate\"><span class=\"pre\">reStructuredText</span></code>"),
+        "inline literals use Sphinx's non-wrapping HTML shape"
+    );
+    assert!(
+        html.contains("<a class=\"reference external\" href=\"https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html\">"),
+        "external references include the standard reference and external classes"
+    );
+    assert!(
+        !html.contains("<span class=\"caption-text\">Contents:</span>"),
+        "empty toctrees do not render their caption"
+    );
+    assert!(
+        html.contains("<div class=\"toctree-wrapper compound\">")
+            && !html.contains("toctree-wrapper compound docutils container"),
+        "toctree wrappers do not inherit the generic container class"
+    );
+    assert!(
+        html.contains("<section id=\"dsport-documentation\">\n<h1>")
+            && html.contains("</p>\n<div class=\"toctree-wrapper compound\">\n</div>\n</section>"),
+        "block-level HTML preserves Sphinx's line-oriented formatting"
+    );
+    let pygments_css = std::fs::read_to_string(rs_out.path().join("html/_static/pygments.css"))
+        .expect("read generated Pygments stylesheet");
+    assert!(
+        pygments_css.contains(".highlight .c { color: #8F5902;"),
+        "Alabaster's registered Pygments style is rendered"
+    );
+    assert!(
+        !html.contains("sphinx-quickstart on Wed Jul  1 16:30:16 2026"),
+        "source comments are not rendered into the HTML body"
+    );
+}
+
 // ── index.html content parity ─────────────────────────────────────────────────
 //
 // `build_otherdocs_parity` (above) only compares file *names* — it says
@@ -354,6 +438,14 @@ fn normalize_html_for_diff(html: &str) -> String {
     // `theme_render.rs` reports this crate's own version as
     // `sphinx_version` in lieu of a bundled Python Sphinx version.
     out = out.replace(env!("CARGO_PKG_VERSION"), "VERSION");
+    out = out.replace("Sphinx VERSION-sphinxdocrs", "Sphinx VERSION");
+    // Native HTML builders add the built-in WebMCP integration; it has no
+    // upstream Python counterpart and is intentionally excluded from content
+    // parity comparisons.
+    let re_webmcp =
+        regex::Regex::new(r#"\n    <script src="_static/webmcp\.js\?v=[0-9a-f]+"></script>"#)
+            .expect("valid regex");
+    out = re_webmcp.replace_all(&out, "").into_owned();
     out
 }
 

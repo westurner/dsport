@@ -69,13 +69,18 @@ fn wrap(node: &Node, tag: &str, out: &mut String, tasks: &mut Vec<Task>) {
     schedule(node, format!("</{tag}>"), tasks);
 }
 
+fn wrap_block(node: &Node, tag: &str, out: &mut String, tasks: &mut Vec<Task>) {
+    let _ = write!(out, "<{tag}>");
+    schedule(node, format!("</{tag}>\n"), tasks);
+}
+
 fn wrap_with_class(node: &Node, tag: &str, class: &str, out: &mut String, tasks: &mut Vec<Task>) {
     let _ = write!(out, "<{tag} class=\"{class}\">");
     schedule(node, format!("</{tag}>"), tasks);
 }
 
 fn heading_level(tree: &Doctree, id: NodeId) -> usize {
-    let mut level = 1;
+    let mut level = 0;
     let mut parent = tree.node(id).parent;
     while let Some(parent_id) = parent {
         if matches!(tree.node(parent_id).kind, NodeKind::Section { .. }) {
@@ -83,7 +88,23 @@ fn heading_level(tree: &Doctree, id: NodeId) -> usize {
         }
         parent = tree.node(parent_id).parent;
     }
-    level.min(6)
+    level.max(1).min(6)
+}
+
+fn toctree_level(tree: &Doctree, id: NodeId) -> Option<usize> {
+    let mut level = 1;
+    let mut parent = tree.node(id).parent;
+    while let Some(parent_id) = parent {
+        match &tree.node(parent_id).kind {
+            NodeKind::ListItem => level += 1,
+            NodeKind::Container { classes } if classes == "toctree-wrapper compound" => {
+                return Some(level);
+            }
+            _ => {}
+        }
+        parent = tree.node(parent_id).parent;
+    }
+    None
 }
 
 /// Write `id`'s own opening markup (if any) immediately to `out`, then
@@ -105,20 +126,35 @@ fn emit_enter(
             }
         }
         NodeKind::Section { ids, .. } => {
-            let _ = write!(out, "<section id=\"{ids}\">");
-            schedule(node, "</section>", tasks);
+            let _ = write!(out, "<section id=\"{ids}\">\n");
+            schedule(node, "</section>\n", tasks);
         }
         NodeKind::Title => {
             let level = heading_level(tree, id);
             let tag = format!("h{level}");
-            wrap(node, &tag, out, tasks);
+            let close = tree
+                .node(id)
+                .parent
+                .and_then(|parent| match &tree.node(parent).kind {
+                    NodeKind::Section { ids, .. } if !ids.is_empty() => Some(format!(
+                        "<a class=\"headerlink\" href=\"#{}\" title=\"Link to this heading\">¶</a></{tag}>\n",
+                        escape(ids)
+                    )),
+                    _ => None,
+                })
+                .unwrap_or_else(|| format!("</{tag}>\n"));
+            let _ = write!(out, "<{tag}>");
+            schedule(node, close, tasks);
         }
         NodeKind::Subtitle { .. } => wrap_with_class(node, "p", "subtitle", out, tasks),
         NodeKind::Transition => out.push_str("<hr/>"),
-        NodeKind::Paragraph => wrap(node, "p", out, tasks),
+        NodeKind::Paragraph => wrap_block(node, "p", out, tasks),
         NodeKind::Emphasis => wrap(node, "em", out, tasks),
         NodeKind::Strong => wrap(node, "strong", out, tasks),
-        NodeKind::Literal => wrap(node, "code", out, tasks),
+        NodeKind::Literal => {
+            out.push_str("<code class=\"docutils literal notranslate\"><span class=\"pre\">");
+            schedule(node, "</span></code>", tasks);
+        }
         NodeKind::TitleReference => wrap(node, "cite", out, tasks),
         NodeKind::Inline { classes } => {
             if classes.is_empty() {
@@ -175,7 +211,14 @@ fn emit_enter(
                 wrap(node, "ol", out, tasks)
             }
         }
-        NodeKind::ListItem => wrap(node, "li", out, tasks),
+        NodeKind::ListItem => {
+            if let Some(level) = toctree_level(tree, id) {
+                let _ = write!(out, "<li class=\"toctree-l{level}\">");
+                schedule(node, "</li>", tasks);
+            } else {
+                wrap(node, "li", out, tasks);
+            }
+        }
         NodeKind::DefinitionList => {
             if is_compactable(tree, id, options, false) {
                 wrap_with_class(node, "dl", "simple", out, tasks)
@@ -237,12 +280,17 @@ fn emit_enter(
         NodeKind::Container { classes } => {
             // `.. container:: classes` — real docutils/Sphinx markup:
             // `<div class="{classes} docutils container">`.
-            if classes.is_empty() {
-                out.push_str("<div class=\"docutils container\">");
+            if classes == "toctree-wrapper compound" {
+                let _ = write!(out, "<div class=\"{classes}\">\n");
+                schedule(node, "</div>\n", tasks);
             } else {
-                let _ = write!(out, "<div class=\"{classes} docutils container\">");
+                if classes.is_empty() {
+                    out.push_str("<div class=\"docutils container\">");
+                } else {
+                    let _ = write!(out, "<div class=\"{classes} docutils container\">");
+                }
+                schedule(node, "</div>", tasks);
             }
-            schedule(node, "</div>", tasks);
         }
         NodeKind::GenericAdmonition { title, classes } => {
             // `.. admonition:: Title` (optionally `:class: extra`) — real
@@ -304,15 +352,7 @@ fn emit_enter(
                 latex,
             ));
         }
-        NodeKind::Comment => {
-            out.push_str("<!-- ");
-            for &c in &node.children {
-                if let NodeKind::Text(s) = &tree.node(c).kind {
-                    out.push_str(&escape(s));
-                }
-            }
-            out.push_str(" -->");
-        }
+        NodeKind::Comment => {}
         NodeKind::Reference {
             refuri, classes, ..
         } => {
@@ -333,7 +373,7 @@ fn emit_enter(
             } else if refuri.starts_with('#') {
                 classes.clone()
             } else if classes.is_empty() {
-                "external".to_string()
+                "reference external".to_string()
             } else {
                 format!("{classes} external")
             };
@@ -687,7 +727,11 @@ mod tests {
             &crate::cli::CommonOptions::default(),
         );
 
-        assert!(rendered.contains("<section id=\"section\"><h2>Section</h2>"));
+        assert!(
+            rendered.contains(
+                "<section id=\"section\">\n<h1>Section<a class=\"headerlink\" href=\"#section\" title=\"Link to this heading\">¶</a></h1>\n"
+            )
+        );
         assert!(rendered.contains(
             "<div class=\"literal-block-wrapper docutils container\"><div class=\"code-block-caption\"><span class=\"caption-text\">example.py</span></div>"
         ));
@@ -697,6 +741,25 @@ mod tests {
         ));
         assert!(rendered.contains(
             "<span class=\"sd\">&quot;&quot;&quot;Colors enumerator&quot;&quot;&quot;</span>"
+        ));
+    }
+
+    #[test]
+    fn preserved_top_level_section_matches_sphinx_heading_shape() {
+        let tree = crate::parse_rst_with_options(
+            ".. source comment\n\nTitle\n=====\n\nBody.\n",
+            "index.rst",
+            crate::TitlePromotion::Preserve,
+        );
+        let rendered = html5(
+            &tree,
+            &crate::cli::Html5Options::default(),
+            &crate::cli::CommonOptions::default(),
+        );
+
+        assert!(!rendered.contains("source comment"));
+        assert!(rendered.contains(
+            "<section id=\"title\">\n<h1>Title<a class=\"headerlink\" href=\"#title\" title=\"Link to this heading\">¶</a></h1>\n"
         ));
     }
 }

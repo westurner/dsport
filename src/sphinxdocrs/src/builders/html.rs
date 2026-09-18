@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use docutilsrs::cli::{CommonOptions, Html5Options};
 use docutilsrs::doctree::{Doctree, NodeKind};
-use docutilsrs::{html5, parse_rst_with_source};
+use docutilsrs::html5;
 
 use super::{BuildError, BuildResult, Builder};
 use crate::config::SphinxConfig;
@@ -133,15 +133,43 @@ impl HtmlBuilder {
         docname: &str,
         tree: &Doctree,
     ) -> (String, String) {
-        // Extract promoted document title from NodeKind::Document { title, .. }
-        let title = match &tree.node(tree.root()).kind {
-            NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
-            _ => docname.rsplit('/').next().unwrap_or(docname).to_owned(),
-        };
+        let title = Self::document_title(tree)
+            .unwrap_or_else(|| docname.rsplit('/').next().unwrap_or(docname).to_owned());
         let body = html5(tree, &self.html5_options, &self.common_options);
         (title, body)
     }
 
+    fn document_title(tree: &Doctree) -> Option<String> {
+        let root = tree.root();
+        if let NodeKind::Document { title, .. } = &tree.node(root).kind {
+            if !title.is_empty() {
+                return Some(title.clone());
+            }
+        }
+
+        for &child in &tree.node(root).children {
+            if !matches!(tree.node(child).kind, NodeKind::Section { .. }) {
+                continue;
+            }
+            for &section_child in &tree.node(child).children {
+                if !matches!(tree.node(section_child).kind, NodeKind::Title) {
+                    continue;
+                }
+                let mut text = String::new();
+                let mut pending = vec![section_child];
+                while let Some(node_id) = pending.pop() {
+                    if let NodeKind::Text(value) = &tree.node(node_id).kind {
+                        text.push_str(value);
+                    }
+                    pending.extend(tree.node(node_id).children.iter().rev().copied());
+                }
+                if !text.is_empty() {
+                    return Some(text);
+                }
+            }
+        }
+        None
+    }
     /// Wrap an HTML5 fragment in a minimal full HTML5 page.
     ///
     /// Includes a link to `_static/sphinxdocrs.css` so pages have basic
@@ -184,7 +212,11 @@ impl HtmlBuilder {
         outdir: &Path,
         meta: &PageMeta,
     ) -> Result<(), BuildError> {
-        let tree = parse_rst_with_source(source, docname);
+        let tree = docutilsrs::parse_rst_with_options(
+            source,
+            docname,
+            docutilsrs::TitlePromotion::Preserve,
+        );
         self.build_doc_themed_from_tree(docname, &tree, outdir, meta)
     }
 
@@ -644,7 +676,7 @@ impl Builder for HtmlBuilder {
                     .map_err(|e| {
                         BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
                     })?;
-                    parse_rst_with_source(&source, docname)
+                    env.parse_source(docname, &source)?
                 }
             };
             // Keep the resolution call as an idempotent compatibility fallback
@@ -1344,7 +1376,7 @@ mod tests {
     #[test]
     fn render_fragment_section_title() {
         let b = builder();
-        let tree = parse_rst_with_source("Hello\n=====\n\nWorld.\n", "test");
+        let tree = docutilsrs::parse_rst_with_source("Hello\n=====\n\nWorld.\n", "test");
         let (_title, html) = b.render_fragment_from_tree("test", &tree);
         // html5 writer produces <section ...> and heading elements
         assert!(html.contains("Hello") || html.contains("section"));
@@ -1353,7 +1385,7 @@ mod tests {
     #[test]
     fn render_fragment_empty_source() {
         let b = builder();
-        let tree = parse_rst_with_source("", "empty");
+        let tree = docutilsrs::parse_rst_with_source("", "empty");
         let (_title, html) = b.render_fragment_from_tree("empty", &tree);
         // Empty source → empty or minimal output, no panic.
         let _ = html; // just ensure it doesn't panic

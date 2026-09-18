@@ -597,7 +597,11 @@ impl BuildEnvironment {
             ));
         }
         match self.parser_for_path(&path).as_str() {
-            "restructuredtext" => Ok(docutilsrs::parse_rst_with_source(source, docname)),
+            "restructuredtext" => Ok(docutilsrs::parse_rst_with_options(
+                source,
+                docname,
+                docutilsrs::TitlePromotion::Preserve,
+            )),
             "myst" | "markdown" => Ok(myst_md_rs::parse_to_doctree(
                 source,
                 path.to_string_lossy().into_owned(),
@@ -804,10 +808,8 @@ impl BuildEnvironment {
         let parse_source = highlighted_source.as_deref().unwrap_or(source);
         let tree = self.parse_source(docname, parse_source)?;
 
-        let title = match &tree.node(tree.root()).kind {
-            NodeKind::Document { title, .. } if !title.is_empty() => title.clone(),
-            _ => docname.rsplit('/').next().unwrap_or(docname).to_string(),
-        };
+        let title = Self::document_title_from_tree(&tree)
+            .unwrap_or_else(|| docname.rsplit('/').next().unwrap_or(docname).to_string());
         self.set_title(docname.to_string(), title);
 
         // Blank out code-block/literal-block bodies before text-scanning
@@ -849,6 +851,38 @@ impl BuildEnvironment {
         self.record_doc_read(docname.to_string(), now_micros());
 
         Ok(())
+    }
+
+    fn document_title_from_tree(tree: &Doctree) -> Option<String> {
+        let root = tree.root();
+        if let NodeKind::Document { title, .. } = &tree.node(root).kind {
+            if !title.is_empty() {
+                return Some(title.clone());
+            }
+        }
+
+        for &child in &tree.node(root).children {
+            if !matches!(tree.node(child).kind, NodeKind::Section { .. }) {
+                continue;
+            }
+            for &section_child in &tree.node(child).children {
+                if !matches!(tree.node(section_child).kind, NodeKind::Title) {
+                    continue;
+                }
+                let mut text = String::new();
+                let mut pending = vec![section_child];
+                while let Some(node_id) = pending.pop() {
+                    if let NodeKind::Text(value) = &tree.node(node_id).kind {
+                        text.push_str(value);
+                    }
+                    pending.extend(tree.node(node_id).children.iter().rev().copied());
+                }
+                if !text.is_empty() {
+                    return Some(text);
+                }
+            }
+        }
+        None
     }
 
     /// Expand the top-level `automodule` directive before docutils parsing.
@@ -1519,16 +1553,6 @@ impl BuildEnvironment {
                     classes: "toctree-wrapper compound".to_string(),
                 },
             );
-            if let Some(caption) = caption {
-                let p = tree.append(id, NodeKind::Paragraph);
-                let span = tree.append(
-                    p,
-                    NodeKind::Inline {
-                        classes: "caption-text".to_string(),
-                    },
-                );
-                tree.append(span, NodeKind::Text(caption));
-            }
             // Entries are written relative to the directory containing
             // *this* document (e.g. `usage/restructuredtext/index.rst`
             // listing `basics` really means `usage/restructuredtext/basics`),
@@ -1540,6 +1564,16 @@ impl BuildEnvironment {
             let depth = if maxdepth <= 0 { 0 } else { maxdepth as usize };
             let resolved = crate::toctree::resolve_from_entries(self, &entries, depth);
             if !resolved.is_empty() {
+                if let Some(caption) = caption {
+                    let p = tree.append(id, NodeKind::Paragraph);
+                    let span = tree.append(
+                        p,
+                        NodeKind::Inline {
+                            classes: "caption-text".to_string(),
+                        },
+                    );
+                    tree.append(span, NodeKind::Text(caption));
+                }
                 Self::append_toc_entries(tree, id, &resolved, &builder, &base_uri);
             }
         }
@@ -2589,7 +2623,7 @@ mod tests {
             tree.node(tree.root())
                 .children
                 .iter()
-                .any(|&id| matches!(tree.node(id).kind, NodeKind::Title))
+                .any(|&id| matches!(tree.node(id).kind, NodeKind::Section { .. }))
         );
     }
 

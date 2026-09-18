@@ -150,6 +150,7 @@ def _parse_conf(theme_dir):
     return inherit, options, pyg, sidebars, stylesheets
 
 def resolve(theme_name, theme_path_dirs, registered_themes):
+    requested_theme = theme_name
     chain = []
     seen = set()
     name = theme_name
@@ -174,6 +175,13 @@ def resolve(theme_name, theme_path_dirs, registered_themes):
     merged = {}
     for c in chain:
         merged.update(c['options'])
+    # Alabaster's setup hook adds this value to every page context.
+    if requested_theme == 'alabaster':
+        try:
+            from importlib.metadata import version
+            merged['alabaster_version'] = version('alabaster')
+        except Exception:
+            pass
     static_dirs = [c['static'] for c in chain]
     # Child-first (the order templates should be searched in, so a child
     # theme's own template overrides its base's, while unmodified templates
@@ -206,6 +214,10 @@ def resolve(theme_name, theme_path_dirs, registered_themes):
         from pygments.formatters import HtmlFormatter
         from sphinx.pygments_styles import NoneStyle
         style = pygments_style or 'default'
+        if isinstance(style, str) and '.' in style:
+            module_name, class_name = style.rsplit('.', 1)
+            module = __import__(module_name, fromlist=[class_name])
+            style = getattr(module, class_name)
         if style == 'none':
             style = NoneStyle
         try:
@@ -218,7 +230,10 @@ def resolve(theme_name, theme_path_dirs, registered_themes):
     return {
         'static_dirs': static_dirs,
         'template_dirs': template_dirs,
-        'options': {f'theme_{k}': v for k, v in merged.items()},
+        'options': {
+            (k if k == 'alabaster_version' else f'theme_{k}'): v
+            for k, v in merged.items()
+        },
         'sidebars': sidebars,
         'stylesheets': stylesheets,
         'search_js_dir': search_js,

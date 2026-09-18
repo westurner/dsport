@@ -5,14 +5,36 @@ This document merges the former `docs/sphinx-port-inventory.md`
 (*sphinx port inventory, Phase 4*) and `docs/sphinxdocrs-cli-port-plan.md`
 (*sphinxdocrs CLI port & test plan*); both are superseded by this file.
 
-## Current Verification (2026-08-28)
+## Current Verification (2026-09-18)
 
 The H4-H7 implementation rows below reflect the current native code, not the
 original phase-4 placeholders. The focused theme renderer suite passes 17/17,
 the native builder parity matrix passes, and fresh Alabaster and Jinja/Pocoo
 builds match Python viewport metadata. The real external-doc suite currently
-passes 8/14 cases; the six remaining failures are tracked content/tree parity
+passes 9/14 cases; the five remaining failures are tracked content/tree parity
 gaps rather than build failures.
+
+### Latest local verification (2026-09-18)
+
+The current package baseline is `cargo test -p sphinxdocrs --all-targets`:
+767 tests pass. The two utility expectations in
+`tests/util_rst_osutil.rs` (`rst_escape_dotted_module` and
+`rst_escape_toctree_directive`) now use the native security-hardened
+`util_strypes::rst_escape` contract rather than asserting upstream Sphinx's
+narrow `sphinx.util.rst.escape` behavior. The native implementation still
+escapes all ASCII punctuation, removes control characters, and strips
+indentation; that remains an accepted native deviation.
+
+The gated external-document suite now passes **9/14**:
+`cargo test -p sphinxdocrs --features test-build-extdocs --test otherdocs`
+fails five HTML cases. The H11.2 fixes now cover preserved Sphinx section
+doctrees, page-title indexing, header links, inline literals, external-link
+classes, empty toctree wrappers, Alabaster metadata, theme-aware viewport
+handling, Pygments style resolution, and block formatting. The remaining
+failures are three file-tree snapshots that include intentional native WebMCP
+artifacts, plus two Sphinx/Jinja theme-content cases covering navigation
+attributes, image/reference fidelity, captions, and theme-specific assets. No
+external build failed to produce its expected HTML entry point.
 
 ### Gap Clusters
 
@@ -138,7 +160,7 @@ in the notes column of the relevant row.
 | `registry.py` | `registry` | P2 | **done** | source-suffix/parser, transforms/post-transforms, CSS/JS/static assets, LaTeX packages, HTML themes, `add_builder`/`add_domain`/`add_translator`/`add_html_math_renderer` |
 | `versioning.py` | `versioning` | P2 | **done** | `VERSIONING_RATIO`, `levenshtein_distance`, `get_ratio`, `add_uids`, `merge_doctrees`, `VersionableNode`, `apply_uid_transform`, `UID_TRANSFORM_PRIORITY = 880`. **Gap:** not invoked from a read phase yet — `docutilsrs::doctree::Node` has no `uid`/`VersionableNode` impl (→ **H8**) |
 | `config.py` | `config` | P2 | **mirrored** | `SphinxConfig`, 50+ built-in option registry, `ConfigVal`, `RebuildKind`, `ConfigOpt`, `convert_overrides`, alias sync (`master_doc`↔`root_doc`, `copyright`↔`project_copyright`), typed accessors, `py_read_conf_py` |
-| `util/*` | `util_*` | P2 | **mirrored** | `util_matching`, `util_console` (22 ANSI codes), `util_rst` (incl. `default_role`, **H1d**), `util_osutil`, `util_uri`, `util_lines`, `util_docstrings` |
+| `util/*` | `util_*` | P2 | **mirrored** | `util_matching`, `util_console` (22 ANSI codes), `util_rst` (incl. `default_role`, **H1d**), `util_osutil`, `util_uri`, `util_lines`, `util_docstrings`. **Accepted deviation:** native `rst_escape` is the hardened sanitizer from `util_strypes` (all ASCII punctuation, controls, and indentation), rather than Sphinx's narrower symbol-only escape. |
 | `locale.py` | `locale` | P2 | **done** | `PoCatalog` (incl. `#, fuzzy` handling and header capture), `Translator`, `TranslatorRegistry`, `init`, `init_chain`, `init_console`, `get_translation`, `tr`, `tr_console`, `tr!`/`tr_c!`, `admonition_labels`. **Extension:** `CATALOG_LOOKUP_ORDER = ["sphinxdocrs", "sphinx"]` — `tr`/`tr_console` walk the chain, first hit wins |
 | `util/i18n.py` | `intl` | P2 | **done** | `CatalogInfo` (incl. `write_mo`), `CatalogRepository`, `docname_to_domain`, `DATE_FORMAT_MAPPINGS`, `split_date_format`, `ustrftime_to_babel`, `babel_format_date`, `format_date`, `encode_mo` / `decode_mo`. **Accepted deviations:** CLDR data limited to `en`/`de`/`ja` (others fall back to `en`, as upstream does for unknown locales); MO output is singular-only with an empty hash table; `.po` files are decoded as UTF-8 |
 | `roles.py` | `roles` | P3 | **partial** | pure-algorithm subset: `GENERIC_DOCROLES`, `SPECIFIC_DOCROLES`, `is_builtin_role`, `format_rfc_target`, `parse_emphasized_literal`, `XRefRoleConfig`, `DefaultRoleConfig`. **Gap:** role `run()` execution (→ **H5b**) |
@@ -323,7 +345,7 @@ Tagged from `src/sphinx/tests/`.
 | `test_config/` | config | P2 | **mirrored** — `tests/config.rs` |
 | `test_extensions/` | registry | P2 | **done** — `tests/registry.rs`; `load_extension` landed on `SphinxApp` (**H4b**), covered by `tests/events_app.rs` |
 | `test_versioning.py` | versioning | P2 | **done** — `tests/versioning.rs` |
-| `test_util/` | util | P2 | **done** — `tests/util_rst_osutil.rs`, `tests/util_extra.rs`; `default_role` closed (**H1d**) |
+| `test_util/` | util | P2 | **mirrored** — `tests/util_rst_osutil.rs`, `tests/util_extra.rs`; `default_role` closed (**H1d**). The two upstream `escape` expectations are replaced by native hardened-contract assertions. |
 | `test_intl/` | intl / locale | P3 | **mirrored** — `tests/locale.rs`, `tests/intl.rs`, plus `test_util_i18n.py`'s `test_catalog_write_mo` / `test_format_date` cases as `intl` unit tests |
 | `test_quickstart.py` | quickstart | C1 | **mirrored** — `tests/quickstart.rs`, `tests/quickstart_cli.rs` |
 | `test_ext_apidoc/` | apidoc | C3 | **mirrored** — `tests/apidoc.rs` |
@@ -1349,7 +1371,7 @@ deviation unless a future decision explicitly requires reproducing pickle.
 ##### H11.2 HTML, dirhtml, and singlehtml
 
 Status: **partial**. The path/layout plumbing and asset-tag contracts are
-implemented, but the current real external-document suite still reports six
+implemented, but the current real external-document suite still reports five
 residual failures across three document trees. They cluster into HTML body and
 section shape, TOC/sidebar structure, navigation attributes/links, theme
 metadata values, and generated artifact/file-tree differences. Resolve these
@@ -1464,7 +1486,18 @@ explicitly documented renderer/theme provenance deviations.
   attribute contracts as regular black-box tests.
 - Updated real-theme viewport detection to recognize direct `<meta
   name="viewport">` declarations as well as templated `metatags` blocks, so
-  the renderer does not inject a duplicate default viewport tag.
+  the renderer does not inject a duplicate default viewport tag; Alabaster's
+  upstream dual-tag behavior remains preserved explicitly.
+- Matched Sphinx's preserved top-level-section read mode for RST doctrees,
+  section-derived page titles, section header links, comment omission, inline
+  literal markup, external reference classes, empty toctree wrappers, and
+  line-oriented block formatting. Added focused regressions in the docutils
+  HTML writer and external-doc harness.
+- Resolved dotted Pygments style declarations such as
+  `alabaster.support.Alabaster`, producing byte-identical Alabaster
+  `pygments.css` for the current external fixture.
+- Added Alabaster's page-context version value and normalized only the native
+  WebMCP script and `-sphinxdocrs` footer marker in strict HTML content parity.
 - Passed the active HTML-family path style into local TOC rendering, preserving
   directory targets for dirhtml pages instead of emitting flat `.html` links;
   `theme_render` now covers this nested navigation contract directly.

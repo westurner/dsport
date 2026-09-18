@@ -953,9 +953,9 @@ impl SphinxConfig {
         add("pygments_style", Null, Html, "Pygments style");
         add(
             "html_add_external_link_class",
-            Bool(false),
+            Bool(true),
             Html,
-            "Add an external class to non-internal content links",
+            "Add reference and external classes to content links",
         );
         add(
             "highlight_language",
@@ -1977,7 +1977,7 @@ mod sphinx_config_tests {
     #[test]
     fn external_link_class_defaults_off_and_reads_conf_value() {
         let cfg = SphinxConfig::new_defaults();
-        assert!(!cfg.html_add_external_link_class());
+        assert!(cfg.html_add_external_link_class());
 
         let mut raw = HashMap::new();
         raw.insert("html_add_external_link_class".into(), ConfigVal::Bool(true));

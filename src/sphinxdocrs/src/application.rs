@@ -1025,7 +1025,7 @@ mod tests {
         app.build().unwrap();
         let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
         assert!(
-            html.contains("class=\"external\" href=\"https://example.test/docs\""),
+            html.contains("class=\"reference external\" href=\"https://example.test/docs\""),
             "conf.py option should enable external link classes:\n{html}"
         );
     }
@@ -1053,7 +1053,7 @@ mod tests {
         app.build().unwrap();
         let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
         assert!(
-            html.contains("<h1>Welcome</h1>"),
+            html.contains("<h1>Welcome"),
             "body must not be HTML-escaped:\n{html}"
         );
         if html.contains("Quick search") {

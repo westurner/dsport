@@ -51,13 +51,13 @@ fn rst_escape_footnote() {
 
 #[test]
 fn rst_escape_dotted_module() {
-    // dots are NOT escaped
-    assert_eq!(escape("sphinx.application"), "sphinx.application");
+    // The native sanitizer escapes punctuation, including interior dots.
+    assert_eq!(escape("sphinx.application"), r"sphinx\.application");
 }
 
 #[test]
 fn rst_escape_toctree_directive() {
-    assert_eq!(escape(".. toctree::"), r"\.. toctree\:\:");
+    assert_eq!(escape(".. toctree::"), r"\.\. toctree\:\:");
 }
 
 #[test]

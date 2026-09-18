@@ -422,7 +422,7 @@ fn render_toc_html(entries: &[TocEntry], base_uri: &str, path_style: PathStyle) 
             href
         };
         out.push_str(&format!(
-            "<li class=\"toctree-l1\"><a class=\"reference internal\" href=\"{}\">{}</a>",
+            "<li><a class=\"reference internal\" href=\"{}\">{}</a>",
             html_escape_attr(&href),
             html_escape_text(&entry.title)
         ));
@@ -650,8 +650,8 @@ pub struct ThemeRenderer {
     /// page — mirrors `self.theme.sidebar_templates` (the classic `basic`
     /// theme's own default list; see the module accepted-deviation note).
     default_sidebars: Vec<String>,
-    /// The default docutils viewport tag, omitted when the resolved template
-    /// chain declares its own viewport tag.
+    /// The default docutils viewport tag, omitted for themes that own the tag;
+    /// Alabaster is the upstream exception and receives both tags.
     default_metatags: String,
 }
 
@@ -765,11 +765,14 @@ impl ThemeRenderer {
             &toc_entries,
             path_style,
         );
-        let default_metatags = if theme_declares_viewport(&template_dirs) {
-            String::new()
-        } else {
-            r#"<meta name="viewport" content="width=device-width, initial-scale=1" />"#.into()
-        };
+        let default_metatags =
+            if theme_name != "alabaster" && theme_declares_viewport(&template_dirs) {
+                String::new()
+            } else {
+                r#"<meta name="viewport" content="width=device-width, initial-scale=1" />
+"#
+                .into()
+            };
 
         Some(Self {
             env: jinja_env,

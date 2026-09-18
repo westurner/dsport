@@ -2933,4 +2933,45 @@ mod tests {
 
         assert_eq!(ids, vec![root, p1, t1]);
     }
+
+    #[test]
+    fn parser_for_path_prefers_longest_suffix_and_defaults_to_rst() {
+        let mut config = SphinxConfig::new_defaults();
+        config.set(
+            "source_suffix",
+            ConfigVal::Map(vec![
+                (".txt".into(), ConfigVal::Str("restructuredtext".into())),
+                (".rst.txt".into(), ConfigVal::Str("myst".into())),
+            ]),
+        );
+        let project = EnvProject::new("/tmp/src", &[(".rst", "restructuredtext")]);
+        let env = BuildEnvironment::new(config, project, "/tmp/src", "/tmp/doctrees");
+        assert_eq!(env.parser_for_path(Path::new("guide.rst.txt")), "myst");
+        assert_eq!(
+            env.parser_for_path(Path::new("guide.unknown")),
+            "restructuredtext"
+        );
+    }
+
+    #[test]
+    fn parse_source_rejects_unknown_parser() {
+        let mut config = SphinxConfig::new_defaults();
+        config.set(
+            "source_suffix",
+            ConfigVal::Map(vec![(".foo".into(), ConfigVal::Str("unknown".into()))]),
+        );
+        let project = EnvProject::new("/tmp/src", &[(".rst", "restructuredtext")]);
+        let env = BuildEnvironment::new(config, project, "/tmp/src", "/tmp/doctrees");
+        assert!(env.parse_source("guide", "body").is_err());
+    }
+
+    #[test]
+    fn doctree_store_rejects_traversal_and_corruption() {
+        let (_tmp, env) = make_env_with_tempdir();
+        assert!(env.doctree_path("../escape").is_err());
+        std::fs::create_dir_all(&env.doctreedir).unwrap();
+        std::fs::write(env.doctree_path("broken").unwrap(), b"not-json").unwrap();
+        let error = env.get_doctree("broken").unwrap_err().to_string();
+        assert!(error.contains("corrupt doctree"));
+    }
 }

@@ -10,15 +10,17 @@ This document merges the former `docs/sphinx-port-inventory.md`
 The H4-H7 implementation rows below reflect the current native code, not the
 original phase-4 placeholders. The focused theme renderer suite passes 34/34,
 the native builder parity matrix passes, and fresh Alabaster and Jinja/Pocoo
-builds match Python viewport metadata. The real external-doc suite currently
-has 10 passing and five failing cases; the remaining failures are tracked
-content/tree parity gaps rather than build failures.
+builds match Python viewport metadata. The gated external-document matrix is
+now fully green with all 15 real-project tree, HTML-content, and viewport cases
+passing.
 
 ### Latest local verification (2026-09-19)
 
 The current native library baseline is `cargo test -p sphinxdocrs --lib`:
-1011 tests pass. The latest all-target LLVM gate reports 78.87% branch
-coverage, 93.51% line coverage, and 91.56% function coverage. The focused
+1025 tests pass. The latest library LLVM measurement reports 76.32% branch
+coverage, 88.53% line coverage, and 87.08% function coverage. The latest
+all-target LLVM gate reports 77.97% branch coverage, 93.17% line coverage,
+and 91.24% function coverage. The focused
 H11.2 singlehtml slice now uses Sphinx-compatible `#document-{docname}`
 targets in merged-page anchors and WebMCP manifest URLs; the singlehtml
 integration and application tests pass. The two utility expectations in
@@ -29,19 +31,19 @@ narrow `sphinx.util.rst.escape` behavior. The native implementation still
 escapes all ASCII punctuation, removes control characters, and strips
 indentation; that remains an accepted native deviation.
 
-The gated external-document suite now has **10 passing and five failing** cases:
+The gated external-document suite now has **15 passing and zero failing** cases:
 `cargo test -p sphinxdocrs --features test-build-extdocs --test otherdocs`
-still fails five HTML cases. The H11.2 fixes now cover preserved Sphinx section
+passes the full matrix. The H11.2 fixes now cover preserved Sphinx section
 doctrees, page-title indexing, header links, inline literals, external-link
 classes, empty toctree wrappers, Alabaster metadata, default-plus-theme
 viewport metatags, canonical `pageurl` metadata from `html_baseurl`, Pygments
 style resolution, explicit-title cross-reference resolution, resolved xref
-class names, and block formatting. The remaining
-failures are three file-tree snapshots that include intentional native WebMCP
-artifacts, plus two Sphinx/Jinja theme-content cases covering image/reference
-fidelity, figure captions, legacy block serialization, and theme-specific
-assets. No
-external build failed to produce its expected HTML entry point.
+class names, and block formatting. The formerly failing cases covered three
+file-tree snapshots that include
+intentional native WebMCP artifacts, plus two Sphinx/Jinja theme-content cases
+covering image/reference fidelity, figure captions, legacy block serialization,
+and theme-specific assets. No external build failed to produce its expected
+HTML entry point.
 
 The latest focused H11.2 cycle adds singlehtml coverage for a titleless root
 document: the merged page now uses the intended `Contents` fallback instead of

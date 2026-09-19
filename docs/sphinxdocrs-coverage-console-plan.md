@@ -113,6 +113,20 @@ by `src/sphinxdocrs/tests/`.
     DSPort, Sphinx, and Jinja fixtures.
   - No new LLVM coverage report was run; the aggregate branch totals above
     remain unchanged.
+- Measured on 2026-09-19 (environment helper/domain inventory tranche):
+  - The focused `environment::tests` target passes all 62 tests after adding
+    direct coverage for document-title selection, missing/package autodoc
+    resolution, highlight no-op/`none` handling, invalid notebook decoding,
+    missing source errors, empty incremental reads, and read-phase standard,
+    RST, Python, JavaScript, index, and xref inventory population.
+  - Fresh library-only LLVM coverage after this addition is 76.32% branches
+    (657/2775 missed), 88.53% lines (3335/28565 missed), and 87.08% functions
+    (408/3157 missed). The retained report is
+    `reports/2026-09-19Tcoverage-console/library-after-environment-domain.log`.
+  - The fresh all-target LLVM gate is 77.97% branches (674/3059 missed),
+    93.17% lines (1979/28985 missed), and 91.24% functions (279/3184
+    missed). The retained report is
+    `reports/2026-09-19Tcoverage-console/all-targets-after-environment-domain.log`.
 
 Coverage scope note: `cargo +nightly llvm-cov ... --lib` does not execute
 `src/sphinxdocrs/tests/*.rs` integration-test binaries. Use the all-targets
@@ -426,7 +440,7 @@ execution order. `missed/total` is authoritative; percentages are rounded.
 
 | Module | Missed/total | Branch % | Upstream coverage source |
 | --- | ---: | ---: | --- |
-| `environment.rs` | lib 74/296; all 57/296 | lib 75.00%; all 80.74% | `test_environment/test_environment.py`, `test_environment_toctree.py`, `test_environment_record_dependencies.py` (updated 2026-09-19: added direct xref/toctree resolver cases covering explicit/shortened/unresolved refs, extlinks, hidden/caption/depth handling, plus prior discovery/YAML/read-event coverage; remaining misses are concentrated in larger lifecycle/domain branches) |
+| `environment.rs` | lib 120/412; all 95/412 | lib 70.87%; all 76.94% | `test_environment/test_environment.py`, `test_environment_toctree.py`, `test_environment_record_dependencies.py` (updated 2026-09-19: added direct document-title, autodoc module resolution, highlight-state, notebook decode, missing-source, empty incremental-read, and read-phase domain-inventory cases; remaining misses are concentrated in larger lifecycle/domain branches) |
 | `config.rs` | lib 28/198; all 28/198 | lib 85.86%; all 85.86% | `test_config/test_config.py`, `test_config/test_copyright.py` (updated 2026-09-19: added raw conversion wrong-shape coverage and the `read_conf_py` wrapper; remaining misses are defensive PyO3/raw-shape edges) |
 | `builders/html.rs` | lib 34/126; all 32/126 | lib 73.02%; all 74.60% | `test_builders/test_build_html*.py`, `test_build_html_assets.py`, `test_build_html_toctree.py`, `test_build_warnings.py` (updated 2026-09-19: added wrapper title, dirhtml target, and static-file layout cases) |
 | `builders/linkcheck.rs` | lib 32/62; all 14/62 | lib 48.39%; all 77.42% | `test_builders/test_build_linkcheck.py`, HTTP/logging tests |

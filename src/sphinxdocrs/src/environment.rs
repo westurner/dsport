@@ -2837,6 +2837,58 @@ mod tests {
     }
 
     #[test]
+    fn expand_autodoc_handles_missing_modules_and_package_modules() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = EnvProject::new(dir.path(), &[(".rst", "restructuredtext")]);
+        let env = BuildEnvironment::new(
+            SphinxConfig::new_defaults(),
+            project,
+            dir.path(),
+            dir.path().join("doctrees"),
+        );
+
+        assert!(env.expand_autodoc(".. automodule:: missing\n").is_none());
+
+        std::fs::create_dir(dir.path().join("package")).unwrap();
+        std::fs::write(
+            dir.path().join("package/__init__.py"),
+            "\"\"\"Package docs.\"\"\"\n\ndef answer():\n    return 42\n",
+        )
+        .unwrap();
+        let expanded = env
+            .expand_autodoc(".. automodule:: package\n   :members:\n\n")
+            .expect("package automodule should expand");
+        assert!(expanded.contains("Package docs."));
+    }
+
+    #[test]
+    fn document_title_prefers_document_title_and_skips_empty_titles() {
+        let mut tree = Doctree::new_document("title");
+        tree.set_kind(
+            tree.root(),
+            NodeKind::Document {
+                source: String::new(),
+                ids: String::new(),
+                names: String::new(),
+                title: "Document title".into(),
+            },
+        );
+        assert_eq!(
+            BuildEnvironment::document_title_from_tree(&tree).as_deref(),
+            Some("Document title")
+        );
+
+        let mut empty = Doctree::new_document("empty");
+        let section = empty.append(empty.root(), NodeKind::Section {
+            ids: String::new(),
+            names: String::new(),
+            classes: String::new(),
+        });
+        empty.append(section, NodeKind::Paragraph);
+        assert_eq!(BuildEnvironment::document_title_from_tree(&empty), None);
+    }
+
+    #[test]
     fn highlight_directive_sets_language_for_unlabeled_code_block() {
         let mut env = make_env();
         env.read_one_with_source(
@@ -2905,6 +2957,45 @@ mod tests {
             )
             .unwrap();
         assert!(rewritten.contains("   .. code-block::\n"));
+    }
+
+    #[test]
+    fn highlight_state_handles_none_and_noop_inputs() {
+        let env = make_env();
+        assert!(env.apply_highlight_language("Plain text").is_none());
+
+        let rewritten = env
+            .apply_highlight_language(".. highlight:: none\n\n.. code-block::\n\n   text")
+            .unwrap();
+        assert!(rewritten.contains(".. code-block::\n"));
+        assert!(!rewritten.contains(".. code-block:: none"));
+    }
+
+    #[test]
+    fn parse_source_rejects_invalid_notebooks() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.project
+            .docname_to_path
+            .insert("broken".into(), "broken.ipynb".into());
+        let error = env.parse_source("broken", "not json").unwrap_err().to_string();
+        assert!(error.contains("invalid notebook"));
+    }
+
+    #[test]
+    fn read_one_reports_missing_source() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        let error = env.read_one("missing").unwrap_err().to_string();
+        assert!(error.contains("failed to read"));
+    }
+
+    #[test]
+    fn read_docs_with_empty_selection_keeps_existing_state() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.read_one_with_source("index", "Index\n=====\n").unwrap();
+        let read = env.read_docs(Vec::new(), None).unwrap();
+        assert!(read.is_empty());
+        assert!(env.is_doc_read("index"));
+        assert!(env.has_stored_doctree("index"));
     }
 
     #[test]
@@ -3502,6 +3593,33 @@ mod tests {
         let error = env.read_all_with_events(&events).unwrap_err().to_string();
         assert!(error.contains("listener failed"));
         assert!(!env.has_stored_doctree("index"));
+    }
+
+    #[test]
+    fn read_one_populates_domain_inventories_from_source() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.read_one_with_source(
+            "index",
+            ".. _label:\n\n.. rst:directive:: toctree\n\n.. glossary::\n\n   widget\n      A thing.\n\n.. py:module:: pkg.mod\n\n.. py:function:: greet(name)\n\n.. js:module:: widgets\n\n.. js:function:: render(el)\n\n.. index:: pair: foo; bar\n\nSee :ref:`label`.\n",
+        )
+        .unwrap();
+
+        assert!(env.std_domain.anonlabels.contains_key("label"));
+        assert!(env.std_domain.terms.contains_key("widget"));
+        assert!(env
+            .domain_objects()
+            .iter()
+            .any(|(domain, entry)| domain == "rst" && entry.name == "toctree"));
+        assert!(env
+            .domain_objects()
+            .iter()
+            .any(|(domain, entry)| domain == "py" && entry.name == "pkg.mod.greet"));
+        assert!(env
+            .domain_objects()
+            .iter()
+            .any(|(domain, entry)| domain == "js" && entry.name == "widgets.render"));
+        assert!(!env.indexentries.get("index").unwrap().is_empty());
+        assert_eq!(env.pending_xrefs.get("index").unwrap().len(), 1);
     }
 
     #[test]

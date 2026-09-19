@@ -21,6 +21,7 @@
 //! | `toc` (per-page) | rendered from the current document's section tree, distinct from the global `toctree()` above |
 //! | `sidebars` | [`resolve_sidebars`] — `html_sidebars` pattern-matched per docname via `crate::util_matching` (the same `fnmatch`-style glob translator `exclude_patterns`/`include_patterns` use), mirroring `StandaloneHTMLBuilder._get_sidebars`'s wildcard-precedence rule |
 //! | `parents`/`next`/`prev`/`rellinks` | [`collect_relations`] — a pre-order flatten of the global toctree, mirroring `BuildEnvironment.collect_relations` |
+//! | `pageurl` | per-page absolute URL from `html_baseurl` and the builder target URI |
 //! | `theme_<option>` | merged `theme.conf`/`theme.toml` options + `html_theme_options` (config wins) |
 //! | `html_context` | merged last (highest precedence), matching `self.globalcontext |= self.config.html_context` |
 //! | `html-page-context` event | emitted per page via `BuildEnvironment::events_handle` (H4a), best-effort no-op when absent |
@@ -41,7 +42,8 @@
 //!   renders correctly only when it already lands there through
 //!   `html_static_path` or the active theme's own static files.
 //! - `meta` (per-page docinfo) is not modeled. The default docutils viewport
-//!   metatag is supplied only when the active theme does not declare one.
+//!   metatag is supplied only when the active theme does not declare one,
+//!   except for Alabaster, which receives both upstream viewport tags.
 //! - `sphinx_version` reports this crate's own version with a `-sphinxdocrs`
 //!   marker, not upstream Sphinx's, since there is no bundled Python Sphinx
 //!   version to report in a pure-Rust build.
@@ -1074,6 +1076,15 @@ impl ThemeRenderer {
         ctx.insert("title".into(), title.into());
         ctx.insert("body".into(), body_html.into());
         ctx.insert("meta".into(), serde_json::Value::Null);
+        ctx.insert(
+            "pageurl".into(),
+            canonical_page_url(
+                &env.config.html_baseurl(),
+                &target_uri(self.state.path_style, docname),
+            )
+            .map(serde_json::Value::from)
+            .unwrap_or(serde_json::Value::Null),
+        );
         ctx.insert("metatags".into(), self.default_metatags.clone().into());
         ctx.insert("has_maths_elements".into(), false.into());
 
@@ -1193,6 +1204,15 @@ impl ThemeRenderer {
         ctx.insert("title".into(), "Search".into());
         ctx.insert("body".into(), "".into());
         ctx.insert("meta".into(), serde_json::Value::Null);
+        ctx.insert(
+            "pageurl".into(),
+            canonical_page_url(
+                &env.config.html_baseurl(),
+                &target_uri(self.state.path_style, "search"),
+            )
+            .map(serde_json::Value::from)
+            .unwrap_or(serde_json::Value::Null),
+        );
         ctx.insert("metatags".into(), self.default_metatags.clone().into());
         ctx.insert("has_maths_elements".into(), false.into());
         ctx.insert("next".into(), serde_json::Value::Null);
@@ -1261,6 +1281,17 @@ fn theme_declares_viewport(template_dirs: &[PathBuf]) -> bool {
     template_dirs
         .iter()
         .any(|directory| directory_declares_viewport(directory))
+}
+
+fn canonical_page_url(baseurl: &str, target_uri: &str) -> Option<String> {
+    if baseurl.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{}/{}",
+        baseurl.trim_end_matches('/'),
+        target_uri.trim_start_matches('/')
+    ))
 }
 
 /// Convert a `serde_json`-built context into a
@@ -1596,6 +1627,19 @@ fn config_val_to_json(v: &crate::config::ConfigVal) -> serde_json::Value {
 mod tests {
     use super::*;
     use docutilsrs::parse_rst_with_source;
+
+    #[test]
+    fn canonical_page_url_joins_base_url_and_target() {
+        assert_eq!(canonical_page_url("", "index.html"), None);
+        assert_eq!(
+            canonical_page_url("https://docs.example.test/guide/", "index.html"),
+            Some("https://docs.example.test/guide/index.html".into())
+        );
+        assert_eq!(
+            canonical_page_url("/guide", "/reference.html"),
+            Some("/guide/reference.html".into())
+        );
+    }
 
     #[test]
     fn render_attributes_rejects_markup_and_event_attribute_names() {

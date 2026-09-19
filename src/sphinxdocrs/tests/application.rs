@@ -294,6 +294,26 @@ fn html_build_always_emits_webmcp_assets() {
     assert_eq!(manifest["pages"][0]["url"], "index.html");
 }
 
+/// Native extensions are idempotent, matching Sphinx's setup-extension
+/// behavior when the same extension is encountered through multiple paths.
+#[test]
+fn loading_native_extension_twice_is_idempotent() {
+    let src = make_src_with_docs(&[("index", "Welcome\n=======\n\nBody.\n")]);
+    let out = tempfile::TempDir::new().unwrap();
+    let dt = tempfile::TempDir::new().unwrap();
+    let mut app =
+        SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+
+    let extension = "sphinxdocrs::extensions::webmcp";
+    assert_eq!(app.extension_sources.get(extension), Some(&"rust"));
+    let loaded_count = app.extensions.len();
+
+    app.load_extension(extension).unwrap();
+
+    assert_eq!(app.extensions.len(), loaded_count);
+    assert_eq!(app.extension_sources.get(extension), Some(&"rust"));
+}
+
 #[test]
 fn singlehtml_build_uses_manifest_anchors_and_webmcp_assets() {
     let src = make_src_with_docs(&[

@@ -8,7 +8,7 @@ This document merges the former `docs/sphinx-port-inventory.md`
 ## Current Verification (2026-09-19)
 
 The H4-H7 implementation rows below reflect the current native code, not the
-original phase-4 placeholders. The focused theme renderer suite passes 17/17,
+original phase-4 placeholders. The focused theme renderer suite passes 33/33,
 the native builder parity matrix passes, and fresh Alabaster and Jinja/Pocoo
 builds match Python viewport metadata. The real external-doc suite currently
 passes 9/14 cases; the five remaining failures are tracked content/tree parity
@@ -34,7 +34,8 @@ The gated external-document suite now passes **9/14**:
 fails five HTML cases. The H11.2 fixes now cover preserved Sphinx section
 doctrees, page-title indexing, header links, inline literals, external-link
 classes, empty toctree wrappers, Alabaster metadata, theme-aware viewport
-handling, Pygments style resolution, and block formatting. The remaining
+handling, canonical `pageurl` metadata from `html_baseurl`, Pygments style
+resolution, and block formatting. The remaining
 failures are three file-tree snapshots that include intentional native WebMCP
 artifacts, plus two Sphinx/Jinja theme-content cases covering navigation
 attributes, image/reference fidelity, captions, and theme-specific assets. No
@@ -712,9 +713,10 @@ operator (needed by `alabaster`'s `titlesuffix` concatenation) — both
 fixed directly in the vendored `minijinja` fork.
 
 **Gate:** no dedicated `tests/theming.rs` file exists — coverage instead
-comes from inline `#[cfg(test)]` modules in `theme_render.rs` (17 cases:
+comes from inline `#[cfg(test)]` modules in `theme_render.rs` (33 focused
+cases covering
 `pathto`/`hasdoc`/`toctree` globals, sidebar glob precedence, local vs.
-global `toc`, minijinja markup-safety propagation) and `theme_static.rs`
+global `toc`, canonical page URLs, minijinja markup-safety propagation) and `theme_static.rs`
 (5 cases: conf parsing, inheritance chains, absent-theme fallback), plus
 end-to-end verification building a real `alabaster`-themed tree
 (`tests/otherdocs.rs`, gated by `--features test-build-extdocs`) and a

@@ -2236,7 +2236,7 @@ fn expand_yaml_toctree_directives(source: &str, srcdir: &Path) -> Result<String,
 /// `"tutorial/getting-started"` while `docname_join("index",
 /// "usage/installation")` stays `"usage/installation"`. `..`/`.` segments
 /// in `other` are normalized against `base`'s directory the same way.
-fn docname_join(base: &str, other: &str) -> String {
+pub(crate) fn docname_join(base: &str, other: &str) -> String {
     let mut segments: Vec<&str> = match base.rfind('/') {
         Some(idx) => base[..idx].split('/').collect(),
         None => Vec::new(),

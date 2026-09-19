@@ -1545,7 +1545,17 @@ explicitly documented renderer/theme provenance deviations.
   global that resets per page and emits each key once, matching the upstream
   context helper. The focused renderer regression covers duplicate and empty
   keys. The Jinja2 external fixture no longer reports its `I`/`N` access-key
-  mismatch; its remaining differences are TOC depth and image/theme markup.
+  mismatch; its remaining differences are image/theme markup and legacy-theme
+  block serialization.
+- Honored real-theme `toctree()` keyword arguments for `maxdepth`, `collapse`,
+  and `titles_only`, preserving directive captions and per-directive depth
+  defaults. Global theme entries now include stored document section headings
+  when the theme requests them, while page-local TOCs retain Sphinx's root
+  document anchor and unclassed section markup. Focused coverage now includes
+  bounded depth, collapsed branches, captioned groups, titles-only trees, and
+  overline-style preserved document titles. The Sphinx external case no longer
+  reports a TOC-tree or root-anchor mismatch; hidden-node provenance remains an
+  accepted `includehidden` limitation.
   Also matched the default `html_title` separator when `release` is empty. A
   minimal basic-theme search-page comparison now differs only in the expected
   native-versus-upstream `sphinx_version` footer value.

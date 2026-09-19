@@ -26,7 +26,9 @@
 //! | `html-page-context` event | emitted per page via `BuildEnvironment::events_handle` (H4a), best-effort no-op when absent |
 //!
 //! **Accepted deviations** (see also `crate::toctree`'s own module doc):
-//! - `toctree()` ignores its `maxdepth`/`collapse`/`includehidden` kwargs.
+//! - `toctree()` accepts `maxdepth`/`collapse`/`titles_only` kwargs; hidden
+//!   node provenance is not retained, so `includehidden` is accepted but has
+//!   no additional effect.
 //! - `css_files`/`script_files` are primarily discovered by scanning
 //!   `outdir/_static/` for top-level `*.css`/`*.js` files after static
 //!   assets are copied (every copied asset gets linked, in the order
@@ -58,7 +60,7 @@ use std::sync::{Arc, Mutex};
 
 use jinja2rs::Environment;
 use markupsafers::Markup;
-use minijinja::value::{Object, ObjectRepr, Value};
+use minijinja::value::{from_args, Kwargs, Object, ObjectRepr, Value};
 use minijinja::{Error, ErrorKind, State};
 
 use crate::app_events::EventArg;
@@ -93,6 +95,9 @@ struct PageState {
     /// `toctree()` Jinja global, which is itself a per-page call computing
     /// fresh `pathto()`-relativized hrefs every time, not a fixed string.
     toc_entries: Vec<TocEntry>,
+    /// Root-document toctree directives, preserving their captions and
+    /// directive-local maxdepth values for real theme `toctree()` calls.
+    toc_groups: Vec<TocGroup>,
     /// Output layout used to resolve page URIs and asset roots.
     path_style: PathStyle,
     /// Output directory used for local asset checksums.
@@ -102,6 +107,13 @@ struct PageState {
     js_attributes: HashMap<String, HashMap<String, String>>,
     /// Access keys already emitted while rendering the current page.
     accesskeys: Mutex<HashSet<String>>,
+}
+
+#[derive(Debug, Clone)]
+struct TocGroup {
+    caption: Option<String>,
+    entries: Vec<TocEntry>,
+    max_depth: usize,
 }
 
 impl PageState {
@@ -114,12 +126,13 @@ impl PageState {
 }
 
 fn target_uri(path_style: PathStyle, docname: &str) -> String {
+    let has_fragment = docname.contains('#');
     let (docname, fragment) = docname.split_once('#').unwrap_or((docname, ""));
     let uri = match path_style {
         PathStyle::Flat => HtmlBuilder::new().get_target_uri(docname),
         PathStyle::Dir => HtmlBuilder::new_dir_style().get_target_uri(docname),
     };
-    if fragment.is_empty() {
+    if !has_fragment {
         uri
     } else {
         format!("{uri}#{fragment}")
@@ -216,9 +229,7 @@ impl Object for HasdocGlobal {
 }
 
 /// `toctree(**kwargs)` — mirrors
-/// `StandaloneHTMLBuilder._get_local_toctree` (see the module
-/// accepted-deviation note: kwargs are ignored, and this always renders the
-/// global toctree).
+/// `StandaloneHTMLBuilder._get_local_toctree` for the native global toctree.
 struct ToctreeGlobal(Arc<PageState>);
 
 impl std::fmt::Debug for ToctreeGlobal {
@@ -232,9 +243,37 @@ impl Object for ToctreeGlobal {
         ObjectRepr::Plain
     }
 
-    fn call(self: &Arc<Self>, _state: &State<'_, '_>, _args: &[Value]) -> Result<Value, Error> {
+    fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
+        let (_, kwargs) = from_args::<(&[Value], Kwargs)>(args)?;
+        let requested_max_depth = kwargs.get::<Option<Value>>("maxdepth")?.and_then(|value| {
+            let text = value.to_string();
+            (!text.is_empty())
+                .then(|| text.parse::<usize>().ok())
+                .flatten()
+        });
+        let collapse = kwargs
+            .get::<Option<Value>>("collapse")?
+            .map(|value| matches!(value.to_string().as_str(), "true" | "True" | "1"))
+            .unwrap_or(false);
+        let titles_only = kwargs
+            .get::<Option<Value>>("titles_only")?
+            .map(|value| matches!(value.to_string().as_str(), "true" | "True" | "1"))
+            .unwrap_or(false);
+        // Hidden-node provenance is not retained by the native environment;
+        // consume the upstream keyword so real templates remain compatible.
+        let _ = kwargs.get::<Option<Value>>("includehidden")?;
         let base_uri = self.0.current_target_uri();
-        let html = render_toc_html(&self.0.toc_entries, &base_uri, self.0.path_style);
+        let current_docname = self.0.current_docname.lock().unwrap().clone();
+        let html = render_toc_groups(
+            &self.0.toc_groups,
+            &self.0.toc_entries,
+            &base_uri,
+            self.0.path_style,
+            requested_max_depth,
+            collapse,
+            titles_only,
+            &current_docname,
+        );
         Ok(markupsafers::minijinja_compat::markup_to_value(
             Markup::from_safe(html),
         ))
@@ -438,7 +477,143 @@ fn resource_pathto(state: &PageState, name: &str) -> String {
 /// it (mirrors upstream's `pathto()`-based link construction) — a raw
 /// `get_target_uri` result is root-relative and 404s from any page not at
 /// the project root.
+fn global_toc_groups(env: &BuildEnvironment, root_doc: &str) -> Option<Vec<TocGroup>> {
+    let tree = env.get_doctree(root_doc).ok()?;
+    let mut groups = Vec::new();
+    for id in 0..tree.nodes_len() {
+        let docutilsrs::doctree::NodeKind::Toctree {
+            caption,
+            maxdepth,
+            entries,
+            ..
+        } = &tree.node(id).kind
+        else {
+            continue;
+        };
+        let entries: Vec<String> = entries
+            .iter()
+            .map(|entry| crate::environment::docname_join(root_doc, entry))
+            .collect();
+        let resolved = toctree::resolve_from_entries(env, &entries, 0);
+        if !resolved.is_empty() {
+            groups.push(TocGroup {
+                caption: caption.clone(),
+                entries: resolved,
+                max_depth: (*maxdepth).max(0) as usize,
+            });
+        }
+    }
+    Some(groups)
+}
+
+fn enrich_toc_entries_with_sections(env: &BuildEnvironment, entries: &mut [TocEntry]) {
+    for entry in entries {
+        enrich_toc_entries_with_sections(env, &mut entry.children);
+        let Some(tree) = env.get_doctree(&entry.docname).ok() else {
+            continue;
+        };
+        let mut sections = local_toc_from_doctree(Some(&tree), &entry.docname);
+        if sections
+            .first()
+            .is_some_and(|section| env.titles.get(&entry.docname) == Some(&section.title))
+        {
+            let root = sections.remove(0);
+            sections = root.children;
+        }
+        sections.extend(std::mem::take(&mut entry.children));
+        entry.children = sections;
+    }
+}
+
+fn render_toc_groups(
+    groups: &[TocGroup],
+    fallback_entries: &[TocEntry],
+    base_uri: &str,
+    path_style: PathStyle,
+    requested_max_depth: Option<usize>,
+    collapse: bool,
+    titles_only: bool,
+    current_docname: &str,
+) -> String {
+    if groups.is_empty() {
+        return render_toc_html_with_options(
+            fallback_entries,
+            base_uri,
+            path_style,
+            requested_max_depth.unwrap_or(0),
+            collapse,
+            titles_only,
+            true,
+            current_docname,
+        );
+    }
+
+    let mut out = String::new();
+    for group in groups {
+        if group.entries.is_empty() {
+            continue;
+        }
+        if let Some(caption) = &group.caption {
+            out.push_str(&format!(
+                "<p class=\"caption\" role=\"heading\"><span class=\"caption-text\">{}</span></p>\n",
+                html_escape_text(caption)
+            ));
+        }
+        let max_depth = requested_max_depth
+            .filter(|depth| *depth != 0)
+            .unwrap_or(group.max_depth);
+        out.push_str(&render_toc_html_with_options(
+            &group.entries,
+            base_uri,
+            path_style,
+            max_depth,
+            collapse,
+            titles_only,
+            true,
+            current_docname,
+        ));
+    }
+    out
+}
+
 fn render_toc_html(entries: &[TocEntry], base_uri: &str, path_style: PathStyle) -> String {
+    render_toc_html_with_options(entries, base_uri, path_style, 0, false, false, false, "")
+}
+
+fn render_toc_html_with_options(
+    entries: &[TocEntry],
+    base_uri: &str,
+    path_style: PathStyle,
+    max_depth: usize,
+    collapse: bool,
+    titles_only: bool,
+    depth_classes: bool,
+    current_docname: &str,
+) -> String {
+    render_toc_html_at_depth(
+        entries,
+        base_uri,
+        path_style,
+        max_depth,
+        collapse,
+        titles_only,
+        depth_classes,
+        current_docname,
+        1,
+    )
+}
+
+fn render_toc_html_at_depth(
+    entries: &[TocEntry],
+    base_uri: &str,
+    path_style: PathStyle,
+    max_depth: usize,
+    collapse: bool,
+    titles_only: bool,
+    depth_classes: bool,
+    current_docname: &str,
+    depth: usize,
+) -> String {
     if entries.is_empty() {
         return String::new();
     }
@@ -454,19 +629,46 @@ fn render_toc_html(entries: &[TocEntry], base_uri: &str, path_style: PathStyle) 
         } else {
             href
         };
-        out.push_str(&format!(
-            "<li><a class=\"reference internal\" href=\"{}\">{}</a>",
-            html_escape_attr(&href),
-            html_escape_text(&entry.title)
-        ));
-        if !entry.children.is_empty() {
-            out.push('\n');
-            out.push_str(&render_toc_html(&entry.children, base_uri, path_style));
+        if depth_classes {
+            out.push_str(&format!(
+                "<li class=\"toctree-l{depth}\"><a class=\"reference internal\" href=\"{}\">{}</a>",
+                html_escape_attr(&href),
+                html_escape_text(&entry.title)
+            ));
+        } else {
+            out.push_str(&format!(
+                "<li><a class=\"reference internal\" href=\"{}\">{}</a>",
+                html_escape_attr(&href),
+                html_escape_text(&entry.title)
+            ));
+        }
+        let within_depth = max_depth == 0 || depth < max_depth;
+        let on_current_branch = !collapse || toc_branch_contains(entry, current_docname);
+        if !titles_only && !entry.children.is_empty() && within_depth && on_current_branch {
+            out.push_str(&render_toc_html_at_depth(
+                &entry.children,
+                base_uri,
+                path_style,
+                max_depth,
+                collapse,
+                titles_only,
+                depth_classes,
+                current_docname,
+                depth + 1,
+            ));
         }
         out.push_str("</li>\n");
     }
     out.push_str("</ul>\n");
     out
+}
+
+fn toc_branch_contains(entry: &TocEntry, docname: &str) -> bool {
+    entry.docname == docname
+        || entry
+            .children
+            .iter()
+            .any(|child| toc_branch_contains(child, docname))
 }
 
 /// Extract the section-heading TOC for one document. Unlike the global
@@ -495,11 +697,14 @@ fn local_toc_from_doctree(
         tree: &docutilsrs::doctree::Doctree,
         parent: docutilsrs::doctree::NodeId,
         docname: &str,
+        level: usize,
+        document_title: &str,
     ) -> Vec<TocEntry> {
         tree.node(parent)
             .children
             .iter()
-            .filter_map(|&id| {
+            .enumerate()
+            .filter_map(|(index, &id)| {
                 let node = tree.node(id);
                 let docutilsrs::doctree::NodeKind::Section { ids, .. } = &node.kind else {
                     return None;
@@ -510,16 +715,29 @@ fn local_toc_from_doctree(
                         .then(|| text_content(tree, child))
                 })?;
                 Some(TocEntry {
-                    docname: format!("{docname}#{ids}"),
+                    docname: if level == 0
+                        && index == 0
+                        && (document_title.is_empty() || title == document_title)
+                    {
+                        format!("{docname}#")
+                    } else {
+                        format!("{docname}#{ids}")
+                    },
                     title,
-                    children: sections(tree, id, docname),
+                    children: sections(tree, id, docname, level + 1, document_title),
                 })
             })
             .collect()
     }
 
     doctree
-        .map(|tree| sections(tree, tree.root(), docname))
+        .map(|tree| {
+            let document_title = match &tree.node(tree.root()).kind {
+                docutilsrs::doctree::NodeKind::Document { title, .. } => title.as_str(),
+                _ => "",
+            };
+            sections(tree, tree.root(), docname, 0, document_title)
+        })
         .unwrap_or_default()
 }
 
@@ -742,8 +960,18 @@ impl ThemeRenderer {
 
         let all_docs: HashSet<String> = all_docs.into_iter().cloned().collect();
         let toc_entries = toctree::global_toctree_for_doc(env, 0);
-        let mut relations = collect_relations(&toc_entries);
         let root_doc = env.config.root_doc();
+        let mut toc_groups = global_toc_groups(env, &root_doc).unwrap_or_else(|| {
+            vec![TocGroup {
+                caption: None,
+                entries: toc_entries.clone(),
+                max_depth: 0,
+            }]
+        });
+        for group in &mut toc_groups {
+            enrich_toc_entries_with_sections(env, &mut group.entries);
+        }
+        let mut relations = collect_relations(&toc_entries);
         if !relations.contains_key(&root_doc) {
             if let Some(first) = toc_entries.first() {
                 relations.insert(
@@ -764,6 +992,7 @@ impl ThemeRenderer {
             all_docs,
             use_index: env.config.html_use_index(),
             toc_entries: toc_entries.clone(),
+            toc_groups,
             path_style,
             outdir: outdir.to_path_buf(),
             css_attributes: env
@@ -1445,6 +1674,91 @@ mod tests {
     }
 
     #[test]
+    fn render_toc_html_honors_depth_and_collapse_options() {
+        let entries = vec![
+            TocEntry {
+                docname: "guide".into(),
+                title: "Guide".into(),
+                children: vec![TocEntry {
+                    docname: "guide/intro".into(),
+                    title: "Introduction".into(),
+                    children: vec![TocEntry {
+                        docname: "guide/details".into(),
+                        title: "Details".into(),
+                        children: vec![],
+                    }],
+                }],
+            },
+            TocEntry {
+                docname: "reference".into(),
+                title: "Reference".into(),
+                children: vec![TocEntry {
+                    docname: "reference/api".into(),
+                    title: "API".into(),
+                    children: vec![],
+                }],
+            },
+        ];
+
+        let bounded = render_toc_html_with_options(
+            &entries,
+            "index.html",
+            PathStyle::Flat,
+            2,
+            false,
+            false,
+            false,
+            "",
+        );
+        assert!(bounded.contains("Introduction"));
+        assert!(!bounded.contains("Details"));
+
+        let collapsed = render_toc_html_with_options(
+            &entries,
+            "index.html",
+            PathStyle::Flat,
+            0,
+            true,
+            false,
+            false,
+            "guide/intro",
+        );
+        assert!(collapsed.contains("Introduction"));
+        assert!(collapsed.contains("Details"));
+        assert!(!collapsed.contains("API"));
+    }
+
+    #[test]
+    fn render_toc_groups_emits_caption_and_titles_only_tree() {
+        let groups = vec![TocGroup {
+            caption: Some("Contents".into()),
+            entries: vec![TocEntry {
+                docname: "guide".into(),
+                title: "Guide".into(),
+                children: vec![TocEntry {
+                    docname: "guide/intro".into(),
+                    title: "Introduction".into(),
+                    children: vec![],
+                }],
+            }],
+            max_depth: 0,
+        }];
+        let html = render_toc_groups(
+            &groups,
+            &[],
+            "index.html",
+            PathStyle::Flat,
+            None,
+            false,
+            true,
+            "",
+        );
+        assert!(html.contains("caption-text\">Contents</span>"));
+        assert!(html.contains("toctree-l1"));
+        assert!(!html.contains("Introduction"));
+    }
+
+    #[test]
     fn local_toc_ignores_document_level_toctree() {
         let doctree = parse_rst_with_source(
             ".. toctree::\n\n   guide/intro\n   guide/reference\n",
@@ -1478,6 +1792,20 @@ mod tests {
         assert!(html.contains("href=\"#second\""), "got: {html}");
         assert!(html.find("First").unwrap() < html.find("Second").unwrap());
         assert!(html.find("Nested").unwrap() > html.find("First").unwrap());
+    }
+
+    #[test]
+    fn local_toc_document_title_uses_page_anchor() {
+        let doctree = docutilsrs::parse_rst_with_options(
+            "======\nSphinx\n======\n\nGet started\n-----------\n",
+            "index",
+            docutilsrs::TitlePromotion::Preserve,
+        );
+        let entries = local_toc_from_doctree(Some(&doctree), "index");
+        assert_eq!(entries[0].title, "Sphinx");
+        assert_eq!(entries[0].docname, "index#");
+        let html = render_toc_html(&entries, "index.html", PathStyle::Flat);
+        assert!(html.contains("href=\"#\">Sphinx</a>"), "got: {html}");
     }
 
     #[test]
@@ -1610,6 +1938,7 @@ mod tests {
             all_docs: HashSet::new(),
             use_index: true,
             toc_entries: Vec::new(),
+            toc_groups: Vec::new(),
             path_style: PathStyle::Flat,
             outdir: outdir.path().to_path_buf(),
             css_attributes: HashMap::new(),

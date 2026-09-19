@@ -1502,4 +1502,261 @@ mod tests {
 
         assert!(result.is_err(), "should error when no source file exists");
     }
+
+    // ── index_link ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn index_link_without_anchor() {
+        let link = builder().index_link("guide/intro", "");
+        assert_eq!(link, "<a href=\"guide/intro.html\">guide/intro</a>");
+    }
+
+    #[test]
+    fn index_link_with_anchor() {
+        let link = builder().index_link("index", "term-1");
+        assert_eq!(link, "<a href=\"index.html#term-1\">index</a>");
+    }
+
+    // ── render_genindex_page ──────────────────────────────────────────────────
+
+    #[test]
+    fn render_genindex_page_empty_buckets() {
+        let html = builder().render_genindex_page(&[], &PageMeta::default());
+        assert!(html.contains("No index entries"));
+    }
+
+    #[test]
+    fn render_genindex_page_simple_term_with_links() {
+        let buckets = vec![(
+            "A".to_string(),
+            vec![GenIndexTerm {
+                name: "apple".to_string(),
+                links: vec![("fruit".to_string(), String::new())],
+                subterms: vec![],
+                see: None,
+            }],
+        )];
+        let html = builder().render_genindex_page(&buckets, &PageMeta::default());
+        assert!(html.contains("apple"));
+        assert!(html.contains("fruit.html"));
+        assert!(html.contains("<h2 id=\"A\">A</h2>"));
+    }
+
+    #[test]
+    fn render_genindex_page_see_and_seealso_terms() {
+        let buckets = vec![(
+            "B".to_string(),
+            vec![
+                GenIndexTerm {
+                    name: "banana".to_string(),
+                    links: vec![],
+                    subterms: vec![],
+                    see: Some(("fruit".to_string(), false)),
+                },
+                GenIndexTerm {
+                    name: "berry".to_string(),
+                    links: vec![],
+                    subterms: vec![],
+                    see: Some(("fruit".to_string(), true)),
+                },
+            ],
+        )];
+        let html = builder().render_genindex_page(&buckets, &PageMeta::default());
+        assert!(html.contains("(see fruit)"));
+        assert!(html.contains("(see also fruit)"));
+    }
+
+    #[test]
+    fn render_genindex_page_subterms_with_and_without_direct_links() {
+        let buckets = vec![(
+            "C".to_string(),
+            vec![
+                GenIndexTerm {
+                    name: "cherry".to_string(),
+                    links: vec![],
+                    subterms: vec![("pie".to_string(), vec![("desserts".to_string(), String::new())])],
+                    see: None,
+                },
+                GenIndexTerm {
+                    name: "citrus".to_string(),
+                    links: vec![("fruit".to_string(), String::new())],
+                    subterms: vec![("orange".to_string(), vec![("fruit".to_string(), "orange".to_string())])],
+                    see: None,
+                },
+            ],
+        )];
+        let html = builder().render_genindex_page(&buckets, &PageMeta::default());
+        // No-direct-links term: name has no "(...)" summary before its subterm list.
+        assert!(html.contains("cherry\n<ul>"));
+        assert!(html.contains("pie: "));
+        // Direct-links term: name is followed by "(links)" then its subterm list.
+        assert!(html.contains("citrus ("));
+        assert!(html.contains("orange: "));
+        assert!(html.contains("fruit.html#orange"));
+    }
+
+    // ── render_modindex_page ──────────────────────────────────────────────────
+
+    #[test]
+    fn render_modindex_page_empty_buckets() {
+        let html = builder().render_modindex_page(&[], &PageMeta::default());
+        assert!(html.contains("No modules recorded"));
+    }
+
+    #[test]
+    fn render_modindex_page_with_modules() {
+        let buckets = vec![(
+            "M".to_string(),
+            vec![ModIndexEntry {
+                name: "mypkg.mod".to_string(),
+                docname: "api/mypkg".to_string(),
+                anchor: "module-mypkg.mod".to_string(),
+            }],
+        )];
+        let html = builder().render_modindex_page(&buckets, &PageMeta::default());
+        assert!(html.contains("<code>mypkg.mod</code>"));
+        assert!(html.contains("api/mypkg.html#module-mypkg.mod"));
+        assert!(html.contains("<strong>M</strong>"));
+    }
+
+    // ── build_all: genindex/modindex integration ──────────────────────────────
+
+    #[test]
+    fn build_all_writes_genindex_page_by_default() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        std::fs::write(src.path().join("index.rst"), "Home\n====\n\nText.\n").unwrap();
+        let config = crate::config::SphinxConfig::new_defaults();
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+        builder().build_all(src.path(), out.path(), &env).unwrap();
+        assert!(out.path().join("genindex.html").exists());
+    }
+
+    #[test]
+    fn build_all_skips_modindex_page_when_no_modules_recorded() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        std::fs::write(src.path().join("index.rst"), "Home\n====\n\nText.\n").unwrap();
+        let config = crate::config::SphinxConfig::new_defaults();
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+        builder().build_all(src.path(), out.path(), &env).unwrap();
+        // html_domain_indices defaults to enabled, but no Python modules
+        // were recorded, so the (empty) modindex page must be skipped.
+        assert!(!out.path().join("py-modindex.html").exists());
+    }
+
+    // ── document_title fallback (no single top-level title promoted) ────────
+
+    #[test]
+    fn render_fragment_falls_back_to_first_section_title_when_multiple_top_level_sections() {
+        let b = builder();
+        let source = ".. note::\n\n   Not a section.\n\nSection One\n===========\n\nBody.\n\nSection Two\n===========\n\nMore.\n";
+        let tree = docutilsrs::parse_rst_with_source(source, "multi");
+        let (title, _html) = b.render_fragment_from_tree("multi", &tree);
+        assert_eq!(title, "Section One");
+    }
+
+    // ── trait-method plumbing ─────────────────────────────────────────────────
+
+    #[test]
+    fn default_builder_matches_new() {
+        let b = HtmlBuilder::default();
+        assert_eq!(b.name(), "html");
+        assert_eq!(b.format(), "html");
+        assert_eq!(b.out_suffix(), ".html");
+    }
+
+    #[test]
+    fn write_doc_renders_persisted_doctree() {
+        let tmp = TempDir::new().unwrap();
+        let b = builder();
+        let tree = docutilsrs::parse_rst_with_source("Title\n=====\n\nBody.\n", "index");
+        b.write_doc("index", &tree, tmp.path()).unwrap();
+        assert!(tmp.path().join("index.html").exists());
+    }
+
+    // ── copy_html_static_path / copy_dir_contents ─────────────────────────────
+
+    #[test]
+    fn copy_html_static_path_warns_and_skips_missing_directory() {
+        use crate::config::{ConfigVal, SphinxConfig};
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        let mut raw = std::collections::HashMap::new();
+        raw.insert(
+            "html_static_path".into(),
+            ConfigVal::List(vec![ConfigVal::Str("does-not-exist".into())]),
+        );
+        let config = SphinxConfig::new(raw, std::collections::HashMap::new());
+        // Must not error even though the configured directory is missing.
+        copy_html_static_path(src.path(), out.path(), &config).unwrap();
+        assert!(!out.path().join("_static").exists());
+    }
+
+    #[test]
+    fn copy_dir_contents_recurses_into_nested_directories() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        std::fs::create_dir_all(src.path().join("nested")).unwrap();
+        std::fs::write(src.path().join("nested").join("deep.txt"), b"x").unwrap();
+        copy_dir_contents(src.path(), dst.path()).unwrap();
+        assert!(dst.path().join("nested").join("deep.txt").exists());
+    }
+
+    // ── copy_source_file ───────────────────────────────────────────────────────
+
+    #[test]
+    fn copy_source_file_errors_when_source_missing() {
+        let tmp = TempDir::new().unwrap();
+        let err = copy_source_file(&tmp.path().join("missing.rst"), "missing", tmp.path());
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn copy_source_file_defaults_extension_when_source_has_none() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        let src_path = src.path().join("noext");
+        std::fs::write(&src_path, b"content").unwrap();
+        copy_source_file(&src_path, "noext", out.path()).unwrap();
+        assert!(out.path().join("_sources").join("noext.rst.txt").exists());
+    }
+
+    // ── collect_docnames / discover_docnames_pub ──────────────────────────────
+
+    #[test]
+    fn discover_docnames_pub_returns_empty_for_unreadable_dir() {
+        let tmp = TempDir::new().unwrap();
+        let config = SphinxConfig::new_defaults();
+        let docs = discover_docnames_pub(&tmp.path().join("does-not-exist"), &config);
+        assert!(docs.is_empty());
+    }
+
+    // ── percent_encode_path / hex helpers ──────────────────────────────────────
+
+    #[test]
+    fn percent_encode_path_escapes_special_characters() {
+        // Space (0x20) and '#' need escaping; hex digits span both the
+        // 0-9 and A-F halves of `hex_digit`.
+        assert_eq!(percent_encode_path("a b#c"), "a%20b%23c");
+    }
+
+    // ── src_path_for_docname_with_suffixes: no suffixes configured ────────────
+
+    #[test]
+    fn src_path_for_docname_with_suffixes_errors_when_no_suffixes_configured() {
+        use crate::config::{ConfigVal, SphinxConfig};
+        let tmp = TempDir::new().unwrap();
+        let mut raw = std::collections::HashMap::new();
+        raw.insert("source_suffix".into(), ConfigVal::Map(vec![]));
+        let config = SphinxConfig::new(raw, std::collections::HashMap::new());
+        let err = src_path_for_docname_with_suffixes(tmp.path(), "index", &config).unwrap_err();
+        assert!(matches!(err, BuildError::Other(_)));
+    }
 }

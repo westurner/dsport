@@ -258,7 +258,7 @@ impl JsonBuilder {
             project: env.config.project(),
             copyright: env
                 .config
-                .get("copyright")
+                .get("project_copyright")
                 .and_then(|v| v.as_str().map(String::from))
                 .unwrap_or_default(),
             release: env.config.release(),
@@ -1097,5 +1097,290 @@ mod tests {
     #[test]
     fn html_escape_quotes() {
         assert_eq!(html_escape_text(r#"say "hi""#), "say &quot;hi&quot;");
+    }
+
+    // ── build_all integration ─────────────────────────────────────────────────
+
+    fn make_env(
+        src: &Path,
+        out: &Path,
+    ) -> crate::environment::BuildEnvironment {
+        let config = crate::config::SphinxConfig::new_defaults();
+        let project = crate::environment::EnvProject::new(src, &[(".rst", "restructuredtext")]);
+        crate::environment::BuildEnvironment::new(config, project, src, out)
+    }
+
+    #[test]
+    fn build_all_writes_pages_globalcontext_and_navigation_links() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        write_file(src.path(), "index.rst", "Welcome\n=======\n\nHomepage.\n");
+        write_file(src.path(), "about.rst", "About\n=====\n\nSome info.\n");
+        let env = make_env(src.path(), out.path());
+
+        let result = JsonBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
+        assert_eq!(result.written, 2);
+
+        assert!(out.path().join("index.fjson").exists());
+        assert!(out.path().join("about.fjson").exists());
+        assert!(out.path().join("search.fjson").exists());
+        assert!(out.path().join("objects.inv").exists());
+        assert!(out.path().join("last_build").exists());
+
+        let global_raw = std::fs::read_to_string(out.path().join("globalcontext.json")).unwrap();
+        let global: serde_json::Value = serde_json::from_str(&global_raw).unwrap();
+        assert_eq!(global["project"], "Project name not set");
+        assert_eq!(global["file_suffix"], ".fjson");
+        assert_eq!(global["titles"]["index"], "Welcome");
+        assert_eq!(global["titles"]["about"], "About");
+        assert_eq!(global["html5_doctype"], true);
+
+        // "index" (the root doc) sorts first in navigation, so "about"
+        // (the only other doc) becomes its "next" page and vice versa.
+        let about_raw = std::fs::read_to_string(out.path().join("about.fjson")).unwrap();
+        let about: serde_json::Value = serde_json::from_str(&about_raw).unwrap();
+        assert_eq!(about["prev"]["link"], "");
+        assert_eq!(about["prev"]["title"], "Welcome");
+        assert!(about["next"].is_null());
+
+        let index_raw = std::fs::read_to_string(out.path().join("index.fjson")).unwrap();
+        let index: serde_json::Value = serde_json::from_str(&index_raw).unwrap();
+        assert!(index["prev"].is_null());
+        assert_eq!(index["next"]["link"], "about/");
+        assert_eq!(index["next"]["title"], "About");
+    }
+
+    #[test]
+    fn build_all_uses_env_all_docs_when_present() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        write_file(src.path(), "index.rst", "Welcome\n=======\n\nHomepage.\n");
+        write_file(src.path(), "unused.rst", "Unused\n======\n\nNot referenced.\n");
+        let mut env = make_env(src.path(), out.path());
+        env.all_docs.insert("index".to_string(), 0);
+
+        let result = JsonBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
+        assert_eq!(result.written, 1);
+        assert!(out.path().join("index.fjson").exists());
+        assert!(!out.path().join("unused.fjson").exists());
+    }
+
+    #[test]
+    fn build_all_reflects_configured_copyright_and_release_in_globalcontext() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        write_file(src.path(), "index.rst", "Welcome\n=======\n\nHomepage.\n");
+        let mut raw = HashMap::new();
+        raw.insert(
+            "project_copyright".to_string(),
+            crate::config::ConfigVal::Str("2026, Example".into()),
+        );
+        raw.insert(
+            "release".to_string(),
+            crate::config::ConfigVal::Str("2.0".into()),
+        );
+        let config = crate::config::SphinxConfig::new(raw, HashMap::new());
+        let project = crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+
+        JsonBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
+        let global_raw = std::fs::read_to_string(out.path().join("globalcontext.json")).unwrap();
+        let global: serde_json::Value = serde_json::from_str(&global_raw).unwrap();
+        assert_eq!(global["copyright"], "2026, Example");
+        assert_eq!(global["release"], "2.0");
+    }
+
+    #[test]
+    fn build_all_removes_fallback_stylesheet_when_theme_provides_basic_css() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        write_file(src.path(), "index.rst", "Welcome\n=======\n\nHomepage.\n");
+        let env = make_env(src.path(), out.path());
+        JsonBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
+        // Default theme (alabaster/basic) always ships `_static/basic.css`;
+        // the JSON builder's own fallback stylesheet must not linger.
+        assert!(out.path().join("_static/basic.css").exists());
+        assert!(!out.path().join("_static/sphinxdocrs.css").exists());
+    }
+
+    #[test]
+    fn build_all_empty_project_writes_globalcontext_and_search_only() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        let env = make_env(src.path(), out.path());
+        let result = JsonBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
+        assert_eq!(result.written, 0);
+        assert!(out.path().join("globalcontext.json").exists());
+        assert!(out.path().join("search.fjson").exists());
+    }
+
+    #[test]
+    fn effective_suffixes_prefers_env_project_source_suffix() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        let config = crate::config::SphinxConfig::new_defaults();
+        let project = crate::environment::EnvProject::new(src.path(), &[(".md", "markdown")]);
+        let env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+        let builder = JsonBuilder::new();
+        assert_eq!(builder.effective_suffixes(&env), vec![".md"]);
+    }
+
+    #[test]
+    fn effective_suffixes_falls_back_to_builder_default_when_project_suffix_empty() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        let config = crate::config::SphinxConfig::new_defaults();
+        let project = crate::environment::EnvProject::new(src.path(), &[]);
+        let env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+        let builder = JsonBuilder::with_source_suffixes(vec![".rst".into()]);
+        assert_eq!(builder.effective_suffixes(&env), vec![".rst"]);
+    }
+
+    #[test]
+    fn default_builder_matches_new() {
+        let b = JsonBuilder::default();
+        assert_eq!(b.name(), "json");
+        assert_eq!(b.source_suffixes, vec![".rst"]);
+    }
+
+    #[test]
+    fn build_all_hides_genindex_rellink_when_html_use_index_disabled() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        write_file(src.path(), "index.rst", "Welcome\n=======\n\nHomepage.\n");
+        let mut raw = HashMap::new();
+        raw.insert(
+            "html_use_index".to_string(),
+            crate::config::ConfigVal::Bool(false),
+        );
+        let config = crate::config::SphinxConfig::new(raw, HashMap::new());
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+        JsonBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
+        let global_raw = std::fs::read_to_string(out.path().join("globalcontext.json")).unwrap();
+        let global: serde_json::Value = serde_json::from_str(&global_raw).unwrap();
+        assert_eq!(global["rellinks"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn build_all_skips_theme_options_when_theme_unresolvable() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        write_file(src.path(), "index.rst", "Welcome\n=======\n\nHomepage.\n");
+        let mut raw = HashMap::new();
+        raw.insert(
+            "html_theme".to_string(),
+            crate::config::ConfigVal::Str("no_such_theme_xyz".into()),
+        );
+        let config = crate::config::SphinxConfig::new(raw, HashMap::new());
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+        // Must not panic even though the theme cannot be resolved.
+        JsonBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
+        assert!(out.path().join("globalcontext.json").exists());
+    }
+
+    #[test]
+    fn build_all_returns_error_when_all_docs_references_missing_file() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        let mut env = make_env(src.path(), out.path());
+        env.all_docs.insert("missing".to_string(), 0);
+        let err = JsonBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap_err();
+        assert!(matches!(err, BuildError::Other(_)));
+    }
+
+    // ── free-function helpers ─────────────────────────────────────────────────
+
+    #[test]
+    fn navigation_docnames_root_first_when_present() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        let env = make_env(src.path(), out.path());
+        let docs = vec![
+            ("zeta".to_string(), ".rst".to_string()),
+            ("index".to_string(), ".rst".to_string()),
+            ("alpha".to_string(), ".rst".to_string()),
+        ];
+        assert_eq!(navigation_docnames(&env, &docs), vec!["index", "alpha", "zeta"]);
+    }
+
+    #[test]
+    fn navigation_docnames_sorts_all_when_root_absent() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        let env = make_env(src.path(), out.path());
+        let docs = vec![
+            ("zeta".to_string(), ".rst".to_string()),
+            ("alpha".to_string(), ".rst".to_string()),
+        ];
+        assert_eq!(navigation_docnames(&env, &docs), vec!["alpha", "zeta"]);
+    }
+
+    #[test]
+    fn discover_sources_skips_non_matching_extension() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "index.rst", "");
+        write_file(tmp.path(), "notes.txt", "");
+        let docs = discover_sources(tmp.path(), &[".rst"]);
+        let map: HashMap<_, _> = docs.into_iter().collect();
+        assert_eq!(map.get("index").map(String::as_str), Some(".rst"));
+        assert!(!map.contains_key("notes"));
+    }
+
+    #[test]
+    fn collect_sources_returns_early_when_dir_unreadable() {
+        let tmp = TempDir::new().unwrap();
+        let mut out = Vec::new();
+        collect_sources(tmp.path(), &tmp.path().join("does-not-exist"), &[".rst"], &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn static_asset_names_splits_css_and_recognised_js_and_ignores_directories() {
+        let tmp = TempDir::new().unwrap();
+        let static_dir = tmp.path().join("_static");
+        std::fs::create_dir_all(&static_dir).unwrap();
+        std::fs::write(static_dir.join("theme.css"), "").unwrap();
+        std::fs::write(static_dir.join("pygments.css"), "").unwrap();
+        std::fs::write(static_dir.join("doctools.js"), "").unwrap();
+        std::fs::write(static_dir.join("unrelated.js"), "").unwrap();
+        std::fs::create_dir_all(static_dir.join("subdir")).unwrap();
+        let (css, js) = static_asset_names(tmp.path());
+        assert!(css.contains(&"_static/theme.css".to_string()));
+        assert!(css.contains(&"_static/pygments.css".to_string()));
+        assert!(js.contains(&"_static/doctools.js".to_string()));
+        assert!(!js.iter().any(|name| name.contains("unrelated")));
+    }
+
+    #[test]
+    fn static_asset_names_empty_when_static_dir_missing() {
+        let tmp = TempDir::new().unwrap();
+        let (css, js) = static_asset_names(tmp.path());
+        assert!(css.is_empty());
+        assert!(js.is_empty());
     }
 }

@@ -493,7 +493,7 @@ impl BuildEnvironment {
                 BuildError::Other(format!("failed to read {}: {e}", path.display()))
             })?;
             let expanded = expand_yaml_toctree_directives(&source, &self.srcdir)?;
-            targets.extend(scan_toctree_entries(&expanded));
+            targets.extend(scan_toctree_entries_preserving_suffixes(&expanded));
         }
 
         for target in targets {
@@ -2355,6 +2355,20 @@ fn scan_toctree_entries(source: &str) -> Vec<String> {
 }
 
 fn scan_toctree_entries_with_titles(source: &str) -> Vec<(String, Option<String>)> {
+    scan_toctree_entries_with_titles_mode(source, true)
+}
+
+fn scan_toctree_entries_preserving_suffixes(source: &str) -> Vec<String> {
+    scan_toctree_entries_with_titles_mode(source, false)
+        .into_iter()
+        .map(|(entry, _)| entry)
+        .collect()
+}
+
+fn scan_toctree_entries_with_titles_mode(
+    source: &str,
+    strip_source_suffixes: bool,
+) -> Vec<(String, Option<String>)> {
     let mut entries = Vec::new();
     let lines: Vec<&str> = source.lines().collect();
     let mut i = 0;
@@ -2384,10 +2398,14 @@ fn scan_toctree_entries_with_titles(source: &str) -> Vec<(String, Option<String>
                                     .map(|(title, target)| (target, Some(title.to_string())))
                             })
                             .unwrap_or((body, None));
-                        let target = [".ipynb", ".rst", ".md", ".txt"]
-                            .iter()
-                            .find_map(|suffix| target.strip_suffix(suffix))
-                            .unwrap_or(target);
+                        let target = if strip_source_suffixes {
+                            [".ipynb", ".rst", ".md", ".txt"]
+                                .iter()
+                                .find_map(|suffix| target.strip_suffix(suffix))
+                                .unwrap_or(target)
+                        } else {
+                            target
+                        };
                         entries.push((target.to_string(), title));
                     }
                     i += 1;
@@ -2669,6 +2687,103 @@ mod tests {
         let project = EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
         let env = BuildEnvironment::new(config, project, &srcdir, &doctreedir);
         (tmp, env)
+    }
+
+    #[test]
+    fn find_files_prefers_longest_suffix_and_skips_unknown_files() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(env.srcdir.join("guide.rst.txt"), "Guide\n=====\n").unwrap();
+        std::fs::write(env.srcdir.join("guide.txt"), "Duplicate\n=========\n").unwrap();
+        std::fs::write(env.srcdir.join("ignored.md"), "ignored").unwrap();
+        env.config.set(
+            "source_suffix",
+            ConfigVal::Map(vec![
+                (".txt".into(), ConfigVal::Str("restructuredtext".into())),
+                (".rst.txt".into(), ConfigVal::Str("myst".into())),
+            ]),
+        );
+
+        env.find_files().unwrap();
+
+        assert_eq!(env.found_docs().len(), 1);
+        assert!(env.found_docs().contains("guide"));
+        assert_eq!(
+            env.project.docname_to_path.get("guide").map(String::as_str),
+            Some("guide.rst.txt")
+        );
+    }
+
+    #[test]
+    fn register_yaml_notebooks_adds_targets_titles_and_root_toctree() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(
+            env.srcdir.join("_toc.yml"),
+            "root: index\nchapters:\n  - file: notebook.ipynb\n    title: Notebook Chapter\n",
+        )
+        .unwrap();
+        std::fs::write(
+            env.srcdir.join("notebook.ipynb"),
+            r##"{"cells":[],"metadata":{},"nbformat":4,"nbformat_minor":5}"##,
+        )
+        .unwrap();
+
+        env.register_yaml_notebooks().unwrap();
+
+        assert!(env.found_docs().contains("notebook"));
+        assert_eq!(
+            env.project.docname_to_path.get("notebook").map(String::as_str),
+            Some("notebook.ipynb")
+        );
+        assert_eq!(
+            env.toctree_includes.get("index"),
+            Some(&vec!["notebook".to_string()])
+        );
+        assert_eq!(
+            env.longtitles.get("notebook").map(String::as_str),
+            Some("Notebook Chapter")
+        );
+
+        // A second registration sees the existing docname and exercises the
+        // duplicate-target branch without changing the recorded path.
+        env.register_yaml_notebooks().unwrap();
+        assert_eq!(env.found_docs().iter().filter(|doc| *doc == "notebook").count(), 1);
+    }
+
+    #[test]
+    fn register_yaml_notebooks_reads_source_directives_and_reports_read_errors() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(
+            env.srcdir.join("custom.yml"),
+            "root: index\nchapters:\n  - file: inline.ipynb\n",
+        )
+        .unwrap();
+        std::fs::write(env.srcdir.join("index.rst"), ".. toctreeyml:: custom.yml\n").unwrap();
+        std::fs::write(
+            env.srcdir.join("inline.ipynb"),
+            r##"{"cells":[],"metadata":{},"nbformat":4,"nbformat_minor":5}"##,
+        )
+        .unwrap();
+        env.project
+            .docname_to_path
+            .insert("index".into(), "index.rst".into());
+
+        env.register_yaml_notebooks().unwrap();
+        assert!(env.found_docs().contains("inline"));
+
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.project
+            .docname_to_path
+            .insert("missing".into(), "missing.rst".into());
+        let error = env.register_yaml_notebooks().unwrap_err().to_string();
+        assert!(error.contains("failed to read"));
+    }
+
+    #[test]
+    fn register_yaml_notebooks_reports_unreadable_toc() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::create_dir(env.srcdir.join("_toc.yml")).unwrap();
+        let error = env.register_yaml_notebooks().unwrap_err().to_string();
+        assert!(error.contains("failed to read"));
     }
 
     #[test]
@@ -2966,6 +3081,78 @@ mod tests {
     }
 
     #[test]
+    fn parse_source_rejects_invalid_notebook_json() {
+        let mut config = SphinxConfig::new_defaults();
+        config.set(
+            "source_suffix",
+            ConfigVal::Map(vec![(".ipynb".into(), ConfigVal::Str("myst".into()))]),
+        );
+        let project = EnvProject::new("/tmp/src", &[(".ipynb", "myst")]);
+        let env = BuildEnvironment::new(config, project, "/tmp/src", "/tmp/doctrees");
+        let error = env.parse_source("broken.ipynb", "not-json").unwrap_err().to_string();
+        assert!(error.contains("invalid notebook"));
+    }
+
+    #[test]
+    fn read_one_and_read_all_report_missing_sources() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.project.docnames.insert("missing".into());
+        assert!(env.read_one("missing").is_err());
+        assert!(env.read_all().is_err());
+    }
+
+    #[test]
+    fn read_all_with_events_emits_source_and_doctree_payloads() {
+        use crate::app_events::{AppEventManager, EventArg};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n\nBody.\n").unwrap();
+        env.find_files().unwrap();
+        let events = AppEventManager::shared();
+        let source_count = Rc::new(RefCell::new(0usize));
+        let source_count_ref = Rc::clone(&source_count);
+        events.borrow_mut().connect("source-read", 0, move |args| {
+            if matches!(args.get(1), Some(EventArg::StrList(_))) {
+                *source_count_ref.borrow_mut() += 1;
+            }
+            Ok(())
+        });
+        let doctree_count = Rc::new(RefCell::new(0usize));
+        let doctree_count_ref = Rc::clone(&doctree_count);
+        events.borrow_mut().connect("doctree-read", 0, move |args| {
+            if matches!(args.first(), Some(EventArg::Doctree(_))) {
+                *doctree_count_ref.borrow_mut() += 1;
+            }
+            Ok(())
+        });
+
+        let read = env.read_all_with_events(&events).unwrap();
+        assert_eq!(read, vec!["index"]);
+        assert_eq!(*source_count.borrow(), 1);
+        assert_eq!(*doctree_count.borrow(), 1);
+        assert_eq!(events.borrow().emitted(), &["source-read", "doctree-read"]);
+    }
+
+    #[test]
+    fn read_all_with_events_propagates_source_listener_errors() {
+        use crate::app_events::AppEventManager;
+
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
+        env.find_files().unwrap();
+        let events = AppEventManager::shared();
+        events.borrow_mut().connect("source-read", 0, |_args| {
+            Err(crate::app_events::EventError("listener failed".into()))
+        });
+
+        let error = env.read_all_with_events(&events).unwrap_err().to_string();
+        assert!(error.contains("listener failed"));
+        assert!(!env.has_stored_doctree("index"));
+    }
+
+    #[test]
     fn doctree_store_rejects_traversal_and_corruption() {
         let (_tmp, env) = make_env_with_tempdir();
         assert!(env.doctree_path("../escape").is_err());
@@ -3070,6 +3257,23 @@ sections:
         let src = "root: index\nsections:\n  - url: from-url\n";
         let entries = yaml_toc_entries(src).unwrap();
         assert!(entries.iter().any(|e| e.target == "from-url"));
+    }
+
+    #[test]
+    fn yaml_helpers_skip_non_mapping_values_and_report_missing_default_file() {
+        let entries = yaml_toc_entries(
+            "parts:\n  - 7\n  - chapters: [guide]\nsections:\n  - 42\n",
+        )
+        .unwrap();
+        assert!(entries.iter().any(|entry| entry.target == "guide"));
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let source = ".. toctreeyml::\n   root: index\noutside\n";
+        let expanded = expand_yaml_toctree_directives(source, tmp.path()).unwrap();
+        assert!(expanded.contains(".. toctree::"));
+
+        let err = expand_yaml_toctree_directives(".. toctreeyml::\n", tmp.path()).unwrap_err();
+        assert!(err.to_string().contains("_toc.yml"));
     }
 
     #[test]

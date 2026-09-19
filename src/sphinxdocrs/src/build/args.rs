@@ -315,6 +315,12 @@ mod tests {
     }
 
     #[test]
+    fn confdir_empty_value_uses_sourcedir() {
+        let src = PathBuf::from("/src");
+        assert_eq!(parse_confdir(false, Some(""), &src), Some(src));
+    }
+
+    #[test]
     fn confdir_default_is_sourcedir() {
         let src = PathBuf::from("/src");
         assert_eq!(parse_confdir(false, None, &src), Some(src.clone()));
@@ -372,6 +378,12 @@ mod tests {
             ovr.get("html_context.title"),
             Some(&ConfValue::Str("Foo Bar".to_owned()))
         );
+    }
+
+    #[test]
+    fn conf_value_display_formats_string_and_int() {
+        assert_eq!(ConfValue::Str("value".into()).to_string(), "value");
+        assert_eq!(ConfValue::Int(42).to_string(), "42");
     }
 
     #[test]

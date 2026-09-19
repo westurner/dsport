@@ -144,6 +144,8 @@ mod tests {
         let b = ManpageBuilder::new();
         assert_eq!(b.name(), "man");
         assert_eq!(b.format(), "man");
+        assert_eq!(b.out_suffix(), "");
+        assert_eq!(b.get_target_uri("guide/command"), "guide/command");
     }
 
     #[test]
@@ -153,5 +155,116 @@ mod tests {
             .build_doc("mycommand", "mycommand\n=========\n\nA tool.\n", tmp.path())
             .unwrap();
         assert!(tmp.path().join("mycommand.1").exists());
+    }
+
+    fn man_pages_config(entries: Vec<ConfigVal>) -> crate::config::SphinxConfig {
+        let mut config = crate::config::SphinxConfig::new_defaults();
+        config.set("man_pages", ConfigVal::List(entries));
+        config
+    }
+
+    fn valid_man_page(docname: &str, name: &str, section: &str) -> ConfigVal {
+        ConfigVal::List(vec![
+            ConfigVal::Str(docname.into()),
+            ConfigVal::Str(name.into()),
+            ConfigVal::Str("A command".into()),
+            ConfigVal::List(vec![ConfigVal::Str("Author".into())]),
+            ConfigVal::Str(section.into()),
+        ])
+    }
+
+    #[test]
+    fn configured_pages_validates_shapes_and_duplicates() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        let project = crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+
+        let env = crate::environment::BuildEnvironment::new(
+            man_pages_config(vec![valid_man_page("index", "tool", "1")]),
+            project.clone(),
+            src.path(),
+            out.path(),
+        );
+        assert_eq!(ManpageBuilder::configured_pages(&env).unwrap().unwrap().len(), 1);
+
+        let duplicate = crate::environment::BuildEnvironment::new(
+            man_pages_config(vec![
+                valid_man_page("index", "tool", "1"),
+                valid_man_page("other", "tool", "1"),
+            ]),
+            project.clone(),
+            src.path(),
+            out.path(),
+        );
+        assert!(ManpageBuilder::configured_pages(&duplicate)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate"));
+
+        for entry in [
+            ConfigVal::Str("not-a-sequence".into()),
+            ConfigVal::List(vec![]),
+            ConfigVal::List(vec![ConfigVal::Str("index".into())]),
+            ConfigVal::List(vec![ConfigVal::Str("index".into()), ConfigVal::Str("tool".into())]),
+            ConfigVal::List(vec![
+                ConfigVal::Str("index".into()),
+                ConfigVal::Str("tool".into()),
+                ConfigVal::Str("title".into()),
+                ConfigVal::List(vec![]),
+            ]),
+        ] {
+            let env = crate::environment::BuildEnvironment::new(
+                man_pages_config(vec![entry]),
+                project.clone(),
+                src.path(),
+                out.path(),
+            );
+            assert!(ManpageBuilder::configured_pages(&env).is_err());
+        }
+    }
+
+    #[test]
+    fn build_all_renders_configured_pages_and_noop_without_config() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        std::fs::write(src.path().join("index.rst"), "Tool\n====\n\nA tool.\n").unwrap();
+        let project = crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+
+        let env = crate::environment::BuildEnvironment::new(
+            man_pages_config(vec![valid_man_page("index", "tool", "1")]),
+            project.clone(),
+            src.path(),
+            out.path(),
+        );
+        let result = ManpageBuilder::new().build_all(src.path(), out.path(), &env).unwrap();
+        assert_eq!(result.written, 1);
+        assert!(out.path().join("tool.1").is_file());
+
+        let no_pages = crate::environment::BuildEnvironment::new(
+            crate::config::SphinxConfig::new_defaults(),
+            project,
+            src.path(),
+            out.path(),
+        );
+        let result = ManpageBuilder::new().build_all(src.path(), out.path(), &no_pages).unwrap();
+        assert_eq!(result.written, 0);
+    }
+
+    #[test]
+    fn render_document_uses_stored_doctree_when_available() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        std::fs::write(src.path().join("index.rst"), "Tool\n====\n").unwrap();
+        let project = crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let env = crate::environment::BuildEnvironment::new(
+            man_pages_config(vec![valid_man_page("index", "tool", "1")]),
+            project,
+            src.path(),
+            out.path(),
+        );
+        let tree = env.parse_doc("index").unwrap();
+        env.store_doctree("index", &tree).unwrap();
+        let result = ManpageBuilder::new().build_all(src.path(), out.path(), &env).unwrap();
+        assert_eq!(result.written, 1);
     }
 }

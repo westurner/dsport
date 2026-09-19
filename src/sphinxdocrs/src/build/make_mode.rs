@@ -328,6 +328,8 @@ mod tests {
     use crate::cli::io::MockRunner;
     use tempfile::TempDir;
 
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn make_mode_in(tmp: &TempDir) -> MakeMode {
         MakeMode::new(tmp.path().join("src"), tmp.path().join("build"), vec![])
     }
@@ -370,6 +372,8 @@ mod tests {
         std::fs::create_dir_all(&build).unwrap();
         std::fs::create_dir_all(&src).unwrap();
         std::fs::write(build.join("stale.html"), b"old content").unwrap();
+        std::fs::create_dir(build.join("nested")).unwrap();
+        std::fs::write(build.join("nested/stale.css"), b"old content").unwrap();
         let m = MakeMode::new(&src, &build, vec![]);
         assert_eq!(m.build_clean(), 0);
         assert!(
@@ -391,6 +395,7 @@ mod tests {
 
     #[test]
     fn run_generic_build_dispatches_correct_args() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         let src = tmp.path().join("src");
         let build = tmp.path().join("build");
@@ -413,8 +418,7 @@ mod tests {
 
     #[test]
     fn run_generic_build_appends_paper_override() {
-        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = LOCK.lock().unwrap();
+        let _env_guard = ENV_LOCK.lock().unwrap();
         unsafe { std::env::set_var("PAPER", "a4") };
         let tmp = TempDir::new().unwrap();
         let src = tmp.path().join("src");
@@ -432,6 +436,7 @@ mod tests {
 
     #[test]
     fn run_generic_build_runner_error_returns_one() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         let src = tmp.path().join("src");
         std::fs::create_dir_all(&src).unwrap();
@@ -443,7 +448,34 @@ mod tests {
     }
 
     #[test]
+    fn run_generic_build_uses_explicit_doctree_dir_and_returns_runner_code() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        let doctrees = tmp.path().join("custom-doctrees");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut mock = MockRunner::new();
+        mock.expect_run()
+            .withf(|_, args, _| args.iter().any(|arg| arg.ends_with("custom-doctrees")))
+            .returning(|_, _, _| Ok(7));
+        let m = make_mode_in(&tmp);
+        assert_eq!(m.run_generic_build("html", Some(doctrees), &mock), 7);
+    }
+
+    #[test]
+    fn dispatch_latexpdf_stops_when_latex_build_fails() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut mock = MockRunner::new();
+        mock.expect_run().times(1).returning(|_, _, _| Ok(1));
+        assert_eq!(make_mode_in(&tmp).dispatch("latexpdf", &mock), 1);
+    }
+
+    #[test]
     fn dispatch_latexpdf_runs_build_then_make() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         let src = tmp.path().join("src");
         std::fs::create_dir_all(&src).unwrap();
@@ -460,6 +492,7 @@ mod tests {
 
     #[test]
     fn dispatch_latexpdf_propagates_make_failure() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         let src = tmp.path().join("src");
         std::fs::create_dir_all(&src).unwrap();
@@ -472,6 +505,47 @@ mod tests {
             }
         });
         assert_eq!(make_mode_in(&tmp).dispatch("latexpdf", &mock), 1);
+    }
+
+    #[test]
+    fn dispatch_latexpdfja_runs_latex_and_make() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut mock = MockRunner::new();
+        mock.expect_run().times(2).returning(|_, _, _| Ok(0));
+        assert_eq!(make_mode_in(&tmp).dispatch("latexpdfja", &mock), 0);
+    }
+
+    #[test]
+    fn dispatch_info_runs_texinfo_and_make() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut mock = MockRunner::new();
+        mock.expect_run().times(2).returning(|_, _, _| Ok(0));
+        assert_eq!(make_mode_in(&tmp).dispatch("info", &mock), 0);
+    }
+
+    #[test]
+    fn dispatch_gettext_uses_gettext_doctree_dir() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut mock = MockRunner::new();
+        mock.expect_run()
+            .withf(|_, args, _| {
+                args.windows(2)
+                    .any(|pair| {
+                        pair[0] == "--doctree-dir"
+                            && pair[1].ends_with("build/gettext/.doctrees")
+                    })
+            })
+            .returning(|_, _, _| Ok(0));
+        assert_eq!(make_mode_in(&tmp).dispatch("gettext", &mock), 0);
     }
 
     // ── run_make_mode ─────────────────────────────────────────────────────

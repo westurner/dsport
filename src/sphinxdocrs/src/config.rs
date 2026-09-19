@@ -1976,6 +1976,69 @@ mod sphinx_config_tests {
     }
 
     #[test]
+    fn math_renderer_names_and_extension_precedence() {
+        assert_eq!(MathRenderer::MathJax.name(), "mathjax");
+        assert_eq!(MathRenderer::ImgMath.name(), "imgmath");
+        assert_eq!(MathRenderer::Ratex.name(), "ratex");
+
+        let mut cfg = Config::defaults();
+        cfg.extensions = vec!["unknown.extension".into(), "sphinx.ext.imgmath".into()];
+        assert_eq!(cfg.effective_math_renderer(), MathRenderer::ImgMath);
+        cfg.extensions = vec!["sphinx.ext.mathjax".into(), "dsport.ext.ratex".into()];
+        assert_eq!(cfg.effective_math_renderer(), MathRenderer::MathJax);
+        cfg.extensions = vec!["unknown.extension".into()];
+        assert_eq!(cfg.effective_math_renderer(), MathRenderer::MathJax);
+        cfg.math_renderer = Some(MathRenderer::Ratex);
+        assert_eq!(cfg.effective_math_renderer(), MathRenderer::Ratex);
+    }
+
+    #[test]
+    fn math_config_reader_covers_option_shapes_and_errors() {
+        Python::attach(|py| -> PyResult<()> {
+            let cfg = Config::from_source(
+                py,
+                r#"
+extensions = ['sphinx.ext.mathjax']
+math_renderer = 'imgmath'
+mathjax_path = 'https://example.test/mathjax.js'
+mathjax_options = {'async': 'async'}
+mathjax3_config = {'tex': {'inlineMath': [['$', '$']]}}
+imgmath_image_format = 'svg'
+imgmath_latex = 'latex-custom'
+imgmath_dvipng = 'dvipng-custom'
+imgmath_dvisvgm = 'dvisvgm-custom'
+"#,
+            )
+            .unwrap();
+            assert_eq!(cfg.extensions, vec!["sphinx.ext.mathjax"]);
+            assert_eq!(cfg.math_renderer, Some(MathRenderer::ImgMath));
+            assert_eq!(cfg.mathjax_path, "https://example.test/mathjax.js");
+            assert_eq!(cfg.mathjax_options.get("async"), Some(&"async".into()));
+            assert!(cfg.mathjax3_config.as_deref().is_some_and(|v| v.contains("tex")));
+            assert_eq!(cfg.imgmath_image_format, "svg");
+            assert_eq!(cfg.imgmath_latex, "latex-custom");
+            assert_eq!(cfg.imgmath_dvipng, "dvipng-custom");
+            assert_eq!(cfg.imgmath_dvisvgm, "dvisvgm-custom");
+
+            let wrong_shapes = Config::from_source(
+                py,
+                "extensions = 'not-a-list'\nmath_renderer = 1\nmathjax_path = 1\nmathjax_options = []\nimgmath_image_format = 1\nimgmath_latex = 1\nimgmath_dvipng = 1\nimgmath_dvisvgm = 1\n",
+            )
+            .unwrap();
+            assert!(wrong_shapes.extensions.is_empty());
+            assert_eq!(wrong_shapes.mathjax_path, DEFAULT_MATHJAX_PATH);
+
+            let error = Config::from_source(py, "math_renderer = 'unknown'\n").unwrap_err();
+            assert!(error.to_string().contains("unknown math_renderer"));
+            Ok(())
+        })
+        .unwrap();
+
+        let error = Config::from_conf_py(Path::new("/no/such/conf.py")).unwrap_err();
+        assert!(error.to_string().contains("cannot read"));
+    }
+
+    #[test]
     fn external_link_class_defaults_off_and_reads_conf_value() {
         let cfg = SphinxConfig::new_defaults();
         assert!(cfg.html_add_external_link_class());
@@ -2279,6 +2342,342 @@ mod sphinx_config_tests {
         assert_eq!(
             cfg.source_suffix().get(".md").map(String::as_str),
             Some("myst")
+        );
+    }
+
+    #[test]
+    fn typed_accessors_read_configured_values_and_filter_shapes() {
+        let mut raw = HashMap::new();
+        raw.insert("author".into(), ConfigVal::Str("A. Author".into()));
+        raw.insert("version".into(), ConfigVal::Str("1.2".into()));
+        raw.insert("release".into(), ConfigVal::Str("1.2.3".into()));
+        raw.insert(
+            "extensions".into(),
+            ConfigVal::List(vec![ConfigVal::Str("ext.demo".into()), ConfigVal::Int(1)]),
+        );
+        raw.insert(
+            "needs_extensions".into(),
+            ConfigVal::Map(vec![
+                ("ext.demo".into(), ConfigVal::Str("1.0".into())),
+                ("ignored".into(), ConfigVal::Int(1)),
+            ]),
+        );
+        raw.insert(
+            "exclude_patterns".into(),
+            ConfigVal::List(vec![ConfigVal::Str("draft/**".into()), ConfigVal::Int(1)]),
+        );
+        raw.insert(
+            "include_patterns".into(),
+            ConfigVal::List(vec![ConfigVal::Str("docs/**".into()), ConfigVal::Int(1)]),
+        );
+        raw.insert("highlight_language".into(), ConfigVal::Str("rust".into()));
+        raw.insert("html_add_external_link_class".into(), ConfigVal::Bool(false));
+        raw.insert("numfig".into(), ConfigVal::Bool(true));
+        raw.insert("nitpicky".into(), ConfigVal::Bool(true));
+        raw.insert("smartquotes".into(), ConfigVal::Bool(false));
+        raw.insert("rst_prolog".into(), ConfigVal::Str(".. prolog::".into()));
+        raw.insert("rst_epilog".into(), ConfigVal::Str(".. epilog::".into()));
+        raw.insert("html_theme".into(), ConfigVal::Str("basic".into()));
+        raw.insert(
+            "html_static_path".into(),
+            ConfigVal::List(vec![ConfigVal::Str("_static".into()), ConfigVal::Int(1)]),
+        );
+        raw.insert(
+            "html_theme_path".into(),
+            ConfigVal::List(vec![ConfigVal::Str("_themes".into())]),
+        );
+        raw.insert("html_title".into(), ConfigVal::Str("Docs".into()));
+        raw.insert("html_short_title".into(), ConfigVal::Str("D".into()));
+        raw.insert(
+            "html_context".into(),
+            ConfigVal::Map(vec![("owner".into(), ConfigVal::Str("team".into()))]),
+        );
+        raw.insert(
+            "html_theme_options".into(),
+            ConfigVal::Map(vec![("navigation_depth".into(), ConfigVal::Int(3))]),
+        );
+        for name in [
+            "html_show_copyright",
+            "html_show_sphinx",
+            "html_show_search_summary",
+            "html_copy_source",
+            "html_show_sourcelink",
+        ] {
+            raw.insert(name.into(), ConfigVal::Bool(false));
+        }
+        raw.insert("html_sourcelink_suffix".into(), ConfigVal::Str(".rst".into()));
+        raw.insert(
+            "html_use_opensearch".into(),
+            ConfigVal::Str("https://docs.example.test".into()),
+        );
+        raw.insert("html_baseurl".into(), ConfigVal::Str("/docs".into()));
+        raw.insert("html_logo".into(), ConfigVal::Str("logo.svg".into()));
+        raw.insert("html_favicon".into(), ConfigVal::Str("favicon.ico".into()));
+        raw.insert(
+            "html_last_updated_fmt".into(),
+            ConfigVal::Str("%Y-%m-%d".into()),
+        );
+        raw.insert(
+            "html_sidebars".into(),
+            ConfigVal::Map(vec![
+                (
+                    "index".into(),
+                    ConfigVal::List(vec![ConfigVal::Str("localtoc.html".into()), ConfigVal::Int(1)]),
+                ),
+                ("guide/*".into(), ConfigVal::Str("not-a-list".into())),
+            ]),
+        );
+        raw.insert("html_domain_indices".into(), ConfigVal::Bool(false));
+        raw.insert("html_use_index".into(), ConfigVal::Bool(false));
+        let cfg = SphinxConfig::new(raw, HashMap::new());
+
+        assert_eq!(cfg.author(), "A. Author");
+        assert_eq!(cfg.version(), "1.2");
+        assert_eq!(cfg.release(), "1.2.3");
+        assert_eq!(cfg.extensions(), vec!["ext.demo"]);
+        assert_eq!(cfg.needs_extensions().get("ext.demo"), Some(&"1.0".into()));
+        assert_eq!(cfg.exclude_patterns(), vec!["draft/**"]);
+        assert_eq!(cfg.include_patterns(), vec!["docs/**"]);
+        assert_eq!(cfg.highlight_language(), "rust");
+        assert!(!cfg.html_add_external_link_class());
+        assert!(cfg.numfig());
+        assert!(cfg.nitpicky());
+        assert!(!cfg.smartquotes());
+        assert_eq!(cfg.rst_prolog().as_deref(), Some(".. prolog::"));
+        assert_eq!(cfg.rst_epilog().as_deref(), Some(".. epilog::"));
+        assert_eq!(cfg.html_theme(), "basic");
+        assert_eq!(cfg.html_static_path(), vec!["_static"]);
+        assert_eq!(cfg.html_theme_path(), vec!["_themes"]);
+        assert_eq!(cfg.html_title(), "Docs");
+        assert_eq!(cfg.html_short_title(), "D");
+        assert_eq!(cfg.html_context().len(), 1);
+        assert_eq!(cfg.html_theme_options().len(), 1);
+        assert!(!cfg.html_show_copyright());
+        assert!(!cfg.html_show_sphinx());
+        assert!(!cfg.html_show_search_summary());
+        assert!(!cfg.html_copy_source());
+        assert!(!cfg.html_show_sourcelink());
+        assert_eq!(cfg.html_sourcelink_suffix(), ".rst");
+        assert_eq!(cfg.html_use_opensearch(), "https://docs.example.test");
+        assert_eq!(cfg.html_baseurl(), "/docs");
+        assert_eq!(cfg.html_logo().as_deref(), Some("logo.svg"));
+        assert_eq!(cfg.html_favicon().as_deref(), Some("favicon.ico"));
+        assert_eq!(cfg.html_last_updated_fmt().as_deref(), Some("%Y-%m-%d"));
+        assert_eq!(cfg.html_sidebars()[0].1, vec!["localtoc.html"]);
+        assert!(cfg.html_sidebars()[1].1.is_empty());
+        assert!(!cfg.html_domain_indices());
+        assert!(!cfg.html_use_index());
+    }
+
+    #[test]
+    fn typed_accessors_use_defaults_for_wrong_shapes() {
+        let mut raw = HashMap::new();
+        for name in [
+            "author",
+            "version",
+            "release",
+            "highlight_language",
+            "rst_prolog",
+            "rst_epilog",
+            "html_theme",
+            "html_sourcelink_suffix",
+            "html_use_opensearch",
+            "html_baseurl",
+            "html_logo",
+            "html_favicon",
+            "html_last_updated_fmt",
+        ] {
+            raw.insert(name.into(), ConfigVal::Int(1));
+        }
+        for name in [
+            "extensions",
+            "needs_extensions",
+            "exclude_patterns",
+            "include_patterns",
+            "html_static_path",
+            "html_theme_path",
+            "html_context",
+            "html_theme_options",
+            "html_sidebars",
+        ] {
+            raw.insert(name.into(), ConfigVal::Bool(true));
+        }
+        for name in [
+            "html_add_external_link_class",
+            "numfig",
+            "nitpicky",
+            "smartquotes",
+            "html_show_copyright",
+            "html_show_sphinx",
+            "html_show_search_summary",
+            "html_copy_source",
+            "html_show_sourcelink",
+            "html_domain_indices",
+            "html_use_index",
+        ] {
+            raw.insert(name.into(), ConfigVal::Str("wrong".into()));
+        }
+        let cfg = SphinxConfig::new(raw, HashMap::new());
+
+        assert_eq!(cfg.author(), "Author name not set");
+        assert_eq!(cfg.version(), "");
+        assert_eq!(cfg.release(), "");
+        assert_eq!(cfg.extensions(), Vec::<String>::new());
+        assert_eq!(cfg.needs_extensions().len(), 0);
+        assert_eq!(cfg.exclude_patterns(), Vec::<String>::new());
+        assert_eq!(cfg.include_patterns(), vec!["**"]);
+        assert_eq!(cfg.highlight_language(), "default");
+        assert!(!cfg.html_add_external_link_class());
+        assert!(!cfg.numfig());
+        assert!(!cfg.nitpicky());
+        assert!(cfg.smartquotes());
+        assert_eq!(cfg.rst_prolog(), None);
+        assert_eq!(cfg.rst_epilog(), None);
+        assert_eq!(cfg.html_theme(), "alabaster");
+        assert!(cfg.html_static_path().is_empty());
+        assert!(cfg.html_theme_path().is_empty());
+        assert_eq!(cfg.html_title(), "Project name not set  documentation");
+        assert_eq!(cfg.html_short_title(), "Project name not set  documentation");
+        assert!(cfg.html_context().is_empty());
+        assert!(cfg.html_theme_options().is_empty());
+        assert!(cfg.html_show_copyright());
+        assert!(cfg.html_show_sphinx());
+        assert!(cfg.html_show_search_summary());
+        assert!(cfg.html_copy_source());
+        assert!(cfg.html_show_sourcelink());
+        assert_eq!(cfg.html_sourcelink_suffix(), ".txt");
+        assert_eq!(cfg.html_use_opensearch(), "");
+        assert_eq!(cfg.html_baseurl(), "");
+        assert_eq!(cfg.html_logo(), None);
+        assert_eq!(cfg.html_favicon(), None);
+        assert_eq!(cfg.html_last_updated_fmt(), None);
+        assert!(cfg.html_sidebars().is_empty());
+        assert!(cfg.html_domain_indices());
+        assert!(cfg.html_use_index());
+    }
+
+    #[test]
+    fn linkcheck_and_intersphinx_accessors_cover_mapping_and_numeric_shapes() {
+        let mut raw = HashMap::new();
+        raw.insert(
+            "intersphinx_mapping".into(),
+            ConfigVal::Map(vec![
+                (
+                    "docs".into(),
+                    ConfigVal::List(vec![
+                        ConfigVal::Str("https://docs.example.test".into()),
+                        ConfigVal::Str("objects.inv".into()),
+                    ]),
+                ),
+                (
+                    "default-inv".into(),
+                    ConfigVal::List(vec![ConfigVal::Str("https://other.example.test".into())]),
+                ),
+                ("not-a-list".into(), ConfigVal::Str("skip".into())),
+                ("empty-list".into(), ConfigVal::List(vec![])),
+                (
+                    "bad-url".into(),
+                    ConfigVal::List(vec![ConfigVal::Int(1), ConfigVal::Str("skip".into())]),
+                ),
+            ]),
+        );
+        raw.insert(
+            "linkcheck_ignore".into(),
+            ConfigVal::List(vec![ConfigVal::Str("^https://skip".into()), ConfigVal::Int(1)]),
+        );
+        raw.insert(
+            "linkcheck_allowed_redirects".into(),
+            ConfigVal::Map(vec![
+                ("^https://old".into(), ConfigVal::Str("^https://new".into())),
+                ("ignored".into(), ConfigVal::Int(1)),
+            ]),
+        );
+        raw.insert("linkcheck_anchors".into(), ConfigVal::Bool(false));
+        raw.insert(
+            "linkcheck_anchors_ignore".into(),
+            ConfigVal::List(vec![ConfigVal::Str("^generated".into()), ConfigVal::Int(1)]),
+        );
+        raw.insert("linkcheck_timeout".into(), ConfigVal::Float(2.5));
+        raw.insert("linkcheck_retries".into(), ConfigVal::Int(3));
+        raw.insert("linkcheck_rate_limit_timeout".into(), ConfigVal::Int(12));
+        let cfg = SphinxConfig::new(raw, HashMap::new());
+
+        assert_eq!(
+            cfg.intersphinx_mapping(),
+            vec![
+                (
+                    "docs".into(),
+                    "https://docs.example.test".into(),
+                    Some("objects.inv".into()),
+                ),
+                (
+                    "default-inv".into(),
+                    "https://other.example.test".into(),
+                    None,
+                ),
+            ]
+        );
+        assert_eq!(cfg.linkcheck_ignore(), vec!["^https://skip"]);
+        assert_eq!(
+            cfg.linkcheck_allowed_redirects(),
+            vec![("^https://old".into(), "^https://new".into())]
+        );
+        assert!(!cfg.linkcheck_anchors());
+        assert_eq!(cfg.linkcheck_anchors_ignore(), vec!["^generated"]);
+        assert_eq!(cfg.linkcheck_timeout(), 2);
+        assert_eq!(cfg.linkcheck_retries(), 3);
+        assert_eq!(cfg.linkcheck_rate_limit_timeout(), 12.0);
+
+        let mut raw = HashMap::new();
+        raw.insert("linkcheck_timeout".into(), ConfigVal::Int(-1));
+        raw.insert("linkcheck_retries".into(), ConfigVal::Int(-1));
+        raw.insert("linkcheck_rate_limit_timeout".into(), ConfigVal::Float(-1.0));
+        raw.insert("html_domain_indices".into(), ConfigVal::List(vec![]));
+        let cfg = SphinxConfig::new(raw, HashMap::new());
+        assert_eq!(cfg.linkcheck_timeout(), 30);
+        assert_eq!(cfg.linkcheck_retries(), 1);
+        assert_eq!(cfg.linkcheck_rate_limit_timeout(), 300.0);
+        assert!(!cfg.html_domain_indices());
+
+        let mut raw = HashMap::new();
+        raw.insert(
+            "html_domain_indices".into(),
+            ConfigVal::List(vec![ConfigVal::Str("py".into())]),
+        );
+        let cfg = SphinxConfig::new(raw, HashMap::new());
+        assert!(cfg.html_domain_indices());
+    }
+
+    #[test]
+    fn config_resolution_covers_aliases_invalid_overrides_and_wrong_shapes() {
+        let mut raw = HashMap::new();
+        raw.insert("root_doc".into(), ConfigVal::Str("contents".into()));
+        raw.insert("copyright".into(), ConfigVal::Str("2026, Docs".into()));
+        raw.insert("linkcheck_timeout".into(), ConfigVal::Int(7));
+        raw.insert("source_suffix".into(), ConfigVal::Bool(true));
+        raw.insert("linkcheck_allowed_redirects".into(), ConfigVal::Bool(true));
+        raw.insert("linkcheck_anchors_ignore".into(), ConfigVal::Bool(true));
+        let mut overrides = HashMap::new();
+        overrides.insert("linkcheck_timeout".into(), "not-a-number".into());
+        let cfg = SphinxConfig::new(raw, overrides);
+
+        assert_eq!(cfg.get("master_doc"), Some(ConfigVal::Str("contents".into())));
+        assert_eq!(
+            cfg.get("project_copyright"),
+            Some(ConfigVal::Str("2026, Docs".into()))
+        );
+        assert_eq!(cfg.linkcheck_timeout(), 7);
+        assert_eq!(cfg.source_suffix().get(".rst").map(String::as_str), Some("restructuredtext"));
+        assert!(cfg.linkcheck_allowed_redirects().is_empty());
+        assert_eq!(cfg.linkcheck_anchors_ignore(), vec!["^!"]);
+
+        let mut cfg = SphinxConfig::new_defaults();
+        cfg.set("copyright", ConfigVal::Str("2027, Docs".into()));
+        assert_eq!(cfg.get("project_copyright"), Some(ConfigVal::Str("2027, Docs".into())));
+        cfg.set("project_copyright", ConfigVal::Str("2028, Docs".into()));
+        assert_eq!(
+            cfg.raw_config().get("copyright"),
+            Some(&ConfigVal::Str("2028, Docs".into()))
         );
     }
 

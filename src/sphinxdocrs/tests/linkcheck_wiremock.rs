@@ -157,6 +157,79 @@ async fn anchor_missing_reports_broken() {
 }
 
 #[tokio::test]
+async fn rate_limited_exhausted_reports_broken() {
+    let server = MockServer::start().await;
+    // Always 429 — with retries exhausted, check_uri must give up.
+    Mock::given(method("HEAD"))
+        .and(path("/limited"))
+        .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "1"))
+        .mount(&server)
+        .await;
+
+    let uri = format!("{}/limited", server.uri());
+    let mut config = LinkcheckConfig::default();
+    config.retries = 0;
+    let result = check_uri_sync("index", &uri, &config);
+
+    assert_eq!(result.status, LinkStatus::Broken, "{result:?}");
+    assert_eq!(result.code, 429);
+}
+
+#[tokio::test]
+async fn build_all_reports_broken_and_redirected_in_output_txt() {
+    use sphinxdocrs::builders::Builder;
+    use sphinxdocrs::builders::linkcheck::LinkcheckBuilder;
+    use sphinxdocrs::config::SphinxConfig;
+    use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
+
+    let server = MockServer::start().await;
+    Mock::given(method("HEAD"))
+        .and(path("/missing"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    Mock::given(method("HEAD"))
+        .and(path("/old"))
+        .respond_with(ResponseTemplate::new(301).insert_header("Location", "/new"))
+        .mount(&server)
+        .await;
+    Mock::given(method("HEAD"))
+        .and(path("/new"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let src = tempfile::TempDir::new().unwrap();
+    let out = tempfile::TempDir::new().unwrap();
+    let rst = format!(
+        "Title\n=====\n\nA `broken <{}/missing>`_ link and a `redirect <{}/old>`_ link.\n",
+        server.uri(),
+        server.uri()
+    );
+    std::fs::write(src.path().join("index.rst"), rst).unwrap();
+
+    let src_path = src.path().to_path_buf();
+    let out_path = out.path().to_path_buf();
+    let (result, out_dir) = std::thread::spawn(move || {
+        let config = SphinxConfig::new_defaults();
+        let project = EnvProject::new(&src_path, &[(".rst", "restructuredtext")]);
+        let env = BuildEnvironment::new(config, project, &src_path, &out_path);
+        let builder = LinkcheckBuilder::new();
+        let result = builder.build_all(&src_path, &out_path, &env).unwrap();
+        (result, out_path)
+    })
+    .join()
+    .expect("build_all thread panicked");
+
+    let txt = std::fs::read_to_string(out_dir.join("output.txt")).unwrap();
+    assert!(txt.contains("[broken]"), "{txt}");
+    assert!(txt.contains("[redirected]"), "{txt}");
+    assert!(txt.contains("to "), "expected redirect target in {txt}");
+    assert_eq!(result.warnings.len(), 1, "{:?}", result.warnings);
+    assert!(result.warnings[0].contains("broken link"), "{:?}", result.warnings);
+}
+
+#[tokio::test]
 async fn rate_limited_then_success_reports_working() {
     let server = MockServer::start().await;
     // First request: 429 with a short Retry-After. Second: 200.

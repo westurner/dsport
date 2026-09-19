@@ -138,6 +138,12 @@ mod tests {
     }
 
     #[test]
+    fn explicit_yes_color_mode_enables_color() {
+        let l = parse_logging(false, false, None, 0, "yes");
+        assert!(l.color);
+    }
+
+    #[test]
     fn finish_build_exits_zero_without_warningiserror() {
         let config = parse_logging(false, false, None, 0, "no");
         let code = finish_build(&["a warning".to_string()], &config, false);
@@ -173,11 +179,28 @@ mod tests {
     }
 
     #[test]
+    fn finish_build_suppresses_terminal_warnings_and_reports_write_failure() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let missing_parent = tmp.path().join("missing").join("warnings.txt");
+        let config = parse_logging(true, true, Some(missing_parent), 0, "no");
+        assert_eq!(finish_build(&["hidden warning".to_string()], &config, true), 1);
+    }
+
+    #[test]
     fn warning_format_respects_color_mode() {
         assert_eq!(format_warning("message", false), "WARNING: message");
         assert_eq!(
             format_warning("message", true),
             "\x1b[91mWARNING: message\x1b[39;49;00m"
+        );
+    }
+
+    #[test]
+    fn warning_format_preserves_existing_warning_prefixes() {
+        assert_eq!(format_warning("WARNING: already formatted", false), "WARNING: already formatted");
+        assert_eq!(
+            format_warning("index.rst: WARNING: located warning", false),
+            "index.rst: WARNING: located warning"
         );
     }
 }

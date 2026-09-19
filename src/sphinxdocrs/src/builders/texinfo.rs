@@ -93,4 +93,44 @@ mod tests {
         assert!(output.contains("Body."));
         assert!(output.ends_with("@bye\n"));
     }
+
+    #[test]
+    fn trait_metadata_and_nested_build_doc_path() {
+        let out = TempDir::new().unwrap();
+        let builder = TexinfoBuilder::new();
+        assert_eq!(builder.name(), "texinfo");
+        assert_eq!(builder.format(), "texinfo");
+        assert_eq!(builder.out_suffix(), ".texi");
+        assert_eq!(builder.get_target_uri("guide/intro"), "guide/intro.texi");
+        builder
+            .build_doc("guide/intro", "Intro\n=====\n\nBody.\n", out.path())
+            .unwrap();
+        assert!(out.path().join("guide/intro.texi").is_file());
+    }
+
+    #[test]
+    fn build_all_discovers_docs_uses_existing_docnames_and_reports_missing_sources() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        std::fs::create_dir_all(src.path().join("guide")).unwrap();
+        std::fs::write(src.path().join("index.rst"), "Index\n=====\n").unwrap();
+        std::fs::write(src.path().join("guide/intro.rst"), "Intro\n=====\n").unwrap();
+        let project = crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let mut env = BuildEnvironment::new(
+            crate::config::SphinxConfig::new_defaults(),
+            project,
+            src.path(),
+            out.path(),
+        );
+        let builder = TexinfoBuilder::new();
+        assert_eq!(builder.build_all(src.path(), out.path(), &env).unwrap().written, 2);
+
+        env.all_docs.insert("guide/intro".into(), 1);
+        env.all_docs.insert("index".into(), 1);
+        let second_out = TempDir::new().unwrap();
+        assert_eq!(builder.build_all(src.path(), second_out.path(), &env).unwrap().written, 2);
+
+        env.all_docs.insert("missing".into(), 1);
+        assert!(builder.build_all(src.path(), second_out.path(), &env).is_err());
+    }
 }

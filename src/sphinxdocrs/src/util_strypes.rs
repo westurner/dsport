@@ -359,13 +359,15 @@ mod tests {
     fn attribute_names_reject_event_and_malformed_names() {
         assert!(is_safe_html_attribute_name("data-value"));
         assert!(!is_safe_html_attribute_name("onerror"));
+        assert!(!is_safe_html_attribute_name(""));
+        assert!(!is_safe_html_attribute_name("1data"));
         assert!(!is_safe_html_attribute_name("bad name"));
         assert!(!is_safe_html_attribute_name("style"));
     }
 
     #[test]
     fn xml_context_escapes_and_drops_invalid_controls() {
-        assert_eq!(xml_escape("<&\"'\u{0001}"), "&lt;&amp;&quot;&apos;");
+        assert_eq!(xml_escape("<&>\"'\u{0001}"), "&lt;&amp;&gt;&quot;&apos;");
     }
 
     #[test]
@@ -507,6 +509,15 @@ indented"
     }
 
     #[test]
+    fn po_escape_covers_control_quote_unknown_and_malformed_forms() {
+        assert_eq!(
+            unescape_po_string(r###"\b\f\r\t\v\"\\\x\q\""###),
+            "\x08\x0c\r\t\x0b\"\\\\x\\q\""
+        );
+        assert_eq!(unescape_po_string("trailing\\"), "trailing\\");
+    }
+
+    #[test]
     fn safe_po_escape_removes_terminal_and_control_sequences() {
         assert_eq!(
             unescape_po_string_safe(r"line\n\t\r\a\x1b[31mred\x1b[0m\x1b]title\x07"),
@@ -536,5 +547,11 @@ indented"
     fn terminal_sanitizer_removes_multiple_control_families() {
         let input = "ok\x1b[31m red\x1b[0m\x1b]0;title\x07\x1b[2J\r\x07done";
         assert_eq!(strip_escape_sequences(input), "ok reddone");
+    }
+
+    #[test]
+    fn terminal_sanitizer_handles_c1_controls_and_escape_variants() {
+        let input = "a\u{009b}31mb\u{009d}title\u{009c}c\x1bPdata\x1b\\d\x1bZef\x1b";
+        assert_eq!(strip_escape_sequences(input), "abcdef");
     }
 }

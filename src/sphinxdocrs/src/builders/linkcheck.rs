@@ -567,6 +567,66 @@ mod tests {
         let b = LinkcheckBuilder::new();
         assert_eq!(b.name(), "linkcheck");
         assert_eq!(b.format(), "");
+        assert_eq!(b.out_suffix(), ".txt");
+        assert_eq!(b.get_target_uri("index"), "index");
+        assert!(b.build_doc("index", "irrelevant", Path::new("/nonexistent")).is_ok());
+    }
+
+    #[test]
+    fn link_status_as_str_covers_every_variant() {
+        assert_eq!(LinkStatus::Working.as_str(), "working");
+        assert_eq!(LinkStatus::Redirected.as_str(), "redirected");
+        assert_eq!(LinkStatus::Broken.as_str(), "broken");
+        assert_eq!(LinkStatus::Ignored.as_str(), "ignored");
+    }
+
+    #[test]
+    fn collect_hyperlinks_finds_external_image_uris() {
+        let rst = "Title\n=====\n\n.. image:: https://example.com/logo.png\n";
+        let tree = parse_rst_with_source(rst, "index");
+        let uris = collect_hyperlinks(&tree);
+        assert!(uris.iter().any(|u| u == "https://example.com/logo.png"));
+    }
+
+    #[test]
+    fn split_anchor_handles_empty_and_missing_and_decoded_fragments() {
+        assert_eq!(split_anchor("https://x/y#"), ("https://x/y", String::new()));
+        assert_eq!(
+            split_anchor("https://x/y"),
+            ("https://x/y", String::new())
+        );
+        assert_eq!(
+            split_anchor("https://x/y#a%20b"),
+            ("https://x/y", "a b".to_string())
+        );
+    }
+
+    #[test]
+    fn contains_anchor_empty_anchor_is_always_present() {
+        assert!(contains_anchor(b"<html></html>", ""));
+    }
+
+    #[test]
+    fn contains_anchor_finds_matching_id() {
+        assert!(contains_anchor(
+            br#"<h1 id="section-a">A</h1>"#,
+            "section-a"
+        ));
+        assert!(!contains_anchor(br#"<h1 id="other">A</h1>"#, "section-a"));
+    }
+
+    #[test]
+    fn check_uri_network_error_exhausts_retries_reports_broken() {
+        // Port 0 is never a valid connection target, so this fails fast
+        // with a connection error rather than timing out.
+        let cfg = LinkcheckConfig {
+            retries: 0,
+            timeout_secs: 2,
+            ..LinkcheckConfig::default()
+        };
+        let r = check_uri("index", "http://127.0.0.1:0/", &cfg);
+        assert_eq!(r.status, LinkStatus::Broken);
+        assert_eq!(r.code, 0);
     }
 
     #[test]
@@ -666,5 +726,35 @@ See section_.\n\
         assert!(output_json_path(out.path()).exists());
         // The mailto link is Ignored, so no broken warnings.
         assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn build_all_uses_env_all_docs_and_skips_missing_source_files() {
+        use crate::config::SphinxConfig;
+        use crate::environment::{BuildEnvironment, EnvProject};
+        use tempfile::TempDir;
+
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        std::fs::write(
+            src.path().join("index.rst"),
+            "Title\n=====\n\nMail `me <mailto:a@b.com>`_.\n",
+        )
+        .unwrap();
+
+        let config = SphinxConfig::new_defaults();
+        let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let mut env = BuildEnvironment::new(config, project, src.path(), out.path());
+        env.all_docs.insert("index".to_string(), 0);
+        // Already has its configured extension, so `src_path_for_docname_with_suffixes`
+        // resolves it without an existence check — but the file genuinely
+        // isn't on disk, so `read_source_file` fails and this docname must
+        // be skipped rather than failing the whole build.
+        env.all_docs.insert("missing.rst".to_string(), 0);
+
+        let builder = LinkcheckBuilder::new();
+        let result = builder.build_all(src.path(), out.path(), &env).unwrap();
+        assert!(output_txt_path(out.path()).exists());
+        assert_eq!(result.warnings.len(), 0);
     }
 }

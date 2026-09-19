@@ -236,6 +236,7 @@ mod tests {
             "NO_COLOUR" | "FORCE_COLOR" => Some("1".to_string()),
             _ => None,
         };
+        assert!(env("OTHER").is_none());
         assert!(!terminal_supports_colour_from_env(env));
     }
 
@@ -272,5 +273,71 @@ mod tests {
         let _guard = TEST_LOCK.lock().unwrap();
         *COLOURING_DISABLED.lock().unwrap() = false;
         assert!(colourise("not_a_colour", "x").is_err());
+    }
+
+    #[test]
+    fn every_named_colour_uses_its_declared_escape_code() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        *COLOURING_DISABLED.lock().unwrap() = false;
+        for (name, code) in COLOUR_TABLE {
+            assert_eq!(escape_code_for(name), Some(*code));
+            assert_eq!(colourise(name, "x").unwrap(), wrap(code, "x"));
+        }
+    }
+
+    #[test]
+    fn environment_aliases_match_colour_contract() {
+        let no_colour = |key: &str| (key == "NO_COLOUR").then(|| "1".to_string());
+        assert!(!terminal_supports_colour_from_env(no_colour));
+
+        let force_colour = |key: &str| (key == "FORCE_COLOUR").then(|| "1".to_string());
+        assert!(terminal_supports_colour_from_env(force_colour));
+
+        let ci_true = |key: &str| (key == "CI").then(|| "TRUE".to_string());
+        assert!(terminal_supports_colour_from_env(ci_true));
+    }
+
+    #[test]
+    fn python_console_surface_registers_and_dispatches() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        *COLOURING_DISABLED.lock().unwrap() = false;
+        Python::attach(|py| -> PyResult<()> {
+            let module = PyModule::new(py, "console_test")?;
+            register(&module)?;
+
+            let names: Vec<String> = module.getattr("colour_names")?.call0()?.extract()?;
+            assert_eq!(names.len(), COLOUR_TABLE.len());
+            let code: Option<String> = module
+                .getattr("colour_escape_code")?
+                .call1(("red",))?
+                .extract()?;
+            assert_eq!(code.as_deref(), Some("91"));
+
+            module.getattr("disable_colour")?.call0()?;
+            let plain: String = module
+                .getattr("colourise")?
+                .call1(("red", "x"))?
+                .extract()?;
+            assert_eq!(plain, "x");
+            module.getattr("enable_colour")?.call0()?;
+
+            let colored: String = module
+                .getattr("colourise")?
+                .call1(("red", "x"))?
+                .extract()?;
+            assert!(colored.contains("\x1b[91m"));
+            let safe: String = module
+                .getattr("terminal_safe")?
+                .call1(("caf\u{e9}",))?
+                .extract()?;
+            assert_eq!(safe, "caf\\xe9");
+            let stripped: String = module
+                .getattr("strip_escape_sequences")?
+                .call1((colored,))?
+                .extract()?;
+            assert_eq!(stripped, "x");
+            Ok(())
+        })
+        .unwrap();
     }
 }

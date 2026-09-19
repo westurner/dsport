@@ -426,4 +426,27 @@ mod tests {
                 .is_empty()
         );
     }
+
+    #[test]
+    fn matching_files_handles_nested_include_and_file_exclude() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("nested")).unwrap();
+        std::fs::write(root.path().join("nested/keep.rst"), "").unwrap();
+        std::fs::write(root.path().join("nested/skip.txt"), "").unwrap();
+
+        let files = get_matching_files(
+            root.path(),
+            &["nested/*.rst".to_string()],
+            &["nested/keep.rst".to_string()],
+        )
+        .unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn relative_posix_returns_empty_for_unrelated_paths() {
+        let root = Path::new("/tmp/sphinxdocrs-root");
+        let other = Path::new("/tmp/sphinxdocrs-other");
+        assert_eq!(relative_posix(root, other), "");
+    }
 }

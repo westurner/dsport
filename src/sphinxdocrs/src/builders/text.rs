@@ -148,4 +148,19 @@ mod tests {
         assert!(outdir.join("index.txt").exists());
         assert!(outdir.join("other.txt").exists());
     }
+
+    #[test]
+    fn build_all_uses_explicit_docnames_and_reports_missing_sources() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("index.rst"), "Index\n=====\n").unwrap();
+        let outdir = tmp.path().join("_out");
+        let config = crate::config::SphinxConfig::new_defaults();
+        let project =
+            crate::environment::EnvProject::new(tmp.path(), &[(".rst", "restructuredtext")]);
+        let mut env = crate::environment::BuildEnvironment::new(config, project, tmp.path(), &outdir);
+        env.all_docs.insert("index".into(), 1);
+        assert_eq!(TextBuilder::new().build_all(tmp.path(), &outdir, &env).unwrap().written, 1);
+        env.all_docs.insert("missing".into(), 1);
+        assert!(TextBuilder::new().build_all(tmp.path(), &outdir, &env).is_err());
+    }
 }

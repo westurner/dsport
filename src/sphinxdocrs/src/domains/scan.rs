@@ -918,4 +918,44 @@ mod tests {
         // class prefix for the next sibling.
         assert_eq!(objs[3].fullname, "pkg.top_level");
     }
+
+    #[test]
+    fn scanners_ignore_malformed_and_empty_forms() {
+        let labels = scan_labels(
+            ".. _:\n.. _missing-colon\n.. _valid:\n\nTitle\n--\n.. _term:\n\nterm\n   definition\n",
+        );
+        assert!(labels.iter().any(|(name, _)| name == "valid"));
+        assert!(labels.iter().any(|(name, _)| name == "term"));
+
+        assert!(scan_glossary_terms(".. glossary::\nnot indented\n").is_empty());
+        assert!(scan_rst_domain_objects(".. rst:directive::\n.. rst:role::\n").is_empty());
+        assert_eq!(
+            split_phrase("<target>"),
+            ("<target>".to_string(), None)
+        );
+
+        let xrefs = scan_xref_roles(
+            "bad :ref:`unterminated\n:unknown:role:`skip`\n:rst:dir:`ok`\n:js:func:`f()`\n",
+        );
+        assert_eq!(xrefs.len(), 2);
+        assert_eq!(xrefs[0].domain, "rst");
+        assert_eq!(xrefs[1].domain, "js");
+
+        let invalid_index = scan_index_entries(
+            ".. index::\n   pair: only-one\n   triple: a; b\n   see: only-one\n",
+        );
+        assert!(invalid_index.is_empty());
+
+        let objects = scan_domain_objects(
+            ".. py:currentmodule::\n.. py:currentclass::\n.. py:unknown:: no\n.. py:function::\n.. py:function:: top()\n",
+            "py",
+            &["module", "currentmodule"],
+            &["currentclass"],
+            &["class"],
+            &["function"],
+            |_, args| (args.to_string(), format!("sig:{args}")),
+        );
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].fullname, "top()");
+    }
 }

@@ -236,4 +236,31 @@ mod tests {
         );
         assert!(bytes.windows(11).any(|window| window == b"content.opf"));
     }
+
+    #[test]
+    fn build_all_uses_configured_metadata_and_explicit_docnames() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        std::fs::write(src.path().join("index.rst"), "Index\n=====\n\nBody.\n").unwrap();
+        let mut config = crate::config::SphinxConfig::new_defaults();
+        for (key, value) in [
+            ("epub_title", "Book"),
+            ("epub_author", "Author"),
+            ("epub_language", "en-GB"),
+            ("epub_uid", "book-id"),
+            ("epub_description", "Description"),
+            ("epub_publisher", "Publisher"),
+            ("epub_copyright", "Rights"),
+            ("epub_basename", "book"),
+        ] {
+            config.set(key, crate::config::ConfigVal::Str(value.into()));
+        }
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let mut env = crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+        env.all_docs.insert("index".into(), 1);
+        let result = EpubBuilder::new().build_all(src.path(), out.path(), &env).unwrap();
+        assert_eq!(result.written, 1);
+        assert!(out.path().join("book.epub").is_file());
+    }
 }

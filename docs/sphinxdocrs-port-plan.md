@@ -1539,9 +1539,21 @@ explicitly documented renderer/theme provenance deviations.
   and environment regressions for both contracts.
 - Matched the shared HTML5 writer's transition, epigraph, container, and
   admonition block structure closely enough to advance the focused
-  `src/sphinx/doc` content diff. Figure alignment/IDs, image targets and
-  `_images` copying, captions, and legacy-theme asset checksums remain open
-  H11.2 residuals.
+  `src/sphinx/doc` content diff. Figure alignment/classes and IDs, image target
+  wrappers and `_images` copying, captions, and legacy-theme stylesheet
+  checksums now match the focused external case. The remaining first
+  differences are legacy block serialization and shared smart-quote/anchor
+  behavior.
+- Added focused figure metadata and target-wrapper coverage in
+  `docutilsrs/tests/user_features.rs`. Native HTML builds now preserve figure
+  alignment/classes, deterministic IDs, image targets, captions, dimensions,
+  and local image files under `_images/`.
+- Wired `html_css_files` through raw `conf.py` loading and the native theme
+  context, and copy the bundled `graphviz.css` when `sphinx.ext.graphviz` is
+  enabled. Existing local asset checksum rendering now applies to configured,
+  theme, and extension stylesheets alike. Focused configuration and figure
+  regressions pass; the full 15-test external gate still reports the known
+  HTML/tree residuals and no aggregate snapshot was updated.
 - Matched Sphinx's full breadcrumb ancestor chain for themed pages, omitting
   only the configured root document and preserving root-to-nearest order;
   nested parent-chain behavior is covered by a focused renderer regression.

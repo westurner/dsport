@@ -326,7 +326,7 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         NodeKind::Attribution => {
             let _ = writeln!(out, "{indent}<attribution>");
         }
-        NodeKind::Figure => {
+        NodeKind::Figure { .. } => {
             let _ = writeln!(out, "{indent}<figure>");
         }
         NodeKind::Caption => {

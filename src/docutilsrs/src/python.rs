@@ -134,7 +134,7 @@ fn node_kind_tag(kind: &NodeKind) -> String {
         NodeKind::Row => "row".into(),
         NodeKind::Entry { .. } => "entry".into(),
         NodeKind::Attribution => "attribution".into(),
-        NodeKind::Figure => "figure".into(),
+        NodeKind::Figure { .. } => "figure".into(),
         NodeKind::Caption => "caption".into(),
         NodeKind::Legend => "legend".into(),
         NodeKind::Label => "label".into(),

@@ -326,17 +326,43 @@ fn emit_enter(
             width,
             height,
         } => {
-            let _ = write!(out, "<img src=\"{}\"", escape(uri));
-            if let Some(a) = alt {
-                let _ = write!(out, " alt=\"{}\"", escape(a));
+            let in_figure = node.parent.is_some_and(|parent| {
+                matches!(tree.node(parent).kind, NodeKind::Figure { .. })
+                    || (matches!(tree.node(parent).kind, NodeKind::Reference { .. })
+                        && tree.node(parent).parent.is_some_and(|grandparent| {
+                            matches!(tree.node(grandparent).kind, NodeKind::Figure { .. })
+                        }))
+            });
+            if in_figure {
+                out.push_str("<img");
+                if let Some(a) = alt {
+                    let _ = write!(out, " alt=\"{}\"", escape(a));
+                }
+                let _ = write!(out, " src=\"{}\"", escape(uri));
+                let mut styles = Vec::new();
+                if let Some(width) = width {
+                    styles.push(format!("width: {}px;", escape(width.trim_end_matches("px"))));
+                }
+                if let Some(height) = height {
+                    styles.push(format!("height: {}px;", escape(height.trim_end_matches("px"))));
+                }
+                if !styles.is_empty() {
+                    let _ = write!(out, " style=\"{}\"", styles.join(" "));
+                }
+                out.push_str(" />\n");
+            } else {
+                let _ = write!(out, "<img src=\"{}\"", escape(uri));
+                if let Some(a) = alt {
+                    let _ = write!(out, " alt=\"{}\"", escape(a));
+                }
+                if let Some(width) = width {
+                    let _ = write!(out, " width=\"{}\"", escape(width));
+                }
+                if let Some(height) = height {
+                    let _ = write!(out, " height=\"{}\"", escape(height));
+                }
+                out.push_str("/>");
             }
-            if let Some(width) = width {
-                let _ = write!(out, " width=\"{}\"", escape(width));
-            }
-            if let Some(height) = height {
-                let _ = write!(out, " height=\"{}\"", escape(height));
-            }
-            out.push_str("/>");
         }
         NodeKind::Raw { format } => {
             if format == "html" {
@@ -399,7 +425,20 @@ fn emit_enter(
                     uri
                 );
             }
-            tasks.push(Task::Append("</a>".to_string()));
+            let image_reference = classes
+                .split_whitespace()
+                .any(|class| class == "image-reference")
+                && node.parent.is_some_and(|parent| {
+                    matches!(tree.node(parent).kind, NodeKind::Figure { .. })
+                        || tree.node(parent).parent.is_some_and(|grandparent| {
+                            matches!(tree.node(grandparent).kind, NodeKind::Figure { .. })
+                        })
+                });
+            tasks.push(Task::Append(if image_reference {
+                "</a>\n".to_string()
+            } else {
+                "</a>".to_string()
+            }));
             for &c in node.children.iter().rev() {
                 if should_cloak {
                     if let NodeKind::Text(s) = &tree.node(c).kind {
@@ -461,8 +500,41 @@ fn emit_enter(
             out.push_str("<p class=\"attribution\">— ");
             schedule(node, "</p>", tasks);
         }
-        NodeKind::Figure => wrap(node, "figure", out, tasks),
-        NodeKind::Caption => wrap(node, "figcaption", out, tasks),
+        NodeKind::Figure { ids, classes } => {
+            let class_attr = if classes.is_empty() {
+                String::new()
+            } else {
+                format!(" class=\"{}\"", escape(classes))
+            };
+            let id_attr = if ids.is_empty() {
+                String::new()
+            } else {
+                format!(" id=\"{}\"", escape(ids))
+            };
+            let _ = write!(out, "<figure{class_attr}{id_attr}>\n");
+            schedule(node, "</figure>\n", tasks);
+        }
+        NodeKind::Caption => {
+            let is_figure_caption = node
+                .parent
+                .is_some_and(|parent| matches!(tree.node(parent).kind, NodeKind::Figure { .. }));
+            if is_figure_caption {
+                out.push_str("<figcaption>\n<p><span class=\"caption-text\">");
+                let close = node
+                    .parent
+                    .and_then(|parent| match &tree.node(parent).kind {
+                        NodeKind::Figure { ids, .. } if !ids.is_empty() => Some(format!(
+                            "</span><a class=\"headerlink\" href=\"#{}\" title=\"Link to this image\">¶</a></p>\n</figcaption>\n",
+                            escape(ids)
+                        )),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "</span></p>\n</figcaption>\n".to_string());
+                schedule(node, close, tasks);
+            } else {
+                wrap(node, "figcaption", out, tasks);
+            }
+        }
         NodeKind::Legend => wrap_with_class(node, "div", "legend", out, tasks),
         NodeKind::Label => wrap_with_class(node, "span", "label", out, tasks),
         NodeKind::Footnote { ids, .. } => {

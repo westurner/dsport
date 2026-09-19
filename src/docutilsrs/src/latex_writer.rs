@@ -304,7 +304,7 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
             }
             out.push('\n');
         }
-        NodeKind::Figure => {
+        NodeKind::Figure { .. } => {
             out.push_str("\\begin{figure}[h]\n\\centering\n");
             for &c in &node.children {
                 emit(tree, c, section_depth, out);

@@ -358,7 +358,7 @@ fn emit_enter(
             }
             out.push_str("</draw:frame></text:p>\n");
         }
-        NodeKind::Figure => schedule_children(node, section_depth, tasks),
+        NodeKind::Figure { .. } => schedule_children(node, section_depth, tasks),
         NodeKind::Caption => {
             out.push_str(
                 "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Emphasis\">",

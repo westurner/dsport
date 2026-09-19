@@ -277,7 +277,7 @@ fn emit_enter(
             out.push_str(".RS\n-- ");
             schedule(node, section_depth, "\n.RE\n", tasks);
         }
-        NodeKind::Figure => schedule_children(node, section_depth, tasks),
+        NodeKind::Figure { .. } => schedule_children(node, section_depth, tasks),
         NodeKind::Caption => {
             out.push_str(".PP\n\\fI");
             schedule(node, section_depth, "\\fR\n", tasks);

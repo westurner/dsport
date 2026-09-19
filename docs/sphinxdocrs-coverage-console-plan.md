@@ -94,6 +94,15 @@ by `src/sphinxdocrs/tests/`.
     theme asset checksums.
   - No new LLVM coverage report was run. Aggregate branch totals and the
     `builders/singlehtml.rs` row above remain unchanged.
+- Measured on 2026-09-19 (H11.2 figure/image and asset follow-up):
+  - Focused figure metadata, target-wrapper, `html_css_files` ingestion, and
+    typed CSS accessor regressions pass. The `src/sphinx/doc` parity case now
+    advances past figure/image markup and local/theme/Graphviz stylesheet
+    checksum differences; the external suite still reports shared HTML/tree
+    residuals.
+  - No new LLVM coverage report was run. Aggregate totals remain 77.89%
+    library-only branches (565/2555 missed) and 78.87% all-target branches
+    (600/2839 missed); the module branch-map counts remain unchanged.
 
 Coverage scope note: `cargo +nightly llvm-cov ... --lib` does not execute
 `src/sphinxdocrs/tests/*.rs` integration-test binaries. Use the all-targets

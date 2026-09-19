@@ -373,7 +373,7 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             emit(tree, id, depth, "entry", &attrs, out);
         }
         NodeKind::Attribution => emit(tree, id, depth, "attribution", &[], out),
-        NodeKind::Figure => emit(tree, id, depth, "figure", &[], out),
+        NodeKind::Figure { .. } => emit(tree, id, depth, "figure", &[], out),
         NodeKind::Caption => emit(tree, id, depth, "caption", &[], out),
         NodeKind::Legend => emit(tree, id, depth, "legend", &[], out),
         NodeKind::Label => emit(tree, id, depth, "label", &[], out),
@@ -576,7 +576,7 @@ fn xml_name(kind: &NodeKind) -> Option<String> {
         NodeKind::Row => "row".to_string(),
         NodeKind::Entry { .. } => "entry".to_string(),
         NodeKind::Attribution => "attribution".to_string(),
-        NodeKind::Figure => "figure".to_string(),
+        NodeKind::Figure { .. } => "figure".to_string(),
         NodeKind::Caption => "caption".to_string(),
         NodeKind::Legend => "legend".to_string(),
         NodeKind::Label => "label".to_string(),

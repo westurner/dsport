@@ -1472,6 +1472,11 @@ fn build_global_context(
             css_files.push(css.filename.clone());
         }
     }
+    for css in config.html_css_files() {
+        if !css_files.contains(&css) {
+            css_files.push(css);
+        }
+    }
     for js in &env.added_js_files {
         if let Some(name) = &js.filename {
             if !script_files.contains(name) {

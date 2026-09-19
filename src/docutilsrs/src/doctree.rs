@@ -270,6 +270,10 @@ pub enum NodeKind {
         width: Option<String>,
         height: Option<String>,
     },
+    Figure {
+        ids: String,
+        classes: String,
+    },
     /// Raw passthrough (`.. raw:: format`).
     Raw {
         format: String,
@@ -324,8 +328,6 @@ pub enum NodeKind {
     // ── phase 2 deferrals ───────────────────────────────────────────────
     /// Attribution line within a block_quote (`-- Author`).
     Attribution,
-    /// Container for an image + optional caption + legend.
-    Figure,
     /// First paragraph of a figure body.
     Caption,
     /// Remaining content of a figure body, after the caption.
@@ -746,6 +748,12 @@ enum NodeKindData {
         width: Option<String>,
         height: Option<String>,
     },
+    Figure {
+        #[serde(default)]
+        ids: String,
+        #[serde(default)]
+        classes: String,
+    },
     Raw {
         format: String,
     },
@@ -786,7 +794,6 @@ enum NodeKindData {
         classes: String,
     },
     Attribution,
-    Figure,
     Caption,
     Legend,
     Footnote {
@@ -1032,7 +1039,7 @@ impl From<&NodeKind> for NodeKindData {
                 classes,
             },
             NodeKind::Attribution => NodeKindData::Attribution,
-            NodeKind::Figure => NodeKindData::Figure,
+            NodeKind::Figure { ids, classes } => NodeKindData::Figure { ids, classes },
             NodeKind::Caption => NodeKindData::Caption,
             NodeKind::Legend => NodeKindData::Legend,
             NodeKind::Footnote {
@@ -1255,7 +1262,7 @@ impl From<NodeKindData> for NodeKind {
                 classes,
             },
             NodeKindData::Attribution => NodeKind::Attribution,
-            NodeKindData::Figure => NodeKind::Figure,
+            NodeKindData::Figure { ids, classes } => NodeKind::Figure { ids, classes },
             NodeKindData::Caption => NodeKind::Caption,
             NodeKindData::Legend => NodeKind::Legend,
             NodeKindData::Footnote {

@@ -526,6 +526,20 @@ pub fn copy_theme_static_files_for_builder(
         std::fs::write(static_out.join("pygments.css"), pygments_css.as_bytes())?;
     }
 
+    if config
+        .extensions()
+        .iter()
+        .any(|extension| extension == "sphinx.ext.graphviz")
+    {
+        let graphviz_css = Path::new(&theme.search_js_dir)
+            .parent()
+            .and_then(Path::parent)
+            .map(|sphinx_dir| sphinx_dir.join("templates/graphviz/graphviz.css"));
+        if let Some(source) = graphviz_css.filter(|path| path.is_file()) {
+            std::fs::copy(source, static_out.join("graphviz.css"))?;
+        }
+    }
+
     Ok(())
 }
 

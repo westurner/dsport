@@ -77,6 +77,8 @@ fn parse_rst_impl(source: &str, source_path: &str, promote_title: bool) -> Doctr
         citation_count: 0,
         footnote_ref_count: 0,
         citation_ref_count: 0,
+        implicit_id_count: 1,
+        figure_count: 0,
         current_line: 0,
         inline_ref_sites: Vec::new(),
     };
@@ -109,6 +111,8 @@ pub struct ParseCtx {
     pub(crate) citation_count: u32,
     pub(crate) footnote_ref_count: u32,
     pub(crate) citation_ref_count: u32,
+    pub(crate) implicit_id_count: u32,
+    pub(crate) figure_count: u32,
     /// Source line of the paragraph currently being emitted, or 0 when
     /// unknown. Used to stamp `line=` on system messages for unresolved
     /// references discovered during inline parsing.
@@ -124,6 +128,11 @@ impl ParseCtx {
     fn next_anon_target(&mut self) -> u32 {
         self.anon_target_count += 1;
         self.anon_target_count
+    }
+
+    fn next_figure_id(&mut self) -> String {
+        self.figure_count += 1;
+        format!("id{}", self.implicit_id_count + self.figure_count)
     }
 }
 
@@ -245,6 +254,8 @@ pub enum Block {
         alt: Option<String>,
         width: Option<String>,
         height: Option<String>,
+        classes: String,
+        target: Option<String>,
         caption: Option<String>,
         legend: Vec<Block>,
     },
@@ -1713,6 +1724,9 @@ fn parse_directive(
             let mut alt = None;
             let mut width = None;
             let mut height = None;
+            let mut align = None;
+            let mut target = None;
+            let mut classes = None;
             // Skip blank lines before options.
             let mut j = *i_ref;
             while j < lines.len() && lines[j].trim().is_empty() {
@@ -1738,6 +1752,9 @@ fn parse_directive(
                                 "alt" => alt = Some(v.to_string()),
                                 "width" => width = Some(v.to_string()),
                                 "height" => height = Some(v.to_string()),
+                                "align" => align = Some(v.trim().to_string()),
+                                "target" => target = Some(v.trim().to_string()),
+                                "class" => classes = Some(v.trim().to_string()),
                                 _ => {}
                             }
                             j += 1;
@@ -1801,6 +1818,19 @@ fn parse_directive(
                 alt,
                 width,
                 height,
+                classes: if let Some(align) = align {
+                    format!(
+                        "align-{align}{}",
+                        classes
+                            .as_deref()
+                            .filter(|value| !value.is_empty())
+                            .map(|value| format!(" {value}"))
+                            .unwrap_or_default()
+                    )
+                } else {
+                    classes.unwrap_or_default()
+                },
+                target,
                 caption,
                 legend,
             }
@@ -2964,6 +2994,8 @@ mod rich_paragraph_tests {
             citation_count: 0,
             footnote_ref_count: 0,
             citation_ref_count: 0,
+            implicit_id_count: 0,
+            figure_count: 0,
             current_line: 0,
             inline_ref_sites: Vec::new(),
         };
@@ -3006,6 +3038,8 @@ mod rich_paragraph_tests {
             citation_count: 0,
             footnote_ref_count: 0,
             citation_ref_count: 0,
+            implicit_id_count: 0,
+            figure_count: 0,
             current_line: 0,
             inline_ref_sites: Vec::new(),
         };
@@ -3379,12 +3413,38 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 alt,
                 width,
                 height,
+                classes,
+                target,
                 caption,
                 legend,
             } => {
-                let fig = tree.append(parent, NodeKind::Figure);
+                let fig = tree.append(
+                    parent,
+                    NodeKind::Figure {
+                        ids: ctx.next_figure_id(),
+                        classes,
+                    },
+                );
+                let image_parent = if let Some(target) = target {
+                    let classes = if target.starts_with('#') || target.starts_with('/') {
+                        "reference internal image-reference"
+                    } else {
+                        "reference external image-reference"
+                    };
+                    tree.append(
+                        fig,
+                        NodeKind::Reference {
+                            name: String::new(),
+                            refuri: target,
+                            anonymous: false,
+                            classes: classes.to_string(),
+                        },
+                    )
+                } else {
+                    fig
+                };
                 tree.append(
-                    fig,
+                    image_parent,
                     NodeKind::Image {
                         uri,
                         alt,

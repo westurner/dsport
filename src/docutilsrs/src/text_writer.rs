@@ -307,7 +307,7 @@ fn render_block_recursive(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut
             blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
         }
         NodeKind::Toctree { .. } => {}
-        NodeKind::Figure => {
+        NodeKind::Figure { .. } => {
             let mut inner = Vec::new();
             for &c in &node.children {
                 match &tree.node(c).kind {

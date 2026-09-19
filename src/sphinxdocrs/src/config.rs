@@ -281,12 +281,13 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
             }
         }
 
-        // ── list-of-strings options (html_static_path, html_extra_path) ──────
+        // ── list-of-strings options ─────────────────────────────────────────
         for key in &[
             "html_static_path",
             "html_extra_path",
             "templates_path",
             "html_theme_path",
+            "html_css_files",
         ] {
             if let Ok(Some(v)) = globals.get_item(*key) {
                 if let Ok(list) = v.cast::<PyList>() {
@@ -1126,6 +1127,12 @@ impl SphinxConfig {
             "Directories of static files copied to _static/",
         );
         add(
+            "html_css_files",
+            List(vec![]),
+            Html,
+            "Additional CSS files linked on every HTML page",
+        );
+        add(
             "html_extra_path",
             List(vec![]),
             Html,
@@ -1514,6 +1521,24 @@ impl SphinxConfig {
     /// `extensions` — list of extension module names.
     pub fn extensions(&self) -> Vec<String> {
         self.get("extensions")
+            .and_then(|v| {
+                if let ConfigVal::List(items) = v {
+                    Some(
+                        items
+                            .iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    /// `html_css_files` — project stylesheets linked on every HTML page.
+    pub fn html_css_files(&self) -> Vec<String> {
+        self.get("html_css_files")
             .and_then(|v| {
                 if let ConfigVal::List(items) = v {
                     Some(
@@ -2404,6 +2429,10 @@ imgmath_dvisvgm = 'dvisvgm-custom'
             "html_theme_path".into(),
             ConfigVal::List(vec![ConfigVal::Str("_themes".into())]),
         );
+        raw.insert(
+            "html_css_files".into(),
+            ConfigVal::List(vec![ConfigVal::Str("custom.css".into()), ConfigVal::Int(1)]),
+        );
         raw.insert("html_title".into(), ConfigVal::Str("Docs".into()));
         raw.insert("html_short_title".into(), ConfigVal::Str("D".into()));
         raw.insert(
@@ -2466,6 +2495,7 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         assert_eq!(cfg.html_theme(), "basic");
         assert_eq!(cfg.html_static_path(), vec!["_static"]);
         assert_eq!(cfg.html_theme_path(), vec!["_themes"]);
+        assert_eq!(cfg.html_css_files(), vec!["custom.css"]);
         assert_eq!(cfg.html_title(), "Docs");
         assert_eq!(cfg.html_short_title(), "D");
         assert_eq!(cfg.html_context().len(), 1);
@@ -2786,6 +2816,7 @@ html_static_path = ["_static", "_more_static"]
 html_extra_path = ["_extra"]
 templates_path = ["_templates"]
 html_theme_path = ["_themes"]
+html_css_files = ["custom.css"]
 "#,
         );
         let raw = raw_config_from_conf_py(&path).unwrap();
@@ -2807,6 +2838,10 @@ html_theme_path = ["_themes"]
         assert_eq!(
             raw["html_theme_path"],
             ConfigVal::List(vec![ConfigVal::Str("_themes".into())])
+        );
+        assert_eq!(
+            raw["html_css_files"],
+            ConfigVal::List(vec![ConfigVal::Str("custom.css".into())])
         );
     }
 

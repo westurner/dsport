@@ -687,6 +687,7 @@ impl Builder for HtmlBuilder {
             // caption + nested bullet-list-of-links subtree (see
             // `BuildEnvironment::resolve_toctree_nodes`).
             env.resolve_toctree_nodes(&mut tree, docname);
+            copy_image_assets(&mut tree, srcdir, outdir, docname)?;
             match &real_theme {
                 Some(renderer) => {
                     self.build_doc_real_themed_from_tree(
@@ -962,6 +963,75 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), BuildError> {
                 ))
             })?;
         }
+    }
+    Ok(())
+}
+
+/// Copy local image directive sources to Sphinx's shared `_images` directory
+/// and rewrite their doctree URIs to the emitted asset path.
+fn copy_image_assets(
+    tree: &mut Doctree,
+    srcdir: &Path,
+    outdir: &Path,
+    docname: &str,
+) -> Result<(), BuildError> {
+    let source_dir = docname
+        .rsplit_once('/')
+        .map(|(parent, _)| srcdir.join(parent))
+        .unwrap_or_else(|| srcdir.to_path_buf());
+    let image_dir = outdir.join("_images");
+    let mut images = Vec::new();
+    for id in 0..tree.nodes_len() {
+        let NodeKind::Image { uri, .. } = &tree.node(id).kind else {
+            continue;
+        };
+        if uri.starts_with("#")
+            || uri.contains("://")
+            || uri.starts_with("data:")
+            || uri.starts_with("_images/")
+        {
+            continue;
+        }
+        images.push((id, uri.clone()));
+    }
+
+    for (id, uri) in images {
+        let relative = uri.trim_start_matches('/');
+        let source = if relative.starts_with("_static/") {
+            srcdir.join(relative)
+        } else {
+            source_dir.join(relative)
+        };
+        let Some(filename) = Path::new(relative).file_name() else {
+            continue;
+        };
+        if !source.is_file() {
+            continue;
+        }
+        std::fs::create_dir_all(&image_dir)?;
+        let destination = image_dir.join(filename);
+        std::fs::copy(&source, &destination).map_err(|e| {
+            BuildError::Other(format!(
+                "failed to copy image {} -> {}: {e}",
+                source.display(),
+                destination.display()
+            ))
+        })?;
+        let (alt, width, height) = match &tree.node(id).kind {
+            NodeKind::Image {
+                alt,
+                width,
+                height,
+                ..
+            } => (alt.clone(), width.clone(), height.clone()),
+            _ => continue,
+        };
+        tree.node_mut(id).kind = NodeKind::Image {
+            uri: format!("_images/{}", filename.to_string_lossy()),
+            alt,
+            width,
+            height,
+        };
     }
     Ok(())
 }

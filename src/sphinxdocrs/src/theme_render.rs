@@ -100,6 +100,8 @@ struct PageState {
     /// Attributes registered for CSS and JavaScript assets, keyed by filename.
     css_attributes: HashMap<String, HashMap<String, String>>,
     js_attributes: HashMap<String, HashMap<String, String>>,
+    /// Access keys already emitted while rendering the current page.
+    accesskeys: Mutex<HashSet<String>>,
 }
 
 impl PageState {
@@ -293,6 +295,37 @@ impl std::fmt::Debug for CssTagGlobal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<css_tag>")
     }
+}
+
+/// `accesskey(key)` — mirrors Sphinx's context-aware helper by emitting each
+/// access key at most once during a page render.
+struct AccesskeyGlobal(Arc<PageState>);
+
+impl std::fmt::Debug for AccesskeyGlobal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<accesskey>")
+    }
+}
+
+impl Object for AccesskeyGlobal {
+    fn repr(self: &Arc<Self>) -> ObjectRepr {
+        ObjectRepr::Plain
+    }
+
+    fn call(self: &Arc<Self>, _state: &State<'_, '_>, args: &[Value]) -> Result<Value, Error> {
+        let key = args.first().map(Value::to_string).unwrap_or_default();
+        Ok(Value::from_safe_string(accesskey_markup(
+            &mut self.0.accesskeys.lock().unwrap(),
+            &key,
+        )))
+    }
+}
+
+fn accesskey_markup(seen: &mut HashSet<String>, key: &str) -> String {
+    if key.is_empty() || !seen.insert(key.to_string()) {
+        return String::new();
+    }
+    format!("accesskey=\"{}\"", html_escape_attr(key))
 }
 
 impl Object for CssTagGlobal {
@@ -748,6 +781,7 @@ impl ThemeRenderer {
                         .map(|filename| (filename.clone(), asset.attributes.clone()))
                 })
                 .collect(),
+            accesskeys: Mutex::new(HashSet::new()),
         });
 
         let mut jinja_env = jinja_env;
@@ -756,6 +790,10 @@ impl ThemeRenderer {
         jinja_env.add_global("toctree", Value::from_object(ToctreeGlobal(state.clone())));
         jinja_env.add_global("js_tag", Value::from_object(JsTagGlobal(state.clone())));
         jinja_env.add_global("css_tag", Value::from_object(CssTagGlobal(state.clone())));
+        jinja_env.add_global(
+            "accesskey",
+            Value::from_object(AccesskeyGlobal(state.clone())),
+        );
 
         let global_ctx = build_global_context(
             env,
@@ -799,6 +837,7 @@ impl ThemeRenderer {
         doctree: Option<&docutilsrs::doctree::Doctree>,
     ) -> Result<String, String> {
         *self.state.current_docname.lock().unwrap() = docname.to_string();
+        self.state.accesskeys.lock().unwrap().clear();
 
         let mut ctx = self.global_ctx.clone();
         ctx.insert("pagename".into(), docname.into());
@@ -918,6 +957,7 @@ impl ThemeRenderer {
     /// asset links and no source/document-local navigation.
     pub(crate) fn render_search_page(&self, env: &BuildEnvironment) -> Result<String, String> {
         *self.state.current_docname.lock().unwrap() = "search".to_string();
+        self.state.accesskeys.lock().unwrap().clear();
         let mut ctx = self.global_ctx.clone();
         ctx.insert("pagename".into(), "search".into());
         ctx.insert("current_page_name".into(), "search".into());
@@ -1497,6 +1537,15 @@ mod tests {
     }
 
     #[test]
+    fn accesskey_markup_emits_each_key_once() {
+        let mut seen = HashSet::new();
+        assert_eq!(accesskey_markup(&mut seen, "I"), "accesskey=\"I\"");
+        assert_eq!(accesskey_markup(&mut seen, "I"), "");
+        assert_eq!(accesskey_markup(&mut seen, "N"), "accesskey=\"N\"");
+        assert_eq!(accesskey_markup(&mut seen, ""), "");
+    }
+
+    #[test]
     fn parent_chain_omits_root_and_preserves_ancestor_order() {
         let entries = vec![TocEntry {
             docname: "index".into(),
@@ -1565,6 +1614,7 @@ mod tests {
             outdir: outdir.path().to_path_buf(),
             css_attributes: HashMap::new(),
             js_attributes: HashMap::new(),
+            accesskeys: Mutex::new(HashSet::new()),
         };
         assert!(resource_pathto(&state, "https://example.test/app.js").starts_with("https://"));
         assert!(resource_pathto(&state, "app.js").contains("../_static/app.js"));

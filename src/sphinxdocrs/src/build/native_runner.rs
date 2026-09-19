@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 
-use crate::application::{SphinxApp, is_native_builder};
+use crate::application::{is_native_builder, SphinxApp};
 use crate::build::args::parse_args;
 use crate::cli::io::Runner;
 
@@ -301,6 +301,94 @@ mod tests {
             result.is_ok(),
             "py_fallback runner should not error at the I/O level: {result:?}"
         );
+    }
+
+    #[test]
+    fn non_native_builder_routes_to_python_path() {
+        let tmp = TempDir::new().unwrap();
+        let src = setup_src(&tmp);
+        let out = tmp.path().join("_build/unknown");
+        let doctrees = tmp.path().join("_build/.doctrees");
+        let args = build_args("unknown", &src, &out, &doctrees);
+
+        let result = NativeMakeRunner::new(false).run("sphinx-build", &args, &src);
+        assert!(
+            result.is_ok(),
+            "Python fallback should not fail at the I/O level"
+        );
+    }
+
+    #[test]
+    fn invalid_source_returns_code_1_and_logs_error() {
+        let tmp = TempDir::new().unwrap();
+        let out = tmp.path().join("_build/html");
+        let doctrees = tmp.path().join("_build/.doctrees");
+        let args = build_args("html", &tmp.path().join("missing"), &out, &doctrees);
+
+        let code = NativeMakeRunner::new(false)
+            .run("sphinx-build", &args, tmp.path())
+            .unwrap();
+        assert_eq!(code, 1);
+    }
+
+    #[test]
+    fn quiet_invalid_source_suppresses_error_output() {
+        let tmp = TempDir::new().unwrap();
+        let out = tmp.path().join("_build/html");
+        let doctrees = tmp.path().join("_build/.doctrees");
+        let mut args = build_args("html", &tmp.path().join("missing"), &out, &doctrees);
+        args.insert(0, "-Q".to_owned());
+
+        let code = NativeMakeRunner::new(false)
+            .run("sphinx-build", &args, tmp.path())
+            .unwrap();
+        assert_eq!(code, 1);
+    }
+
+    #[test]
+    fn quiet_success_suppresses_status_output() {
+        let tmp = TempDir::new().unwrap();
+        let src = setup_src(&tmp);
+        let out = tmp.path().join("_build/html");
+        let doctrees = tmp.path().join("_build/.doctrees");
+        let mut args = build_args("html", &src, &out, &doctrees);
+        args.insert(0, "-q".to_owned());
+
+        let code = NativeMakeRunner::new(false)
+            .run("sphinx-build", &args, &src)
+            .unwrap();
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn invalid_source_document_returns_build_error_code_1() {
+        let tmp = TempDir::new().unwrap();
+        let src = setup_src(&tmp);
+        std::fs::write(src.join("broken.rst"), [0xff]).unwrap();
+        let out = tmp.path().join("_build/html");
+        let doctrees = tmp.path().join("_build/.doctrees");
+        let args = build_args("html", &src, &out, &doctrees);
+
+        let code = NativeMakeRunner::new(false)
+            .run("sphinx-build", &args, &src)
+            .unwrap();
+        assert_eq!(code, 1);
+    }
+
+    #[test]
+    fn quiet_invalid_source_document_suppresses_build_error_output() {
+        let tmp = TempDir::new().unwrap();
+        let src = setup_src(&tmp);
+        std::fs::write(src.join("broken.rst"), [0xff]).unwrap();
+        let out = tmp.path().join("_build/html");
+        let doctrees = tmp.path().join("_build/.doctrees");
+        let mut args = build_args("html", &src, &out, &doctrees);
+        args.insert(0, "-Q".to_owned());
+
+        let code = NativeMakeRunner::new(false)
+            .run("sphinx-build", &args, &src)
+            .unwrap();
+        assert_eq!(code, 1);
     }
 
     // ── make mode end-to-end with NativeMakeRunner ───────────────────────────

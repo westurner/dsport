@@ -112,6 +112,10 @@ pub fn terminal_safe(s: &str) -> String {
 /// Rust port answers purely from the environment so it is
 /// deterministic in tests.
 pub fn terminal_supports_colour_from_env<F: Fn(&str) -> Option<String>>(getenv: F) -> bool {
+    terminal_supports_colour_from_env_impl(&getenv)
+}
+
+fn terminal_supports_colour_from_env_impl(getenv: &dyn Fn(&str) -> Option<String>) -> bool {
     if getenv("NO_COLOUR").is_some() || getenv("NO_COLOR").is_some() {
         return false;
     }
@@ -266,6 +270,25 @@ mod tests {
     fn env_logic_dumb_term() {
         let env = |k: &str| (k == "TERM").then(|| "dumb".to_string());
         assert!(!terminal_supports_colour_from_env(env));
+    }
+
+    #[test]
+    fn env_logic_exercises_short_circuit_aliases() {
+        let no_colour_alias = |key: &str| (key == "NO_COLOR").then(|| "1".to_string());
+        assert!(!terminal_supports_colour_from_env(no_colour_alias));
+
+        let force_colour_alias = |key: &str| (key == "FORCE_COLOR").then(|| "1".to_string());
+        assert!(terminal_supports_colour_from_env(force_colour_alias));
+
+        let ci_other = |key: &str| (key == "CI").then(|| "yes".to_string());
+        assert!(!terminal_supports_colour_from_env(ci_other));
+
+        let ci_one_with_term = |key: &str| match key {
+            "CI" => Some("1".to_string()),
+            "TERM" => Some("dumb".to_string()),
+            _ => None,
+        };
+        assert!(terminal_supports_colour_from_env(ci_one_with_term));
     }
 
     #[test]

@@ -327,6 +327,7 @@ fn start_tag(
                     alt: None,
                     width: None,
                     height: None,
+                    classes: String::new(),
                 },
             );
             frames.push(Frame::Image(id));

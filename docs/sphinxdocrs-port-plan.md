@@ -1617,10 +1617,12 @@ Implement project configuration parsing first, then output generation.
 Verified slice: `latex_documents` and `man_pages` are loaded as structured
 configuration values and honored by the native builders. Configured LaTeX
 projects write the selected `.tex` output plus the vendored TeX support assets
-and rendered helper files; configured man projects write only the selected
+and rendered helper files, assemble recursively resolved toctree children in
+order, and honor the configured title, author, and document class with one
+master metadata block. Configured man projects write only the selected
 `name.section` outputs, reject duplicate output names, and write no implicit
-per-source pages when `man_pages` is absent. Structural master-document
-ordering/include parity and full support-file byte parity remain pending.
+per-source pages when `man_pages` is absent. Full support-file byte parity and
+broader upstream fixture coverage remain pending.
 
 For LaTeX:
 
@@ -1629,8 +1631,8 @@ For LaTeX:
 - generate the expected support files (`.sty`, `.xdy`, `Makefile`,
   `make.bat`, and latexmk configuration) through reusable assets;
 - preserve document ordering and master-document includes;
-- add fixtures with explicit `latex_documents`, multiple documents, custom
-  author/title fields, and upstream defaults;
+- cover explicit `latex_documents`, multiple documents, custom author/title/
+  document-class fields, and the single-master metadata contract;
 - compare the master file's document ordering and include graph structurally
   before comparing support-file bytes.
 
@@ -1653,6 +1655,13 @@ LaTeX/man files when project configuration selects a master or command output.
 
 Complete the currently documented H7c/H7d deviations in
 `builders/gettext.rs` and `builders/changes.rs`.
+
+Verified slice: the native gettext builder now writes compact per-document
+catalogs by default, supports an explicit catalog-domain override and
+non-compact nested document paths, and extracts list, field, definition, and
+image-alt messages. Source comments remain document-only because the doctree
+does not yet retain line numbers; UUID/location configuration and the
+project-level changes report remain pending.
 
 For gettext, separate extraction from catalog serialization:
 

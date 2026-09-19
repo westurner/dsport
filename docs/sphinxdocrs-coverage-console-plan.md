@@ -404,7 +404,7 @@ execution order. `missed/total` is authoritative; percentages are rounded.
 | `application.rs` | 32/52 | 38% | `test_application.py`, `test_extension.py` (checked 2026-09-19: added `AppError` Display/From and `SphinxApp` Debug/outdir-is-a-file tests, which raised line/region coverage but did not touch the still-missing branches, which are concentrated in `load_extension`'s Rust-equivalent/version-guard/Python-fallback logic (~396-611) and `sync_registered_themes` (~684-840, 1061-1062)) |
 | `http_client.rs` | 18/24 | 25% | linkcheck/intersphinx HTTP tests |
 | `make_mode.rs` | 11/41 | 73% | `test_command_line.py`, make-mode tests (updated 2026-09-19: covered explicit doctree paths, recursive clean, build short-circuiting, `latexpdfja`, `info`, and `gettext` dispatch) |
-| `builders/latex.rs` | 16/38 | 58% | `test_builders/test_build_latex.py` |
+| `builders/latex.rs` | 16/38 | 58% | `test_builders/test_build_latex.py` (updated 2026-09-19: added configured project master assembly, toctree child ordering, title/author/document-class metadata, and duplicate-title regression coverage) |
 | `util_strypes.rs` | 7/76 | 91% | `test_util/test_util_rst.py`, writer tests (updated 2026-09-19: added PO escape alternatives, malformed escapes, attribute-name edges, XML `>`, and C1/ESC terminal controls) |
 | `extensions/docindex.rs` | 2/14 | 86% | extension/inventory tests (updated 2026-09-19: added the broken-symlink indexing error conversion; remaining misses include defensive artifact/HDT write paths) |
 | `search.rs` | 12/52 | 77% | `test_search.py`, HTML toctree tests |
@@ -428,7 +428,7 @@ execution order. `missed/total` is authoritative; percentages are rounded.
 | `util_rst.rs` | 5/18 | 72% | `test_util/test_util_rst.py` |
 | `autogen/scan.rs` | 4/26 | 85% | autosummary/apidoc tests |
 | `build/logging.rs` | 0/18 | 100% | `test_util/test_util_logging.py`, `test_build_warnings.py` (updated 2026-09-19: covered prefix preservation, explicit color, suppression, and warning-file failure) |
-| `builders/gettext.rs` | 4/14 | 71% | `test_builders/test_build_gettext.py` |
+| `builders/gettext.rs` | 4/14 | 71% | `test_builders/test_build_gettext.py` (updated 2026-09-19: added per-document catalogs, compact-domain handling, nested output paths, and list/field/definition/image-alt extraction coverage) |
 | `builders/singlehtml.rs` | 4/16 | 75% | `test_builders/test_build_html*.py` (updated 2026-09-19: aligned known-document targets, merged anchors, and WebMCP URLs with `#document-{docname}`) |
 | `cli/io.rs` | 4/8 | 50% | `test_command_line.py` |
 | `domains/py_domain.rs` | 4/12 | 67% | `test_domains/test_domain_py*.py` |

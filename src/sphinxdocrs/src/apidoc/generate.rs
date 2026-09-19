@@ -476,6 +476,15 @@ pub fn recurse_tree(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    fn templates() -> ApidocTemplates {
+        ApidocTemplates::vendored()
+    }
+
+    fn options(tmp: &TempDir) -> ApidocOptions {
+        ApidocOptions::new(tmp.path().join("src"), tmp.path().join("out"))
+    }
 
     #[test]
     fn is_initpy_py() {
@@ -500,5 +509,143 @@ mod tests {
             std::slice::from_ref(&re)
         ));
         assert!(!is_excluded(Path::new("/src/mymod.py"), &[re]));
+    }
+
+    #[test]
+    fn package_and_module_filters_cover_missing_private_and_namespace_cases() {
+        let tmp = TempDir::new().unwrap();
+        let pkg = tmp.path().join("pkg");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(pkg.join("__init__.py"), "").unwrap();
+        std::fs::write(pkg.join("public.py"), "").unwrap();
+        std::fs::write(pkg.join("_private.py"), "").unwrap();
+        let excludes = [regex::Regex::new(".*pkg.*").unwrap()];
+
+        assert!(is_package_dir(&pkg));
+        assert!(!is_package_dir(&tmp.path().join("missing")));
+        assert!(!is_skipped_package(&pkg, &options(&tmp), &[]));
+        let namespace = tmp.path().join("namespace");
+        std::fs::create_dir(&namespace).unwrap();
+        assert!(is_skipped_package(
+            &namespace,
+            &options(&tmp),
+            &[]
+        ));
+
+        let mut namespace_options = options(&tmp);
+        namespace_options.implicit_namespaces = true;
+        std::fs::write(namespace.join("module.py"), "").unwrap();
+        assert!(!is_skipped_package(&namespace, &namespace_options, &[]));
+        assert!(is_skipped_package(&pkg, &options(&tmp), &excludes));
+
+        assert!(is_skipped_module(&tmp.path().join("missing.py"), &options(&tmp)));
+        assert!(is_skipped_module(&pkg.join("_private.py"), &options(&tmp)));
+        let mut private_options = options(&tmp);
+        private_options.include_private = true;
+        assert!(!is_skipped_module(&pkg.join("_private.py"), &private_options));
+        assert!(!is_skipped_module(&pkg.join("public.py"), &options(&tmp)));
+    }
+
+    #[test]
+    fn walk_filters_hidden_private_excluded_and_non_python_entries() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("pkg");
+        std::fs::create_dir_all(root.join("visible")).unwrap();
+        std::fs::create_dir_all(root.join("_private")).unwrap();
+        std::fs::create_dir_all(root.join(".hidden")).unwrap();
+        for path in [
+            root.join("z.py"),
+            root.join("a.pyx"),
+            root.join("visible/b.pyd"),
+            root.join("visible/readme.txt"),
+            root.join("_private/hidden.py"),
+            root.join(".hidden/hidden.py"),
+        ] {
+            std::fs::write(path, "").unwrap();
+        }
+        let excludes = [regex::Regex::new("visible").unwrap()];
+        let steps = walk(&root, &excludes, &options(&tmp));
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].1, Vec::<String>::new());
+        assert_eq!(steps[0].2, vec!["a.pyx", "z.py"]);
+
+        assert!(has_child_module(&root, &[], &options(&tmp)));
+        assert!(!has_child_module(&tmp.path().join("missing"), &[], &options(&tmp)));
+    }
+
+    #[test]
+    fn write_file_handles_dry_run_existing_force_and_quiet() {
+        let tmp = TempDir::new().unwrap();
+        let mut opts = options(&tmp);
+        std::fs::create_dir_all(&opts.dest_dir).unwrap();
+
+        opts.dry_run = true;
+        let path = write_file("module", "new", &opts).unwrap();
+        assert_eq!(path, opts.dest_dir.join("module.rst"));
+        assert!(!path.exists());
+
+        opts.dry_run = false;
+        std::fs::write(&path, "old").unwrap();
+        write_file("module", "new", &opts).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
+
+        opts.force = true;
+        opts.quiet = true;
+        write_file("module", "new", &opts).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+    }
+
+    #[test]
+    fn generated_package_and_toc_files_cover_separate_modules_and_deduplication() {
+        let tmp = TempDir::new().unwrap();
+        let mut opts = options(&tmp);
+        opts.force = true;
+        opts.quiet = true;
+        opts.separate_modules = true;
+        opts.include_private = true;
+        std::fs::create_dir_all(opts.dest_dir.clone()).unwrap();
+        let root = tmp.path().join("src");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("__init__.py"), "").unwrap();
+        std::fs::write(root.join("a.py"), "").unwrap();
+        std::fs::write(root.join("_private.py"), "").unwrap();
+        let files = vec!["__init__.py".to_string(), "a.py".to_string(), "_private.py".to_string()];
+        let written = create_package_file(
+            &root,
+            Some("pkg"),
+            "",
+            &files,
+            &opts,
+            &[],
+            false,
+            &[],
+            &templates(),
+        )
+        .unwrap();
+        assert!(written.len() >= 3);
+
+        let toc = create_modules_toc_file(
+            &["pkg".into(), "pkg.sub".into(), "other".into(), "pkg".into()],
+            &opts,
+            "modules",
+            &templates(),
+        )
+        .unwrap();
+        let content = std::fs::read_to_string(toc).unwrap();
+        assert!(content.contains("pkg"));
+        assert!(content.contains("other"));
+        assert_eq!(content.matches("pkg.sub").count(), 0);
+    }
+
+    #[test]
+    fn remove_old_files_keeps_written_and_removes_stale() {
+        let tmp = TempDir::new().unwrap();
+        let keep = tmp.path().join("keep.rst");
+        let stale = tmp.path().join("stale.rst");
+        std::fs::write(&keep, "keep").unwrap();
+        std::fs::write(&stale, "stale").unwrap();
+        remove_old_files(std::slice::from_ref(&keep), tmp.path(), "rst").unwrap();
+        assert!(keep.exists());
+        assert!(!stale.exists());
     }
 }

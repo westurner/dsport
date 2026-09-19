@@ -3153,6 +3153,140 @@ mod tests {
     }
 
     #[test]
+    fn resolve_references_covers_explicit_shortened_and_unresolved_targets() {
+        let mut env = make_env();
+        env.std_domain
+            .note_label("target", "index", "target-id", "Target title");
+        env.pending_xrefs.insert(
+            "index".into(),
+            vec![
+                crate::domains::PendingXref {
+                    domain: "std".into(),
+                    reftype: "ref".into(),
+                    target: "target".into(),
+                    explicit_title: Some("Custom title".into()),
+                    line: 1,
+                    shorten: false,
+                },
+                crate::domains::PendingXref {
+                    domain: "std".into(),
+                    reftype: "ref".into(),
+                    target: "pkg.target".into(),
+                    explicit_title: None,
+                    line: 2,
+                    shorten: true,
+                },
+                crate::domains::PendingXref {
+                    domain: "unknown".into(),
+                    reftype: "ref".into(),
+                    target: "missing".into(),
+                    explicit_title: None,
+                    line: 3,
+                    shorten: false,
+                },
+            ],
+        );
+        let resolutions = env.resolve_references("index");
+        assert!(matches!(
+            &resolutions[0],
+            crate::domains::XrefResolution::Resolved { target, .. }
+                if target.title == "Custom title"
+        ));
+        assert!(matches!(
+            &resolutions[1],
+            crate::domains::XrefResolution::Unresolved { .. }
+        ));
+        assert!(matches!(
+            &resolutions[2],
+            crate::domains::XrefResolution::Unresolved { warning, .. }
+                if warning.contains("missing")
+        ));
+        assert!(env.resolve_references("absent").is_empty());
+        assert_eq!(env.resolve_all_references().len(), 1);
+    }
+
+    #[test]
+    fn resolve_xref_nodes_rewrites_links_and_honors_disabled_and_extlinks() {
+        let mut env = make_env();
+        env.std_domain
+            .note_label("target", "index", "target-id", "Target title");
+        env.config.set(
+            "extlinks",
+            ConfigVal::Map(vec![
+                (
+                    "issue".into(),
+                    ConfigVal::List(vec![
+                        ConfigVal::Str("https://tracker.test/%s".into()),
+                        ConfigVal::Str("Issue %s".into()),
+                    ]),
+                ),
+            ]),
+        );
+
+        let mut tree = Doctree::new_document("index");
+        let root = tree.root();
+        let ref_id = tree.append(root, NodeKind::Inline { classes: "ref".into() });
+        tree.append(ref_id, NodeKind::Text("target".into()));
+        let disabled = tree.append(root, NodeKind::Inline { classes: "ref".into() });
+        tree.append(disabled, NodeKind::Text("!target".into()));
+        let external = tree.append(root, NodeKind::Inline { classes: "issue".into() });
+        tree.append(external, NodeKind::Text("42".into()));
+        let unknown = tree.append(root, NodeKind::Inline { classes: "unknown".into() });
+        tree.append(unknown, NodeKind::Text("text".into()));
+
+        env.resolve_xref_nodes(&mut tree, "index");
+        assert!(matches!(&tree.node(ref_id).kind, NodeKind::Reference { refuri, .. } if refuri == "#target-id"));
+        assert!(matches!(tree.node(disabled).kind, NodeKind::Inline { .. }));
+        assert!(matches!(&tree.node(external).kind, NodeKind::Reference { refuri, classes, .. } if refuri == "https://tracker.test/42" && classes.contains("extlink-issue")));
+        assert!(matches!(tree.node(unknown).kind, NodeKind::Inline { .. }));
+    }
+
+    #[test]
+    fn resolve_toctree_nodes_handles_hidden_caption_depth_and_nested_entries() {
+        let mut env = make_env();
+        env.set_title("guide", "Guide");
+        env.set_title("guide/intro", "Introduction");
+        env.note_toctree("index", vec!["guide".into()]);
+        env.note_toctree("guide", vec!["guide/intro".into()]);
+
+        let mut tree = Doctree::new_document("index");
+        let visible = tree.append(
+            tree.root(),
+            NodeKind::Toctree {
+                caption: Some("Contents".into()),
+                maxdepth: 0,
+                hidden: false,
+                entries: vec!["guide".into()],
+            },
+        );
+        let shallow = tree.append(
+            tree.root(),
+            NodeKind::Toctree {
+                caption: None,
+                maxdepth: 1,
+                hidden: false,
+                entries: vec!["guide".into()],
+            },
+        );
+        let hidden = tree.append(
+            tree.root(),
+            NodeKind::Toctree {
+                caption: Some("Hidden".into()),
+                maxdepth: 1,
+                hidden: true,
+                entries: vec!["guide".into()],
+            },
+        );
+
+        env.resolve_toctree_nodes(&mut tree, "index");
+        assert!(matches!(tree.node(visible).kind, NodeKind::Container { .. }));
+        assert!(tree.node(visible).children.iter().any(|id| matches!(tree.node(*id).kind, NodeKind::Paragraph)));
+        assert!(tree.node(visible).children.iter().any(|id| matches!(tree.node(*id).kind, NodeKind::BulletList { .. })));
+        assert!(matches!(tree.node(shallow).kind, NodeKind::Container { .. }));
+        assert!(matches!(tree.node(hidden).kind, NodeKind::Comment));
+    }
+
+    #[test]
     fn doctree_store_rejects_traversal_and_corruption() {
         let (_tmp, env) = make_env_with_tempdir();
         assert!(env.doctree_path("../escape").is_err());

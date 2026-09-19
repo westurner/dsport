@@ -1450,6 +1450,67 @@ def drop():
         assert_eq!(selected, vec!["a_attr", "a_method", "b_method"]);
     }
 
+    #[test]
+    fn option_pairs_and_selection_matrix_cover_all_selector_modes() {
+        let opts = AutodocOptions::from_option_pairs(&[
+            ("members".into(), "".into()),
+            ("private-members".into(), "_hidden".into()),
+            ("special-members".into(), "".into()),
+            ("inherited-members".into(), "".into()),
+            ("exclude-members".into(), "drop, ,ignored".into()),
+            ("member-order".into(), "bysource".into()),
+            ("unknown-option".into(), "ignored".into()),
+        ]);
+        assert_eq!(opts.members, MemberSelector::All);
+        assert_eq!(opts.private_members, MemberSelector::Named(vec!["_hidden".into()]));
+        assert_eq!(opts.special_members, MemberSelector::All);
+        assert!(opts.inherited_members);
+        assert!(opts.exclude_members.contains("drop"));
+        assert!(!opts.exclude_members.contains(""));
+        assert_eq!(opts.member_order, MemberOrder::Bysource);
+
+        let candidates = vec![
+            MemberCandidate { name: "public".into(), has_doc: true, source_order: 2, kind: MemberKindTag::Function },
+            MemberCandidate { name: "_hidden".into(), has_doc: true, source_order: 0, kind: MemberKindTag::Attribute },
+            MemberCandidate { name: "__dunder__".into(), has_doc: true, source_order: 1, kind: MemberKindTag::Method },
+            MemberCandidate { name: "undoc".into(), has_doc: false, source_order: 3, kind: MemberKindTag::Class },
+            MemberCandidate { name: "drop".into(), has_doc: true, source_order: 4, kind: MemberKindTag::Function },
+        ];
+        let selected = select_members(&candidates, &opts, None);
+        assert_eq!(selected, vec!["_hidden", "__dunder__", "public"]);
+
+        let mut named = AutodocOptions::default();
+        named.members = MemberSelector::Named(vec!["undoc".into(), "public".into()]);
+        named.exclude_members.insert("public".into());
+        assert_eq!(select_members(&candidates, &named, None), vec!["undoc"]);
+
+        let mut all = AutodocOptions::default();
+        all.members = MemberSelector::All;
+        all.undoc_members = true;
+        assert_eq!(
+            select_members(&candidates, &all, Some(&["public".into(), "undoc".into()])),
+            vec!["public", "undoc"]
+        );
+    }
+
+    #[test]
+    fn signature_rendering_covers_complex_defaults_annotations_and_markers() {
+        let source = r#"
+def f(a: int = -1, /, b: str = "x", *args: list[int], flag: bool = True, **kwargs: dict[str, int]) -> tuple[int, str]:
+    """Function docs."""
+    pass
+"#;
+        let rst = document_module_source_with_options("m", source, &AutodocOptions::legacy_default()).unwrap();
+        assert!(rst.contains("py:function:: f(a: int = -1, /, b: str = 'x', *args: list[int], flag: bool = True, **kwargs: dict[(str, int)]) -> tuple[(int, str)]"), "{rst}");
+        assert!(rst.contains("Function docs."), "{rst}");
+
+        let mut none = AutodocOptions::legacy_default();
+        none.typehints = TypeHints::None;
+        let stripped = document_module_source_with_options("m", source, &none).unwrap();
+        assert!(stripped.contains("py:function:: f(a=-1, /, b='x', *args, flag=True, **kwargs)"), "{stripped}");
+        assert!(!stripped.contains("-> tuple"));
+    }
+
     // ── H9a static-path fallback (runtime unavailable) ───────────────────
 
     #[test]

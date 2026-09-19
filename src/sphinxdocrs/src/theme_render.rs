@@ -1538,6 +1538,106 @@ mod tests {
             basename_or_url("https://example.com/logo.png"),
             "https://example.com/logo.png"
         );
+        assert_eq!(basename_or_url("_static/logo.png"), "_static/logo.png");
+        assert_eq!(basename_or_url(""), "");
+    }
+
+    #[test]
+    fn path_and_asset_helpers_cover_flat_dir_fragments_and_checksums() {
+        assert_eq!(target_uri(PathStyle::Flat, "guide/page#intro"), "guide/page.html#intro");
+        assert_eq!(target_uri(PathStyle::Dir, "guide/page#intro"), "guide/page/#intro");
+        assert_eq!(content_root(PathStyle::Flat, "guide/page"), "./");
+        assert_eq!(content_root(PathStyle::Dir, "index"), "./");
+        assert_eq!(content_root(PathStyle::Dir, "guide/index"), "../");
+        assert_eq!(content_root(PathStyle::Dir, "guide/page"), "../../");
+        assert_eq!(append_checksum("asset.js".into(), Some("abc")), "asset.js?v=abc");
+        assert_eq!(append_checksum("asset.js".into(), None), "asset.js");
+
+        let outdir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(outdir.path().join("_static")).unwrap();
+        std::fs::write(outdir.path().join("_static/app.js"), "console.log(1);").unwrap();
+        let state = PageState {
+            current_docname: Mutex::new("guide/page".into()),
+            all_docs: HashSet::new(),
+            use_index: true,
+            toc_entries: Vec::new(),
+            path_style: PathStyle::Flat,
+            outdir: outdir.path().to_path_buf(),
+            css_attributes: HashMap::new(),
+            js_attributes: HashMap::new(),
+        };
+        assert!(resource_pathto(&state, "https://example.test/app.js").starts_with("https://"));
+        assert!(resource_pathto(&state, "app.js").contains("../_static/app.js"));
+        assert!(file_checksum(outdir.path(), "app.js").is_some());
+        assert!(file_checksum(outdir.path(), "missing.js").is_none());
+        assert!(file_checksum(outdir.path(), "https://example.test/app.js").is_none());
+    }
+
+    #[test]
+    fn context_and_static_asset_conversion_cover_all_value_families() {
+        let mut ctx = serde_json::Map::new();
+        ctx.insert("body".into(), "<p>body</p>".into());
+        ctx.insert("next".into(), serde_json::json!({"link": "next.html", "title": "Next"}));
+        ctx.insert("prev".into(), serde_json::Value::Null);
+        ctx.insert("parents".into(), serde_json::json!([{"link": "../", "title": "Root"}]));
+        ctx.insert("project_links".into(), serde_json::json!([{"url": "https://example.test", "title": "Docs"}, "bad"]));
+        ctx.insert("css_files".into(), serde_json::json!(["_static/site.css", 42]));
+        ctx.insert("script_files".into(), serde_json::json!("not-a-list"));
+        let converted = to_minijinja_context(ctx);
+        assert!(converted.contains_key("body"));
+        assert!(converted.contains_key("next"));
+        assert!(converted.contains_key("parents"));
+        assert!(converted.contains_key("project_links"));
+        assert!(converted.contains_key("css_files"));
+        assert!(converted.contains_key("script_files"));
+
+        use crate::config::ConfigVal;
+        let json = config_val_to_json(&ConfigVal::Map(vec![
+            ("none".into(), ConfigVal::Null),
+            ("bool".into(), ConfigVal::Bool(true)),
+            ("int".into(), ConfigVal::Int(1)),
+            ("float".into(), ConfigVal::Float(1.5)),
+            ("str".into(), ConfigVal::Str("value".into())),
+            ("list".into(), ConfigVal::List(vec![ConfigVal::Int(2)])),
+        ]));
+        assert_eq!(json["bool"], true);
+        assert_eq!(json["list"][0], 2);
+    }
+
+    #[test]
+    fn discover_static_assets_filters_unknown_files_and_orders_known_scripts() {
+        let outdir = tempfile::TempDir::new().unwrap();
+        let static_dir = outdir.path().join("_static");
+        std::fs::create_dir_all(static_dir.join("nested")).unwrap();
+        for name in [
+            "sphinx_highlight.js",
+            "documentation_options.js",
+            "doctools.js",
+            "ignored.js",
+            "site.css",
+            "theme.css",
+            "readme.txt",
+        ] {
+            std::fs::write(static_dir.join(name), "x").unwrap();
+        }
+        let (css, js) = discover_static_assets(outdir.path(), &["theme.css".into(), "missing.css".into()]);
+        assert_eq!(css, vec!["_static/theme.css"]);
+        assert_eq!(
+            js,
+            vec![
+                "_static/documentation_options.js",
+                "_static/doctools.js",
+                "_static/sphinx_highlight.js"
+            ]
+        );
+    }
+
+    #[test]
+    fn theme_renderer_returns_none_for_unresolvable_theme() {
+        let mut env = make_test_env("/tmp/theme-render-missing-src", "/tmp/theme-render-missing-doctrees");
+        env.config.set("html_theme", crate::config::ConfigVal::Str("definitely_missing_theme".into()));
+        let outdir = tempfile::TempDir::new().unwrap();
+        assert!(ThemeRenderer::new(&env, outdir.path(), std::iter::empty(), PathStyle::Flat).is_none());
     }
 
     #[test]

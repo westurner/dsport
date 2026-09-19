@@ -3014,4 +3014,53 @@ def setup(app):
             assert_eq!(RebuildKind::from_str(kind.as_str()).unwrap(), kind);
         }
     }
+
+    #[test]
+    fn raw_config_skips_wrong_shapes_and_unsupported_nested_values() {
+        let (_dir, path) = write_conf(
+            r#"
+extensions = "not-a-list"
+project = object()
+html_static_path = "not-a-list"
+latex_documents = [object()]
+man_pages = [object()]
+intersphinx_mapping = {"bad": "not-a-tuple", "short": ("https://example.test",)}
+source_suffix = 42
+needs_extensions = []
+fallback_list = [object()]
+fallback_dict = {1: "bad-key"}
+"#,
+        );
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        assert_eq!(raw.get("extensions"), Some(&ConfigVal::Str("not-a-list".into())));
+        assert!(!raw.contains_key("project"));
+        assert_eq!(
+            raw.get("html_static_path"),
+            Some(&ConfigVal::Str("not-a-list".into()))
+        );
+        assert!(!raw.contains_key("latex_documents"));
+        assert!(!raw.contains_key("man_pages"));
+        assert!(matches!(raw.get("intersphinx_mapping"), Some(ConfigVal::Map(_))));
+        assert!(matches!(raw.get("source_suffix"), Some(ConfigVal::Int(42))));
+        assert_eq!(raw.get("needs_extensions"), Some(&ConfigVal::List(vec![])));
+        assert!(!raw.contains_key("fallback_list"));
+        assert!(!raw.contains_key("fallback_dict"));
+    }
+
+    #[test]
+    fn read_conf_py_wrapper_returns_math_configuration_dict() {
+        let (_dir, path) = write_conf(
+            "extensions = ['sphinx.ext.imgmath']\nmathjax_path = 'custom.js'\nimgmath_image_format = 'svg'\n",
+        );
+        Python::attach(|py| -> PyResult<()> {
+            let result = py_read_conf_py(py, path.to_str().unwrap())?;
+            let dict = result.bind(py);
+            assert_eq!(dict.get_item("effective_math_renderer")?.unwrap().extract::<String>()?, "imgmath");
+            assert_eq!(dict.get_item("mathjax_path")?.unwrap().extract::<String>()?, "custom.js");
+            assert_eq!(dict.get_item("imgmath_image_format")?.unwrap().extract::<String>()?, "svg");
+            assert!(dict.get_item("mathjax_options")?.is_some());
+            Ok(())
+        })
+        .unwrap();
+    }
 }

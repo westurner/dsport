@@ -1164,6 +1164,31 @@ mod tests {
         HtmlBuilder::new()
     }
 
+    #[test]
+    fn wrap_page_handles_empty_and_escaped_project_titles() {
+        let empty_project = HtmlBuilder::wrap_page("<Title>", "<p>Body</p>", "");
+        assert!(empty_project.contains("<title>&lt;Title&gt;</title>"));
+        assert!(empty_project.contains("<p>Body</p>"));
+
+        let project = HtmlBuilder::wrap_page("Title", "Body", "Docs & More");
+        assert!(project.contains("<title>Title &#8212; Docs &amp; More</title>"));
+    }
+
+    #[test]
+    fn dir_style_target_and_static_files_cover_layout_variants() {
+        let b = HtmlBuilder::new_dir_style();
+        assert_eq!(b.get_target_uri("index"), "");
+        assert_eq!(b.get_target_uri("guide/index"), "guide/");
+        assert_eq!(b.get_target_uri("guide/intro"), "guide/intro/");
+
+        let out = TempDir::new().unwrap();
+        write_static_files(out.path(), PathStyle::Dir, true).unwrap();
+        assert!(out.path().join("search/index.html").is_file());
+        assert!(out.path().join("_static/basic.css").is_file());
+        write_static_files(out.path(), PathStyle::Flat, false).unwrap();
+        assert!(!out.path().join("search.html").exists());
+    }
+
     // ── get_target_uri ────────────────────────────────────────────────────────
 
     #[test]

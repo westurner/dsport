@@ -28,6 +28,61 @@ by `src/sphinxdocrs/tests/`.
     `environment.rs` tranches described in the branch map below:
     library-only branch coverage is 68.19% (788/2477 missed),
     with 906 lib tests passing (`cargo test -p sphinxdocrs --lib`).
+- Measured on 2026-09-18 (C4 builder sweep):
+  - Fresh library-only coverage is 71.46% branches (707/2477 missed) and
+    83.96% lines (4173/26024 missed).
+  - Fresh all-target coverage is 75.20% branches (700/2823 missed) and
+    91.54% lines (2235/26418 missed).
+  - `builders/json.rs` is 77.38% branches in both scopes; `builders/html.rs`
+    is 71.43% library-only / 73.81% all-targets; `builders/linkcheck.rs` is
+    48.39% library-only / 77.42% all-targets.
+  - The focused linkcheck validation passes 14 library tests and 11 wiremock
+    integration tests.
+- Measured on 2026-09-19 (C0-C3 follow-up sweep):
+  - Library-only branch coverage is 75.76% (602/2483 missed) and lines are
+    86.43% (3655/26937 missed).
+  - `build/logging.rs` is now 100% branches; `util_strypes.rs` is 90.79%,
+    `config.rs` is 78.79%, `environment.rs` is 67.50%, `build/make_mode.rs`
+    is 73.17%, `util_matching.rs` is 85.19%, and `domains/scan.rs` is 79.05%.
+  - The focused additions cover C0 ranking, C1 matching/string edges, C2
+    make-mode/argument/logging branches, and C3 config/environment/docindex
+    branches. The next large gaps remain environment lifecycle, theme/domain,
+    autodoc, HTML fallback, and application paths.
+- Measured on 2026-09-19 (final all-target gate for this tranche):
+  - All-target branch coverage is 77.20% (645/2829 missed) and lines are
+    92.73% (1987/27331 missed); functions are 90.81% (282/3069 missed).
+  - Integration-test scope changes the key rows: `environment.rs` is
+    library 90/280 (67.86%) versus all-targets 55/286 (80.77%); `config.rs`
+    is 42/198 (78.79%), `domains/scan.rs` is 31/148 (79.05%),
+    `util_console.rs` is 6/28 (78.57%), and the tiny writer rows are 1/4
+    (75%) except `manpage.rs` at 4/12 (66.67%).
+- Measured on 2026-09-19 (priority-gap continuation):
+  - Library-only branch coverage is 77.89% (565/2555 missed) and lines are
+    89.00% (3011/27374 missed).
+  - `apidoc/generate.rs` is now 13/52 missed branches, `environment.rs` is
+    74/296, `config.rs` is 28/198, `autodoc.rs` is 28/122,
+    `builders/html.rs` is 34/126, and `theme_render.rs` is 29/138.
+  - Added direct resolver coverage for xrefs/toctrees, raw config conversion
+    and `read_conf_py`, autodoc selector/signature matrices, and HTML/theme
+    URI, asset, wrapper, and soft-failure helpers.
+- Measured on 2026-09-19 (priority-gap all-target gate):
+  - All-target branch coverage is 78.87% (600/2839 missed) and lines are
+    93.51% (1801/27768 missed); functions are 91.56% (261/3092 missed).
+  - The corresponding all-target rows are `environment.rs` 57/296 (80.74%),
+    `builders/html.rs` 32/126 (74.60%), `theme_render.rs` 22/138 (84.06%),
+    `config.rs` 28/198 (85.86%), `autodoc.rs` 28/122 (77.05%), and
+    `apidoc/generate.rs` 29/78 (62.82%).
+
+Coverage scope note: `cargo +nightly llvm-cov ... --lib` does not execute
+`src/sphinxdocrs/tests/*.rs` integration-test binaries. Use the all-targets
+measurement for builder files whose HTTP or end-to-end paths are covered by
+those binaries; otherwise the library-only percentage can materially
+understate actual branch coverage. A clean all-targets run is intentionally
+slow because it rebuilds every instrumented target and executes every test
+binary; use `cargo +nightly llvm-cov clean --workspace -p sphinxdocrs` only
+for an authoritative fresh baseline, and capture the unfiltered command
+output before filtering summary rows so a failed run cannot be mistaken for
+a hang or an `rg` exit code 1.
 
 The 100% target means every reachable branch in hand-written native runtime
 code covered by the selected package targets. Generated lexer/template data,
@@ -75,6 +130,10 @@ module documentation or a nearby comment when the mapping is non-obvious.
 - Add a small script or documented `jq` command that ranks files by missed
   branches, not only percentage; a 0%-covered 14-line adapter is cheaper than
   a 40%-covered 1,000-line subsystem.
+- `tools/rank_llvm_cov.py` implements the ranking loop for text summaries:
+  `cargo +nightly llvm-cov -p sphinxdocrs --lib --branch --summary-only |
+  python tools/rank_llvm_cov.py --limit 20`. It accepts a saved report as
+  well, handles whitespace-wrapped rows, and omits `TOTAL`.
 - Treat coverage-run failures, timeout-prone integration fixtures, and skipped
   Python/theme tests as separate status categories rather than as covered code.
 
@@ -326,33 +385,34 @@ execution order. `missed/total` is authoritative; percentages are rounded.
 
 | Module | Missed/total | Branch % | Upstream coverage source |
 | --- | ---: | ---: | --- |
-| `environment.rs` | 107/278 | 62% | `test_environment/test_environment.py`, `test_environment_toctree.py`, `test_environment_record_dependencies.py` (updated 2026-09-19: added a `yaml_and_scan_helper_tests` module covering `yaml_toc_entries`/`collect_yaml_toc_entries`/`yaml_docname`/`yaml_toc_root_and_children`/`yaml_option_lines`/`dedent_yaml`/`expand_yaml_toctree_directives`/`sanitize_docname`/`strip_opaque_literal_blocks`/`scan_toctree_entries(_with_titles)`/`scan_include_entries`/`mtime_micros`; remaining misses are concentrated in `read_all_impl`/`resolve_xref_nodes`/`resolve_toctree_nodes`'s larger PyO3-adjacent branches) |
-| `config.rs` | 88/198 | 56% | `test_config/test_config.py`, `test_config/test_copyright.py` (updated 2026-09-19: added a `raw_config_from_conf_py_tests` module covering `raw_config_from_conf_py`'s per-key conversions, `intersphinx_mapping`/`source_suffix`/`needs_extensions` shapes, the generic fallback pass (including named-tuple-shaped objects and module/callable skipping), `conf_py_setup`, and `RebuildKind::from_str`; remaining misses are concentrated in `SphinxConfig`'s larger accessor/typed-override branches) |
-| `builders/html.rs` | 53/126 | 58% | `test_builders/test_build_html*.py`, `test_build_html_assets.py`, `test_build_html_toctree.py`, `test_build_warnings.py` |
-| `builders/json.rs` | 51/84 | 39% | `test_builders/test_build.py`, JSON parity fixtures |
-| `builders/linkcheck.rs` | 50/62 | 19% | `test_builders/test_build_linkcheck.py`, HTTP/logging tests |
+| `environment.rs` | lib 74/296; all 57/296 | lib 75.00%; all 80.74% | `test_environment/test_environment.py`, `test_environment_toctree.py`, `test_environment_record_dependencies.py` (updated 2026-09-19: added direct xref/toctree resolver cases covering explicit/shortened/unresolved refs, extlinks, hidden/caption/depth handling, plus prior discovery/YAML/read-event coverage; remaining misses are concentrated in larger lifecycle/domain branches) |
+| `config.rs` | lib 28/198; all 28/198 | lib 85.86%; all 85.86% | `test_config/test_config.py`, `test_config/test_copyright.py` (updated 2026-09-19: added raw conversion wrong-shape coverage and the `read_conf_py` wrapper; remaining misses are defensive PyO3/raw-shape edges) |
+| `builders/html.rs` | lib 34/126; all 32/126 | lib 73.02%; all 74.60% | `test_builders/test_build_html*.py`, `test_build_html_assets.py`, `test_build_html_toctree.py`, `test_build_warnings.py` (updated 2026-09-19: added wrapper title, dirhtml target, and static-file layout cases) |
+| `builders/linkcheck.rs` | lib 32/62; all 14/62 | lib 48.39%; all 77.42% | `test_builders/test_build_linkcheck.py`, HTTP/logging tests |
+| `builders/json.rs` | lib 19/84; all 19/84 | lib 77.38%; all 77.38% | `test_builders/test_build.py`, JSON parity fixtures |
 | `app_facade.rs` | 7/48 | 85% | `test_application.py`, `test_events.py`, extension tests (updated 2026-09-19: added ~25 native unit tests covering config/env facades, event dispatch/connect, node/directive/role/domain/theme/builder registration, and error conversion; remaining misses are defensive `map_err` arms on effectively-infallible PyO3 conversions and the `doctree: Some(_)` arm of `HtmlPageContext`) |
-| `theme_render.rs` | 42/138 | 70% | `test_theming/*`, `test_build_html_5_output.py`, parity fixtures |
-| `domains/scan.rs` | 40/148 | 73% | `test_domains/*`, `test_environment_toctree.py` |
-| `autodoc.rs` | 34/122 | 72% | `test_ext_autodoc/*.py` |
+| `theme_render.rs` | lib 29/138; all 22/138 | lib 78.99%; all 84.06% | `test_theming/*`, `test_build_html_5_output.py`, parity fixtures (updated 2026-09-19: added URI/content-root, checksum/resource, context conversion, static-asset filtering, and unresolvable-theme fallback cases) |
+| `domains/scan.rs` | 31/148 | 79% | `test_domains/*`, `test_environment_toctree.py` (updated 2026-09-19: added malformed label, glossary, role, xref, index, and domain-context cases) |
+| `autodoc.rs` | lib 28/122; all 28/122 | lib 77.05%; all 77.05% | `test_ext_autodoc/*.py` (updated 2026-09-19: added option-pair/selector matrices and complex signature-expression coverage) |
 | `application.rs` | 32/52 | 38% | `test_application.py`, `test_extension.py` (checked 2026-09-19: added `AppError` Display/From and `SphinxApp` Debug/outdir-is-a-file tests, which raised line/region coverage but did not touch the still-missing branches, which are concentrated in `load_extension`'s Rust-equivalent/version-guard/Python-fallback logic (~396-611) and `sync_registered_themes` (~684-840, 1061-1062)) |
 | `http_client.rs` | 18/24 | 25% | linkcheck/intersphinx HTTP tests |
-| `make_mode.rs` | 16/39 | 59% | `test_command_line.py`, make-mode tests |
+| `make_mode.rs` | 11/41 | 73% | `test_command_line.py`, make-mode tests (updated 2026-09-19: covered explicit doctree paths, recursive clean, build short-circuiting, `latexpdfja`, `info`, and `gettext` dispatch) |
 | `builders/latex.rs` | 16/38 | 58% | `test_builders/test_build_latex.py` |
-| `util_strypes.rs` | 16/76 | 79% | `test_util/test_util_rst.py`, writer tests |
-| `extensions/docindex.rs` | 1/12 | 92% | extension/inventory tests (this row was stale: the file already has 5 tests covering setup, builder/feature skips, artifact path resolution, artifact/HDT toggles, and both HTML-family builders; remaining branch is the external indexer error path) |
+| `util_strypes.rs` | 7/76 | 91% | `test_util/test_util_rst.py`, writer tests (updated 2026-09-19: added PO escape alternatives, malformed escapes, attribute-name edges, XML `>`, and C1/ESC terminal controls) |
+| `extensions/docindex.rs` | 2/14 | 86% | extension/inventory tests (updated 2026-09-19: added the broken-symlink indexing error conversion; remaining misses include defensive artifact/HDT write paths) |
 | `search.rs` | 12/52 | 77% | `test_search.py`, HTML toctree tests |
-| `builders/manpage.rs` | 11/12 | 8% | `test_builders/test_build_manpage.py` |
+| `builders/manpage.rs` | 4/12 | 67% | `test_builders/test_build_manpage.py` (updated 2026-09-19: added `man_pages` shape/duplicate validation, configured output, stored-doctree and source fallback paths) |
 | `locale.rs` | 11/62 | 82% | `test_intl/test_locale.py`, `test_intl/test_intl.py` |
 | `quickstart/validate.rs` | 11/20 | 45% | `test_quickstart.py` |
 | `autodoc_runtime.rs` | 10/52 | 81% | `test_ext_autodoc/test_ext_autodoc_importer.py` |
+| `apidoc/generate.rs` | lib 13/52; all 29/78 | lib 75.00%; all 62.82% | `test_extensions/test_ext_apidoc.py` (updated 2026-09-19: added generator unit coverage for package/module filtering, namespace handling, sorted walks, write modes, stale-file removal, separate modules, and TOC deduplication) |
 | `intl.rs` | 10/64 | 84% | `test_intl/test_catalogs.py`, `test_intl/test_intl.py` |
 | `theme_static.rs` | 10/26 | 62% | `test_theming/*`, `test_build_html_assets.py` |
-| `util_matching.rs` | 9/54 | 83% | `test_util/test_util_matching.py` |
+| `util_matching.rs` | 8/54 | 85% | `test_util/test_util_matching.py` (updated 2026-09-19: added nested include/exclude and unrelated-path fallback cases) |
 | `domains/py_sig.rs` | 7/20 | 65% | `test_domains/test_domain_py*.py` |
 | `intersphinx.rs` | 7/36 | 81% | `test_ext_intersphinx/*.py` |
 | `quickstart/parser.rs` | 7/26 | 73% | `test_quickstart.py` |
-| `util_console.rs` | 7/28 | 75% | `test__cli/test__cli_util_errors.py`, `test_util_display.py` |
+| `util_console.rs` | 6/28 | 79% | `test__cli/test__cli_util_errors.py`, `test_util_display.py` (updated 2026-09-19: covered all named colors, environment aliases, and the Python registration surface; remaining edges are short-circuit branches attributed to already-covered lines) |
 | `autogen/generate.rs` | 6/26 | 77% | autosummary/apidoc tests |
 | `build/native_runner.rs` | 6/10 | 40% | `test_command_line.py`, build lifecycle tests |
 | `builders/changes.rs` | 6/20 | 70% | `test_builders/test_build_changes.py` |
@@ -360,7 +420,7 @@ execution order. `missed/total` is authoritative; percentages are rounded.
 | `util_docstrings.rs` | 5/32 | 84% | `test_util/test_util_docstrings.py` |
 | `util_rst.rs` | 5/18 | 72% | `test_util/test_util_rst.py` |
 | `autogen/scan.rs` | 4/26 | 85% | autosummary/apidoc tests |
-| `build/logging.rs` | 4/18 | 78% | `test_util/test_util_logging.py`, `test_build_warnings.py` |
+| `build/logging.rs` | 0/18 | 100% | `test_util/test_util_logging.py`, `test_build_warnings.py` (updated 2026-09-19: covered prefix preservation, explicit color, suppression, and warning-file failure) |
 | `builders/gettext.rs` | 4/14 | 71% | `test_builders/test_build_gettext.py` |
 | `builders/singlehtml.rs` | 4/16 | 75% | `test_builders/test_build_html*.py` |
 | `cli/io.rs` | 4/8 | 50% | `test_command_line.py` |
@@ -368,17 +428,17 @@ execution order. `missed/total` is authoritative; percentages are rounded.
 | `domains/std_domain.rs` | 4/12 | 67% | `test_domains/test_domain_std.py` |
 | `addnodes.rs` | 3/10 | 70% | `test_addnodes.py` |
 | `assets.rs` | 3/6 | 50% | asset/integrity tests |
-| `builders/texinfo.rs` | 3/4 | 25% | `test_builders/test_build_texinfo.py` |
+| `builders/texinfo.rs` | 1/4 | 75% | `test_builders/test_build_texinfo.py` (updated 2026-09-19: added trait metadata, nested output, explicit docnames, and missing-source paths) |
 | `domains/js_domain.rs` | 3/12 | 75% | `test_domains/test_domain_js.py` |
 | `project.rs` | 3/14 | 79% | `test_project.py`, `test_util/test_util_matching.py` |
 | `quickstart/generate.rs` | 3/16 | 81% | `test_quickstart.py` |
 | `util_lines.rs` | 3/20 | 85% | `test_util/test_util_lines.py` |
 | `versioning.rs` | 3/28 | 89% | `test_versioning.py` |
-| `build/args.rs` | 2/24 | 92% | `test_command_line.py` |
-| `builders/epub.rs` | 2/4 | 50% | `test_builders/test_build_epub.py` |
-| `builders/pseudoxml.rs` | 2/4 | 50% | writer tests |
-| `builders/text.rs` | 2/4 | 50% | `test_builders/test_build_text.py` |
-| `builders/xml.rs` | 2/4 | 50% | XML writer tests |
+| `build/args.rs` | 1/24 | 96% | `test_command_line.py` (updated 2026-09-19: covered `ConfValue` display and empty `--confdir`; one defensive/parser-generated branch remains) |
+| `builders/epub.rs` | 1/4 | 75% | `test_builders/test_build_epub.py` (updated 2026-09-19: added configured metadata and explicit-docname build coverage) |
+| `builders/pseudoxml.rs` | 1/4 | 75% | writer tests (updated 2026-09-19: added explicit-docname and missing-source paths) |
+| `builders/text.rs` | 1/4 | 75% | `test_builders/test_build_text.py` (updated 2026-09-19: added explicit-docname and missing-source paths) |
+| `builders/xml.rs` | 1/4 | 75% | XML writer tests (updated 2026-09-19: added explicit-docname and missing-source paths) |
 | `extension.rs` | 2/12 | 83% | `test_extensions/test_extension.py`, `test_events.py` |
 | `genindex.rs` | 2/4 | 50% | HTML builder tests |
 | `registry.rs` | 2/16 | 88% | `test_application.py`, extension tests |

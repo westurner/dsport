@@ -4660,6 +4660,7 @@ fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str) {
             } else {
                 (None, content.to_string())
             };
+            let refexplicit = explicit_title.is_some();
             let display_text = explicit_title.unwrap_or_else(|| target.clone());
             let (domain, reftype) = if let Some((dom, rt)) = canonical.split_once(':') {
                 (dom.to_string(), rt.to_string())
@@ -4678,7 +4679,7 @@ fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str) {
                     reftarget: target,
                     refdoc: String::new(),
                     refdomain: domain,
-                    refexplicit: false,
+                    refexplicit,
                     warn_missing: true,
                 },
             );

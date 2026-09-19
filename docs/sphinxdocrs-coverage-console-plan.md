@@ -21,8 +21,8 @@ by `src/sphinxdocrs/tests/`.
     `util_console` 75%, `assets` 50%, `make_mode` 59%, `build/args.rs` 91.67%,
     `config.rs` 40%, `environment.rs` 40.65%, `extension.rs` 83.33%,
     `project.rs` 78.57%, and `extensions/docindex.rs` 91.67%.
-  - Existing external HTML parity remains a separate contract: 10/14 cases pass,
-    with five documented theme/tree residuals.
+  - Existing external HTML parity remains a separate contract: the latest gate
+    has 10 passing and five failing cases, with documented theme/tree residuals.
 - Measured on 2026-09-19:
   - after the `app_facade.rs`/`application.rs`/`config.rs`/
     `environment.rs` tranches described in the branch map below:
@@ -86,6 +86,14 @@ by `src/sphinxdocrs/tests/`.
     dimension serialization. These focused additions are not represented in a
     refreshed LLVM aggregate, so the percentages and branch-map counts above
     remain unchanged pending the next full measurement.
+- Measured on 2026-09-19 (H11.2 largest-failure follow-up):
+  - Focused real-theme viewport, parser explicit-title, resolved-xref-class,
+    and HTML5 block-format regressions pass. The `src/sphinx/doc` parity case
+    now advances past viewport and cross-reference drift; its remaining first
+    differences are figure/image fidelity, legacy block serialization, and
+    theme asset checksums.
+  - No new LLVM coverage report was run. Aggregate branch totals and the
+    `builders/singlehtml.rs` row above remain unchanged.
 
 Coverage scope note: `cargo +nightly llvm-cov ... --lib` does not execute
 `src/sphinxdocrs/tests/*.rs` integration-test binaries. Use the all-targets

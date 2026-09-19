@@ -42,8 +42,8 @@
 //!   renders correctly only when it already lands there through
 //!   `html_static_path` or the active theme's own static files.
 //! - `meta` (per-page docinfo) is not modeled. The default docutils viewport
-//!   metatag is supplied only when the active theme does not declare one,
-//!   except for Alabaster, which receives both upstream viewport tags.
+//!   metatag is supplied through `metatags`; themes that declare their own
+//!   viewport therefore receive both upstream viewport tags.
 //! - `sphinx_version` reports this crate's own version with a `-sphinxdocrs`
 //!   marker, not upstream Sphinx's, since there is no bundled Python Sphinx
 //!   version to report in a pure-Rust build.
@@ -903,8 +903,9 @@ pub struct ThemeRenderer {
     /// page — mirrors `self.theme.sidebar_templates` (the classic `basic`
     /// theme's own default list; see the module accepted-deviation note).
     default_sidebars: Vec<String>,
-    /// The default docutils viewport tag, omitted for themes that own the tag;
-    /// Alabaster is the upstream exception and receives both tags.
+    /// The default Sphinx viewport tag rendered through the theme's
+    /// `metatags` context. Themes such as basic may also emit their own
+    /// viewport in the surrounding template; upstream keeps both tags.
     default_metatags: String,
 }
 
@@ -1034,14 +1035,9 @@ impl ThemeRenderer {
             &toc_entries,
             path_style,
         );
-        let default_metatags =
-            if theme_name != "alabaster" && theme_declares_viewport(&template_dirs) {
-                String::new()
-            } else {
-                r#"<meta name="viewport" content="width=device-width, initial-scale=1" />
+        let default_metatags = r#"<meta name="viewport" content="width=device-width, initial-scale=1" />
 "#
-                .into()
-            };
+            .into();
 
         Some(Self {
             env: jinja_env,
@@ -1256,31 +1252,6 @@ impl ThemeRenderer {
             .render(to_minijinja_context(ctx))
             .map_err(|e| e.to_string())
     }
-}
-
-fn theme_declares_viewport(template_dirs: &[PathBuf]) -> bool {
-    fn directory_declares_viewport(dir: &Path) -> bool {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return false;
-        };
-        entries.flatten().any(|entry| {
-            let path = entry.path();
-            if path.is_dir() {
-                return directory_declares_viewport(&path);
-            }
-            let is_template = path
-                .extension()
-                .is_some_and(|extension| extension == "html" || extension == "jinja");
-            is_template
-                && std::fs::read_to_string(path)
-                    .map(|contents| contents.contains("name=\"viewport\""))
-                    .unwrap_or(false)
-        })
-    }
-
-    template_dirs
-        .iter()
-        .any(|directory| directory_declares_viewport(directory))
 }
 
 fn canonical_page_url(baseurl: &str, target_uri: &str) -> Option<String> {
@@ -2197,25 +2168,25 @@ mod tests {
     }
 
     #[test]
-    fn theme_declares_viewport_recognizes_direct_and_templated_meta() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let basic_dir = temp_dir.path().join("basic");
-        let pocoo_dir = temp_dir.path().join("pocoo");
-        std::fs::create_dir_all(&basic_dir).unwrap();
-        std::fs::create_dir_all(&pocoo_dir).unwrap();
-        std::fs::write(
-            basic_dir.join("layout.html"),
-            "<meta name=\"viewport\" content=\"basic\">",
+    fn real_theme_keeps_default_metatags_alongside_theme_viewport() {
+        let env = make_test_env(
+            "/tmp/theme-render-viewport-src",
+            "/tmp/theme-render-viewport-doctrees",
+        );
+        let outdir = tempfile::TempDir::new().unwrap();
+        let renderer = ThemeRenderer::new(
+            &env,
+            outdir.path(),
+            std::iter::once(&"index".to_string()),
+            PathStyle::Flat,
         )
-        .unwrap();
-        std::fs::write(
-            pocoo_dir.join("layout.html"),
-            "{% set metatags %}<meta name=\"viewport\" content=\"theme\">{% endset %}",
-        )
-        .unwrap();
+        .expect("basic theme should resolve");
+        let html = renderer
+            .render_page(&env, "index", "Title", "<p>Body</p>", ".rst", None)
+            .expect("basic theme should render");
 
-        assert!(theme_declares_viewport(&[basic_dir]));
-        assert!(theme_declares_viewport(&[pocoo_dir]));
+        assert!(html.contains("initial-scale=1.0"));
+        assert!(html.contains("initial-scale=1\" />"));
     }
 
     fn make_test_env(srcdir: &str, doctreedir: &str) -> crate::environment::BuildEnvironment {

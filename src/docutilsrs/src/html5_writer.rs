@@ -147,7 +147,7 @@ fn emit_enter(
             schedule(node, close, tasks);
         }
         NodeKind::Subtitle { .. } => wrap_with_class(node, "p", "subtitle", out, tasks),
-        NodeKind::Transition => out.push_str("<hr/>"),
+        NodeKind::Transition => out.push_str("<hr class=\"docutils\" />\n"),
         NodeKind::Paragraph => wrap_block(node, "p", out, tasks),
         NodeKind::Emphasis => wrap(node, "em", out, tasks),
         NodeKind::Strong => wrap(node, "strong", out, tasks),
@@ -273,9 +273,9 @@ fn emit_enter(
                 "error" => "Error",
                 _ => kind,
             };
-            let _ = write!(out, "<div class=\"admonition {kind}\">");
-            let _ = write!(out, "<p class=\"admonition-title\">{}</p>", escape(title));
-            schedule(node, "</div>", tasks);
+            let _ = write!(out, "<div class=\"admonition {kind}\">\n");
+            let _ = write!(out, "<p class=\"admonition-title\">{}</p>\n", escape(title));
+            schedule(node, "</div>\n", tasks);
         }
         NodeKind::Container { classes } => {
             // `.. container:: classes` — real docutils/Sphinx markup:
@@ -289,7 +289,8 @@ fn emit_enter(
                 } else {
                     let _ = write!(out, "<div class=\"{classes} docutils container\">");
                 }
-                schedule(node, "</div>", tasks);
+                    out.push('\n');
+                    schedule(node, "</div>\n", tasks);
             }
         }
         NodeKind::GenericAdmonition { title, classes } => {
@@ -297,20 +298,20 @@ fn emit_enter(
             // markup reverses the class order vs. fixed-kind admonitions:
             // `<div class="{classes or 'admonition'} admonition">`.
             if classes.is_empty() {
-                out.push_str("<div class=\"admonition\">");
+                out.push_str("<div class=\"admonition\">\n");
             } else {
-                let _ = write!(out, "<div class=\"{classes} admonition\">");
+                let _ = write!(out, "<div class=\"{classes} admonition\">\n");
             }
-            let _ = write!(out, "<p class=\"admonition-title\">{}</p>", escape(title));
-            schedule(node, "</div>", tasks);
+            let _ = write!(out, "<p class=\"admonition-title\">{}</p>\n", escape(title));
+            schedule(node, "</div>\n", tasks);
         }
         NodeKind::Epigraph { classes } => {
             if classes.is_empty() {
-                out.push_str("<blockquote class=\"epigraph\">");
+                out.push_str("<blockquote class=\"epigraph\">\n<div>");
             } else {
-                let _ = write!(out, "<blockquote class=\"epigraph {classes}\">");
+                let _ = write!(out, "<blockquote class=\"epigraph {classes}\">\n<div>");
             }
-            schedule(node, "</blockquote>", tasks);
+            schedule(node, "</div></blockquote>\n", tasks);
         }
         NodeKind::Toctree { .. } => {
             // Standalone docutilsrs has no notion of a multi-document

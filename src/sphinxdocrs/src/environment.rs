@@ -1405,7 +1405,7 @@ impl BuildEnvironment {
                 _ => None,
             };
 
-            let inner_class = match domain.as_str() {
+            let unresolved_class = match domain.as_str() {
                 "rst" => format!("xref rst rst-{reftype}"),
                 "py" => format!("xref py py-{reftype}"),
                 "js" => format!("xref js js-{reftype}"),
@@ -1435,12 +1435,20 @@ impl BuildEnvironment {
                     tree.set_kind(
                         id,
                         NodeKind::Inline {
-                            classes: inner_class,
+                            classes: unresolved_class,
                         },
                     );
                     tree.append(id, NodeKind::Text(title));
                 }
                 continue;
+            };
+
+            let resolved_class = match domain.as_str() {
+                "rst" => format!("rst rst-{reftype}"),
+                "py" => format!("py py-{reftype}"),
+                "js" => format!("js js-{reftype}"),
+                _ if reftype == "doc" => "doc".to_string(),
+                _ => format!("std std-{reftype}"),
             };
 
             let title = if let Some(t) = &explicit_title {
@@ -1497,7 +1505,7 @@ impl BuildEnvironment {
             let span = tree.append(
                 id,
                 NodeKind::Inline {
-                    classes: inner_class,
+                    classes: resolved_class,
                 },
             );
             tree.append(span, NodeKind::Text(title));
@@ -3236,6 +3244,8 @@ mod tests {
 
         env.resolve_xref_nodes(&mut tree, "index");
         assert!(matches!(&tree.node(ref_id).kind, NodeKind::Reference { refuri, .. } if refuri == "#target-id"));
+        let span_id = tree.node(ref_id).children[0];
+        assert!(matches!(&tree.node(span_id).kind, NodeKind::Inline { classes } if classes == "std std-ref"));
         assert!(matches!(tree.node(disabled).kind, NodeKind::Inline { .. }));
         assert!(matches!(&tree.node(external).kind, NodeKind::Reference { refuri, classes, .. } if refuri == "https://tracker.test/42" && classes.contains("extlink-issue")));
         assert!(matches!(tree.node(unknown).kind, NodeKind::Inline { .. }));

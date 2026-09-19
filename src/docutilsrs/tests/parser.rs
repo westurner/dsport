@@ -88,6 +88,21 @@ fn reference_resolves_to_target() {
     insta::assert_snapshot!("reference_resolved", pseudo_xml(&parse_rst(src)));
 }
 
+#[test]
+fn explicit_sphinx_xref_preserves_explicit_title_state() {
+    let tree = parse_rst("See :ref:`A label <target>`.\n");
+    let pending = (0..tree.nodes_len()).find_map(|id| match &tree.node(id).kind {
+        docutilsrs::NodeKind::PendingXref {
+            reftarget,
+            refexplicit,
+            ..
+        } => Some((reftarget.clone(), *refexplicit)),
+        _ => None,
+    });
+
+    assert_eq!(pending, Some(("target".to_string(), true)));
+}
+
 // ── document title promotion (with leading preamble nodes) ─────────────────
 
 fn document_title(src: &str) -> String {

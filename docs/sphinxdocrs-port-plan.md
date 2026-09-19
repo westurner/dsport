@@ -8,11 +8,11 @@ This document merges the former `docs/sphinx-port-inventory.md`
 ## Current Verification (2026-09-19)
 
 The H4-H7 implementation rows below reflect the current native code, not the
-original phase-4 placeholders. The focused theme renderer suite passes 33/33,
+original phase-4 placeholders. The focused theme renderer suite passes 34/34,
 the native builder parity matrix passes, and fresh Alabaster and Jinja/Pocoo
 builds match Python viewport metadata. The real external-doc suite currently
-passes 9/14 cases; the five remaining failures are tracked content/tree parity
-gaps rather than build failures.
+has 10 passing and five failing cases; the remaining failures are tracked
+content/tree parity gaps rather than build failures.
 
 ### Latest local verification (2026-09-19)
 
@@ -29,16 +29,18 @@ narrow `sphinx.util.rst.escape` behavior. The native implementation still
 escapes all ASCII punctuation, removes control characters, and strips
 indentation; that remains an accepted native deviation.
 
-The gated external-document suite now passes **9/14**:
+The gated external-document suite now has **10 passing and five failing** cases:
 `cargo test -p sphinxdocrs --features test-build-extdocs --test otherdocs`
-fails five HTML cases. The H11.2 fixes now cover preserved Sphinx section
+still fails five HTML cases. The H11.2 fixes now cover preserved Sphinx section
 doctrees, page-title indexing, header links, inline literals, external-link
-classes, empty toctree wrappers, Alabaster metadata, theme-aware viewport
-handling, canonical `pageurl` metadata from `html_baseurl`, Pygments style
-resolution, and block formatting. The remaining
+classes, empty toctree wrappers, Alabaster metadata, default-plus-theme
+viewport metatags, canonical `pageurl` metadata from `html_baseurl`, Pygments
+style resolution, explicit-title cross-reference resolution, resolved xref
+class names, and block formatting. The remaining
 failures are three file-tree snapshots that include intentional native WebMCP
-artifacts, plus two Sphinx/Jinja theme-content cases covering navigation
-attributes, image/reference fidelity, captions, and theme-specific assets. No
+artifacts, plus two Sphinx/Jinja theme-content cases covering image/reference
+fidelity, figure captions, legacy block serialization, and theme-specific
+assets. No
 external build failed to produce its expected HTML entry point.
 
 The latest focused H11.2 cycle adds singlehtml coverage for a titleless root
@@ -1497,10 +1499,10 @@ explicitly documented renderer/theme provenance deviations.
   and JavaScript attributes, and `async`/`defer` loading-method rendering to
   the real-theme asset tags. `tests/builders.rs` now runs the checksum and
   attribute contracts as regular black-box tests.
-- Updated real-theme viewport detection to recognize direct `<meta
-  name="viewport">` declarations as well as templated `metatags` blocks, so
-  the renderer does not inject a duplicate default viewport tag; Alabaster's
-  upstream dual-tag behavior remains preserved explicitly.
+- Restored Sphinx's default `metatags` value for every real theme: themes that
+  emit their own viewport in the inherited layout receive both upstream tags,
+  including the custom `sphinx13` and `jinja` fixtures. Added a focused
+  real-theme regression for the duplicate viewport contract.
 - Matched Sphinx's preserved top-level-section read mode for RST doctrees,
   section-derived page titles, section header links, comment omission, inline
   literal markup, external reference classes, empty toctree wrappers, and
@@ -1530,6 +1532,16 @@ explicitly documented renderer/theme provenance deviations.
   preserving its empty sidebar wrapper while keeping search-page navigation
   suppressed. The remaining fixture search-page difference is the documented
   native-versus-upstream Sphinx version footer.
+- Preserved `refexplicit` while lowering parsed Sphinx cross-reference roles,
+  so explicit-title `:ref:` links resolve through anonymous labels as in
+  upstream. Resolved references now emit `std std-ref` (and the corresponding
+  domain class) while unresolved roles retain the `xref` marker. Added parser
+  and environment regressions for both contracts.
+- Matched the shared HTML5 writer's transition, epigraph, container, and
+  admonition block structure closely enough to advance the focused
+  `src/sphinx/doc` content diff. Figure alignment/IDs, image targets and
+  `_images` copying, captions, and legacy-theme asset checksums remain open
+  H11.2 residuals.
 - Matched Sphinx's full breadcrumb ancestor chain for themed pages, omitting
   only the configured root document and preserving root-to-nearest order;
   nested parent-chain behavior is covered by a focused renderer regression.

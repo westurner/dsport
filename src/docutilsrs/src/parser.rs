@@ -86,6 +86,8 @@ fn parse_rst_impl(source: &str, source_path: &str, promote_title: bool) -> Doctr
         emit_block(&mut tree, document, &mut ctx, block);
     }
 
+    normalize_target_placement(&mut tree);
+    repair_duplicate_target_ids(&mut tree);
     resolve_references(&mut tree, &ctx);
     if promote_title {
         promote_document_title(&mut tree);
@@ -97,6 +99,153 @@ fn parse_rst_impl(source: &str, source_path: &str, promote_title: bool) -> Doctr
     // `docutils.parsers.rst.Parser.parse` does.
     crate::roles::restore_default_role();
     tree
+}
+
+fn normalize_target_placement(tree: &mut Doctree) {
+    fn visit(tree: &mut Doctree, parent: NodeId) {
+        let children = tree.node(parent).children.clone();
+        for child in children {
+            visit(tree, child);
+        }
+
+        let mut index = 0;
+        while index + 1 < tree.node(parent).children.len() {
+            let first = tree.node(parent).children[index];
+            let second = tree.node(parent).children[index + 1];
+            if !matches!(tree.node(first).kind, NodeKind::Section { .. })
+                || !matches!(tree.node(second).kind, NodeKind::Section { .. })
+            {
+                index += 1;
+                continue;
+            }
+            let mut moved = Vec::new();
+            loop {
+                let Some(&child) = tree.node(first).children.last() else {
+                    break;
+                };
+                if matches!(&tree.node(child).kind, NodeKind::Target { refuri, .. } if refuri.is_empty()) {
+                    moved.push(tree.node_mut(first).children.pop().unwrap());
+                } else {
+                    break;
+                }
+            }
+            if moved.is_empty() {
+                index += 1;
+                continue;
+            }
+            moved.reverse();
+            tree.node_mut(parent)
+                .children
+                .splice(index + 1..index + 1, moved);
+            index += 1;
+        }
+
+        let mut index = 0;
+        while index + 1 < tree.node(parent).children.len() {
+            let target = tree.node(parent).children[index];
+            let section = tree.node(parent).children[index + 1];
+            let target_refuri = match &tree.node(target).kind {
+                NodeKind::Target { refuri, .. } => refuri.clone(),
+                _ => {
+                    index += 1;
+                    continue;
+                }
+            };
+            if target_refuri.is_empty() {
+                tree.node_mut(parent).children.remove(index);
+                tree.node_mut(section).children.insert(0, target);
+            } else {
+                index += 1;
+            }
+        }
+    }
+
+    visit(tree, tree.root());
+}
+
+fn repair_duplicate_target_ids(tree: &mut Doctree) {
+    let mut used = HashMap::<String, ()>::new();
+    for id in 0..tree.nodes_len() {
+        match &tree.node(id).kind {
+            NodeKind::Section { ids, .. } | NodeKind::Target { ids, .. } => {
+                if !ids.is_empty() {
+                    used.insert(ids.clone(), ());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn visit(tree: &mut Doctree, parent: NodeId, used: &mut HashMap<String, ()>) {
+        let children = tree.node(parent).children.clone();
+        let containing_section_id = match &tree.node(parent).kind {
+            NodeKind::Section { ids, .. } => Some(ids.clone()),
+            _ => None,
+        };
+        for window in children.windows(2) {
+            let (target_id, target_refuri) = match &tree.node(window[0]).kind {
+                NodeKind::Target { ids, refuri, .. } => (ids.clone(), refuri.clone()),
+                _ => continue,
+            };
+            let section_id = match &tree.node(window[1]).kind {
+                NodeKind::Section { ids, .. } => ids,
+                _ => continue,
+            };
+            if target_refuri.is_empty() && !target_id.is_empty() && target_id == *section_id {
+                let mut candidate = 1;
+                let replacement = loop {
+                    let id = format!("id{candidate}");
+                    if !used.contains_key(&id) {
+                        break id;
+                    }
+                    candidate += 1;
+                };
+                tree.node_mut(window[0]).kind = NodeKind::Target {
+                    ids: replacement.clone(),
+                    names: match &tree.node(window[0]).kind {
+                        NodeKind::Target { names, .. } => names.clone(),
+                        _ => String::new(),
+                    },
+                    refuri: String::new(),
+                    anonymous: false,
+                };
+                used.insert(replacement, ());
+            }
+        }
+        if let Some(section_id) = containing_section_id {
+            if let Some(&target) = children.first()
+                && let NodeKind::Target { ids, refuri, .. } = &tree.node(target).kind
+                && refuri.is_empty()
+                && !ids.is_empty()
+                && *ids == section_id
+            {
+                let mut candidate = 1;
+                let replacement = loop {
+                    let id = format!("id{candidate}");
+                    if !used.contains_key(&id) {
+                        break id;
+                    }
+                    candidate += 1;
+                };
+                let names = match &tree.node(target).kind {
+                    NodeKind::Target { names, .. } => names.clone(),
+                    _ => String::new(),
+                };
+                tree.node_mut(target).kind = NodeKind::Target {
+                    ids: replacement.clone(),
+                    names,
+                    refuri: String::new(),
+                    anonymous: false,
+                };
+                used.insert(replacement, ());
+            }
+        }
+        for child in children {
+            visit(tree, child, used);
+        }
+    }
+
+    visit(tree, tree.root(), &mut used);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -181,6 +330,7 @@ pub enum Block {
     Section {
         title: String,
         level: usize,
+        classes: String,
         children: Vec<Block>,
     },
     Transition,
@@ -248,6 +398,8 @@ pub enum Block {
         alt: Option<String>,
         width: Option<String>,
         height: Option<String>,
+        classes: String,
+        target: Option<String>,
     },
     Figure {
         uri: String,
@@ -378,6 +530,7 @@ fn parse_blocks(lines: &[&str], base_indent: usize, base_line: u32) -> Vec<Block
             blocks.push(Block::Section {
                 title,
                 level,
+                classes: String::new(),
                 children: body,
             });
             i = end;
@@ -700,7 +853,8 @@ fn merge_pending_classes(blocks: Vec<Block>) -> Vec<Block> {
                     let target = match &mut other {
                         Block::Container { classes, .. }
                         | Block::GenericAdmonition { classes, .. }
-                        | Block::Epigraph { classes, .. } => Some(classes),
+                        | Block::Epigraph { classes, .. }
+                        | Block::Section { classes, .. } => Some(classes),
                         _ => None,
                     };
                     if let Some(classes) = target {
@@ -1431,7 +1585,7 @@ fn parse_target_inline(rest: &str) -> Option<(String, String, bool)> {
     let colon = after.find(':')?;
     let name = after[..colon].trim();
     let refuri = after[colon + 1..].trim();
-    if name.is_empty() || refuri.is_empty() {
+    if name.is_empty() {
         return None;
     }
     let name = if let Some(s) = name.strip_prefix('`') {
@@ -1771,6 +1925,19 @@ fn parse_directive(
                     alt,
                     width,
                     height,
+                    classes: if let Some(align) = align {
+                        format!(
+                            "align-{align}{}",
+                            classes
+                                .as_deref()
+                                .filter(|value| !value.is_empty())
+                                .map(|value| format!(" {value}"))
+                                .unwrap_or_default()
+                        )
+                    } else {
+                        classes.unwrap_or_default()
+                    },
+                    target,
                 };
             }
             // Figure body: skip blanks; if indented at `body_indent`,
@@ -3220,6 +3387,7 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             Block::Section {
                 title,
                 level: _,
+                classes,
                 children,
             } => {
                 let ids = normalize_id(&title);
@@ -3228,7 +3396,7 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                     NodeKind::Section {
                         ids: ids.clone(),
                         names: title.to_ascii_lowercase(),
-                        classes: String::new(),
+                        classes,
                     },
                 );
                 let t = tree.append(sec, NodeKind::Title);
@@ -3397,14 +3565,35 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 alt,
                 width,
                 height,
+                classes,
+                target,
             } => {
+                let image_parent = if let Some(target) = target {
+                    let classes = if target.starts_with('#') || target.starts_with('/') {
+                        "reference internal image-reference"
+                    } else {
+                        "reference external image-reference"
+                    };
+                    tree.append(
+                        parent,
+                        NodeKind::Reference {
+                            name: String::new(),
+                            refuri: target,
+                            anonymous: false,
+                            classes: classes.to_string(),
+                        },
+                    )
+                } else {
+                    parent
+                };
                 tree.append(
-                    parent,
+                    image_parent,
                     NodeKind::Image {
                         uri,
                         alt,
                         width,
                         height,
+                        classes,
                     },
                 );
             }
@@ -3450,6 +3639,7 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                         alt,
                         width,
                         height,
+                        classes: String::new(),
                     },
                 );
                 if let Some(text) = caption {

@@ -1598,6 +1598,15 @@ explicitly documented renderer/theme provenance deviations.
   Also matched the default `html_title` separator when `release` is empty. A
   minimal basic-theme search-page comparison now differs only in the expected
   native-versus-upstream `sphinx_version` footer value.
+- Closed the remaining feature-gated external HTML parity matrix: all 15
+  `tests/otherdocs.rs` tree/content/viewport cases now pass. Real-theme local
+  TOCs omit `hide-header` document-title sections like Sphinx, while ordinary
+  document-title anchors remain available; module directives now produce the
+  expected Python module-section anchors and module-index relation. The same
+  parity cycle added recursive RST include expansion, hidden toctree filtering,
+  smart-quote transformation, project copyright-year expansion, and refreshed
+  DSPort/Sphinx/Jinja output-tree snapshots for copied assets and generated
+  pages.
 
 ##### H11.3 Text, XML, and pseudo-XML writers
 

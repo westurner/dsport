@@ -435,10 +435,17 @@ fn normalize_html_for_diff(html: &str) -> String {
     let mut out = re_sphinx_version
         .replace_all(html, "Sphinx VERSION")
         .into_owned();
+    let re_sphinx_footer = regex::Regex::new(
+        r#"(<a href="https://www\.sphinx-doc\.org/">Sphinx</a> )v?\d+\.\d+(\.\d+)?(\+/[0-9a-f]+)?"#,
+    )
+    .expect("valid regex");
+    out = re_sphinx_footer
+        .replace_all(&out, "${1}VERSION")
+        .into_owned();
     // `theme_render.rs` reports this crate's own version as
     // `sphinx_version` in lieu of a bundled Python Sphinx version.
     out = out.replace(env!("CARGO_PKG_VERSION"), "VERSION");
-    out = out.replace("Sphinx VERSION-sphinxdocrs", "Sphinx VERSION");
+    out = out.replace("VERSION-sphinxdocrs", "VERSION");
     // Native HTML builders add the built-in WebMCP integration; it has no
     // upstream Python counterpart and is intentionally excluded from content
     // parity comparisons.

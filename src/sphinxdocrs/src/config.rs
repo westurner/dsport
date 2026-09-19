@@ -780,6 +780,16 @@ impl SphinxConfig {
     ///
     /// Mirrors `Config.__init__`.
     pub fn new(raw_config: HashMap<String, ConfigVal>, overrides: HashMap<String, String>) -> Self {
+        let mut raw_config = raw_config;
+        let current_year = {
+            use crate::cli::io::{Clock, SystemClock};
+            SystemClock.year().to_string()
+        };
+        for key in ["copyright", "project_copyright"] {
+            if let Some(ConfigVal::Str(value)) = raw_config.get_mut(key) {
+                *value = value.replace("%Y", &current_year);
+            }
+        }
         let extensions = match raw_config.get("extensions") {
             Some(ConfigVal::List(v)) => v
                 .iter()

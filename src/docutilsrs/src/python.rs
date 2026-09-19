@@ -410,6 +410,7 @@ impl PyNode {
                 alt,
                 width,
                 height,
+                ..
             } => {
                 dict.set_item("uri", uri)?;
                 if let Some(v) = alt {

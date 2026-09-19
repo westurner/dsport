@@ -220,6 +220,7 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             alt,
             width,
             height,
+            ..
         } => {
             let mut s = format!("{indent}<image");
             if let Some(v) = alt {

@@ -261,6 +261,7 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             alt,
             width,
             height,
+            ..
         } => {
             let mut attrs = Vec::new();
             if let Some(v) = alt {

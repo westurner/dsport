@@ -125,8 +125,12 @@ fn emit_enter(
                 tasks.push(Task::Enter(c));
             }
         }
-        NodeKind::Section { ids, .. } => {
-            let _ = write!(out, "<section id=\"{ids}\">\n");
+        NodeKind::Section { ids, classes, .. } => {
+            if classes.is_empty() {
+                let _ = write!(out, "<section id=\"{ids}\">\n");
+            } else {
+                let _ = write!(out, "<section class=\"{}\" id=\"{ids}\">\n", escape(classes));
+            }
             schedule(node, "</section>\n", tasks);
         }
         NodeKind::Title => {
@@ -198,7 +202,10 @@ fn emit_enter(
             }
         }
         NodeKind::BulletList { .. } => {
-            if is_compactable(tree, id, options, false) {
+            if toctree_level(tree, id).is_some() {
+                out.push_str("<ul>\n");
+                schedule(node, "</ul>\n", tasks);
+            } else if is_compactable(tree, id, options, false) {
                 wrap_with_class(node, "ul", "simple", out, tasks)
             } else {
                 wrap(node, "ul", out, tasks)
@@ -214,7 +221,7 @@ fn emit_enter(
         NodeKind::ListItem => {
             if let Some(level) = toctree_level(tree, id) {
                 let _ = write!(out, "<li class=\"toctree-l{level}\">");
-                schedule(node, "</li>", tasks);
+                schedule(node, "</li>\n", tasks);
             } else {
                 wrap(node, "li", out, tasks);
             }
@@ -325,6 +332,7 @@ fn emit_enter(
             alt,
             width,
             height,
+            classes,
         } => {
             let in_figure = node.parent.is_some_and(|parent| {
                 matches!(tree.node(parent).kind, NodeKind::Figure { .. })
@@ -333,35 +341,59 @@ fn emit_enter(
                             matches!(tree.node(grandparent).kind, NodeKind::Figure { .. })
                         }))
             });
+            let in_reference = node
+                .parent
+                .is_some_and(|parent| matches!(tree.node(parent).kind, NodeKind::Reference { .. }));
+            let image_alt = alt.as_deref().unwrap_or(uri);
             if in_figure {
                 out.push_str("<img");
-                if let Some(a) = alt {
-                    let _ = write!(out, " alt=\"{}\"", escape(a));
+                let _ = write!(out, " alt=\"{}\"", escape(image_alt));
+                if !classes.is_empty() {
+                    let _ = write!(out, " class=\"{}\"", escape(classes));
                 }
                 let _ = write!(out, " src=\"{}\"", escape(uri));
                 let mut styles = Vec::new();
                 if let Some(width) = width {
-                    styles.push(format!("width: {}px;", escape(width.trim_end_matches("px"))));
+                    styles.push(format!("width: {};", escape(&css_dimension(width))));
                 }
                 if let Some(height) = height {
-                    styles.push(format!("height: {}px;", escape(height.trim_end_matches("px"))));
+                    styles.push(format!("height: {};", escape(&css_dimension(height))));
                 }
                 if !styles.is_empty() {
                     let _ = write!(out, " style=\"{}\"", styles.join(" "));
                 }
                 out.push_str(" />\n");
             } else {
-                let _ = write!(out, "<img src=\"{}\"", escape(uri));
-                if let Some(a) = alt {
-                    let _ = write!(out, " alt=\"{}\"", escape(a));
+                let linked = !in_reference
+                    && (width.is_some() || height.is_some())
+                    && !classes.split_whitespace().any(|class| class == "no-scaled-link");
+                if linked {
+                    let _ = write!(
+                        out,
+                        "<a class=\"reference internal image-reference\" href=\"{}\">",
+                        escape(uri)
+                    );
                 }
+                out.push_str("<img");
+                let _ = write!(out, " alt=\"{}\"", escape(image_alt));
+                if !classes.is_empty() {
+                    let _ = write!(out, " class=\"{}\"", escape(classes));
+                }
+                let _ = write!(out, " src=\"{}\"", escape(uri));
+                let mut styles = Vec::new();
                 if let Some(width) = width {
-                    let _ = write!(out, " width=\"{}\"", escape(width));
+                    styles.push(format!("width: {};", escape(&css_dimension(width))));
                 }
                 if let Some(height) = height {
-                    let _ = write!(out, " height=\"{}\"", escape(height));
+                    styles.push(format!("height: {};", escape(&css_dimension(height))));
                 }
-                out.push_str("/>");
+                if !styles.is_empty() {
+                    let _ = write!(out, " style=\"{}\"", styles.join(" "));
+                }
+                out.push_str(" />\n");
+                if linked {
+                    out.push_str("</a>\n");
+                }
             }
         }
         NodeKind::Raw { format } => {
@@ -428,11 +460,8 @@ fn emit_enter(
             let image_reference = classes
                 .split_whitespace()
                 .any(|class| class == "image-reference")
-                && node.parent.is_some_and(|parent| {
-                    matches!(tree.node(parent).kind, NodeKind::Figure { .. })
-                        || tree.node(parent).parent.is_some_and(|grandparent| {
-                            matches!(tree.node(grandparent).kind, NodeKind::Figure { .. })
-                        })
+                && node.children.iter().any(|child| {
+                    matches!(tree.node(*child).kind, NodeKind::Image { .. })
                 });
             tasks.push(Task::Append(if image_reference {
                 "</a>\n".to_string()
@@ -451,7 +480,11 @@ fn emit_enter(
                 tasks.push(Task::Enter(c));
             }
         }
-        NodeKind::Target { .. } => {}
+        NodeKind::Target { ids, refuri, .. } => {
+            if refuri.is_empty() && !ids.is_empty() {
+                let _ = write!(out, "<span id=\"{}\"></span>", escape(ids));
+            }
+        }
         NodeKind::SubstitutionDefinition { .. } => {}
         NodeKind::SubstitutionReference { refname } => {
             let _ = write!(out, "{}", escape(refname));
@@ -531,6 +564,14 @@ fn emit_enter(
                     })
                     .unwrap_or_else(|| "</span></p>\n</figcaption>\n".to_string());
                 schedule(node, close, tasks);
+            } else if node.parent.is_some_and(|parent| {
+                matches!(
+                    &tree.node(parent).kind,
+                    NodeKind::Container { classes } if classes == "toctree-wrapper compound"
+                )
+            }) {
+                out.push_str("<p class=\"caption\" role=\"heading\">");
+                schedule(node, "</p>\n", tasks);
             } else {
                 wrap(node, "figcaption", out, tasks);
             }
@@ -669,6 +710,17 @@ fn escape(s: &str) -> String {
         }
     }
     out
+}
+
+fn css_dimension(value: &str) -> String {
+    if value
+        .chars()
+        .all(|character| character.is_ascii_digit() || character == '.')
+    {
+        format!("{value}px")
+    } else {
+        value.to_string()
+    }
 }
 
 fn get_math_backend(options: &crate::cli::Html5Options) -> mathrenderrs::MathBackend {

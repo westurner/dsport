@@ -103,6 +103,16 @@ by `src/sphinxdocrs/tests/`.
   - No new LLVM coverage report was run. Aggregate totals remain 77.89%
     library-only branches (565/2555 missed) and 78.87% all-target branches
     (600/2839 missed); the module branch-map counts remain unchanged.
+- Measured on 2026-09-19 (H11.2 external parity closeout):
+  - The feature-gated `tests/otherdocs.rs` matrix is now fully green: all 15
+    real-project tree, HTML-content, and viewport cases pass.
+  - The closing fixes cover hidden document-title sections in real-theme local
+    TOCs, Python module-section anchors and module-index navigation, recursive
+    RST includes, hidden toctree entries, smart quotes, project copyright-year
+    expansion, and the corresponding generated asset/tree snapshots for the
+    DSPort, Sphinx, and Jinja fixtures.
+  - No new LLVM coverage report was run; the aggregate branch totals above
+    remain unchanged.
 
 Coverage scope note: `cargo +nightly llvm-cov ... --lib` does not execute
 `src/sphinxdocrs/tests/*.rs` integration-test binaries. Use the all-targets

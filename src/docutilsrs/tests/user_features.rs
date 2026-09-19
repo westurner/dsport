@@ -1,4 +1,4 @@
-use docutilsrs::{Doctree, NodeKind, parse_rst};
+use docutilsrs::{Doctree, NodeKind, TitlePromotion, parse_rst, parse_rst_with_options};
 
 fn find_text(tree: &Doctree, parent: usize) -> Option<String> {
     for &c in &tree.node(parent).children {
@@ -7,6 +7,25 @@ fn find_text(tree: &Doctree, parent: usize) -> Option<String> {
         }
     }
     None
+}
+
+#[test]
+fn explicit_target_before_section_gets_distinct_id() {
+    let tree = parse_rst_with_options(
+        ".. _get-started:\n\nGet started\n===========\n",
+        "<test>",
+        TitlePromotion::Preserve,
+    );
+    let children = &tree.node(tree.root()).children;
+    assert!(matches!(
+        tree.node(children[0]).kind,
+        NodeKind::Section { ref ids, .. } if ids == "get-started"
+    ));
+    let section_children = &tree.node(children[0]).children;
+    assert!(matches!(
+        tree.node(section_children[0]).kind,
+        NodeKind::Target { ref ids, .. } if ids == "id1"
+    ));
 }
 
 #[test]
@@ -50,6 +69,7 @@ fn figure_directive_params_and_options() {
                         alt,
                         width,
                         height,
+                        ..
                     } = &tree.node(child).kind
                     {
                         img_found = true;
@@ -68,6 +88,7 @@ fn figure_directive_params_and_options() {
                 alt,
                 width,
                 height,
+                ..
             } => {
                 img_found = true;
                 assert_eq!(uri, "picture.png");
@@ -85,6 +106,23 @@ fn figure_directive_params_and_options() {
     assert!(image_reference_found, "image reference wrapper in Figure");
     assert!(img_found, "Image child in Figure");
     assert!(cap_found, "Caption child in Figure");
+}
+
+#[test]
+fn rst_class_applies_to_section() {
+    let tree = parse_rst_with_options(
+        ".. rst-class:: hide-header\n\nTitle\n=====\n",
+        "<test>",
+        TitlePromotion::Preserve,
+    );
+    let section = tree.node(tree.root()).children.iter().find(|&&id| {
+        matches!(tree.node(id).kind, NodeKind::Section { .. })
+    }).copied().expect("section node found");
+
+    assert!(matches!(
+        &tree.node(section).kind,
+        NodeKind::Section { classes, .. } if classes == "hide-header"
+    ));
 }
 
 #[test]

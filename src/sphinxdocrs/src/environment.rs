@@ -596,7 +596,7 @@ impl BuildEnvironment {
                 &myst_md_rs::DoctreeOptions::default(),
             ));
         }
-        match self.parser_for_path(&path).as_str() {
+        let mut tree = match self.parser_for_path(&path).as_str() {
             "restructuredtext" => Ok(docutilsrs::parse_rst_with_options(
                 source,
                 docname,
@@ -610,7 +610,12 @@ impl BuildEnvironment {
             parser => Err(BuildError::Other(format!(
                 "unknown source parser {parser:?} configured for {docname:?}"
             ))),
+        }?;
+        apply_module_section_ids(&mut tree, source);
+        if self.config.smartquotes() {
+            apply_smartquotes(&mut tree);
         }
+        Ok(tree)
     }
 
     /// Persist `tree` to `doctreedir/<docname>.doctree`.
@@ -802,8 +807,16 @@ impl BuildEnvironment {
     /// exactly the file's on-disk content.
     pub fn read_one_with_source(&mut self, docname: &str, source: &str) -> Result<(), BuildError> {
         let yaml_source = expand_yaml_toctree_directives(source, &self.srcdir)?;
-        let expanded_source = self.expand_autodoc(&yaml_source);
-        let source = expanded_source.as_deref().unwrap_or(&yaml_source);
+        let included_source = expand_rst_includes(
+            &yaml_source,
+            &self.doc2path(docname)
+                .parent()
+                .unwrap_or(self.srcdir.as_path())
+                .to_path_buf(),
+            &self.config.source_encoding(),
+        );
+        let expanded_source = self.expand_autodoc(&included_source);
+        let source = expanded_source.as_deref().unwrap_or(&included_source);
         let highlighted_source = self.apply_highlight_language(source);
         let parse_source = highlighted_source.as_deref().unwrap_or(source);
         let tree = self.parse_source(docname, parse_source)?;
@@ -1569,11 +1582,20 @@ impl BuildEnvironment {
                 .into_iter()
                 .map(|entry| docname_join(docname, &entry))
                 .collect();
-            let depth = if maxdepth <= 0 { 0 } else { maxdepth as usize };
-            let resolved = crate::toctree::resolve_from_entries(self, &entries, depth);
+            let resolve_depth = if maxdepth <= 0 { 0 } else { maxdepth as usize };
+            let toc_depth = if maxdepth <= 0 {
+                usize::MAX
+            } else {
+                maxdepth as usize
+            };
+            let mut resolved =
+                crate::toctree::resolve_from_entries(self, &entries, resolve_depth);
+            for entry in &mut resolved {
+                Self::enrich_toc_entry_with_sections(self, entry, toc_depth.saturating_sub(1));
+            }
             if !resolved.is_empty() {
                 if let Some(caption) = caption {
-                    let p = tree.append(id, NodeKind::Paragraph);
+                    let p = tree.append(id, NodeKind::Caption);
                     let span = tree.append(
                         p,
                         NodeKind::Inline {
@@ -1606,8 +1628,24 @@ impl BuildEnvironment {
         let list = tree.append(parent, NodeKind::BulletList { bullet: '*' });
         for entry in entries {
             let item = tree.append(list, NodeKind::ListItem);
-            let target_uri = builder.get_target_uri(&entry.docname);
-            let href = relative_uri(base_uri, &target_uri);
+            let (docname, fragment) = entry.docname.split_once('#').unwrap_or((&entry.docname, ""));
+            let mut target_uri = builder.get_target_uri(docname);
+            if !fragment.is_empty() {
+                target_uri.push('#');
+                target_uri.push_str(fragment);
+            }
+            let fragment = target_uri
+                .split_once('#')
+                .map(|(_, fragment)| fragment.to_string());
+            let mut href = relative_uri(base_uri, &target_uri);
+            if let Some(fragment) = fragment {
+                if href.is_empty() {
+                    href = format!("#{fragment}");
+                } else {
+                    href.push('#');
+                    href.push_str(&fragment);
+                }
+            }
             let refnode = tree.append(
                 item,
                 NodeKind::Reference {
@@ -1617,10 +1655,52 @@ impl BuildEnvironment {
                     classes: "reference internal".to_string(),
                 },
             );
-            tree.append(refnode, NodeKind::Text(entry.title.clone()));
+            Self::append_toc_title(tree, refnode, &entry.title);
             if !entry.children.is_empty() {
                 Self::append_toc_entries(tree, item, &entry.children, builder, base_uri);
             }
+        }
+    }
+
+    fn append_toc_title(tree: &mut Doctree, parent: NodeId, title: &str) {
+        let mut remaining = title;
+        while let Some(start) = remaining.find('\x01') {
+            if start > 0 {
+                tree.append(parent, NodeKind::Text(remaining[..start].to_string()));
+            }
+            let literal_start = start + '\x01'.len_utf8();
+            let Some(end) = remaining[literal_start..].find('\x02') else {
+                tree.append(parent, NodeKind::Text(remaining[start..].to_string()));
+                return;
+            };
+            let literal = tree.append(parent, NodeKind::Literal);
+            tree.append(
+                literal,
+                NodeKind::Text(remaining[literal_start..literal_start + end].to_string()),
+            );
+            remaining = &remaining[literal_start + end + '\x02'.len_utf8()..];
+        }
+        if !remaining.is_empty() {
+            tree.append(parent, NodeKind::Text(remaining.to_string()));
+        }
+    }
+
+    fn enrich_toc_entry_with_sections(
+        env: &BuildEnvironment,
+        entry: &mut crate::toctree::TocEntry,
+        remaining_depth: usize,
+    ) {
+        if remaining_depth == 0 {
+            entry.children.clear();
+            return;
+        }
+        if !entry.docname.contains('#') {
+            let sections = local_section_entries(env, &entry.docname);
+            let nested = std::mem::take(&mut entry.children);
+            entry.children = if sections.is_empty() { nested } else { sections };
+        }
+        for child in &mut entry.children {
+            Self::enrich_toc_entry_with_sections(env, child, remaining_depth.saturating_sub(1));
         }
     }
 
@@ -1882,6 +1962,124 @@ impl BuildEnvironment {
         }
         Some(p)
     }
+}
+
+fn local_section_entries(
+    env: &BuildEnvironment,
+    docname: &str,
+) -> Vec<crate::toctree::TocEntry> {
+    fn text_content(tree: &Doctree, id: NodeId) -> String {
+        match &tree.node(id).kind {
+            NodeKind::Text(text) => text.clone(),
+            NodeKind::Literal => format!(
+                "\x01{}\x02",
+                tree.node(id)
+                    .children
+                    .iter()
+                    .map(|&child| text_content(tree, child))
+                    .collect::<String>()
+            ),
+            _ => tree.node(id).children.iter().map(|&child| text_content(tree, child)).collect(),
+        }
+    }
+
+    fn collect(
+        tree: &Doctree,
+        parent: NodeId,
+        docname: &str,
+    ) -> Vec<crate::toctree::TocEntry> {
+        tree.node(parent)
+            .children
+            .iter()
+            .filter_map(|&id| {
+                let NodeKind::Section { ids, .. } = &tree.node(id).kind else {
+                    return None;
+                };
+                let title = tree.node(id).children.iter().find_map(|&child| {
+                    matches!(tree.node(child).kind, NodeKind::Title)
+                        .then(|| text_content(tree, child))
+                })?;
+                Some(crate::toctree::TocEntry {
+                    docname: format!("{docname}#{ids}"),
+                    title,
+                    children: collect(tree, id, docname),
+                })
+            })
+            .collect()
+    }
+
+    let Ok(tree) = env.get_doctree(docname) else {
+        return Vec::new();
+    };
+    let mut sections = collect(&tree, tree.root(), docname);
+    if sections
+        .first()
+        .is_some_and(|entry| env.titles.get(docname) == Some(&entry.title))
+    {
+        let root = sections.remove(0);
+        sections = root.children;
+    }
+    sections
+}
+
+fn apply_smartquotes(tree: &mut Doctree) {
+    fn visit(tree: &mut Doctree, id: NodeId, literal: bool) {
+        let literal = literal
+            || matches!(
+                tree.node(id).kind,
+                NodeKind::Literal
+                    | NodeKind::LiteralBlock { .. }
+                    | NodeKind::Math { .. }
+                    | NodeKind::MathBlock { .. }
+            );
+        if !literal {
+            if let NodeKind::Text(text) = &mut tree.node_mut(id).kind {
+                *text = smartquote_text(text);
+            }
+        }
+        let children = tree.node(id).children.clone();
+        for child in children {
+            visit(tree, child, literal);
+        }
+    }
+
+    visit(tree, tree.root(), false);
+}
+
+fn smartquote_text(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut index = 0;
+    while index < chars.len() {
+        if index + 2 < chars.len() && chars[index..index + 3] == ['.', '.', '.'] {
+            out.push('…');
+            index += 3;
+            continue;
+        }
+        if index + 1 < chars.len() && chars[index..index + 2] == ['-', '-'] {
+            out.push('—');
+            index += 2;
+            continue;
+        }
+        let character = chars[index];
+        if character == '\'' || character == '"' {
+            let previous = chars.get(index.wrapping_sub(1)).copied();
+            let next = chars.get(index + 1).copied();
+            let apostrophe = character == '\'' && previous.is_some_and(char::is_alphanumeric)
+                && next.is_some_and(char::is_alphanumeric);
+            if apostrophe || previous.is_some_and(|value| !value.is_whitespace()) {
+                out.push(if character == '\'' { '’' } else { '”' });
+            } else if next.is_some_and(|value| !value.is_whitespace()) {
+                out.push(if character == '\'' { '‘' } else { '“' });
+            } else {
+                out.push(if character == '\'' { '’' } else { '”' });
+            }
+        } else {
+            out.push(character);
+        }
+        index += 1;
+    }
+    out
 }
 
 /// Current [`EnvPersisted::version`]. Bump on any breaking change to that
@@ -2386,6 +2584,8 @@ fn scan_toctree_entries_with_titles_mode(
             let rest = rest.trim_start();
             if rest.starts_with("toctree::") {
                 let indent = lines[i].len() - trimmed.len();
+                let mut directive_entries = Vec::new();
+                let mut hidden = false;
                 i += 1;
                 while i < lines.len() {
                     let line = lines[i];
@@ -2398,7 +2598,9 @@ fn scan_toctree_entries_with_titles_mode(
                         break;
                     }
                     let body = line.trim();
-                    if !body.starts_with(':') {
+                    if body == ":hidden:" {
+                        hidden = true;
+                    } else if !body.starts_with(':') {
                         let (target, title) = body
                             .strip_suffix('>')
                             .and_then(|body| {
@@ -2414,9 +2616,12 @@ fn scan_toctree_entries_with_titles_mode(
                         } else {
                             target
                         };
-                        entries.push((target.to_string(), title));
+                        directive_entries.push((target.to_string(), title));
                     }
                     i += 1;
+                }
+                if !hidden {
+                    entries.extend(directive_entries);
                 }
                 continue;
             }
@@ -2438,6 +2643,123 @@ fn scan_include_entries(source: &str) -> Vec<String> {
         })
         .filter(|s| !s.is_empty())
         .collect()
+}
+
+fn expand_rst_includes(source: &str, base_dir: &Path, encoding: &str) -> String {
+    fn expand(source: &str, base_dir: &Path, encoding: &str, depth: usize) -> String {
+        if depth >= 16 {
+            return source.to_string();
+        }
+        let mut out = Vec::new();
+        let mut lines = source.lines().peekable();
+        while let Some(line) = lines.next() {
+            let trimmed = line.trim_start();
+            let Some(path) = trimmed.strip_prefix(".. include::").map(str::trim) else {
+                out.push(line.to_string());
+                continue;
+            };
+            if path.is_empty() {
+                out.push(line.to_string());
+                continue;
+            }
+            let include_path = base_dir.join(path);
+            let Ok(included) = read_source_file(&include_path, encoding) else {
+                out.push(line.to_string());
+                continue;
+            };
+            let indent = &line[..line.len() - trimmed.len()];
+            let expanded = expand(
+                &included,
+                include_path.parent().unwrap_or(base_dir),
+                encoding,
+                depth + 1,
+            );
+            for included_line in expanded.lines() {
+                if included_line.is_empty() {
+                    out.push(String::new());
+                } else {
+                    out.push(format!("{indent}{included_line}"));
+                }
+            }
+            if expanded.is_empty() && lines.peek().is_none() {
+                out.push(String::new());
+            }
+        }
+        out.join("\n")
+    }
+
+    expand(source, base_dir, encoding, 0)
+}
+
+fn apply_module_section_ids(tree: &mut Doctree, source: &str) {
+    let noindex_modules = source
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let trimmed = line.trim_start();
+            let name = trimmed
+                .strip_prefix(".. module::")
+                .or_else(|| trimmed.strip_prefix(".. py:module::"))?
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                return None;
+            }
+            let noindex = source
+                .lines()
+                .skip(index + 1)
+                .take_while(|option| option.trim().is_empty() || option.starts_with(' '))
+                .any(|option| option.trim() == ":noindex:");
+            noindex.then_some(name)
+        })
+        .collect::<HashSet<_>>();
+
+    fn module_name(tree: &Doctree, id: NodeId) -> Option<String> {
+        match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, sig_text, .. }
+                if classes.split_whitespace().any(|class| class == "module") => sig_text
+                    .split_once(' ')
+                    .map(|(_, name)| name.trim().to_string())
+                    .filter(|name| !name.is_empty()),
+            _ => None,
+        }
+    }
+
+    fn visit(
+        tree: &mut Doctree,
+        parent: NodeId,
+        active_module: Option<String>,
+        noindex_modules: &HashSet<String>,
+    ) {
+        let children = tree.node(parent).children.clone();
+        let mut active_module = active_module;
+        for child in children {
+            if matches!(tree.node(child).kind, NodeKind::Section { .. }) {
+                if let Some(module) = &active_module {
+                    if let NodeKind::Section { ids, .. } = &mut tree.node_mut(child).kind {
+                        *ids = format!("module-{module}");
+                    }
+                }
+                if let Some(module) = tree.node(child).children.iter().find_map(|&id| {
+                    module_name(tree, id).filter(|name| !noindex_modules.contains(name))
+                }) {
+                    if let NodeKind::Section { ids, .. } = &mut tree.node_mut(child).kind {
+                        *ids = format!("module-{module}");
+                    }
+                }
+                visit(tree, child, None, noindex_modules);
+                active_module = None;
+            } else if let Some(module) = module_name(tree, child) {
+                if !noindex_modules.contains(&module) {
+                    active_module = Some(module);
+                }
+            } else {
+                active_module = None;
+            }
+        }
+    }
+
+    visit(tree, tree.root(), None, &noindex_modules);
 }
 
 // ── inline tests ──────────────────────────────────────────────────────────────
@@ -2463,6 +2785,28 @@ mod tests {
     fn new_env_all_docs_empty() {
         let env = make_env();
         assert!(env.all_docs.is_empty());
+    }
+
+    #[test]
+    fn module_directive_assigns_following_section_anchor() {
+        let env = make_env();
+        let tree = env
+            .parse_source(
+                "sandbox",
+                ".. module:: jinja2.seccomp\n\nSeccomp Filtering API\n~~~~~~~~~~~~~~~~~~~~~\n",
+            )
+            .unwrap();
+        let section = tree
+            .node(tree.root())
+            .children
+            .iter()
+            .find(|&&id| matches!(tree.node(id).kind, NodeKind::Section { .. }))
+            .copied()
+            .expect("section node");
+        assert!(matches!(
+            tree.node(section).kind,
+            NodeKind::Section { ref ids, .. } if ids == "module-jinja2.seccomp"
+        ));
     }
 
     #[test]
@@ -3290,7 +3634,7 @@ mod tests {
 
         env.resolve_toctree_nodes(&mut tree, "index");
         assert!(matches!(tree.node(visible).kind, NodeKind::Container { .. }));
-        assert!(tree.node(visible).children.iter().any(|id| matches!(tree.node(*id).kind, NodeKind::Paragraph)));
+        assert!(tree.node(visible).children.iter().any(|id| matches!(tree.node(*id).kind, NodeKind::Caption)));
         assert!(tree.node(visible).children.iter().any(|id| matches!(tree.node(*id).kind, NodeKind::BulletList { .. })));
         assert!(matches!(tree.node(shallow).kind, NodeKind::Container { .. }));
         assert!(matches!(tree.node(hidden).kind, NodeKind::Comment));
@@ -3601,6 +3945,12 @@ options:
     fn scan_toctree_entries_stops_at_dedented_line() {
         let source = ".. toctree::\n\n   guide\n\nnot-an-entry\n";
         assert_eq!(scan_toctree_entries(source), vec!["guide"]);
+    }
+
+    #[test]
+    fn scan_toctree_entries_omits_hidden_entries() {
+        let source = ".. toctree::\n   visible\n\n.. toctree::\n   :hidden:\n\n   hidden\n";
+        assert_eq!(scan_toctree_entries(source), vec!["visible"]);
     }
 
     #[test]

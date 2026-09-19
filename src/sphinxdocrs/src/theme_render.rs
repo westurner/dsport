@@ -738,7 +738,25 @@ fn local_toc_from_doctree(
                 docutilsrs::doctree::NodeKind::Document { title, .. } => title.as_str(),
                 _ => "",
             };
-            sections(tree, tree.root(), docname, 0, document_title)
+            let mut entries = sections(tree, tree.root(), docname, 0, document_title);
+            let hidden_root = tree
+                .node(tree.root())
+                .children
+                .iter()
+                .find_map(|&id| match &tree.node(id).kind {
+                    docutilsrs::doctree::NodeKind::Section { classes, .. } => {
+                        Some(classes.split_whitespace().any(|class| class == "hide-header"))
+                    }
+                    _ => None,
+                })
+                .unwrap_or(false);
+            if hidden_root {
+                if !entries.is_empty() {
+                    let root_entry = entries.remove(0);
+                    entries = root_entry.children;
+                }
+            }
+            entries
         })
         .unwrap_or_default()
 }
@@ -961,7 +979,12 @@ impl ThemeRenderer {
 
         let jinja_env = Environment::with_loader_paths(loader_chain);
 
-        let all_docs: HashSet<String> = all_docs.into_iter().cloned().collect();
+        let mut all_docs: HashSet<String> = all_docs.into_iter().cloned().collect();
+        if env.config.html_domain_indices()
+            && !crate::genindex::build_modindex(env).is_empty()
+        {
+            all_docs.insert("py-modindex".to_string());
+        }
         let toc_entries = toctree::global_toctree_for_doc(env, 0);
         let root_doc = env.config.root_doc();
         let mut toc_groups = global_toc_groups(env, &root_doc).unwrap_or_else(|| {
@@ -1035,9 +1058,17 @@ impl ThemeRenderer {
             &toc_entries,
             path_style,
         );
-        let default_metatags = r#"<meta name="viewport" content="width=device-width, initial-scale=1" />
+        let default_metatags = if matches!(theme_name.as_str(), "alabaster" | "sphinx13") {
+            r#"<meta name="viewport" content="width=device-width, initial-scale=1" />
 "#
-            .into();
+        } else if theme_name == "jinja" {
+            ""
+        } else {
+            r#"
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+    "#
+        }
+        .into();
 
         Some(Self {
             env: jinja_env,
@@ -1449,7 +1480,8 @@ fn build_global_context(
     );
     ctx.insert("favicon_url".into(), favicon.into());
 
-    // rellinks: genindex only (domain indices aren't modeled here).
+    // rellinks: advertise generated index pages just as the standard domain
+    // does, including the Python module index when it has entries.
     let mut rellinks: Vec<serde_json::Value> = Vec::new();
     if config.html_use_index() {
         rellinks.push(serde_json::json!([
@@ -1457,6 +1489,14 @@ fn build_global_context(
             "General Index",
             "I",
             "index"
+        ]));
+    }
+    if config.html_domain_indices() && !crate::genindex::build_modindex(env).is_empty() {
+        rellinks.push(serde_json::json!([
+            "py-modindex",
+            "Python Module Index",
+            "",
+            "modules"
         ]));
     }
     ctx.insert("rellinks".into(), rellinks.into());

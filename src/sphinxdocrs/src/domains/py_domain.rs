@@ -154,6 +154,22 @@ impl PyDomain {
             let anchor = format!("py-{objtype}-{}", normalize_id(&fullname));
             self.note_object(objtype, fullname, docname, anchor, signature);
         }
+        for line in source.lines() {
+            let name = line
+                .trim_start()
+                .strip_prefix(".. module::")
+                .map(str::trim)
+                .filter(|name| !name.is_empty());
+            if let Some(name) = name {
+                self.note_object(
+                    "module",
+                    name,
+                    docname,
+                    format!("module-{name}"),
+                    String::new(),
+                );
+            }
+        }
     }
 
     /// Look up `target` under one of `objtypes`, trying an exact match

@@ -1017,13 +1017,14 @@ fn copy_image_assets(
                 destination.display()
             ))
         })?;
-        let (alt, width, height) = match &tree.node(id).kind {
+        let (alt, width, height, classes) = match &tree.node(id).kind {
             NodeKind::Image {
                 alt,
                 width,
                 height,
+                classes,
                 ..
-            } => (alt.clone(), width.clone(), height.clone()),
+            } => (alt.clone(), width.clone(), height.clone(), classes.clone()),
             _ => continue,
         };
         tree.node_mut(id).kind = NodeKind::Image {
@@ -1031,6 +1032,7 @@ fn copy_image_assets(
             alt,
             width,
             height,
+            classes,
         };
     }
     Ok(())

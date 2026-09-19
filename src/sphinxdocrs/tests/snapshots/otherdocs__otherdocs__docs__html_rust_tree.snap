@@ -21,9 +21,10 @@ expression: rs_tree.clone()
 - _static/pygments.css
 - _static/searchtools.js
 - _static/sphinx_highlight.js
-- _static/sphinxdocrs.css
+- _static/webmcp.js
 - genindex.html
 - index.html
 - objects.inv
 - search.html
 - searchindex.js
+- webmcp.json

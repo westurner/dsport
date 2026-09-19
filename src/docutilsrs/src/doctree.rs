@@ -269,6 +269,7 @@ pub enum NodeKind {
         alt: Option<String>,
         width: Option<String>,
         height: Option<String>,
+        classes: String,
     },
     Figure {
         ids: String,
@@ -747,6 +748,8 @@ enum NodeKindData {
         alt: Option<String>,
         width: Option<String>,
         height: Option<String>,
+        #[serde(default)]
+        classes: String,
     },
     Figure {
         #[serde(default)]
@@ -987,11 +990,13 @@ impl From<&NodeKind> for NodeKindData {
                 alt,
                 width,
                 height,
+                classes,
             } => NodeKindData::Image {
                 uri,
                 alt,
                 width,
                 height,
+                classes,
             },
             NodeKind::Raw { format } => NodeKindData::Raw { format },
             NodeKind::Comment => NodeKindData::Comment,
@@ -1210,11 +1215,13 @@ impl From<NodeKindData> for NodeKind {
                 alt,
                 width,
                 height,
+                classes,
             } => NodeKind::Image {
                 uri,
                 alt,
                 width,
                 height,
+                classes,
             },
             NodeKindData::Raw { format } => NodeKind::Raw { format },
             NodeKindData::Comment => NodeKind::Comment,

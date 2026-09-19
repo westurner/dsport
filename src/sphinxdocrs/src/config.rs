@@ -898,6 +898,24 @@ impl SphinxConfig {
             Gettext,
             "Allow fuzzy gettext",
         );
+        add(
+            "gettext_compact",
+            Bool(true),
+            Gettext,
+            "Compact gettext catalog domains",
+        );
+        add(
+            "gettext_location",
+            Bool(true),
+            Gettext,
+            "Include gettext source locations",
+        );
+        add(
+            "gettext_uuid",
+            Bool(false),
+            Gettext,
+            "Include gettext message UUIDs",
+        );
         add("master_doc", Str("index".into()), Env, "Master document");
         add(
             "root_doc",

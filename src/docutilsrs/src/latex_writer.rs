@@ -33,10 +33,27 @@ pub fn latex(
             out.push_str("\\maketitle\n");
         }
     }
+    out.push_str(&latex_body(tree, _options, _common));
+    out.push_str("\\end{document}\n");
+    out
+}
+
+/// Render the body of a LaTeX document without its preamble or root title.
+///
+/// Sphinx's project-oriented LaTeX builder assembles several source
+/// documents into one master file. Keeping this body operation separate from
+/// [`latex`] lets that builder reuse the writer without nesting complete
+/// LaTeX documents or repeating `\\title`/`\\maketitle` blocks.
+pub fn latex_body(
+    tree: &Doctree,
+    _options: &crate::cli::LatexOptions,
+    _common: &crate::cli::CommonOptions,
+) -> String {
+    let mut out = String::new();
+    let root = tree.root();
     for &c in &tree.node(root).children {
         emit(tree, c, 0, &mut out);
     }
-    out.push_str("\\end{document}\n");
     out
 }
 

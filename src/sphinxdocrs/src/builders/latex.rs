@@ -217,7 +217,7 @@ impl LatexBuilder {
         )
     }
 
-    fn configured_documents(env: &BuildEnvironment) -> Option<Vec<(String, String)>> {
+    fn configured_documents(env: &BuildEnvironment) -> Option<Vec<(String, String, String, String, String)>> {
         let Some(ConfigVal::List(entries)) = env.config.get("latex_documents") else {
             return None;
         };
@@ -231,18 +231,46 @@ impl LatexBuilder {
                     Some((
                         fields.first()?.as_str()?.to_owned(),
                         fields.get(1)?.as_str()?.to_owned(),
+                        fields.get(2)?.as_str()?.to_owned(),
+                        fields.get(3)?.as_str()?.to_owned(),
+                        fields.get(4)?.as_str()?.to_owned(),
                     ))
                 })
                 .collect(),
         )
     }
 
-    fn render_document(
+    fn configure_master(body: &str, title: &str, author: &str, documentclass: &str) -> String {
+        let class = match documentclass {
+            "manual" => "sphinxmanual",
+            "howto" => "sphinxhowto",
+            other if !other.is_empty() => other,
+            _ => "article",
+        };
+        format!(
+            "\\documentclass{{{class}}}\n\\usepackage[utf8]{{inputenc}}\n\\usepackage{{hyperref}}\n\\begin{{document}}\n\\title{{{}}}\n\\author{{{}}}\n\\maketitle\n{}\\end{{document}}\n",
+            escape_latex(title),
+            escape_latex(author),
+            body,
+        )
+    }
+
+    fn render_document_body(
         &self,
         srcdir: &Path,
         env: &BuildEnvironment,
         docname: &str,
     ) -> Result<String, BuildError> {
+        let tree = self.load_document(srcdir, env, docname)?;
+        Ok(docutilsrs::latex_body(&tree, &self.options, &self.common))
+    }
+
+    fn load_document(
+        &self,
+        srcdir: &Path,
+        env: &BuildEnvironment,
+        docname: &str,
+    ) -> Result<docutilsrs::Doctree, BuildError> {
         let tree = match env.get_and_resolve_doctree(docname) {
             Ok(tree) => tree,
             Err(_) => {
@@ -256,8 +284,52 @@ impl LatexBuilder {
                 docutilsrs::parse_rst_with_source(&source, docname)
             }
         };
-        Ok(latex(&tree, &self.options, &self.common))
+        Ok(tree)
     }
+
+    fn project_document_order(env: &BuildEnvironment, start: &str) -> Vec<String> {
+        let mut ordered = vec![start.to_string()];
+        let mut seen = std::collections::HashSet::from([start.to_string()]);
+        let found = env.found_docs();
+        fn append(
+            entries: &[crate::toctree::TocEntry],
+            found: &std::collections::HashSet<String>,
+            ordered: &mut Vec<String>,
+            seen: &mut std::collections::HashSet<String>,
+        ) {
+            for entry in entries {
+                if (found.is_empty() || found.contains(&entry.docname))
+                    && seen.insert(entry.docname.clone())
+                {
+                    ordered.push(entry.docname.clone());
+                }
+                append(&entry.children, found, ordered, seen);
+            }
+        }
+        let entries = crate::toctree::resolve(env, start, 0);
+        append(&entries, found, &mut ordered, &mut seen);
+        ordered
+    }
+}
+
+fn escape_latex(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\\' => escaped.push_str("\\textbackslash{}"),
+            '{' => escaped.push_str("\\{"),
+            '}' => escaped.push_str("\\}"),
+            '$' => escaped.push_str("\\$"),
+            '&' => escaped.push_str("\\&"),
+            '%' => escaped.push_str("\\%"),
+            '#' => escaped.push_str("\\#"),
+            '_' => escaped.push_str("\\_"),
+            '^' => escaped.push_str("\\textasciicircum{}"),
+            '~' => escaped.push_str("\\textasciitilde{}"),
+            _ => escaped.push(character),
+        }
+    }
+    escaped
 }
 
 impl Builder for LatexBuilder {
@@ -307,8 +379,15 @@ impl Builder for LatexBuilder {
         if let Some(configured) = Self::configured_documents(env) {
             Self::write_support_files(outdir)?;
             let mut result = BuildResult::default();
-            for (docname, targetname) in configured {
-                let output = self.render_document(srcdir, env, &docname)?;
+            for (docname, targetname, title, author, documentclass) in configured {
+                let mut body = self.render_document_body(srcdir, env, &docname)?;
+                for child in Self::project_document_order(env, &docname)
+                    .into_iter()
+                    .skip(1)
+                {
+                    body.push_str(&self.render_document_body(srcdir, env, &child)?);
+                }
+                let output = Self::configure_master(&body, &title, &author, &documentclass);
                 let rel: PathBuf = targetname
                     .split('/')
                     .collect::<PathBuf>()
@@ -322,7 +401,6 @@ impl Builder for LatexBuilder {
             }
             return Ok(result);
         }
-
         for docname in &docnames {
             // Use string append, not with_extension — the latter strips any
             // existing dot in the final component (e.g. "0.1" → "0.rst").

@@ -3,16 +3,16 @@
 //!
 //! Complements the inline `#[cfg(test)]` unit tests in
 //! `src/builders/gettext.rs` with a full `SphinxApp::build()` dispatch
-//! and a multi-document project producing a combined `.pot` catalog.
+//! and a multi-document project producing per-document `.pot` catalogs.
 
 use std::collections::HashMap;
 
 use tempfile::TempDir;
 
 use sphinxdocrs::application::SphinxApp;
-use sphinxdocrs::builders::Builder;
 use sphinxdocrs::builders::gettext::GettextBuilder;
-use sphinxdocrs::config::SphinxConfig;
+use sphinxdocrs::builders::Builder;
+use sphinxdocrs::config::{ConfigVal, SphinxConfig};
 use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 
 #[test]
@@ -24,7 +24,33 @@ fn builder_identity() {
 }
 
 #[test]
-fn build_all_over_a_multi_document_project_writes_one_combined_pot() {
+fn extracts_list_definition_field_and_image_messages() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "Title\n=====\n\n* List item.\n\nTerm\n  Definition text.\n\n:Field: Field value.\n\n.. image:: image.png\n   :alt: Image description.\n",
+    )
+    .unwrap();
+    let config = SphinxConfig::new_defaults();
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let env = BuildEnvironment::new(config, project, src.path(), out.path());
+
+    GettextBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+    let pot = std::fs::read_to_string(out.path().join("index.pot")).unwrap();
+    for message in ["List item.", "Field", "Field value.", "Image description."] {
+        assert!(
+            pot.contains(&format!("msgid \"{message}\"")),
+            "missing {message}"
+        );
+    }
+    assert!(pot.contains("msgid \"Term\\n  Definition text.\""));
+}
+
+#[test]
+fn build_all_over_a_multi_document_project_writes_per_document_pots() {
     let src = TempDir::new().unwrap();
     let out = TempDir::new().unwrap();
     std::fs::write(
@@ -46,24 +72,25 @@ fn build_all_over_a_multi_document_project_writes_one_combined_pot() {
         .unwrap();
     assert_eq!(result.written, 2);
 
-    let pot_path = out.path().join("sphinx.pot");
-    assert!(pot_path.exists());
-    let pot = std::fs::read_to_string(&pot_path).unwrap();
+    let index_pot = out.path().join("index.pot");
+    let about_pot = out.path().join("about.pot");
+    assert!(index_pot.exists());
+    assert!(about_pot.exists());
+    let index = std::fs::read_to_string(index_pot).unwrap();
+    let about = std::fs::read_to_string(about_pot).unwrap();
 
     // Standard .pot header.
-    assert!(pot.starts_with("# SOME DESCRIPTIVE TITLE."));
-    assert!(pot.contains("msgid \"\"\nmsgstr \"\""));
+    assert!(index.starts_with("# SOME DESCRIPTIVE TITLE."));
+    assert!(index.contains("msgid \"\"\nmsgstr \"\""));
 
-    // A message shared by both documents appears once, with both
-    // documents' location comments attached.
-    let shared_idx = pot.find("msgid \"A shared greeting.\"").unwrap();
-    let preceding = &pot[..shared_idx];
-    let last_locations_block = preceding.rsplit("\n\n").next().unwrap();
-    assert!(last_locations_block.contains("#: index"));
-    assert!(last_locations_block.contains("#: about"));
+    // A message shared by both documents appears in each document catalog.
+    assert!(index.contains("msgid \"A shared greeting.\""));
+    assert!(about.contains("msgid \"A shared greeting.\""));
+    assert!(index.contains("#: index"));
+    assert!(about.contains("#: about"));
 
     // A message unique to one document also appears.
-    assert!(pot.contains("msgid \"Something unique to About.\""));
+    assert!(about.contains("msgid \"Something unique to About.\""));
 }
 
 #[test]
@@ -87,6 +114,32 @@ fn sphinx_app_build_dispatches_to_gettext() {
     .unwrap();
     let result = app.build().unwrap();
     assert_eq!(result.written, 1);
-    let pot = std::fs::read_to_string(out.path().join("sphinx.pot")).unwrap();
+    let pot = std::fs::read_to_string(out.path().join("index.pot")).unwrap();
     assert!(pot.contains("msgid \"Hello there.\""));
+}
+
+#[test]
+fn compact_false_writes_nested_document_catalog_paths() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    std::fs::create_dir_all(src.path().join("guide")).unwrap();
+    std::fs::write(
+        src.path().join("guide").join("intro.rst"),
+        "Intro\n=====\n\nNested message.\n",
+    )
+    .unwrap();
+
+    let mut config = SphinxConfig::new_defaults();
+    config.set("gettext_compact", ConfigVal::Bool(false));
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let env = BuildEnvironment::new(config, project, src.path(), out.path());
+    GettextBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    let pot = out.path().join("guide").join("intro.pot");
+    assert!(pot.exists());
+    assert!(std::fs::read_to_string(pot)
+        .unwrap()
+        .contains("msgid \"Nested message.\""));
 }

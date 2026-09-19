@@ -401,8 +401,12 @@ fn build_html_multi_doc_project() {
 #[test]
 fn build_latex_honors_configured_project_output() {
     let src = make_src_with_docs(&[
-        ("index", "Project\n=======\n\nSee guide.\n"),
+        (
+            "index",
+            "Project\n=======\n\nSee guide.\n\n.. toctree::\n\n   guide\n   reference\n",
+        ),
         ("guide", "Guide\n=====\n\nDetails.\n"),
+        ("reference", "Reference\n=========\n\nAPI details.\n"),
     ]);
     std::fs::write(
         src.path().join("conf.py"),
@@ -422,6 +426,14 @@ fn build_latex_honors_configured_project_output() {
     assert!(out.path().join("make.bat").exists());
     assert!(out.path().join("latexmkrc").exists());
     assert!(out.path().join("sphinx.sty").exists());
+    let master = std::fs::read_to_string(out.path().join("project-manual.tex")).unwrap();
+    assert!(master.contains("Details."));
+    assert!(master.contains("API details."));
+    assert!(master.find("Details.").unwrap() < master.find("API details.").unwrap());
+    assert!(master.contains("\\documentclass{sphinxmanual}"));
+    assert!(master.contains("\\title{Project Manual}"));
+    assert!(master.contains("\\author{Author}"));
+    assert_eq!(master.matches("\\maketitle").count(), 1);
     let makefile = std::fs::read_to_string(out.path().join("Makefile")).unwrap();
     assert!(!makefile.contains("{%"));
     assert!(!out.path().join("index.tex").exists());

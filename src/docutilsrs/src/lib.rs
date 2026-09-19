@@ -26,7 +26,7 @@ pub mod zip_writer;
 pub use doctree::{Doctree, NodeAttributeValue, NodeKind};
 pub use encoding::{SourceDecodeError, decode_source, decode_source_auto};
 pub use html5_writer::html5;
-pub use latex_writer::latex;
+pub use latex_writer::{latex, latex_body};
 pub use manpage_writer::manpage;
 pub use odt_writer::odt;
 pub use parser::{TitlePromotion, parse_rst, parse_rst_with_options, parse_rst_with_source};

@@ -1,24 +1,12 @@
 //! `sphinxdocrs::builders::gettext` — Rust port of
 //! `sphinx.builders.gettext.MessageCatalogBuilder`.
 //!
-//! Walks each document's doctree, extracts translatable text from
-//! section/subsection titles and paragraphs (see the accepted deviation
-//! below for the node kinds *not* extracted), groups occurrences by
-//! message text, and writes a single GNU gettext `.pot` template.
+//! Walks each document's doctree, extracts translatable text, groups
+//! occurrences by message text, and writes GNU gettext `.pot` templates.
 //!
 //! **Accepted deviations:**
-//! - Only `Title`/`Subtitle`/`Paragraph` text is extracted. Upstream also
-//!   extracts list items, definition list terms/definitions, field
-//!   lists, table cells, and image `alt` text — a real
-//!   `docutilsrs::doctree::Node` line-number field would be needed to
-//!   emit upstream's `#: docname:linenum` location comments faithfully
-//!   for all of these; this cut covers the majority of real
-//!   documentation prose and is a bounded, testable first step.
 //! - Location comments are `#: docname` (no line number), since
 //!   `docutilsrs::doctree::Node` doesn't carry source line numbers.
-//! - `gettext_compact` (grouping into one `.pot` per top-level path
-//!   segment) is not honoured; this always writes a single combined
-//!   `sphinx.pot`.
 //! - No `gettext_uuid`/`gettext_location`/`gettext_auto_build` config
 //!   options are read.
 //!
@@ -29,7 +17,7 @@
 //! | `MessageCatalogBuilder.name` | `"gettext"` | constant |
 //! | `MessageCatalogBuilder.format` | `"gettext"` | constant |
 //! | `MessageCatalogBuilder.out_suffix` | `".pot"` | constant |
-//! | `MessageCatalogBuilder.build` (message extraction + `.pot` write) | [`GettextBuilder::build_all`] | one combined `sphinx.pot`, see deviations above |
+//! | `MessageCatalogBuilder.build` (message extraction + `.pot` write) | [`GettextBuilder::build_all`] | compact per-domain catalogs, without line numbers/UUIDs |
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -38,6 +26,7 @@ use docutilsrs::doctree::{Doctree, NodeId, NodeKind};
 use docutilsrs::parse_rst_with_source;
 
 use super::{BuildError, BuildResult, Builder};
+use crate::config::ConfigVal;
 use crate::environment::BuildEnvironment;
 
 /// Message-catalog (`.pot`) builder.
@@ -92,7 +81,7 @@ impl Builder for GettextBuilder {
 
         std::fs::create_dir_all(outdir)?;
 
-        let mut catalog: MessageCatalog = BTreeMap::new();
+        let mut catalogs: BTreeMap<String, MessageCatalog> = BTreeMap::new();
         for docname in &docnames {
             let tree = match env.get_and_resolve_doctree(docname) {
                 Ok(tree) => tree,
@@ -112,21 +101,38 @@ impl Builder for GettextBuilder {
                     parse_rst_with_source(&source, docname)
                 }
             };
-            extract_into(&tree, docname, &mut catalog);
+            let domain = gettext_domain(docname, env.config.get("gettext_compact").as_ref());
+            extract_into(&tree, docname, catalogs.entry(domain).or_default());
             result.written += 1;
         }
 
-        let pot = render_pot(
-            &catalog,
-            &env.config.project(),
-            &env.config.version(),
-            &env.config
-                .get("project_copyright")
-                .and_then(|v| v.as_str().map(String::from))
-                .unwrap_or_default(),
-        );
-        std::fs::write(outdir.join("sphinx.pot"), pot.as_bytes())?;
+        let copyright = env
+            .config
+            .get("project_copyright")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default();
+        for (domain, catalog) in catalogs {
+            let pot = render_pot(
+                &catalog,
+                &env.config.project(),
+                &env.config.version(),
+                &copyright,
+            );
+            let path = outdir.join(format!("{domain}.pot"));
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(path, pot.as_bytes())?;
+        }
         Ok(result)
+    }
+}
+
+fn gettext_domain(docname: &str, compact: Option<&ConfigVal>) -> String {
+    match compact {
+        Some(ConfigVal::Bool(false)) => docname.to_owned(),
+        Some(ConfigVal::Str(domain)) => domain.clone(),
+        _ => docname.split('/').next().unwrap_or(docname).to_owned(),
     }
 }
 
@@ -157,6 +163,15 @@ fn walk(tree: &Doctree, id: NodeId, out: &mut Vec<String>) {
             }
             // Titles/subtitles/paragraphs have no nested block content to
             // recurse into beyond inline markup already flattened above.
+        }
+        NodeKind::Term | NodeKind::Classifier | NodeKind::FieldName => {
+            let text = flatten_text(tree, id);
+            if !text.trim().is_empty() {
+                out.push(text);
+            }
+        }
+        NodeKind::Image { alt: Some(alt), .. } if !alt.trim().is_empty() => {
+            out.push(alt.clone());
         }
         _ => {
             for &child in &node.children {
@@ -305,11 +320,13 @@ mod tests {
             .build_all(src.path(), out.path(), &env)
             .unwrap();
         assert_eq!(result.written, 2);
-        let pot = std::fs::read_to_string(out.path().join("sphinx.pot")).unwrap();
-        assert!(pot.contains("msgid \"Shared greeting.\""));
-        assert!(pot.contains("msgid \"Unique about text.\""));
-        assert!(pot.contains("#: index"));
-        assert!(pot.contains("#: about"));
+        let index = std::fs::read_to_string(out.path().join("index.pot")).unwrap();
+        let about = std::fs::read_to_string(out.path().join("about.pot")).unwrap();
+        assert!(index.contains("msgid \"Shared greeting.\""));
+        assert!(about.contains("msgid \"Shared greeting.\""));
+        assert!(about.contains("msgid \"Unique about text.\""));
+        assert!(index.contains("#: index"));
+        assert!(about.contains("#: about"));
     }
 
     #[test]

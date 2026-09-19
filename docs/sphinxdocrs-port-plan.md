@@ -41,6 +41,13 @@ artifacts, plus two Sphinx/Jinja theme-content cases covering navigation
 attributes, image/reference fidelity, captions, and theme-specific assets. No
 external build failed to produce its expected HTML entry point.
 
+The latest focused H11.2 cycle adds singlehtml coverage for a titleless root
+document: the merged page now uses the intended `Contents` fallback instead of
+the synthetic `index` docname. Native HTML5 image serialization also preserves
+parsed `width` and `height` attributes. The aggregate LLVM percentages above
+remain the last measured values; these focused tests have not been folded into
+a new coverage report yet.
+
 ### Gap Clusters
 
 The current `grep -i 'deviation|gap|partial'` inventory groups into six
@@ -1531,6 +1538,12 @@ explicitly documented renderer/theme provenance deviations.
   standalone `.html` targets; merged fragment IDs and WebMCP manifest URLs now
   use the same `document-` anchor prefix, with focused unit, integration, and
   application coverage exercising the contract.
+- Corrected singlehtml's merged-page title selection to distinguish an actual
+  document title from the renderer's docname fallback. A titleless root now
+  reaches the existing `Contents` fallback, with an integration regression
+  covering the page title, merged document anchor, and body content.
+- Preserved parsed image `width` and `height` attributes in native HTML5
+  output, with a focused writer regression covering dimensioned images.
 - Corrected themed `toc` semantics to use only the current document's section
   headings, excluding document-level toctree children; section fragment links
   are preserved through flat and dirhtml target URI generation.

@@ -160,9 +160,9 @@ impl Builder for SinglehtmlBuilder {
                     parse_rst_with_source(&source, docname)
                 }
             };
-            let (title, body) = self.inner.render_fragment_from_tree(docname, &tree);
+            let (_title, body) = self.inner.render_fragment_from_tree(docname, &tree);
             if i == 0 {
-                combined_title = title;
+                combined_title = HtmlBuilder::document_title(&tree).unwrap_or_default();
             }
             sections.push(format!(
                 "<div id=\"document-{}\">\n{body}\n</div>",

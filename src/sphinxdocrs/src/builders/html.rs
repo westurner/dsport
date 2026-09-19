@@ -139,7 +139,7 @@ impl HtmlBuilder {
         (title, body)
     }
 
-    fn document_title(tree: &Doctree) -> Option<String> {
+    pub(crate) fn document_title(tree: &Doctree) -> Option<String> {
         let root = tree.root();
         if let NodeKind::Document { title, .. } = &tree.node(root).kind {
             if !title.is_empty() {

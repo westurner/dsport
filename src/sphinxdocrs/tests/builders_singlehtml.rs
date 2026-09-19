@@ -75,3 +75,29 @@ fn sphinx_app_build_dispatches_to_singlehtml() {
     assert!(out.path().join("index.html").exists());
     assert!(!out.path().join("about.html").exists());
 }
+
+#[test]
+fn titleless_first_document_uses_contents_fallback() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    std::fs::write(src.path().join("index.rst"), "Homepage content only.\n").unwrap();
+
+    let mut app = SphinxApp::new(
+        src.path(),
+        out.path(),
+        doctrees.path(),
+        "singlehtml",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.build().unwrap();
+
+    let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+    assert!(
+        html.contains("<title>Contents &#8212; Project name not set</title>"),
+        "{html}"
+    );
+    assert!(html.contains("id=\"document-index\""), "{html}");
+    assert!(html.contains("Homepage content only."), "{html}");
+}

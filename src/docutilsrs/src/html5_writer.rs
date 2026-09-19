@@ -319,10 +319,21 @@ fn emit_enter(
             // `BuildEnvironment::resolve_toctree_nodes`). Renders nothing
             // here, matching a `:hidden:` toctree's real behavior.
         }
-        NodeKind::Image { uri, alt, .. } => {
+        NodeKind::Image {
+            uri,
+            alt,
+            width,
+            height,
+        } => {
             let _ = write!(out, "<img src=\"{}\"", escape(uri));
             if let Some(a) = alt {
                 let _ = write!(out, " alt=\"{}\"", escape(a));
+            }
+            if let Some(width) = width {
+                let _ = write!(out, " width=\"{}\"", escape(width));
+            }
+            if let Some(height) = height {
+                let _ = write!(out, " height=\"{}\"", escape(height));
             }
             out.push_str("/>");
         }

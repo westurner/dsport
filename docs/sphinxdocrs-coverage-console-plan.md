@@ -79,6 +79,13 @@ by `src/sphinxdocrs/tests/`.
   - The aggregate totals remain 77.89% library-only branches (565/2555
     missed) and 78.87% all-target branches (600/2839 missed); the
     `builders/singlehtml.rs` row remains 4/16 missed (75.00%).
+- Measured on 2026-09-19 (H11.2 focused follow-up):
+  - The singlehtml integration target passes its three tests, including the
+    titleless-root `Contents` fallback and merged document anchor contract.
+  - The Docutils HTML5 coverage target passes its two tests, including image
+    dimension serialization. These focused additions are not represented in a
+    refreshed LLVM aggregate, so the percentages and branch-map counts above
+    remain unchanged pending the next full measurement.
 
 Coverage scope note: `cargo +nightly llvm-cov ... --lib` does not execute
 `src/sphinxdocrs/tests/*.rs` integration-test binaries. Use the all-targets
@@ -429,7 +436,7 @@ execution order. `missed/total` is authoritative; percentages are rounded.
 | `autogen/scan.rs` | 4/26 | 85% | autosummary/apidoc tests |
 | `build/logging.rs` | 0/18 | 100% | `test_util/test_util_logging.py`, `test_build_warnings.py` (updated 2026-09-19: covered prefix preservation, explicit color, suppression, and warning-file failure) |
 | `builders/gettext.rs` | 4/14 | 71% | `test_builders/test_build_gettext.py` (updated 2026-09-19: added per-document catalogs, compact-domain handling, nested output paths, and list/field/definition/image-alt extraction coverage) |
-| `builders/singlehtml.rs` | 4/16 | 75% | `test_builders/test_build_html*.py` (updated 2026-09-19: aligned known-document targets, merged anchors, and WebMCP URLs with `#document-{docname}`) |
+| `builders/singlehtml.rs` | 4/16 | 75% | `test_builders/test_build_html*.py` (updated 2026-09-19: aligned known-document targets, merged anchors, and WebMCP URLs with `#document-{docname}`; focused follow-up covers titleless-root `Contents` fallback) |
 | `cli/io.rs` | 4/8 | 50% | `test_command_line.py` |
 | `domains/py_domain.rs` | 4/12 | 67% | `test_domains/test_domain_py*.py` |
 | `domains/std_domain.rs` | 4/12 | 67% | `test_domains/test_domain_std.py` |

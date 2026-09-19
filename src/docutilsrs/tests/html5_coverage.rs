@@ -11,3 +11,21 @@ fn test_html5_coverage() {
     let html = html5(&tree, &options, &common_opts);
     assert!(!html.is_empty());
 }
+
+#[test]
+fn image_dimensions_are_preserved_in_html5_output() {
+    let tree = docutilsrs::parse_rst(
+        ".. image:: diagram.svg\n   :alt: Diagram\n   :width: 320px\n   :height: 180px\n",
+    );
+    let html = html5(
+        &tree,
+        &Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
+    assert!(
+        html.contains(
+            "<img src=\"diagram.svg\" alt=\"Diagram\" width=\"320px\" height=\"180px\"/>"
+        ),
+        "{html}"
+    );
+}

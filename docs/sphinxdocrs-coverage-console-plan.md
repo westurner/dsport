@@ -422,7 +422,7 @@ execution order. `missed/total` is authoritative; percentages are rounded.
 | `util_console.rs` | 6/28 | 79% | `test__cli/test__cli_util_errors.py`, `test_util_display.py` (updated 2026-09-19: covered all named colors, environment aliases, and the Python registration surface; remaining edges are short-circuit branches attributed to already-covered lines) |
 | `autogen/generate.rs` | 6/26 | 77% | autosummary/apidoc tests |
 | `build/native_runner.rs` | 6/10 | 40% | `test_command_line.py`, build lifecycle tests |
-| `builders/changes.rs` | 6/20 | 70% | `test_builders/test_build_changes.py` |
+| `builders/changes.rs` | 6/20 | 70% | `test_builders/test_build_changes.py` (updated: verified upstream-shaped `index.html` frameset, `changes.html` report, highlighted per-source pages, source anchors, and CSS support assets) |
 | `extensions/webmcp.rs` | 6/10 | 40% | native WebMCP contract tests |
 | `util_docstrings.rs` | 5/32 | 84% | `test_util/test_util_docstrings.py` |
 | `util_rst.rs` | 5/18 | 72% | `test_util/test_util_rst.py` |

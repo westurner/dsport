@@ -1663,6 +1663,14 @@ image-alt messages. Source comments remain document-only because the doctree
 does not yet retain line numbers; UUID/location configuration and the
 project-level changes report remain pending.
 
+Verified changes slice: `ChangesBuilder` now emits the upstream-shaped
+`index.html` frameset, `changes.html` report, highlighted
+`rst/<docname>.html` source pages, and `default.css`/`basic.css` support
+files. Multi-document fixtures verify version ordering, source links, and
+source-line anchors. Classification into library/C API/other groups remains
+deferred because the current text scanner does not retain structured
+changeset metadata.
+
 For gettext, separate extraction from catalog serialization:
 
 - emit per-document `.pot` files by default, matching upstream;
@@ -1750,14 +1758,20 @@ cannot be represented by the native environment model.
   context includes upstream version tuples, styles, asset lists, and resolved
   theme options. The established public `GlobalContext.titles` field remains
   serialized for Rust consumers.
+- Threaded the resolved theme context through page, search, and global JSON
+  artifacts, including theme-declared sidebars, configured `html_context` and
+  `html_theme_options`, and `alabaster_version_info` when the active theme
+  provides `alabaster_version`. Focused tests now assert page/search sidebar
+  agreement and the version metadata shape.
 - Added JSON asset staging and builder-aware `documentation_options.js`
   metadata, including `.fjson`/`.html` suffixes and Sphinx-compatible script
   ordering. `environment.pickle` versus `environment.json` remains the
   explicit H8b deviation.
 - Remaining H11.6 differences are limited to native HTML fragment/TOC
-  rendering, exact theme provenance fields for external themes, and
-  search-index serialized ordering/term representation; the required JSON
-  artifact set is now present and structurally parseable.
+  rendering, resolved parent chains for nested toctrees, exact theme
+  provenance fields for external themes, and search-index serialized
+  ordering/term representation; the required JSON artifact set is now
+  present and structurally parseable.
 
 The six real external-document failures are represented by focused Rust tests
 in `tests/builders.rs`, `tests/toctree.rs`, and `tests/events_app.rs`. The

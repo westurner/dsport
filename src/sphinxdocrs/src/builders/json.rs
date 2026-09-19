@@ -20,8 +20,10 @@
 //! | `SerializingHTMLBuilder.handle_finish` | [`JsonBuilder::build_all`] | write `globalcontext.json` after all pages |
 //! | `conf.py` `source_suffix` (list/dict) | [`JsonBuilder::source_suffixes`] | multiple extensions; mirrors Sphinx multi-suffix discovery |
 //!
-//! **Deferred**: Jinja2 templates, TOC tree, search index, CSS/JS assets,
-//! image handling, domain indices, i18n, `_sources` copy.
+//! **Deferred**: full Jinja2 page templates, resolved hierarchical TOC tree,
+//! image handling, domain indices, i18n, and `_sources` copy. Search/index
+//! artifacts, CSS/JS assets, and auxiliary JSON files are emitted by
+//! [`JsonBuilder::build_all`].
 //!
 //! ## Multi-format projects
 //!
@@ -43,7 +45,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use docutilsrs::cli::{CommonOptions, Html5Options};
-use docutilsrs::{TitlePromotion, html5, parse_rst_with_options};
+use docutilsrs::{html5, parse_rst_with_options, TitlePromotion};
 use serde::{Deserialize, Serialize};
 
 use super::{BuildError, BuildResult, Builder};
@@ -253,6 +255,7 @@ impl JsonBuilder {
         outdir: &Path,
         env: &BuildEnvironment,
         titles: HashMap<String, String>,
+        theme_context: &serde_json::Map<String, serde_json::Value>,
     ) -> Result<(), BuildError> {
         let ctx = GlobalContext {
             project: env.config.project(),
@@ -334,15 +337,8 @@ impl JsonBuilder {
                     serde_json::json!([])
                 },
             );
-            if let Some((_, theme_options, _, _)) = crate::theme_static::resolve_theme_templates(
-                &env.config.html_theme(),
-                &env.srcdir,
-                &env.config.html_theme_path(),
-                env.config.registered_themes(),
-            ) {
-                for (key, option) in theme_options {
-                    fields.insert(key, option.into());
-                }
+            for (key, option) in theme_context {
+                fields.insert(key.clone(), option.clone());
             }
             fields.insert("theme_nosidebar".into(), "false".into());
         }
@@ -548,14 +544,21 @@ impl Builder for JsonBuilder {
         }
 
         let navigation_docs = navigation_docnames(env, &docs);
+        let (theme_context, sidebars) = theme_context(env);
         for (index, (docname, suffix)) in docs.iter().enumerate() {
             let source = &sources[index];
-            let extra = page_context_extras(docname, &navigation_docs, &titles);
+            let extra = page_context_extras(
+                docname,
+                &navigation_docs,
+                &titles,
+                &theme_context,
+                &sidebars,
+            );
             self.write_page(docname, source, outdir, suffix, &env.config, &extra)?;
             result.written += 1;
         }
 
-        self.write_globalcontext(outdir, env, titles)?;
+        self.write_globalcontext(outdir, env, titles, &theme_context)?;
 
         let docnames: Vec<String> = docs.iter().map(|(name, _)| name.clone()).collect();
         if let Err(error) =
@@ -566,7 +569,7 @@ impl Builder for JsonBuilder {
             )));
         }
         write_json_inventory(env, outdir, &docnames)?;
-        write_search_page(outdir)?;
+        write_search_page(outdir, &theme_context, &sidebars)?;
         std::fs::File::create(outdir.join("last_build"))?;
         Ok(result)
     }
@@ -576,6 +579,8 @@ fn page_context_extras(
     docname: &str,
     docnames: &[String],
     titles: &HashMap<String, String>,
+    theme_context: &serde_json::Map<String, serde_json::Value>,
+    sidebars: &[String],
 ) -> serde_json::Map<String, serde_json::Value> {
     let related = |name: &str| {
         serde_json::json!({
@@ -591,15 +596,7 @@ fn page_context_extras(
     );
     extra.insert("has_maths_elements".into(), false.into());
     extra.insert("rellinks".into(), serde_json::json!([]));
-    extra.insert(
-        "sidebars".into(),
-        serde_json::json!([
-            "localtoc.html",
-            "relations.html",
-            "sourcelink.html",
-            "searchbox.html"
-        ]),
-    );
+    extra.insert("sidebars".into(), serde_json::json!(sidebars));
     let index = docnames.iter().position(|name| name == docname);
     let mut rellinks = Vec::new();
     if let Some(index) = index {
@@ -635,7 +632,76 @@ fn page_context_extras(
             .and_then(|i| docnames.get(i + 1))
             .map_or(serde_json::Value::Null, |name| related(name)),
     );
+    for (key, value) in theme_context {
+        extra.insert(key.clone(), value.clone());
+    }
     extra
+}
+
+fn theme_context(
+    env: &BuildEnvironment,
+) -> (serde_json::Map<String, serde_json::Value>, Vec<String>) {
+    let mut context = serde_json::Map::new();
+    let mut sidebars = vec![
+        "localtoc.html".to_string(),
+        "relations.html".to_string(),
+        "sourcelink.html".to_string(),
+        "searchbox.html".to_string(),
+    ];
+
+    if let Some((_, options, resolved_sidebars, _)) = crate::theme_static::resolve_theme_templates(
+        &env.config.html_theme(),
+        &env.srcdir,
+        &env.config.html_theme_path(),
+        env.config.registered_themes(),
+    ) {
+        for (key, value) in options {
+            context.insert(key, value.into());
+        }
+        if !resolved_sidebars.is_empty() {
+            sidebars = resolved_sidebars;
+        }
+    }
+
+    for (key, value) in env.config.html_theme_options() {
+        context.insert(format!("theme_{key}"), config_val_to_json(&value));
+    }
+    for (key, value) in env.config.html_context() {
+        context.insert(key, config_val_to_json(&value));
+    }
+
+    if let Some(version) = context
+        .get("alabaster_version")
+        .and_then(serde_json::Value::as_str)
+    {
+        let parts = version
+            .split('.')
+            .take(3)
+            .filter_map(|part| part.parse::<u64>().ok())
+            .collect::<Vec<_>>();
+        if parts.len() == 3 {
+            context.insert("alabaster_version_info".into(), serde_json::json!(parts));
+        }
+    }
+
+    (context, sidebars)
+}
+
+fn config_val_to_json(value: &crate::config::ConfigVal) -> serde_json::Value {
+    use crate::config::ConfigVal;
+
+    match value {
+        ConfigVal::Null => serde_json::Value::Null,
+        ConfigVal::Bool(value) => (*value).into(),
+        ConfigVal::Int(value) => (*value).into(),
+        ConfigVal::Float(value) => (*value).into(),
+        ConfigVal::Str(value) => value.clone().into(),
+        ConfigVal::List(values) => values.iter().map(config_val_to_json).collect(),
+        ConfigVal::Map(values) => values
+            .iter()
+            .map(|(key, value)| (key.clone(), config_val_to_json(value)))
+            .collect(),
+    }
 }
 
 fn navigation_docnames(env: &BuildEnvironment, docs: &[(String, String)]) -> Vec<String> {
@@ -749,11 +815,19 @@ fn write_json_inventory(
     Ok(())
 }
 
-fn write_search_page(outdir: &Path) -> Result<(), BuildError> {
+fn write_search_page(
+    outdir: &Path,
+    theme_context: &serde_json::Map<String, serde_json::Value>,
+    sidebars: &[String],
+) -> Result<(), BuildError> {
     let context = serde_json::json!({
         "current_page_name": "search",
-        "sidebars": ["localtoc.html", "relations.html", "sourcelink.html", "searchbox.html"]
+        "sidebars": sidebars,
     });
+    let mut context = context.as_object().cloned().unwrap_or_default();
+    for (key, value) in theme_context {
+        context.insert(key.clone(), value.clone());
+    }
     let file = std::fs::File::create(outdir.join("search.fjson"))?;
     to_py_json_writer(file, &context)
         .map_err(|e| BuildError::Other(format!("search page serialization failed: {e}")))?;
@@ -1101,10 +1175,7 @@ mod tests {
 
     // ── build_all integration ─────────────────────────────────────────────────
 
-    fn make_env(
-        src: &Path,
-        out: &Path,
-    ) -> crate::environment::BuildEnvironment {
+    fn make_env(src: &Path, out: &Path) -> crate::environment::BuildEnvironment {
         let config = crate::config::SphinxConfig::new_defaults();
         let project = crate::environment::EnvProject::new(src, &[(".rst", "restructuredtext")]);
         crate::environment::BuildEnvironment::new(config, project, src, out)
@@ -1150,6 +1221,18 @@ mod tests {
         assert!(index["prev"].is_null());
         assert_eq!(index["next"]["link"], "about/");
         assert_eq!(index["next"]["title"], "About");
+        assert!(index["sidebars"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()));
+        if let Some(version) = index.get("alabaster_version") {
+            assert!(version.is_string());
+            assert!(index["alabaster_version_info"].is_array());
+        }
+
+        let search_raw = std::fs::read_to_string(out.path().join("search.fjson")).unwrap();
+        let search: serde_json::Value = serde_json::from_str(&search_raw).unwrap();
+        assert_eq!(search["current_page_name"], "search");
+        assert_eq!(search["sidebars"], index["sidebars"]);
     }
 
     #[test]
@@ -1157,7 +1240,11 @@ mod tests {
         let src = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
         write_file(src.path(), "index.rst", "Welcome\n=======\n\nHomepage.\n");
-        write_file(src.path(), "unused.rst", "Unused\n======\n\nNot referenced.\n");
+        write_file(
+            src.path(),
+            "unused.rst",
+            "Unused\n======\n\nNot referenced.\n",
+        );
         let mut env = make_env(src.path(), out.path());
         env.all_docs.insert("index".to_string(), 0);
 
@@ -1184,7 +1271,8 @@ mod tests {
             crate::config::ConfigVal::Str("2.0".into()),
         );
         let config = crate::config::SphinxConfig::new(raw, HashMap::new());
-        let project = crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
         let env =
             crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
 
@@ -1325,7 +1413,10 @@ mod tests {
             ("index".to_string(), ".rst".to_string()),
             ("alpha".to_string(), ".rst".to_string()),
         ];
-        assert_eq!(navigation_docnames(&env, &docs), vec!["index", "alpha", "zeta"]);
+        assert_eq!(
+            navigation_docnames(&env, &docs),
+            vec!["index", "alpha", "zeta"]
+        );
     }
 
     #[test]
@@ -1355,7 +1446,12 @@ mod tests {
     fn collect_sources_returns_early_when_dir_unreadable() {
         let tmp = TempDir::new().unwrap();
         let mut out = Vec::new();
-        collect_sources(tmp.path(), &tmp.path().join("does-not-exist"), &[".rst"], &mut out);
+        collect_sources(
+            tmp.path(),
+            &tmp.path().join("does-not-exist"),
+            &[".rst"],
+            &mut out,
+        );
         assert!(out.is_empty());
     }
 

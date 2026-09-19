@@ -46,16 +46,23 @@ fn build_all_over_a_multi_document_project_groups_by_version() {
         .unwrap();
     assert_eq!(result.written, 2);
 
-    let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+    let html = std::fs::read_to_string(out.path().join("changes.html")).unwrap();
     assert!(html.contains("The initial release."));
     assert!(html.contains("Renamed a parameter."));
     assert!(html.contains("Use the new API instead."));
     // Newest version first.
-    let pos_2_0 = html.find("Changes in version 2.0").unwrap();
-    let pos_1_1 = html.find("Changes in version 1.1").unwrap();
-    let pos_1_0 = html.find("Changes in version 1.0").unwrap();
+    let pos_2_0 = html.find("version 2.0").unwrap();
+    let pos_1_1 = html.find("version 1.1").unwrap();
+    let pos_1_0 = html.find("version 1.0").unwrap();
     assert!(pos_2_0 < pos_1_1);
     assert!(pos_1_1 < pos_1_0);
+    assert!(out.path().join("rst/index.html").is_file());
+    assert!(out.path().join("rst/api.html").is_file());
+    assert!(out.path().join("default.css").is_file());
+    assert!(out.path().join("basic.css").is_file());
+    let source = std::fs::read_to_string(out.path().join("rst/index.html")).unwrap();
+    assert!(source.contains("<a name=\"L4\">"));
+    assert!(source.contains("<span class=\"hl\">") && source.contains("versionadded"));
 }
 
 #[test]
@@ -79,6 +86,8 @@ fn sphinx_app_build_dispatches_to_changes() {
     .unwrap();
     let result = app.build().unwrap();
     assert_eq!(result.written, 1);
-    let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
-    assert!(html.contains("Changes in version 1.0"));
+    let html = std::fs::read_to_string(out.path().join("changes.html")).unwrap();
+    assert!(html.contains("version 1.0"));
+    let frameset = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+    assert!(frameset.contains("src=\"changes.html\""));
 }

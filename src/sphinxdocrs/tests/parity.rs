@@ -390,11 +390,15 @@ fn accepted_deviation(builder: &str, path: &str) -> Option<&'static str> {
         "html" | "dirhtml" | "singlehtml" => {
             Some("H11.2: HTML-family paths, assets, and page templates pending")
         }
-        "json" => Some("H11.6: JSONHTMLBuilder context and artifacts pending"),
+        "json" => Some(
+            "H11.6: nested navigation, search-index ordering, and full template context remain",
+        ),
         "latex" | "man" => Some("H11.4: project-oriented output pending"),
         "text" | "xml" | "pseudoxml" => Some("H11.3: writer metadata and formatting pending"),
         "gettext" => Some("H11.5: per-document gettext catalogs pending"),
-        "changes" => Some("H11.5: changes report layout and output naming pending"),
+        "changes" => Some(
+            "H11.5: structured module/C API classification and full theme-template parity remain",
+        ),
         _ => None,
     }
 }

@@ -72,6 +72,13 @@ by `src/sphinxdocrs/tests/`.
     `builders/html.rs` 32/126 (74.60%), `theme_render.rs` 22/138 (84.06%),
     `config.rs` 28/198 (85.86%), `autodoc.rs` 28/122 (77.05%), and
     `apidoc/generate.rs` 29/78 (62.82%).
+- Measured on 2026-09-19 (H11.2 singlehtml navigation slice):
+  - The focused singlehtml unit/integration tests and the WebMCP manifest
+    integration test pass after aligning known-document targets and merged
+    fragment anchors with Sphinx's `#document-{docname}` contract.
+  - The aggregate totals remain 77.89% library-only branches (565/2555
+    missed) and 78.87% all-target branches (600/2839 missed); the
+    `builders/singlehtml.rs` row remains 4/16 missed (75.00%).
 
 Coverage scope note: `cargo +nightly llvm-cov ... --lib` does not execute
 `src/sphinxdocrs/tests/*.rs` integration-test binaries. Use the all-targets
@@ -422,7 +429,7 @@ execution order. `missed/total` is authoritative; percentages are rounded.
 | `autogen/scan.rs` | 4/26 | 85% | autosummary/apidoc tests |
 | `build/logging.rs` | 0/18 | 100% | `test_util/test_util_logging.py`, `test_build_warnings.py` (updated 2026-09-19: covered prefix preservation, explicit color, suppression, and warning-file failure) |
 | `builders/gettext.rs` | 4/14 | 71% | `test_builders/test_build_gettext.py` |
-| `builders/singlehtml.rs` | 4/16 | 75% | `test_builders/test_build_html*.py` |
+| `builders/singlehtml.rs` | 4/16 | 75% | `test_builders/test_build_html*.py` (updated 2026-09-19: aligned known-document targets, merged anchors, and WebMCP URLs with `#document-{docname}`) |
 | `cli/io.rs` | 4/8 | 50% | `test_command_line.py` |
 | `domains/py_domain.rs` | 4/12 | 67% | `test_domains/test_domain_py*.py` |
 | `domains/std_domain.rs` | 4/12 | 67% | `test_domains/test_domain_std.py` |

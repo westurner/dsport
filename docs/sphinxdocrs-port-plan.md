@@ -5,7 +5,7 @@ This document merges the former `docs/sphinx-port-inventory.md`
 (*sphinx port inventory, Phase 4*) and `docs/sphinxdocrs-cli-port-plan.md`
 (*sphinxdocrs CLI port & test plan*); both are superseded by this file.
 
-## Current Verification (2026-09-18)
+## Current Verification (2026-09-19)
 
 The H4-H7 implementation rows below reflect the current native code, not the
 original phase-4 placeholders. The focused theme renderer suite passes 17/17,
@@ -14,10 +14,14 @@ builds match Python viewport metadata. The real external-doc suite currently
 passes 9/14 cases; the five remaining failures are tracked content/tree parity
 gaps rather than build failures.
 
-### Latest local verification (2026-09-18)
+### Latest local verification (2026-09-19)
 
-The current package baseline is `cargo test -p sphinxdocrs --all-targets`:
-767 tests pass. The two utility expectations in
+The current native library baseline is `cargo test -p sphinxdocrs --lib`:
+1011 tests pass. The latest all-target LLVM gate reports 78.87% branch
+coverage, 93.51% line coverage, and 91.56% function coverage. The focused
+H11.2 singlehtml slice now uses Sphinx-compatible `#document-{docname}`
+targets in merged-page anchors and WebMCP manifest URLs; the singlehtml
+integration and application tests pass. The two utility expectations in
 `tests/util_rst_osutil.rs` (`rst_escape_dotted_module` and
 `rst_escape_toctree_directive`) now use the native security-hardened
 `util_strypes::rst_escape` contract rather than asserting upstream Sphinx's
@@ -729,7 +733,7 @@ Ordered by dependency on `docutilsrs` writers that already exist.
 | id | builders |
 | --- | --- |
 | **H7a** | ✅ `text`, `xml`, `pseudoxml` — thin `Builder` wrappers (`builders/text.rs`, `builders/xml.rs`, `builders/pseudoxml.rs`) over two new `docutilsrs` writers (`docutilsrs::text`, `docutilsrs::to_xml`) plus the already-existing `docutilsrs::pseudo_xml`. All three are registered in `NATIVE_BUILDER_CLASSES`/`NATIVE_BUILDERS` and dispatched from `SphinxApp::build`. **Accepted deviations:** `docutilsrs::text` has no upstream analogue to mirror exactly (Sphinx's own `sphinx.writers.text.TextWriter` is a from-scratch line-wrapping/table-drawing engine, not a `docutils` writer) — it is a deliberately simplified renderer (no line wrapping, no visual table drawing, non-arabic `EnumeratedList` types still render as arabic digits); `docutilsrs::to_xml`'s pretty-printer always puts an element's open tag, children, and close tag on separate lines (even a childless leaf), rather than upstream's collapsed same-line/self-closing forms — still well-formed XML, verified by a stack-based tag-balance test |
-| **H7b** | ✅ `dirhtml` — `DirhtmlBuilder` delegates every `Builder` method to an inner `HtmlBuilder` constructed via a new `HtmlBuilder::new_dir_style()` (a `PathStyle::{Flat,Dir}` field threaded through `get_target_uri` and the (now `&self`) `write_page`), reusing the *entire* H6 theming/search-index/static-asset pipeline unchanged — only the physical file layout (`<docname>/index.html`) and `get_target_uri` differ. **Accepted deviation:** in-page navigation chrome rendered through the real theme pipeline (`theme_render.rs`'s `pathto`/`toctree` helpers) still hardcodes a flat-style `HtmlBuilder::new().get_target_uri(..)` at several call sites, so a `dirhtml` build's *files* land correctly but themed cross-document navigation links may still point at the flat naming — recorded in `PathStyle`'s own doc comment. ✅ `singlehtml` — `SinglehtmlBuilder` renders every document's fragment via `HtmlBuilder::render_fragment_from_tree`/`render_embedded_or_wrap` (both promoted to `pub(crate)` for this) and concatenates them (each in an `id`-anchored `<div>`) into one `index.html`, root document first. **Accepted deviation:** no merged sidebar/TOC reflecting the concatenated structure (each fragment still renders independently); document order is a lexicographic sort with `index` pinned first, not a toctree-driven `assemble_doctree` order (H5d's toctree resolution has no "current root" concept this builder could consult) |
+| **H7b** | ✅ `dirhtml` — `DirhtmlBuilder` delegates every `Builder` method to an inner `HtmlBuilder` constructed via a new `HtmlBuilder::new_dir_style()` (a `PathStyle::{Flat,Dir}` field threaded through `get_target_uri` and the (now `&self`) `write_page`), reusing the *entire* H6 theming/search-index/static-asset pipeline unchanged — only the physical file layout (`<docname>/index.html`) and `get_target_uri` differ. **Accepted deviation:** in-page navigation chrome rendered through the real theme pipeline (`theme_render.rs`'s `pathto`/`toctree` helpers) still hardcodes a flat-style `HtmlBuilder::new().get_target_uri(..)` at several call sites, so a `dirhtml` build's *files* land correctly but themed cross-document navigation links may still point at the flat naming — recorded in `PathStyle`'s own doc comment. ✅ `singlehtml` — `SinglehtmlBuilder` renders every document's fragment via `HtmlBuilder::render_fragment_from_tree`/`render_embedded_or_wrap` (both promoted to `pub(crate)` for this) and concatenates them into one `index.html` in resolved toctree order, with matching `id="document-{docname}"` anchors and Sphinx-compatible `#document-{docname}` targets (including WebMCP manifest URLs). **Accepted deviation:** no merged sidebar/TOC reflecting the concatenated structure (each fragment still renders independently), and the merged page does not yet use the real resolved theme renderer |
 | **H7c** | ✅ `gettext` — `GettextBuilder` walks each document's doctree, extracting translatable text from `Title`/`Subtitle`/`Paragraph` nodes (`builders/gettext.rs`), groups occurrences by message text (deduplicated, insertion-ordered per-docname location list), and writes one combined `sphinx.pot` GNU-gettext template. **Accepted deviations:** only `Title`/`Subtitle`/`Paragraph` are extracted (not list items, definition terms, field lists, table cells, or image `alt` text — a real line-number field on `docutilsrs::doctree::Node` would be needed to emit faithful `#: docname:linenum` locations for all of these); location comments omit the line number (`#: docname` only) for the same reason; `gettext_compact`-style per-directory catalog splitting is not honoured (always one combined `.pot`); `gettext_uuid`/`gettext_location`/`gettext_auto_build` config are not read |
 | **H7d** | ✅ `epub` and `texinfo` — native project builders are registered and dispatched; EPUB writes a deterministic stored ZIP containing `mimetype`, `META-INF/container.xml`, `OEBPS/content.opf` with metadata/manifest/spine, `OEBPS/nav.xhtml`, `OEBPS/toc.ncx`, and per-document XHTML, using persisted read-phase doctrees when available; texinfo writes `.texi` documents with Texinfo headers and `@bye`. **Accepted deviations:** EPUB does not yet mirror Sphinx's cover, guide, pre/post-file, CSS, writing-mode, or compressed-package configuration; navigation is a flat document list rather than a resolved hierarchical toctree; texinfo does not yet produce a project-level `.info` archive or full Texinfo node/menu structure. `changes` — ✅ `ChangesBuilder` (`builders/changes.rs`) scans every document's RST source for `.. versionadded::`/`.. versionchanged::`/`.. deprecated::` directives (`scan_version_changes`, following the H3a/H3c/H5b text-scan precedent), groups entries by version, and renders one flat `index.html` report, newest version first. **Accepted deviations:** versions sort as plain strings (reverse-lexicographic), not PEP 440/semver-aware; output is a flat per-version `<ul>`, not the module-grouped, cross-linked-to-source-docs report upstream's Jinja2 template renders |
 | **H7e** | ❌ `doctest`, `coverage`, `qthelp` / `devhelp` / `htmlhelp` / `applehelp` — **keep-python decision** |
@@ -1522,8 +1526,9 @@ explicitly documented renderer/theme provenance deviations.
   nested parent-chain behavior is covered by a focused renderer regression.
 - Matched singlehtml's known-document URI contract: merged-page documents now
   target `#document-{docname}`, while unknown additional pages retain their
-  standalone `.html` targets; focused unit and integration coverage exercise
-  both paths.
+  standalone `.html` targets; merged fragment IDs and WebMCP manifest URLs now
+  use the same `document-` anchor prefix, with focused unit, integration, and
+  application coverage exercising the contract.
 - Corrected themed `toc` semantics to use only the current document's section
   headings, excluding document-level toctree children; section fragment links
   are preserved through flat and dirhtml target URI generation.

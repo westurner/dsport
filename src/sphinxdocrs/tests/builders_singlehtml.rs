@@ -44,8 +44,8 @@ fn build_all_over_a_project_with_a_subdirectory_merges_every_doc() {
     assert!(!out.path().join("guide").exists());
 
     let combined = std::fs::read_to_string(out.path().join("index.html")).unwrap();
-    assert!(combined.contains("id=\"index\""));
-    assert!(combined.contains("id=\"guide/intro\""));
+    assert!(combined.contains("id=\"document-index\""));
+    assert!(combined.contains("id=\"document-guide/intro\""));
     assert!(combined.contains("Homepage."));
     assert!(combined.contains("Nested doc."));
 }

@@ -100,7 +100,7 @@ pub fn build_finished(app: &SphinxApp) -> Result<(), AppError> {
                 docname: docname.clone(),
                 title: env.get_title(docname).unwrap_or(docname).to_string(),
                 url: if app.buildername == "singlehtml" {
-                    format!("index.html#{docname}")
+                    format!("index.html#document-{docname}")
                 } else {
                     format!("{docname}.html")
                 },

@@ -326,10 +326,13 @@ fn singlehtml_build_uses_manifest_anchors_and_webmcp_assets() {
         .iter()
         .map(|page| page["url"].as_str().unwrap())
         .collect();
-    assert_eq!(urls, ["index.html#guide", "index.html#index"]);
+    assert_eq!(
+        urls,
+        ["index.html#document-guide", "index.html#document-index"]
+    );
     let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
-    assert!(html.contains("id=\"index\""));
-    assert!(html.contains("id=\"guide\""));
+    assert!(html.contains("id=\"document-index\""));
+    assert!(html.contains("id=\"document-guide\""));
     assert!(out.path().join("_static/webmcp.js").exists());
 }
 

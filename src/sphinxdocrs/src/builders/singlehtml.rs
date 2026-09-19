@@ -4,7 +4,7 @@
 //! Renders every document into **one** `index.html` page, reusing
 //! `HtmlBuilder`'s fragment rendering (`render_fragment_from_tree`) and
 //! embedded-theme wrapper (`render_embedded_or_wrap`) per document, then
-//! concatenating the fragments (each wrapped in a `<div id="{docname}">`
+//! concatenating the fragments (each wrapped in a `<div id="document-{docname}">`
 //! anchor) before wrapping the whole thing once.
 //!
 //! **Accepted deviation:** this does not go through the *real* resolved
@@ -76,7 +76,7 @@ impl Builder for SinglehtmlBuilder {
         if docname == "index" {
             String::new()
         } else if self.known_docs.borrow().contains(docname) {
-            format!("#{docname}")
+            format!("#document-{docname}")
         } else {
             format!("{docname}.html")
         }
@@ -88,7 +88,10 @@ impl Builder for SinglehtmlBuilder {
     fn build_doc(&self, docname: &str, source: &str, outdir: &Path) -> Result<(), BuildError> {
         let tree = parse_rst_with_source(source, docname);
         let (title, body) = self.inner.render_fragment_from_tree(docname, &tree);
-        let anchored = format!("<div id=\"{}\">\n{body}\n</div>", html_escape_attr(docname));
+        let anchored = format!(
+            "<div id=\"document-{}\">\n{body}\n</div>",
+            html_escape_attr(docname)
+        );
         let page = HtmlBuilder::render_embedded_or_wrap(
             docname,
             &title,
@@ -162,7 +165,7 @@ impl Builder for SinglehtmlBuilder {
                 combined_title = title;
             }
             sections.push(format!(
-                "<div id=\"{}\">\n{body}\n</div>",
+                "<div id=\"document-{}\">\n{body}\n</div>",
                 html_escape_attr(docname)
             ));
             result.written += 1;
@@ -267,8 +270,8 @@ mod tests {
             "guide/intro".to_string(),
         ]);
 
-        assert_eq!(b.get_target_uri("about"), "#about");
-        assert_eq!(b.get_target_uri("guide/intro"), "#guide/intro");
+        assert_eq!(b.get_target_uri("about"), "#document-about");
+        assert_eq!(b.get_target_uri("guide/intro"), "#document-guide/intro");
         assert_eq!(b.get_target_uri("missing"), "missing.html");
     }
 
@@ -287,7 +290,7 @@ mod tests {
             .build_doc("about", "About\n=====\n\nSome info.\n", tmp.path())
             .unwrap();
         let out = std::fs::read_to_string(tmp.path().join("index.html")).unwrap();
-        assert!(out.contains("id=\"about\""));
+        assert!(out.contains("id=\"document-about\""));
         assert!(out.contains("Some info."));
     }
 
@@ -309,19 +312,20 @@ mod tests {
         let builder = SinglehtmlBuilder::new();
         let result = builder.build_all(src.path(), out.path(), &env).unwrap();
         assert_eq!(result.written, 2);
-        assert_eq!(builder.get_target_uri("about"), "#about");
+        assert_eq!(builder.get_target_uri("about"), "#document-about");
         assert_eq!(builder.get_target_uri("additional"), "additional.html");
         assert_eq!(builder.get_target_uri("index"), "");
         // Exactly one HTML file is produced.
         assert!(out.path().join("index.html").exists());
         assert!(!out.path().join("about.html").exists());
         let combined = std::fs::read_to_string(out.path().join("index.html")).unwrap();
-        assert!(combined.contains("id=\"index\""));
-        assert!(combined.contains("id=\"about\""));
+        assert!(combined.contains("id=\"document-index\""));
+        assert!(combined.contains("id=\"document-about\""));
         assert!(combined.contains("Homepage."));
         assert!(combined.contains("Some info."));
         // `index` renders before `about` in document order.
-        assert!(combined.find("id=\"index\"").unwrap() < combined.find("id=\"about\"").unwrap());
+        assert!(combined.find("id=\"document-index\"").unwrap()
+            < combined.find("id=\"document-about\"").unwrap());
     }
 
     #[test]
@@ -351,9 +355,9 @@ mod tests {
             .unwrap();
         assert_eq!(result.written, 3);
         let combined = std::fs::read_to_string(out.path().join("index.html")).unwrap();
-        let idx_index = combined.find("id=\"index\"").unwrap();
-        let idx_zzz = combined.find("id=\"zzz\"").unwrap();
-        let idx_aaa = combined.find("id=\"aaa\"").unwrap();
+        let idx_index = combined.find("id=\"document-index\"").unwrap();
+        let idx_zzz = combined.find("id=\"document-zzz\"").unwrap();
+        let idx_aaa = combined.find("id=\"document-aaa\"").unwrap();
         assert!(idx_index < idx_zzz, "root doc must render first");
         assert!(
             idx_zzz < idx_aaa,
@@ -392,9 +396,9 @@ mod tests {
             .unwrap();
         assert_eq!(result.written, 3);
         let combined = std::fs::read_to_string(out.path().join("index.html")).unwrap();
-        assert!(combined.contains("id=\"orphan\""));
-        let idx_aaa = combined.find("id=\"aaa\"").unwrap();
-        let idx_orphan = combined.find("id=\"orphan\"").unwrap();
+        assert!(combined.contains("id=\"document-orphan\""));
+        let idx_aaa = combined.find("id=\"document-aaa\"").unwrap();
+        let idx_orphan = combined.find("id=\"document-orphan\"").unwrap();
         assert!(
             idx_aaa < idx_orphan,
             "orphan doc must be appended after toctree-ordered docs"

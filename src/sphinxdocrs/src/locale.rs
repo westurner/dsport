@@ -602,7 +602,14 @@ pub fn admonition_labels() -> HashMap<&'static str, String> {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock_registry() -> std::sync::MutexGuard<'static, ()> {
+        REGISTRY_LOCK.lock().unwrap()
+    }
 
     fn write_po(dir: &Path, lang: &str, catalog: &str, content: &str) {
         let lc = dir.join(lang).join("LC_MESSAGES");
@@ -776,6 +783,7 @@ msgstr "Hallo"
 
     #[test]
     fn init_loads_catalog_and_translates() {
+        let _registry_guard = lock_registry();
         let tmp = TempDir::new().unwrap();
         write_po(
             tmp.path(),
@@ -793,6 +801,7 @@ msgstr "Hallo"
 
     #[test]
     fn get_translation_before_init_returns_msgid() {
+        let _registry_guard = lock_registry();
         clear_translators();
         let translate = get_translation("notregistered", "ns_missing");
         assert_eq!(translate("Hello sphinx"), "Hello sphinx");
@@ -800,6 +809,7 @@ msgstr "Hallo"
 
     #[test]
     fn init_unknown_language_returns_msgid() {
+        let _registry_guard = lock_registry();
         let tmp = TempDir::new().unwrap();
         write_po(
             tmp.path(),
@@ -828,6 +838,7 @@ msgstr "Hallo"
     /// test to keep it isolated from the parallel test runner.
     #[test]
     fn tr_walks_the_catalog_chain() {
+        let _registry_guard = lock_registry();
         let tmp = TempDir::new().unwrap();
         write_po(
             tmp.path(),
@@ -870,6 +881,7 @@ msgstr "Hallo"
 
     #[test]
     fn init_chain_reports_false_when_no_catalog_matches() {
+        let _registry_guard = lock_registry();
         let tmp = TempDir::new().unwrap();
         clear_translators();
         assert!(!init_chain(
@@ -881,6 +893,7 @@ msgstr "Hallo"
 
     #[test]
     fn init_merges_multiple_locale_dirs() {
+        let _registry_guard = lock_registry();
         let tmp1 = TempDir::new().unwrap();
         let tmp2 = TempDir::new().unwrap();
         write_po(
@@ -908,6 +921,7 @@ msgstr "Hallo"
 
     #[test]
     fn is_translator_registered_reflects_init() {
+        let _registry_guard = lock_registry();
         clear_translators();
         assert!(!is_translator_registered("myext2", "test_ns_reg"));
         let tmp = TempDir::new().unwrap();

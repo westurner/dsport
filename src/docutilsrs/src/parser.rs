@@ -4358,12 +4358,16 @@ pub(crate) fn promote_document_title(tree: &mut Doctree) {
         NodeKind::Section { ids, names, .. } => (ids.clone(), names.clone()),
         _ => return,
     };
-    // Section children: first should be Title.
+    // Section children may begin with preamble nodes moved there by target
+    // normalization. The first non-preamble child must be the title.
     let sec_children = tree.node(sec_id).children.clone();
-    if sec_children.is_empty() {
+    let title_idx = sec_children
+        .iter()
+        .position(|child| !is_preamble_node(&tree.node(*child).kind));
+    let Some(title_idx) = title_idx else {
         return;
-    }
-    let title_id = sec_children[0];
+    };
+    let title_id = sec_children[title_idx];
     if !matches!(&tree.node(title_id).kind, NodeKind::Title) {
         return;
     }
@@ -4387,10 +4391,18 @@ pub(crate) fn promote_document_title(tree: &mut Doctree) {
     }
     tree.node_mut(root).children.insert(i, title_id);
     tree.node_mut(title_id).parent = Some(root);
-    // Hoist the section's other children to be children of root, in order.
+    // Preamble nodes that were inside the section belong after the promoted
+    // title, matching docutils' DocTitle transform.
     let mut insert_at = i + 1;
+    for preamble in sec_children[..title_idx].iter().copied() {
+        tree.detach(preamble);
+        tree.node_mut(root).children.insert(insert_at, preamble);
+        tree.node_mut(preamble).parent = Some(root);
+        insert_at += 1;
+    }
+    // Hoist the section's other children to be children of root, in order.
     let promoted_to_subtitle = {
-        let body = &sec_children[1..];
+        let body = &sec_children[title_idx + 1..];
         body.len() == 1 && matches!(&tree.node(body[0]).kind, NodeKind::Section { .. })
     };
     if promoted_to_subtitle {
@@ -4423,7 +4435,7 @@ pub(crate) fn promote_document_title(tree: &mut Doctree) {
             tree.node_mut(c).parent = Some(root);
         }
     } else {
-        for c in sec_children.into_iter().skip(1) {
+        for c in sec_children.into_iter().skip(title_idx + 1) {
             tree.detach(c);
             tree.node_mut(root).children.insert(insert_at, c);
             tree.node_mut(c).parent = Some(root);

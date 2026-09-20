@@ -88,7 +88,8 @@ Contents:
 9. [**H-phase: plan to close the remaining deferred work**](#9-h-phase--plan-to-close-the-remaining-deferred-work)
 10. [**H12: stack-safe docutilsrs renderers**](#h12-stack-safe-docutilsrs-renderers)
 11. [**H13: MyST Markdown to doctree and native HTML**](#tier-h13--myst-markdown-to-doctree-and-native-html)
-12. [**J-phase: source-encoding hardening follow-ups**](#10-j-phase--source-encoding-hardening-follow-ups)
+12. [**H14: Rust and Lean domains, autodoc, and apidoc**](#tier-h14--rust-and-lean-domains-autodoc-and-apidoc)
+13. [**J-phase: source-encoding hardening follow-ups**](#10-j-phase--source-encoding-hardening-follow-ups)
 
 ---
 
@@ -181,13 +182,13 @@ in the notes column of the relevant row.
 | `util/i18n.py` | `intl` | P2 | **done** | `CatalogInfo` (incl. `write_mo`), `CatalogRepository`, `docname_to_domain`, `DATE_FORMAT_MAPPINGS`, `split_date_format`, `ustrftime_to_babel`, `babel_format_date`, `format_date`, `encode_mo` / `decode_mo`. **Accepted deviations:** CLDR data limited to `en`/`de`/`ja` (others fall back to `en`, as upstream does for unknown locales); MO output is singular-only with an empty hash table; `.po` files are decoded as UTF-8 |
 | `roles.py` | `roles` | P3 | **partial** | pure-algorithm subset: `GENERIC_DOCROLES`, `SPECIFIC_DOCROLES`, `is_builtin_role`, `format_rfc_target`, `parse_emphasized_literal`, `XRefRoleConfig`, `DefaultRoleConfig`. **Gap:** role `run()` execution (→ **H5b**) |
 | `directives/` | `docutilsrs::plugins` + parser dispatch | P3 | **partial** | native registry now runs before built-ins; callable `app.add_directive` handlers return replacement RST. Full docutils Directive class/options/node execution remains (→ **H5a**) |
-| `domains/` | — | P3 | **deferred** | only `registry.add_domain` name-registration exists; `env.domaindata` is never populated (→ **H3**) |
+| `domains/` | `domains` | P3 | **mirrored** | `std`/`rst`/`py`/`js` domain data, object aggregation, search metadata, and xref recovery are implemented (**H3**); Rust and Lean domain support is a separate planned extension (**H14**) |
 | `environment/` | `environment` | P3 | **mirrored** ✅ | `BuildEnvironment`: `find_files` (**H2a**), doctree store `parse_doc`/`store_doctree`/`get_doctree`/`has_stored_doctree` (**H2b**), `read_all` read phase (**H2c**), `get_and_resolve_doctree` (**H2e**), `check_consistency` (**H2f**). **Gap:** `resolve_references`, `domains` (→ **H3**) |
 | `builders/` | `builders` | P3 | **partial** | `Builder` trait + `HtmlBuilder`, `LatexBuilder`, `ManpageBuilder`, `LinkcheckBuilder`, `JsonBuilder`, `TextBuilder`, `XmlBuilder`, `PseudoxmlBuilder` (**H7a**, done), `DirhtmlBuilder`, `SinglehtmlBuilder` (**H7b**, done), `GettextBuilder` (**H7c**, done), `ChangesBuilder`, minimal `EpubBuilder`, and minimal `TexinfoBuilder` (**H7d**, done), all dispatched by `SphinxApp`. **Gap:** full EPUB packaging/navigation, texinfo project metadata, and real HTML body/navigation/content parity. `doctest`/`coverage`/`qthelp`/`devhelp`/`htmlhelp`/`applehelp` are **keep-python** (**H7e**, decided) |
 | `application.py` | `application` | P3 | **partial** | `SphinxApp`: path validation, config, registry, env, extension loading, native events, `read()` (**H2**: `find_files` + `read_all`), and `build()` (`&mut self`, two-phase). **Gaps:** parallel build, incremental rebuild, and full i18n (→ **H4**, **H8**) |
 | `theming.py` | `theme`, `theme_static`, `theme_render` | P3 | **mirrored** ✅ | self-contained `sphinxdocrs_basic` theme + real third-party theme inheritance (`alabaster`/`basic`) rendered through `jinja2rs`; full per-page context (`pathto`/`hasdoc`/`toctree()`/`toc`/relbar/sidebars/`html_context`/`html-page-context`) (**H6**, done). **Accepted deviation:** `theme.conf`/`theme.toml` inheritance-chain parsing still goes through an embedded PyO3 bootstrap rather than pure Rust (**H6a**) |
 | `search/` | `search` | P3 | **done** | `SearchIndex`, `split_words`, `feed`, `to_json`, Snowball stemming for all 15 `sphinx.search` languages (**H1f**, via `stemmer.rs`). **Accepted deviation:** `rust_stemmers`' Dutch algorithm is the legacy `dutch_porter` Snowball revision, not the one `snowballstemmer.stemmer('dutch')` resolves to — patched via built-in `ParityOverrides` for Sphinx's own Dutch stopword vocabulary; broader vocabularies may need project-supplied overrides. `objects`/`objtypes`/`objnames`/`indexentries` now populated from domain data (**H3d**) — see the accepted deviations noted on that row in §3 |
-| `ext/autodoc/` | `autodoc` | P3 | **mirrored** ✅ | `document_module`/`document_module_auto`/`render_function`/`render_class` with a PyO3 runtime-import bridge (`autodoc_runtime.rs`, falling back to `ruff_python_parser` static extraction when import fails), `:members:`/`:undoc-members:`/`:private-members:`/`:special-members:`/`:exclude-members:`/`:member-order:` option handling, type hints, decorators (`@property`/`@staticmethod`/`@classmethod`), `__all__` ordering, `autodoc_mock_imports` (**H9**, done). **Accepted deviations:** `:inherited-members:` parsed but not expanded; overload sets render only the last definition; `autodoc_typehints="description"` treated as `"signature"` — see the Tier H9 writeup in §9 |
+| `ext/autodoc/` | `autodoc` | P3 | **mirrored** ✅ | Python `document_module`/`document_module_auto`/`render_function`/`render_class` with a PyO3 runtime-import bridge and `ruff_python_parser` static fallback, option handling, type hints, decorators, `__all__`, and `autodoc_mock_imports` (**H9**, done). Rust/Lean source autodoc requires the language-neutral analyzer contract and source-specific renderers planned in **H14**. **Accepted Python deviations:** `:inherited-members:` parsed but not expanded; overload sets render only the last definition; `autodoc_typehints="description"` treated as `"signature"` |
 | `ext/intersphinx/` | `intersphinx` | P3 | **partial** | `fetch_inventories`, `InvCache`, `Inventory` / `InventoryItem` / `InventoryError` (v1 + v2 `loads`, `load_file`), `dumps`. **Gap:** xref fallback — the parsed inventories are not consulted during reference resolution (→ **H5c**) |
 | `highlighting.py` | — | P3 | **partial** | `docutilsrs` code/code-block/sourcecode paths use native `pygmentsrs` with Python fallback; `automodule` output now enters that path; Sphinx aliases (`py`/`py3`/`python3`/`default`/`pycon3`), Python-console detection, and `guess` fallback are covered. Lexer-error logging, relaxed retry, and location-rich diagnostics remain (→ **H10**) |
 | `pycode/` | — | P3 | **keep-python** | superseded by `autodoc.rs` + `ruff_python_ast` |
@@ -203,7 +204,7 @@ in the notes column of the relevant row.
 | --- | --- | --- | --- | --- |
 | `sphinx-quickstart` | `sphinx-quickstart-rs` | `sphinx.cmd.quickstart` | **C1** | **done** — fully native |
 | `sphinx-build` | `sphinx-build-rs` | `sphinx.cmd.build` + `sphinx.cmd.make_mode` | **C2** | **partial** — `-M` make-mode native; `-b` native for `html`/`latex`/`man`/`linkcheck`; other builders delegate to Python |
-| `sphinx-apidoc` | `sphinx-apidoc-rs` | `sphinx.ext.apidoc` | **C3** | **done** — module/package/TOC generation + `--full`; parity verified vs Python 9.1.0 |
+| `sphinx-apidoc` | `sphinx-apidoc-rs` | `sphinx.ext.apidoc` | **C3** | **done for Python** — module/package/TOC generation + `--full`; parity verified vs Python 9.1.0. Rust crate and Lean module discovery/templates are planned in **H14** |
 | `sphinx-autogen` | `sphinx-autogen-rs` | `sphinx.ext.autosummary.generate` | **C4** | **done** — RST scan, arg-parse, native stub generation |
 
 Every binary honours `--use-python-impl` and `SPHINXDOCRS_PY_FALLBACK=1`.
@@ -259,6 +260,7 @@ manually because minijinja lacks it.
 | `find_autosummary_in_lines` / `_in_files` | `autogen::scan` | regex parser matching upstream |
 | autosummary stub templates | `assets/autosummary/*.rst` | `base`, `class`, `module`; `underline` + `_` identity filters |
 | `generate_autosummary_docs` (stub writing) | `autogen::generate` | `infer_obj_type` (CamelCase→class, else→module), `StubContext`, `generate_stub(s)`, `--remove-old`. `StubContext::from_entry_runtime`/`generate_stub(s)_runtime` (**H9d**, done) populate real member lists via the `autodoc_runtime` PyO3 bridge when the target is importable, falling back to the empty-list heuristic otherwise; `bin/sphinx_autogen.rs` uses the runtime variant |
+| language-neutral source declarations | `source_analysis` (planned) | shared declaration records consumed by domains, autodoc, and apidoc; Python remains the existing adapter, Lean uses Arborium/tree-sitter, and Rust uses the librustdoc/toolchain adapter defined in **H14** |
 
 ---
 
@@ -549,6 +551,8 @@ types, directives, roles, and index.
 | **H3d** | ✅ search objects | `BuildEnvironment::domain_objects()` aggregates every domain's `get_objects()`; `search.rs`'s `objects`/`objtypes`/`objnames` now mirror `IndexBuilder.get_objects`'s schema (prefix-grouped `[docindex, typeindex, priority, shortanchor, name]` tuples), and `indexentries` is populated from a new `.. index::` scanner (`domains/scan.rs::scan_index_entries`, `env.indexentries`). **Accepted deviation**: every object is treated as default priority (`0`) since `ObjectEntry` doesn't carry per-object priority, and `objnames`' human-readable type name is just the raw `objtype` string rather than a localized display name |
 | **H3e** | ✅ `js` | `js:module`/`function`/`class`/`method`/`attribute`/`data`, reusing the same nesting scanner as `py` but with a manual (non-`ruff`) paren-balance signature splitter (`domains/js_domain.rs`) since JS isn't Python; `:js:func:`/`class`/`meth`/`attr`/`data`/`mod` xref resolution. No `currentclass`-equivalent directive, matching upstream's smaller `js` domain surface |
 | **H3f** | ❌ `c` / `cpp` — **keep-python decision** | Upstream `sphinx.domains.{c,cpp}` are real declaration-grammar parsers (thousands of combined lines: template arguments, operator overloads, `noexcept`/`constexpr` qualifiers, overload sets, ...) with no "one directive line → one signature" shortcut the text-scan pattern the other domains use relies on. Porting cost is disproportionate without a concrete downstream project needing C/C++ domain support. **Decision**: stay on the Python bridge indefinitely; reopen as its own dedicated H-tier item if a real doc tree requires it |
+| **H3g** | deferred → **H14** `rust` | Rust declarations, `::` paths, reexports, impl members, rustdoc links, and rendered documentation require semantic source data; do not extend the generic text scanner as the primary analyzer |
+| **H3h** | deferred → **H14** `lean` | Lean namespaces, theorem/type declarations, notation, and declaration comments require a tree-sitter parse; use Arborium rather than line-oriented matching |
 
 Design note: define
 `trait Domain { fn name(); fn resolve_xref(..); fn get_objects(..); fn merge_domaindata(..); }`
@@ -1035,6 +1039,10 @@ comment):**
 Verification: `cargo test -p sphinxdocrs` (711 lib tests + all
 integration-test binaries) and `cargo clippy -p sphinxdocrs
 --all-targets -- -D warnings` are both clean.
+
+H9 is complete for the existing Python autodoc contract only. It does not
+mean that a Rust or Lean source tree can be passed to `autodoc`; those
+language adapters share the H14 declaration model and are gated separately.
 
 ### Tier H10 — highlighting
 
@@ -2185,6 +2193,379 @@ H13 is complete when:
 * the focused native gate plus the full `sphinxdocrs` and `myst-md-rs` suites
   pass.
 
+### Tier H14 — Rust and Lean domains, autodoc, and apidoc
+
+H14 adds source-aware documentation for Rust and Lean without regressing the
+existing Python implementation. It is intentionally broader than adding two
+domain tables: the domain, autodoc, and apidoc surfaces all need the same
+qualified declaration model, source locations, documentation text, aliases,
+and visibility policy. The implementation therefore has one analysis
+boundary and three consumers:
+
+1. **Domain and xref consumer:** registers declarations in the build
+   environment and resolves roles such as `rust:func` or `lean:thm`.
+2. **Autodoc consumer:** renders declarations and their documentation into
+   parser-native description nodes.
+3. **Apidoc consumer:** discovers source modules/packages and emits the RST
+   entry points that autodoc consumes.
+
+The current `sphinx-autogen-rs` binary remains the autosummary stub generator;
+it is not renamed or overloaded. H14 defines a separate `sphinx-autodoc-rs`
+surface as a reusable library API first, with a CLI binary only when the
+standalone command contract is frozen. This keeps the already-compatible
+Python `autodoc` and `sphinx-autogen-rs` paths intact.
+
+#### H14a -- backend and toolchain validation gate
+
+Do this before adding public domain names or committing to a source schema.
+The current repository has no `librustdoc` crates.io package and rustdoc's
+compiler library is coupled to a rustc checkout and sysroot. The plan must
+not invent a stable Rust API under that name.
+
+| backend | required decision | initial implementation boundary |
+| --- | --- | --- |
+| Lean | Confirm the pinned Arborium release, `arborium-lean::language()` API, parser API, supported Rust version, native C compiler requirement, and grammar node names used by the fixture corpus | Optional `lean` Cargo feature; `arborium`/`arborium-lean` behind that feature; no Lean parsing on builds that do not enable it |
+| Rust | Attempt a small pinned rustdoc driver against the selected rustc/rustdoc source and verify that the compiler-internal `librustdoc` APIs can be built and invoked for a Cargo crate | A versioned `rustdoc` adapter with an explicit toolchain identity; compiler-internal types must not leak into the language-neutral declaration model |
+| Rust bootstrap | If the internal driver cannot be distributed or built on the supported toolchains, generate rustdoc JSON with the matching rustdoc executable and decode it with the matching `rustdoc-types` crate | This is a compatibility fallback and acquisition boundary, not a claim that `rustdoc-types` is `librustdoc`; record the selected mode in diagnostics and persisted environment metadata |
+
+The Rust gate is complete only when a fixture crate containing modules,
+reexports, traits, impl blocks, associated items, macros, hidden items, and
+doc links produces the same declaration set through the chosen adapter on all
+supported toolchains. Pin the rustdoc source commit or toolchain channel,
+`rustdoc-types` schema version when JSON mode is used, Cargo features, target,
+edition, and `RUSTDOCFLAGS`. Reject a mismatched JSON schema or toolchain with
+a clear backend-unavailable error; never silently fall back to a lossy text
+scan for a build that requested semantic Rust analysis.
+
+For Lean, add a small corpus before implementing the analyzer. It must cover
+`namespace`, `section`, `def`, `theorem`, `lemma`, `example`, `inductive`,
+`structure`, `class`, `instance`, `abbrev`, `axiom`, `opaque`, `notation`,
+commands with attributes, nested namespaces, module doc comments (`/-!`),
+declaration doc comments (`/-- ... -/`), and malformed-but-parseable input.
+Record Arborium tree node kinds and byte ranges in snapshots so a grammar
+upgrade fails as an intentional compatibility change rather than changing
+the scanner's behavior unnoticed.
+
+#### H14b -- shared source declaration model
+
+Add a language-neutral `source_analysis` module. The exact Rust type names can
+be chosen during implementation, but the serialized contract must contain at
+least:
+
+| field | purpose |
+| --- | --- |
+| `language` and `backend` | distinguish Python, Rust, and Lean plus the analyzer/version that produced the record |
+| `qualified_name` | canonical lookup key using the source language's namespace separator |
+| `short_name` and `parent` | title shortening, member grouping, and namespace navigation |
+| `kind` | function, module, type, trait/class, theorem, field, variant, method, macro, constant, instance, and other source-specific kinds |
+| `signature` / `type_text` | stable display text, retained separately from the lookup name |
+| `documentation` | normalized doc comment text, preserving source line breaks where the writer needs them |
+| `visibility` | public, restricted, private, or source-specific visibility state |
+| `source` | normalized path, byte/line/column span, and optional end span |
+| `aliases` | reexports, aliases, notation names, and alternate lookup spellings |
+| `children` | deterministic child declaration IDs or qualified names |
+| `deprecated`, `noindex`, and `attributes` | indexing and rendering policy without reparsing source text |
+
+Use stable IDs for internal graph edges, but expose qualified names as the
+public domain keys. A declaration record must not contain `rustc` or
+tree-sitter node types. Normalize paths and line endings at the adapter
+boundary, sort declarations and aliases deterministically, and keep raw
+source slices only when required to reproduce a signature. Store diagnostics
+alongside the snapshot with severity, source span, and backend identity.
+
+Define a source analyzer interface equivalent to:
+
+```text
+analyze(request: SourceAnalysisRequest) -> Result<AnalysisSnapshot, AnalysisError>
+```
+
+The request carries source root, selected package/module, feature and target
+configuration, private-item policy, backend policy, and a cancellation or
+resource limit. The domain, autodoc, and apidoc layers consume only the
+snapshot. Python can be adapted from the current static/runtime paths first;
+its existing `MemberInfo` behavior remains the compatibility baseline.
+
+#### H14c -- Rust analyzer and `rust` domain
+
+The primary Rust analyzer is the librustdoc adapter validated in H14a. It
+must obtain declarations from rustdoc's resolved item graph, not from a
+regular-expression scan of `.rs` files. The adapter owns Cargo metadata,
+workspace package selection, feature flags, target, edition, cfg values,
+private-item policy, and rustdoc diagnostics. It must preserve rustdoc item
+IDs long enough to resolve links and then lower them to H14b records.
+
+Required extraction behavior:
+
+- map crates, modules, functions, structs, enums, enum variants, traits,
+  trait items, impl blocks, methods, associated types, associated constants,
+  constants, statics, type aliases, macros, union fields, and reexports;
+- retain `pub`, `pub(crate)`, restricted, private, `doc(hidden)`, and
+  `#[deprecated]` state so `:private-members:` and indexing policy are
+  deliberate rather than inferred from spelling;
+- resolve `use` reexports and aliases to the canonical item while retaining
+  every public spelling as an alias;
+- render generic parameters, where clauses, lifetimes, trait bounds,
+  `async`, `unsafe`, `extern`, ABI, receiver form, associated-item context,
+  and return types from rustdoc data;
+- preserve rustdoc intra-doc links as xref candidates, including links whose
+  target is an associated item or a reexport; and
+- capture source spans and crate/module ownership for diagnostics and future
+  source-location roles without making source paths part of the canonical
+  xref key.
+
+The first domain directive/role set should be explicit and small enough to
+test, then grow with fixtures:
+
+| directive | roles | declaration kinds |
+| --- | --- | --- |
+| `rust:module` | `rust:mod` | crate and module namespaces |
+| `rust:function` | `rust:func` | free functions and unsafe/async variants |
+| `rust:struct`, `rust:enum`, `rust:union`, `rust:trait` | `rust:struct`, `rust:enum`, `rust:trait`, `rust:type` | nominal types and traits |
+| `rust:impl` | `rust:impl`, `rust:meth` | impl blocks and associated methods/items |
+| `rust:method`, `rust:associatedtype`, `rust:associatedconst` | matching short roles | trait and impl members |
+| `rust:constant`, `rust:static`, `rust:type`, `rust:macro` | `rust:const`, `rust:static`, `rust:type`, `rust:macro` | value, alias, and macro declarations |
+| `rust:variant`, `rust:field` | `rust:variant`, `rust:field` | enum variants and fields |
+
+Use `::` as the canonical Rust namespace separator. Xref lookup must support
+absolute paths, current-module relative paths, leading `self::`/`super::`,
+short names when unambiguous, `~` display-name shortening, and explicit-title
+syntax. Do not apply the existing final-dot search split to Rust names. A
+reexport must resolve both its public path and its canonical target, while
+ambiguous short names must remain unresolved with a useful warning.
+
+#### H14d -- Lean analyzer and `lean` domain
+
+The Lean analyzer uses Arborium's tree-sitter grammar as the source of syntax
+structure. Parse each `.lean` file with byte ranges, walk namespace/module
+boundaries, and attach documentation comments to the next declaration using
+the grammar span rather than a line-distance heuristic. The analyzer should
+retain the original declaration text for signatures while normalizing names
+and comments into H14b records.
+
+The initial Lean declaration set is `namespace`, `def`, `theorem`, `lemma`,
+`example`, `inductive`, `structure`, `class`, `instance`, `abbrev`, `axiom`,
+`opaque`, constructors, fields, and notation declarations. Include namespace
+and section context in every qualified name. Treat notation and aliases as
+lookup aliases only when the parse and attribute data establish that mapping;
+do not guess semantic equivalence from identifier text.
+
+The first Lean domain surface should be:
+
+| directive | roles | declaration kinds |
+| --- | --- | --- |
+| `lean:module`, `lean:namespace` | `lean:mod`, `lean:ns` | files, imported modules, and namespaces |
+| `lean:def`, `lean:theorem`, `lean:lemma` | `lean:def`, `lean:thm`, `lean:lemma` | definitions and propositions |
+| `lean:inductive`, `lean:structure`, `lean:class` | matching roles | types, structures, and classes |
+| `lean:instance`, `lean:abbrev`, `lean:axiom`, `lean:opaque` | matching roles | instances and declaration forms |
+| `lean:constructor`, `lean:field`, `lean:notation` | matching roles | children and notation aliases |
+
+Use `.` as the canonical Lean namespace separator, with explicit support for
+the source's namespace qualification rules. Lookup must handle current
+namespace context, fully qualified names, notation aliases, and `~`
+shortening. The domain must not pretend that a theorem's type is a Rust-like
+function signature; retain Lean's binder and proposition text verbatim after
+the adapter's newline normalization.
+
+#### H14e -- parser-native directives and rendering boundary
+
+The current `docutilsrs` parser has hardcoded directive dispatch and does not
+turn unknown Rust or Lean directives into structured object descriptions.
+Generated RST containing `.. rust:function::` or `.. lean:theorem::` is
+therefore not a valid integration by itself.
+
+Prefer a parser-native structured path:
+
+1. extend the directive registry with source-description handlers registered
+   by `sphinxdocrs`;
+2. lower each handler to the existing description/signature/content model or
+   add the smallest typed node needed for language-specific signatures;
+3. preserve domain, object kind, canonical name, signature, source location,
+   and child documentation as typed attributes; and
+4. make every writer render the node or use a documented generic fallback.
+
+If parser-native support cannot land in the first slice, use a controlled
+generated-RST adapter only for directives already understood by the parser,
+and fail clearly when a requested source directive would otherwise be
+discarded. Do not silently emit plain paragraphs that look like successful
+autodoc output. Add parser tests for nested descriptions, explicit titles,
+content blocks, malformed signatures, and unknown kinds before enabling the
+Rust/Lean directives by default.
+
+#### H14f -- environment, xrefs, search, and persistence
+
+Add typed `rust_domain` and `lean_domain` state to `BuildEnvironment`, matching
+the existing concrete `std`/`rst`/`py`/`js` fields. During the read phase:
+
+- analyze only source roots requested by the document or apidoc-generated
+  entry point, and cache the snapshot by source/config/backend identity;
+- clear declarations and aliases for a document before rereading it;
+- register objects and index entries through the same aggregation path used
+  by existing domains;
+- resolve xrefs after all documents are read, with domain-relative context and
+  explicit-title/shortening behavior; and
+- retain unresolved xrefs and backend diagnostics for the configured warning
+  policy rather than turning an analyzer failure into an empty domain.
+
+Include the analyzer backend, toolchain/schema version, Cargo/Lean options,
+source hashes, and domain schema version in incremental rebuild inputs. Bump
+the environment persistence version when the declaration model changes;
+persist typed Rust/Lean domain data or deliberately invalidate it. Never load
+an old snapshot as an apparently empty Rust/Lean domain.
+
+Update search name handling so namespace separators are language-aware:
+Python keeps dotted splitting, Rust recognizes `::`, and Lean recognizes
+namespace dots without treating a type's punctuation as a final-dot-only
+hierarchy. Search results should expose canonical names, short names, aliases,
+kind labels, documentation text, and source locations consistently. Add
+cross-language collision tests; a Rust `Thing` record must not shadow a Lean
+`Thing` record merely because their short names match.
+
+#### H14g -- Rust/Lean autodoc and `sphinx-autodoc-rs`
+
+Refactor the rendering portion of `autodoc.rs` around a source-independent
+documenter contract. Keep the current Python entry points and option parsing
+working, but introduce an adapter that supplies H14b declaration records and
+lets a language renderer choose its directive, signature formatter, member
+ordering, and documentation body.
+
+The planned API should support the equivalent of:
+
+```text
+document_source(request, analyzer, renderer) -> Result<Vec<StructuredDescription>, AutodocError>
+```
+
+where `request` includes source kind, root/package/item, members policy,
+private/hidden policy, excluded names, ordering, and backend settings. Rust
+and Lean renderers must:
+
+- render module and namespace trees deterministically;
+- include or omit private/hidden/deprecated declarations according to
+  explicit options;
+- render declaration signatures without Python-specific `ruff` formatting;
+- retain source locations and canonical names for domain registration;
+- preserve doc comment paragraphs, code blocks, lists, and cross-reference
+  markup through the parser's structured path; and
+- report unsupported declaration kinds rather than dropping them silently.
+
+Define the standalone `sphinx-autodoc-rs` CLI only after this library
+contract is tested. Its initial modes should be `--source-kind rust` and
+`--source-kind lean`, with `auto` determined from a Cargo manifest or `.lean`
+input. `--use-python-impl` remains valid for Python and for explicitly
+requested unsupported source modes. The CLI must print backend/toolchain
+failures with the source path and declaration name that caused them.
+
+Python remains the reference implementation for `document_module` and
+`document_module_auto`; do not force Rust/Lean fields into Python's
+`AutodocOptions` when a source-neutral request type is cleaner. Preserve
+Python's accepted deviations from H9 and add Rust/Lean deviations separately
+so parity reports cannot accidentally mix the three languages.
+
+#### H14h -- Rust/Lean apidoc and `sphinx-apidoc-rs`
+
+Extend `ApidocOptions` with a source mode while preserving the current
+Python-default constructor and CLI behavior. The mode must distinguish:
+
+- `python`: current package/module discovery and `automodule` templates;
+- `rust`: Cargo package/workspace discovery and rustdoc-backed module roots;
+- `lean`: Lean file/module discovery and namespace roots; and
+- `auto`: select one mode from the input manifest or suffix, failing on
+  ambiguous mixed roots unless the caller chooses a mode.
+
+Rust discovery must understand a workspace `Cargo.toml`, package manifests,
+`src/lib.rs`, `src/main.rs` where requested, nested `mod.rs` and `foo.rs`
+modules, `include!` boundaries only when rustdoc confirms the item graph, and
+package features/targets. It must produce stable crate/module names and
+delegate declaration membership to the Rust analyzer rather than treating
+every `.rs` file as a public module.
+
+Lean discovery must understand a project root containing `lakefile.lean` or a
+documented module root, recurse through `.lean` files, map file paths to Lean
+module names, and use imports/namespaces from the Arborium snapshot to avoid
+inventing package membership. Private helper files can be excluded by the
+same explicit policy used by the analyzer.
+
+Add source-specific templates and options:
+
+| source | generated entry point | options |
+| --- | --- | --- |
+| Rust | `rust:module` plus generated child declarations | package, target, features, cfg, `document-private-items`, member order |
+| Lean | `lean:module` / `lean:namespace` plus generated child declarations | module root, imports, private declarations, namespace grouping, member order |
+| Python | existing `automodule` output | all current `ApidocOptions`, unchanged defaults and `--full` behavior |
+
+Generated files must be deterministic, preserve `--force`, `--dry-run`,
+`--remove-old`, exclusion, suffix, and template-dir semantics, and never
+overwrite a Python output tree with Rust or Lean files without an explicit
+mode. `--full` should add the required domain/source extension to the
+generated project configuration, while retaining the current Python quickstart
+path. Add a manifest/source-kind marker to generated files so a later run can
+detect a mode mismatch before deleting files.
+
+#### H14i -- tests, parity gates, and accepted deviations
+
+Build tests around fixtures rather than live third-party workspaces. Add:
+
+- unit tests for H14b normalization, qualified-name shortening, aliases,
+  visibility, source spans, deterministic ordering, and schema round trips;
+- Rust fixture-crate tests for modules, reexports, impls, trait items,
+  associated items, macros, hidden/deprecated items, generic signatures, and
+  rustdoc links through the selected librustdoc adapter;
+- Lean Arborium snapshots for every declaration form in H14a, including
+  nested namespaces, comments, notation, malformed input, and byte ranges;
+- parser/writer tests for native Rust/Lean description directives and nested
+  documentation content;
+- environment tests for rereads, persistence invalidation, domain merge,
+  ambiguous short names, aliases, unresolved references, and search output;
+- autodoc tests comparing generated structured descriptions against the source
+  declaration snapshots; and
+- apidoc tests for Cargo workspaces, Lean module trees, mixed-root rejection,
+  dry-run/removal behavior, templates, and Python backward compatibility.
+
+The focused default gate should run without upstream Sphinx and exercise the
+native fixtures. A `test-parity` gate should additionally:
+
+1. compare Rust declaration names/signatures/docs against rustdoc output from
+   the pinned toolchain;
+2. compare Lean parse/declaration snapshots against the pinned Arborium
+   grammar corpus;
+3. build the same generated RST through the native parser and the documented
+   Python fallback where a Python domain equivalent exists; and
+4. compare normalized doctree/object/search output, never only the existence
+   of an HTML file.
+
+Expected limitations must be recorded per language. Likely initial accepted
+deviations include rustdoc toolchain-version differences, macro-expanded
+source locations, Lean elaboration information unavailable from syntax alone,
+and unsupported custom attributes. None of these may be represented as
+silently missing declarations: emit a diagnostic and identify the affected
+item. A backend-unavailable error is preferable to a false-success empty
+domain.
+
+#### H14j -- delivery order and completion gate
+
+Land H14 in the following reviewable increments:
+
+1. **H14a/H14b:** backend probes, pinned fixture manifests, declaration
+   schema, serialization, diagnostics, and Python adapter smoke tests.
+2. **H14c/H14d:** Rust librustdoc and Lean Arborium analyzers with snapshot
+   fixtures; no parser or CLI changes until both produce stable snapshots.
+3. **H14e/H14f:** parser-native descriptions, domain registration, xrefs,
+   search, incremental invalidation, environment persistence, and writers.
+4. **H14g:** source-neutral autodoc library plus Rust/Lean renderers and
+   focused `sphinx-autodoc-rs` CLI behavior.
+5. **H14h:** source-mode apidoc discovery, templates, `--full`, and
+   `sphinx-apidoc-rs` backward-compatibility tests.
+6. **H14i/H14j:** parity fixtures, accepted-deviation records, documentation,
+   feature-gated CI, and final full-crate verification.
+
+H14 is complete when a Rust crate and a Lean module tree can each be
+discovered by apidoc, rendered by autodoc, registered in their domain,
+cross-referenced from another document, searched by canonical and short name,
+persisted and incrementally reread, and built through the native parser and
+HTML writer without silently dropping declarations. The Python C3/H9 behavior
+must remain green throughout.
+
+**Planned commit message:** `PRO: plan Rust and Lean domain, autodoc, and apidoc support`
+
 ### 9.5 Remaining work not completed this session
 
 A 2026-07-28 session closed **H6** (theming — it was already
@@ -2204,7 +2585,9 @@ their own sessions. This
 section is a concrete starting point for
 picking them back up, based on what these sessions learned about the
 codebase's actual shape (as opposed to `docutilsrs::doctree::NodeKind`
-in the abstract):
+in the abstract). H14 is the planned follow-up for Rust/Lean source
+analysis and documentation tooling; it is intentionally not counted as
+implemented by the current Python-only C3/H9 rows:
 
 - **`epub` (H7d remainder).** The output is a zip archive
   (`crate::zip_writer` in `docutilsrs` already exists and is exercised

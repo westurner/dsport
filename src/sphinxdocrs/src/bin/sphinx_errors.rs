@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, ValueEnum};
 use sphinxdocrs::cli::io::RealTerminal;
 use sphinxdocrs::error_log::{
-    ErrorDatabase, ErrorLogError, ErrorMessage, InputFormat, RealEditor, import_file,
-    run_interactive,
+    import_file, run_interactive, ErrorDatabase, ErrorLogError, ErrorMessage, InputFormat,
+    RealEditor,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -138,4 +138,46 @@ fn is_sqlite_path(path: &Path) -> bool {
         path.extension().and_then(|extension| extension.to_str()),
         Some("db") | Some("sqlite") | Some("sqlite3")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_formats_convert_to_input_formats() {
+        assert_eq!(InputFormat::from(CliFormat::Auto), InputFormat::Auto);
+        assert_eq!(InputFormat::from(CliFormat::Text), InputFormat::Text);
+        assert_eq!(InputFormat::from(CliFormat::Json), InputFormat::Json);
+        assert_eq!(InputFormat::from(CliFormat::Sqlite), InputFormat::Sqlite);
+    }
+
+    #[test]
+    fn print_error_formats_all_location_shapes() {
+        for (path, line, char_number) in [
+            ("index.rst", Some(4), Some(2)),
+            ("index.rst", Some(4), None),
+            ("index.rst", None, Some(2)),
+            ("", None, None),
+        ] {
+            print_error(&ErrorMessage {
+                id: 0,
+                build_id: 0,
+                status: String::new(),
+                path: path.to_owned(),
+                line,
+                char: char_number,
+                msg: "diagnostic".to_owned(),
+            });
+        }
+    }
+
+    #[test]
+    fn sqlite_path_detection_accepts_supported_extensions_only() {
+        assert!(is_sqlite_path(Path::new("errors.db")));
+        assert!(is_sqlite_path(Path::new("errors.sqlite")));
+        assert!(is_sqlite_path(Path::new("errors.sqlite3")));
+        assert!(!is_sqlite_path(Path::new("errors.json")));
+        assert!(!is_sqlite_path(Path::new("errors")));
+    }
 }

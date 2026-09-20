@@ -199,3 +199,42 @@ fn py_sphinx_apidoc() {
 fn py_sphinx_autogen() {
     println!("stub running");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pyo3::types::PyModule;
+
+    #[test]
+    fn python_module_registers_and_dispatches_public_surface() {
+        Python::attach(|py| -> PyResult<()> {
+            let module = PyModule::new(py, "sphinxdocrs_test")?;
+            sphinxdocrs(py, &module)?;
+
+            let module_version: String = module.getattr("version")?.call0()?.extract()?;
+            assert_eq!(module_version, version());
+
+            let module_features: Vec<String> = module.getattr("features")?.call0()?.extract()?;
+            assert_eq!(module_features.len(), features().len());
+            assert!(
+                module
+                    .getattr("supports")?
+                    .call1(("util:matching",))?
+                    .extract::<bool>()?
+            );
+            assert!(
+                !module
+                    .getattr("supports")?
+                    .call1(("missing:feature",))?
+                    .extract::<bool>()?
+            );
+
+            module.getattr("main")?.call0()?;
+            module.getattr("sphinx_quickstart")?.call0()?;
+            module.getattr("sphinx_apidoc")?.call0()?;
+            module.getattr("sphinx_autogen")?.call0()?;
+            Ok(())
+        })
+        .unwrap();
+    }
+}

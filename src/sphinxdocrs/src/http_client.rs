@@ -74,6 +74,9 @@ pub enum Backend {
     Reqwest,
 }
 
+#[cfg(test)]
+pub(crate) static HTTP_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Resolve the active backend from `SPHINXDOCRS_HTTP_CLIENT`.
 ///
 /// Falls back to [`Backend::Curl`] when the variable is unset, not
@@ -408,11 +411,27 @@ fn reqwest_download(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread::JoinHandle;
 
     /// `SPHINXDOCRS_HTTP_CLIENT` is process-global state; serialize the tests
     /// that touch it so they don't race under the default parallel test
     /// harness (same pattern as `locale.rs` / `roles.rs`).
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    use super::HTTP_ENV_LOCK as ENV_LOCK;
+
+    fn local_http_server(response: &str) -> (String, JoinHandle<()>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let response = response.as_bytes().to_vec();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request);
+            stream.write_all(&response).unwrap();
+        });
+        (format!("http://{address}/payload"), handle)
+    }
 
     #[test]
     fn is_http_url_only_accepts_http() {
@@ -463,5 +482,149 @@ mod tests {
         let err = download_to_file("ftp://example.com/x", &dest, 5, 1024).unwrap_err();
         assert!(err.0.contains("unsupported scheme"));
         assert!(!dest.exists());
+    }
+
+    #[test]
+    fn curl_request_and_download_cover_success_and_failure_paths() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (head_url, head_server) = local_http_server(
+            "HTTP/1.1 204 No Content\r\nRetry-After: invalid\r\nContent-Length: 0\r\n\r\n",
+        );
+        let head = request(&head_url, Method::Head, 5).unwrap();
+        assert_eq!(head.status, 204);
+        assert_eq!(head.body, None);
+        assert_eq!(head.retry_after_secs, None);
+        head_server.join().unwrap();
+
+        let (get_url, get_server) = local_http_server(
+            "HTTP/1.1 200 OK\r\nRetry-After: 7\r\nContent-Length: 5\r\n\r\nhello",
+        );
+        let get = request(&get_url, Method::Get, 5).unwrap();
+        assert_eq!(get.status, 200);
+        assert_eq!(get.final_url, get_url);
+        assert_eq!(get.body, Some(b"hello".to_vec()));
+        assert_eq!(get.retry_after_secs, Some(7));
+        get_server.join().unwrap();
+
+        let (download_url, download_server) =
+            local_http_server("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\ndownloaded");
+        let tmp = tempfile::tempdir().unwrap();
+        let destination = tmp.path().join("payload.bin");
+        download_to_file(&download_url, &destination, 5, 1024).unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), b"downloaded");
+        download_server.join().unwrap();
+
+        let (failure_url, failure_server) =
+            local_http_server("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+        let failure =
+            download_to_file(&failure_url, &tmp.path().join("missing.bin"), 5, 1024).unwrap_err();
+        assert!(failure.0.contains("curl exited"));
+        failure_server.join().unwrap();
+
+        let curl_error = request("http://", Method::Head, 1).unwrap_err();
+        assert!(curl_error.0.contains("curl exited"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn curl_download_rejects_non_utf8_destination() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        use std::os::unix::ffi::OsStringExt;
+
+        let invalid = std::path::PathBuf::from(std::ffi::OsString::from_vec(vec![0xff]));
+        let error = download_to_file("http://127.0.0.1/unused", &invalid, 1, 1).unwrap_err();
+        assert!(error.0.contains("not valid UTF-8"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn curl_handles_missing_status_and_missing_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let fake_bin = tempfile::tempdir().unwrap();
+        let fake_curl = fake_bin.path().join("curl");
+        std::fs::write(&fake_curl, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&fake_curl, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let previous_path = std::env::var_os("PATH");
+        // SAFETY: HTTP_ENV_LOCK serializes every test that invokes curl.
+        unsafe {
+            std::env::set_var("PATH", fake_bin.path());
+        }
+        let no_status = request("http://example.com", Method::Head, 1).unwrap_err();
+        assert!(no_status.0.contains("curl produced no status code"));
+
+        let missing_bin = tempfile::tempdir().unwrap();
+        // SAFETY: HTTP_ENV_LOCK serializes every test that invokes curl.
+        unsafe {
+            std::env::set_var("PATH", missing_bin.path());
+        }
+        let missing_request = request("http://example.com", Method::Head, 1).unwrap_err();
+        assert!(missing_request.0.contains("failed to run curl"));
+        let missing_download = download_to_file(
+            "http://example.com",
+            &fake_bin.path().join("unused.bin"),
+            1,
+            1,
+        )
+        .unwrap_err();
+        assert!(missing_download.0.contains("failed to run curl"));
+
+        // SAFETY: HTTP_ENV_LOCK serializes every test that invokes curl.
+        unsafe {
+            match previous_path {
+                Some(path) => std::env::set_var("PATH", path),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+    }
+
+    #[cfg(feature = "http-reqwest")]
+    #[test]
+    fn reqwest_request_and_download_cover_dispatch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // SAFETY: guarded by ENV_LOCK above.
+        unsafe {
+            std::env::set_var("SPHINXDOCRS_HTTP_CLIENT", "reqwest");
+        }
+
+        let (head_url, head_server) = local_http_server(
+            "HTTP/1.1 204 No Content\r\nRetry-After: 3\r\nContent-Length: 0\r\n\r\n",
+        );
+        let head = request(&head_url, Method::Head, 5).unwrap();
+        assert_eq!(head.status, 204);
+        assert_eq!(head.body, None);
+        assert_eq!(head.retry_after_secs, Some(3));
+        head_server.join().unwrap();
+
+        let (get_url, get_server) =
+            local_http_server("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello");
+        let get = request_with_limit(&get_url, Method::Get, 5, 3).unwrap();
+        assert_eq!(get.body, Some(b"hel".to_vec()));
+        get_server.join().unwrap();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let (download_url, download_server) =
+            local_http_server("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\ndownloaded");
+        let destination = tmp.path().join("payload.bin");
+        download_to_file(&download_url, &destination, 5, 1024).unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), b"downloaded");
+        download_server.join().unwrap();
+
+        let (failure_url, failure_server) =
+            local_http_server("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+        let failure =
+            download_to_file(&failure_url, &tmp.path().join("missing.bin"), 5, 1024).unwrap_err();
+        assert!(failure.0.contains("HTTP status 404"));
+        failure_server.join().unwrap();
+
+        let request_error = request("http://127.0.0.1:1/unused", Method::Get, 1).unwrap_err();
+        assert!(request_error.0.contains("request failed"));
+
+        // SAFETY: guarded by ENV_LOCK above.
+        unsafe {
+            std::env::remove_var("SPHINXDOCRS_HTTP_CLIENT");
+        }
     }
 }

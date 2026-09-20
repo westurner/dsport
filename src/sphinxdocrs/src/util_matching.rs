@@ -328,6 +328,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pyo3::types::{PyDict, PyModule};
+
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
 
     #[test]
     fn translate_single_star() {
@@ -448,5 +452,91 @@ mod tests {
         let root = Path::new("/tmp/sphinxdocrs-root");
         let other = Path::new("/tmp/sphinxdocrs-other");
         assert_eq!(relative_posix(root, other), "");
+    }
+
+    #[test]
+    fn translate_pattern_covers_empty_and_unterminated_classes() {
+        assert_eq!(translate_pattern("["), "\\[$");
+        assert_eq!(translate_pattern("[!"), "\\[\\!$");
+        assert!(Regex::new(&format!("^{}", translate_pattern("[]"))).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn matching_files_handles_symlinks_and_nested_excluded_directories() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("nested/deep")).unwrap();
+        std::fs::create_dir_all(root.path().join("nested/skipdir")).unwrap();
+        std::fs::write(root.path().join("nested/deep/keep.rst"), "").unwrap();
+        std::fs::write(root.path().join("nested/skipdir/skip.rst"), "").unwrap();
+        symlink(
+            root.path().join("does-not-exist"),
+            root.path().join("broken.rst"),
+        )
+        .unwrap();
+        let fifo = root.path().join("pipe");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+
+        let files = get_matching_files(
+            root.path(),
+            &["**".to_string()],
+            &["nested/skipdir".to_string()],
+        )
+        .unwrap();
+        assert!(files.contains(&"broken.rst".to_string()));
+        assert!(files.contains(&"nested/deep/keep.rst".to_string()));
+        assert!(!files.iter().any(|file| file.starts_with("nested/skipdir/")));
+    }
+
+    #[test]
+    fn python_surface_registers_and_handles_matchers_and_pathlikes() {
+        Python::attach(|py| -> PyResult<()> {
+            let module = PyModule::new(py, "matching_test")?;
+            register(&module)?;
+
+            let compiled = py_compile_matchers(py, vec!["*.rst".to_string()])?;
+            let callable = compiled.get_item(0)?;
+            let matched: Option<String> = callable.call1(("index.rst",))?.extract()?;
+            assert_eq!(matched.as_deref(), Some("index.rst"));
+            let missing: Option<String> = callable.call1(("index.py",))?.extract()?;
+            assert!(missing.is_none());
+
+            let matcher = PyMatcher::new(vec!["*.rst".to_string()])?;
+            assert!(matcher.__call__("index.rst"));
+            assert!(!matcher.py_match("index.py"));
+
+            let root = tempfile::tempdir().unwrap();
+            std::fs::write(root.path().join("index.rst"), "").unwrap();
+            let path = root.path().to_str().unwrap().to_string();
+            let path_obj = path.clone().into_pyobject(py)?.into_any();
+            let files = py_get_matching_files(py, path_obj, None, None)?;
+            let files: Vec<String> = files.extract()?;
+            assert_eq!(files, vec!["index.rst"]);
+
+            let locals = PyDict::new(py);
+            locals.set_item("path", path)?;
+            let pathlike = py.eval(
+                &std::ffi::CString::new(
+                    "type('PathLike', (), {'__fspath__': lambda self: path})()",
+                )?,
+                Some(&locals),
+                Some(&locals),
+            )?;
+            let files =
+                py_get_matching_files(py, pathlike, Some(vec!["*.rst".to_string()]), Some(vec![]))?;
+            let files: Vec<String> = files.extract()?;
+            assert_eq!(files, vec!["index.rst"]);
+
+            let py_error = to_py_err(Regex::new("[").unwrap_err());
+            assert!(py_error.is_instance_of::<PyValueError>(py));
+            Ok(())
+        })
+        .unwrap();
     }
 }

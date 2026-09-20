@@ -13,7 +13,7 @@
 //! popping here mirrors that contract).
 
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::types::{PyDict, PyModule, PyTuple};
 
 /// Default ``parallel_write_safe`` when not provided by ``setup()``.
 const DEFAULT_PARALLEL_WRITE_SAFE: bool = true;
@@ -227,6 +227,19 @@ mod tests {
             );
             assert!(defaults.parallel_read_safe.bind(py).is_none());
             assert!(defaults.parallel_write_safe.bind(py).extract::<bool>()?);
+
+            let module = PyModule::new(py, "extension_test")?;
+            register(&module)?;
+            assert!(module.getattr("Extension").is_ok());
+
+            let bad_name = py.eval(
+                &CString::new("type('Bad', (), {'__str__': lambda self: 1})()")?,
+                None,
+                None,
+            )?;
+            let bad_name_extension =
+                Extension::new(py, bad_name.into_any().unbind(), py.None(), None)?;
+            assert_eq!(bad_name_extension.__repr__(py)?, "<Extension <extension>>");
             Ok(())
         })
         .unwrap();
@@ -282,7 +295,30 @@ mod tests {
             let needs = PyDict::new(py);
             needs.set_item("unknown", "1.0")?;
             config.setattr("needs_extensions", needs)?;
-            assert!(py_verify_needs_extensions(py, app.into_any(), config.into_any()).is_err());
+            assert!(
+                py_verify_needs_extensions(py, app.clone().into_any(), config.clone().into_any())
+                    .is_err()
+            );
+
+            let invalid = py.eval(
+                &CString::new("type('Ext', (), {'version': 'not-a-version'})()")?,
+                None,
+                None,
+            )?;
+            extensions.set_item("invalid", invalid)?;
+
+            let needs = PyDict::new(py);
+            needs.set_item("invalid", "z-version")?;
+            config.setattr("needs_extensions", needs)?;
+            assert!(
+                py_verify_needs_extensions(py, app.clone().into_any(), config.clone().into_any())
+                    .is_err()
+            );
+
+            let needs = PyDict::new(py);
+            needs.set_item("invalid", "a-version")?;
+            config.setattr("needs_extensions", needs)?;
+            assert!(py_verify_needs_extensions(py, app.into_any(), config.into_any()).is_ok());
             Ok(())
         })
         .unwrap();

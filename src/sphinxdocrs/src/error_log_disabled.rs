@@ -80,3 +80,50 @@ pub fn run_interactive<T: Terminal, E>(
 ) -> Result<usize, ErrorLogError> {
     Err(ErrorLogError)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+
+    struct NoopTerminal;
+
+    impl Terminal for NoopTerminal {
+        fn print(&self, _line: &str) {}
+
+        fn prompt(&self, _prompt_text: &str) -> io::Result<String> {
+            Ok(String::new())
+        }
+    }
+
+    #[test]
+    fn disabled_database_api_returns_the_feature_guidance_error() {
+        let error = ErrorLogError;
+        assert_eq!(
+            error.to_string(),
+            "SQLite error logging is disabled; rebuild with --features sqlite-error-db"
+        );
+        assert!(std::error::Error::source(&error).is_none());
+        assert_eq!(
+            ErrorLogError::from(io::Error::other("ignored")).to_string(),
+            error.to_string()
+        );
+
+        assert!(ErrorDatabase::open("ignored.db").is_err());
+        assert!(ErrorDatabase.list_errors(None, false).is_err());
+        assert!(
+            import_file(
+                "ignored.db",
+                "ignored.log",
+                InputFormat::Auto,
+                "sphinx-build"
+            )
+            .is_err()
+        );
+
+        let terminal = NoopTerminal;
+        terminal.print("ignored");
+        assert!(terminal.prompt("ignored").is_ok());
+        assert!(run_interactive(&ErrorDatabase, &terminal, &(), None, false).is_err());
+    }
+}

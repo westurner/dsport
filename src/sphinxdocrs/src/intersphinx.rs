@@ -581,6 +581,9 @@ mod tests {
 
     #[test]
     fn creates_cache_dir() {
+        let _guard = crate::http_client::HTTP_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // A mapping to a non-existent URL — curl will fail, but the cache dir
         // itself must be created.
         let cfg = config_with_intersphinx(vec![(

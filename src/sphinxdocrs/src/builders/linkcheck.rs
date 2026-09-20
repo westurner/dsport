@@ -617,6 +617,9 @@ mod tests {
 
     #[test]
     fn check_uri_network_error_exhausts_retries_reports_broken() {
+        let _guard = crate::http_client::HTTP_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // Port 0 is never a valid connection target, so this fails fast
         // with a connection error rather than timing out.
         let cfg = LinkcheckConfig {

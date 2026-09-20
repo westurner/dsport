@@ -14,7 +14,7 @@ use sphinxdocrs::apidoc::generate::{
     create_module_file, create_modules_toc_file, is_excluded, is_initpy, module_join, recurse_tree,
 };
 use sphinxdocrs::apidoc::parser::parse_args;
-use sphinxdocrs::apidoc::settings::ApidocOptions;
+use sphinxdocrs::apidoc::settings::{ApidocOptions, SourceMode};
 use sphinxdocrs::apidoc::templates::ApidocTemplates;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -228,6 +228,67 @@ fn recurse_tree_include_private(templates: &ApidocTemplates) {
         has_private,
         "private module should be included when -P + -e: {written:?}"
     );
+}
+
+#[rstest]
+fn source_fixtures_generate_native_entry_points(templates: &ApidocTemplates) {
+    let output = TempDir::new().unwrap();
+    let rust_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/h14/rust");
+    let rust_output = output.path().join("rust");
+    std::fs::create_dir_all(&rust_output).unwrap();
+    let mut rust_options = ApidocOptions::new(rust_root.clone(), rust_output.clone());
+    rust_options.source_mode = SourceMode::Rust;
+    rust_options.cargo_manifest = Some(rust_root.join("Cargo.toml"));
+    rust_options.cargo_package = Some("h14_fixture".to_owned());
+    rust_options.force = true;
+    rust_options.quiet = true;
+
+    let (rust_files, rust_modules) =
+        recurse_tree(&rust_root, &[], &rust_options, templates).unwrap();
+    assert_eq!(rust_modules, ["h14_fixture", "h14_fixture.api"]);
+    assert_eq!(rust_files.len(), 2);
+    let rust_entry = std::fs::read_to_string(rust_output.join("h14_fixture.api.rst")).unwrap();
+    assert!(rust_entry.contains("source-mode: rust"));
+    assert!(rust_entry.contains(".. rust:module:: h14_fixture::api"));
+    assert!(rust_entry.contains(":source:"));
+
+    let lean_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/h14/lean");
+    let lean_output = output.path().join("lean");
+    std::fs::create_dir_all(&lean_output).unwrap();
+    let mut lean_options = ApidocOptions::new(lean_root.clone(), lean_output.clone());
+    lean_options.source_mode = SourceMode::Lean;
+    lean_options.force = true;
+    lean_options.quiet = true;
+
+    let (lean_files, lean_modules) =
+        recurse_tree(&lean_root, &[], &lean_options, templates).unwrap();
+    assert_eq!(lean_modules, ["Demo", "Malformed"]);
+    assert_eq!(lean_files.len(), 2);
+    let lean_entry = std::fs::read_to_string(lean_output.join("Demo.rst")).unwrap();
+    assert!(lean_entry.contains("source-mode: lean"));
+    assert!(lean_entry.contains(".. lean:module:: Demo"));
+    assert!(lean_entry.contains(":source:"));
+}
+
+#[test]
+fn auto_source_mode_rejects_mixed_rust_and_lean_roots() {
+    let root = TempDir::new().unwrap();
+    let output = TempDir::new().unwrap();
+    std::fs::write(root.path().join("lib.rs"), "pub fn answer() {}\n").unwrap();
+    std::fs::write(root.path().join("Demo.lean"), "def answer := 1\n").unwrap();
+
+    let options = ApidocOptions {
+        source_mode: SourceMode::Auto,
+        force: true,
+        quiet: true,
+        ..ApidocOptions::new(root.path().to_path_buf(), output.path().to_path_buf())
+    };
+
+    let template_set = templates();
+    let error = recurse_tree(root.path(), &[], &options, &template_set).unwrap_err();
+    assert!(error.to_string().contains("mixed Rust and Lean"));
 }
 
 // ── module/package file content snapshots ────────────────────────────────────

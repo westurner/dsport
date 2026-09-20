@@ -46,10 +46,15 @@
 //! [`document_module_auto`]/[`crate::autodoc_runtime`].
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ruff_python_ast::{Expr, Parameters, Stmt, StmtClassDef, StmtFunctionDef};
 use ruff_python_parser::parse_module;
+
+use crate::source_analysis::{
+    AnalysisError, DeclarationKind, SourceAnalysisRequest, SourceAnalyzer, SourceDeclaration,
+    SourceLanguage, SourceSpan, Visibility,
+};
 
 /// Error type for autodoc extraction.
 #[derive(Debug)]
@@ -947,16 +952,220 @@ pub fn document_module_auto(
     }
 }
 
+/// Source-neutral request for Rust/Lean autodoc generation.
+#[derive(Debug, Clone)]
+pub struct SourceAutodocRequest {
+    pub language: SourceLanguage,
+    pub analysis: SourceAnalysisRequest,
+    pub include_private: bool,
+    pub include_deprecated: bool,
+    pub include_hidden: bool,
+}
+
+impl SourceAutodocRequest {
+    pub fn new(source_root: impl Into<PathBuf>, language: SourceLanguage) -> Self {
+        let mut analysis = SourceAnalysisRequest::new(source_root);
+        analysis.include_private = false;
+        Self {
+            language,
+            analysis,
+            include_private: false,
+            include_deprecated: true,
+            include_hidden: false,
+        }
+    }
+}
+
+/// One parser-native source description produced by the shared autodoc API.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructuredDescription {
+    pub language: SourceLanguage,
+    pub directive: String,
+    pub kind: DeclarationKind,
+    pub name: String,
+    pub signature: Option<String>,
+    pub documentation: String,
+    pub source: SourceSpan,
+    pub children: Vec<String>,
+}
+
+/// Language-specific policy for source declaration directives and signatures.
+pub trait SourceAutodocRenderer {
+    fn language(&self) -> SourceLanguage;
+    fn directive_for(&self, kind: &DeclarationKind) -> Option<&'static str>;
+    fn signature_for(&self, declaration: &SourceDeclaration) -> Option<String>;
+}
+
+/// Rust renderer for the source-neutral autodoc contract.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RustSourceRenderer;
+
+impl SourceAutodocRenderer for RustSourceRenderer {
+    fn language(&self) -> SourceLanguage { SourceLanguage::Rust }
+
+    fn directive_for(&self, kind: &DeclarationKind) -> Option<&'static str> {
+        Some(match kind {
+            DeclarationKind::AssociatedConstant => "rust:associatedconst",
+            DeclarationKind::AssociatedType => "rust:associatedtype",
+            DeclarationKind::Constant => "rust:constant",
+            DeclarationKind::Enum => "rust:enum",
+            DeclarationKind::Field => "rust:field",
+            DeclarationKind::Function => "rust:function",
+            DeclarationKind::Impl => "rust:impl",
+            DeclarationKind::Macro => "rust:macro",
+            DeclarationKind::Method => "rust:method",
+            DeclarationKind::Module => "rust:module",
+            DeclarationKind::Static => "rust:static",
+            DeclarationKind::Struct => "rust:struct",
+            DeclarationKind::Trait => "rust:trait",
+            DeclarationKind::TypeAlias => "rust:type",
+            DeclarationKind::Union => "rust:union",
+            DeclarationKind::Variant => "rust:variant",
+            _ => return None,
+        })
+    }
+
+    fn signature_for(&self, declaration: &SourceDeclaration) -> Option<String> {
+        declaration.signature.as_ref().map(|signature| {
+            format!("{} {signature}", declaration.qualified_name)
+        })
+    }
+}
+
+/// Lean renderer for the source-neutral autodoc contract.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LeanSourceRenderer;
+
+impl SourceAutodocRenderer for LeanSourceRenderer {
+    fn language(&self) -> SourceLanguage { SourceLanguage::Lean }
+
+    fn directive_for(&self, kind: &DeclarationKind) -> Option<&'static str> {
+        Some(match kind {
+            DeclarationKind::Abbrev => "lean:abbrev",
+            DeclarationKind::Axiom => "lean:axiom",
+            DeclarationKind::Class => "lean:class",
+            DeclarationKind::Definition => "lean:def",
+            DeclarationKind::Example => "lean:example",
+            DeclarationKind::Field => "lean:field",
+            DeclarationKind::Inductive => "lean:inductive",
+            DeclarationKind::Instance => "lean:instance",
+            DeclarationKind::Lemma => "lean:lemma",
+            DeclarationKind::Module => "lean:module",
+            DeclarationKind::Namespace => "lean:namespace",
+            DeclarationKind::Notation => "lean:notation",
+            DeclarationKind::Opaque => "lean:opaque",
+            DeclarationKind::Structure => "lean:structure",
+            DeclarationKind::Theorem => "lean:theorem",
+            DeclarationKind::Variant => "lean:constructor",
+            _ => return None,
+        })
+    }
+
+    fn signature_for(&self, declaration: &SourceDeclaration) -> Option<String> {
+        declaration
+            .signature
+            .clone()
+            .or_else(|| Some(declaration.qualified_name.clone()))
+    }
+}
+
+/// Render a source snapshot into structured descriptions without exposing
+/// rustdoc or Arborium types to downstream consumers.
+pub fn document_source<A: SourceAnalyzer, R: SourceAutodocRenderer>(
+    request: &SourceAutodocRequest,
+    analyzer: &A,
+    renderer: &R,
+) -> Result<Vec<StructuredDescription>, AnalysisError> {
+    let snapshot = analyzer.analyze(&request.analysis)?;
+    if request.language != renderer.language() || snapshot.language != renderer.language() {
+        return Err(AnalysisError::InvalidRequest(format!(
+            "source renderer is for {}, but analyzer produced {}",
+            renderer.language(),
+            snapshot.language
+        )));
+    }
+    let include_private = request.include_private || request.analysis.include_private;
+    let mut declarations = snapshot
+        .declarations
+        .into_iter()
+        .filter(|declaration| {
+            (include_private || !matches!(declaration.visibility, Visibility::Private))
+                && (request.include_deprecated || !declaration.deprecated)
+                && (request.include_hidden || !declaration.noindex)
+                && renderer.directive_for(&declaration.kind).is_some()
+        })
+        .collect::<Vec<_>>();
+    declarations.sort_by(|left, right| {
+        left.qualified_name
+            .cmp(&right.qualified_name)
+            .then(left.kind.cmp(&right.kind))
+    });
+    Ok(declarations
+        .into_iter()
+        .filter_map(|declaration| {
+            let directive = renderer.directive_for(&declaration.kind)?.to_string();
+            let signature = renderer.signature_for(&declaration);
+            Some(StructuredDescription {
+                language: declaration.language,
+                directive,
+                kind: declaration.kind,
+                name: declaration.qualified_name,
+                signature,
+                documentation: declaration.documentation,
+                source: declaration.source,
+                children: declaration.children,
+            })
+        })
+        .collect())
+}
+
+/// Render structured source descriptions through the parser's native domain
+/// directive path. Unsupported declarations have already been filtered by
+/// `document_source`, never silently emitted as plain paragraphs.
+pub fn render_source_rst(descriptions: &[StructuredDescription]) -> String {
+    let mut output = String::new();
+    for description in descriptions {
+        let signature = description
+            .signature
+            .as_deref()
+            .unwrap_or(&description.name);
+        let argument = if description.language == SourceLanguage::Lean {
+            description.name.as_str()
+        } else {
+            signature.trim()
+        };
+        output.push_str(&format!(".. {}:: {argument}\n", description.directive));
+        if description.language == SourceLanguage::Lean && signature.trim() != description.name {
+            output.push('\n');
+            for line in signature.lines() {
+                output.push_str("   ");
+                output.push_str(line);
+                output.push('\n');
+            }
+        }
+        if !description.documentation.is_empty() {
+            output.push('\n');
+            for line in description.documentation.lines() {
+                output.push_str("   ");
+                output.push_str(line);
+                output.push('\n');
+            }
+        }
+        output.push('\n');
+    }
+    output
+}
+
 fn member_kind_tag(kind: crate::autodoc_runtime::MemberKind) -> MemberKindTag {
     use crate::autodoc_runtime::MemberKind as K;
     match kind {
-        K::Module => MemberKindTag::Module,
+        K::Attribute => MemberKindTag::Attribute,
         K::Class => MemberKindTag::Class,
         K::Exception => MemberKindTag::Exception,
         K::Function => MemberKindTag::Function,
         K::Method => MemberKindTag::Method,
+        K::Module => MemberKindTag::Module,
         K::Property => MemberKindTag::Property,
-        K::Attribute => MemberKindTag::Attribute,
     }
 }
 
@@ -1076,12 +1285,103 @@ fn render_module_from_runtime(
 mod tests {
     use super::*;
 
+    struct FixtureAnalyzer;
+
+    impl SourceAnalyzer for FixtureAnalyzer {
+        fn analyze(
+            &self,
+            _request: &SourceAnalysisRequest,
+        ) -> Result<crate::source_analysis::AnalysisSnapshot, AnalysisError> {
+            let source = SourceSpan::new(
+                "src/lib.rs",
+                crate::source_analysis::SourcePosition { byte: 0, line: 1, column: 0 },
+                None,
+            );
+            let mut public = SourceDeclaration::new(
+                SourceLanguage::Rust,
+                "fixture",
+                "crate::answer",
+                "::",
+                DeclarationKind::Function,
+                Some("fn() -> i32".to_owned()),
+                None,
+                "Returns the answer.",
+                Visibility::Public,
+                source.clone(),
+            );
+            public.add_alias("crate::meaning");
+            let private = SourceDeclaration::new(
+                SourceLanguage::Rust,
+                "fixture",
+                "crate::internal",
+                "::",
+                DeclarationKind::Struct,
+                None,
+                None,
+                "Internal implementation.",
+                Visibility::Private,
+                source.clone(),
+            );
+            let mut deprecated = SourceDeclaration::new(
+                SourceLanguage::Rust,
+                "fixture",
+                "crate::old_answer",
+                "::",
+                DeclarationKind::Function,
+                Some("fn()".to_owned()),
+                None,
+                "Deprecated answer.",
+                Visibility::Public,
+                source.clone(),
+            );
+            deprecated.deprecated = true;
+            let mut hidden = SourceDeclaration::new(
+                SourceLanguage::Rust,
+                "fixture",
+                "crate::hidden",
+                "::",
+                DeclarationKind::Function,
+                Some("fn()".to_owned()),
+                None,
+                "Hidden answer.",
+                Visibility::Public,
+                source,
+            );
+            hidden.noindex = true;
+            Ok(crate::source_analysis::AnalysisSnapshot::new(
+                SourceLanguage::Rust,
+                "fixture",
+                "1",
+                "/tmp/src",
+                "hash",
+                vec![private, hidden, deprecated, public],
+                Vec::new(),
+            ))
+        }
+    }
+
     #[test]
     fn module_docstring_is_rendered() {
         let src = "\"\"\"Top-level module docs.\"\"\"\n\ndef noop():\n    pass\n";
         let rst = document_module_source("mymod", src).unwrap();
         assert!(rst.contains(".. py:module:: mymod"));
         assert!(rst.contains("Top-level module docs."));
+    }
+
+    #[test]
+    fn source_autodoc_filters_and_renders_structured_declarations() {
+        let mut request = SourceAutodocRequest::new("/tmp/src", SourceLanguage::Rust);
+        request.include_deprecated = false;
+        let descriptions = document_source(&request, &FixtureAnalyzer, &RustSourceRenderer).unwrap();
+        assert_eq!(descriptions.len(), 1);
+        assert_eq!(descriptions[0].name, "crate::answer");
+        assert_eq!(descriptions[0].directive, "rust:function");
+        let rst = render_source_rst(&descriptions);
+        assert!(rst.contains(".. rust:function:: crate::answer fn() -> i32"));
+        assert!(rst.contains("   Returns the answer."));
+        assert!(!rst.contains("internal"));
+        assert!(!rst.contains("old_answer"));
+        assert!(!rst.contains("hidden"));
     }
 
     #[test]

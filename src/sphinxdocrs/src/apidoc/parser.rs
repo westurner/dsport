@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command};
 
-use crate::apidoc::settings::ApidocOptions;
+use crate::apidoc::settings::{ApidocOptions, SourceMode};
 use crate::quickstart::settings::EXTENSIONS as QS_EXTENSIONS;
 
 /// Build the clap [`Command`] mirroring upstream `get_parser()`.
@@ -211,6 +211,34 @@ pub fn build_parser() -> Command {
                 .help("delegate to the upstream Python sphinx-apidoc"),
         );
 
+    cmd = cmd
+        .arg(
+            Arg::new("source_mode")
+                .long("source-mode")
+                .value_name("MODE")
+                .value_parser(["lean", "python", "rust", "auto"])
+                .default_value("python")
+                .help("source language to document; auto detects the input tree"),
+        )
+        .arg(
+            Arg::new("manifest_path")
+                .long("manifest-path")
+                .value_name("PATH")
+                .help("path to the Cargo manifest for Rust discovery"),
+        )
+        .arg(
+            Arg::new("package")
+                .long("package")
+                .value_name("PACKAGE")
+                .help("Cargo package name to document"),
+        )
+        .arg(
+            Arg::new("features")
+                .long("features")
+                .value_name("FEATURES")
+                .help("comma-separated Cargo features for Rust discovery"),
+        );
+
     // --ext-<name> flags (same set as quickstart, used with --full)
     for (name, _desc) in QS_EXTENSIONS {
         let id: &'static str =
@@ -253,6 +281,14 @@ pub fn parse_args(argv: &[String]) -> Result<ApidocOptions, clap::Error> {
         .trim_start_matches('.')
         .to_owned();
 
+    let source_mode = match m.get_one::<String>("source_mode").map(String::as_str) {
+        Some("auto") => SourceMode::Auto,
+        Some("lean") => SourceMode::Lean,
+        Some("python") => SourceMode::Python,
+        Some("rust") => SourceMode::Rust,
+        _ => SourceMode::Python,
+    };
+
     let toc_file = if m.get_flag("no_toc") {
         String::new()
     } else {
@@ -286,6 +322,19 @@ pub fn parse_args(argv: &[String]) -> Result<ApidocOptions, clap::Error> {
     Ok(ApidocOptions {
         module_path,
         dest_dir,
+        source_mode,
+        cargo_manifest: m.get_one::<String>("manifest_path").map(PathBuf::from),
+        cargo_package: m.get_one::<String>("package").cloned(),
+        cargo_features: m
+            .get_one::<String>("features")
+            .map(|raw| {
+                raw.split(',')
+                    .map(str::trim)
+                    .filter(|feature| !feature.is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
         exclude_pattern: m
             .get_many::<String>("exclude_pattern")
             .unwrap_or_default()
@@ -346,6 +395,28 @@ mod tests {
     fn no_toc_clears_toc_file() {
         let opts = parse_args(&argv(&["-o", "/out", "/src", "-T"])).unwrap();
         assert!(opts.toc_file.is_empty());
+    }
+
+    #[test]
+    fn source_mode_and_cargo_options_parse() {
+        let opts = parse_args(&argv(&[
+            "-o",
+            "/out",
+            "/workspace",
+            "--source-mode",
+            "rust",
+            "--manifest-path",
+            "/workspace/Cargo.toml",
+            "--package",
+            "demo",
+            "--features",
+            "docs,nightly",
+        ]))
+        .unwrap();
+        assert_eq!(opts.source_mode, SourceMode::Rust);
+        assert_eq!(opts.cargo_manifest, Some(PathBuf::from("/workspace/Cargo.toml")));
+        assert_eq!(opts.cargo_package.as_deref(), Some("demo"));
+        assert_eq!(opts.cargo_features, vec!["docs", "nightly"]);
     }
 
     #[test]

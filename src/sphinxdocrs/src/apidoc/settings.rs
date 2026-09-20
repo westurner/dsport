@@ -5,6 +5,16 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+/// Source family used by apidoc discovery and generated directives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SourceMode {
+    #[default]
+    Auto,
+    Lean,
+    Python,
+    Rust,
+}
+
 /// Default automodule options (mirrors `_generate.OPTIONS` default).
 pub const DEFAULT_AUTOMODULE_OPTIONS: &[&str] = &["members", "undoc-members", "show-inheritance"];
 
@@ -17,6 +27,16 @@ pub struct ApidocOptions {
     pub module_path: PathBuf,
     /// Output directory for generated `.rst` files.
     pub dest_dir: PathBuf,
+
+    /// Source language to document. `Auto` detects the input tree;
+    /// defaults to Python for backward compatibility.
+    pub source_mode: SourceMode,
+    /// Optional Cargo manifest path used by Rust discovery.
+    pub cargo_manifest: Option<PathBuf>,
+    /// Optional Cargo package name to document.
+    pub cargo_package: Option<String>,
+    /// Cargo feature names used by Rust discovery.
+    pub cargo_features: Vec<String>,
 
     /// Glob/fnmatch exclude patterns (resolved before use).
     pub exclude_pattern: Vec<String>,
@@ -79,6 +99,10 @@ impl ApidocOptions {
         Self {
             module_path,
             dest_dir,
+            source_mode: SourceMode::Python,
+            cargo_manifest: None,
+            cargo_package: None,
+            cargo_features: Vec::new(),
             exclude_pattern: vec![],
             max_depth: 4,
             follow_links: false,

@@ -42,7 +42,7 @@ use std::path::Path;
 
 use docutilsrs::doctree::{Doctree, NodeId, NodeKind};
 
-use crate::domains::{IndexEntry, ObjectEntry};
+use crate::domains::{IndexEntry, ObjectEntry, SourceObjectEntry};
 
 /// The `envversion` block Sphinx writes.  Values track the on-disk format
 /// version of each environment component; consumers only check `sphinx`.
@@ -314,6 +314,8 @@ pub struct SearchIndex {
     /// `(domain, ObjectEntry)` pairs from every registered domain
     /// (**H3d** — see [`SearchIndex::set_objects`]).
     objects: Vec<(String, ObjectEntry)>,
+    /// Rich Rust/Lean declaration metadata for source-aware search clients.
+    source_objects: Vec<SourceObjectEntry>,
     /// docname → `.. index::` entries (**H5e** input).
     index_entries: BTreeMap<String, Vec<IndexEntry>>,
     /// Stemmer for the configured `search_language`.
@@ -452,6 +454,12 @@ impl SearchIndex {
         self.objects = objects;
     }
 
+    /// Register source declarations with their canonical names, aliases,
+    /// documentation, and source locations (**H14f**).
+    pub fn set_source_objects(&mut self, objects: Vec<SourceObjectEntry>) {
+        self.source_objects = objects;
+    }
+
     /// Register `.. index::` entries recovered per document (**H5e**
     /// input), typically `env.indexentries.clone()`.
     pub fn set_index_entries(&mut self, index_entries: BTreeMap<String, Vec<IndexEntry>>) {
@@ -467,7 +475,30 @@ impl SearchIndex {
         &self,
         fn2index: &BTreeMap<String, usize>,
     ) -> (serde_json::Value, serde_json::Value, serde_json::Value) {
-        let mut sorted = self.objects.clone();
+        let mut all_objects = self.objects.clone();
+        for source in &self.source_objects {
+            all_objects.push((
+                source.domain.clone(),
+                ObjectEntry {
+                    obj_type: source.kind.as_str().to_string(),
+                    name: source.canonical_name.clone(),
+                    docname: source.docname.clone(),
+                    anchor: source.anchor.clone(),
+                },
+            ));
+            for alias in &source.aliases {
+                all_objects.push((
+                    source.domain.clone(),
+                    ObjectEntry {
+                        obj_type: source.kind.as_str().to_string(),
+                        name: alias.clone(),
+                        docname: source.docname.clone(),
+                        anchor: source.anchor.clone(),
+                    },
+                ));
+            }
+        }
+        let mut sorted = all_objects;
         sorted.sort_by(|a, b| (&a.0, &a.1.name).cmp(&(&b.0, &b.1.name)));
 
         let mut otypes: BTreeMap<(String, String), usize> = BTreeMap::new();
@@ -478,10 +509,11 @@ impl SearchIndex {
             let Some(&docindex) = fn2index.get(&entry.docname) else {
                 continue;
             };
-            let (prefix, name) = match entry.name.rfind('.') {
+            let separator = if domain == "rust" { "::" } else { "." };
+            let (prefix, name) = match entry.name.rfind(separator) {
                 Some(pos) => (
                     entry.name[..pos].to_string(),
-                    entry.name[pos + 1..].to_string(),
+                    entry.name[pos + separator.len()..].to_string(),
                 ),
                 None => (String::new(), entry.name.clone()),
             };
@@ -562,6 +594,38 @@ impl SearchIndex {
         )
     }
 
+    fn encode_source_objects(&self) -> serde_json::Value {
+        let mut objects = self.source_objects.clone();
+        objects.sort_by(|left, right| {
+            left.domain
+                .cmp(&right.domain)
+                .then(left.canonical_name.cmp(&right.canonical_name))
+                .then(left.docname.cmp(&right.docname))
+        });
+        serde_json::Value::Array(
+            objects
+                .into_iter()
+                .map(|object| {
+                    serde_json::json!({
+                        "noindex": object.noindex,
+                        "domain": object.domain,
+                        "language": object.language,
+                        "kind": object.kind.as_str(),
+                        "name": object.name,
+                        "canonical_name": object.canonical_name,
+                        "aliases": object.aliases,
+                        "docname": object.docname,
+                        "anchor": object.anchor,
+                        "documentation": object.documentation,
+                        "signature": object.signature,
+                        "source": object.source,
+                        "deprecated": object.deprecated,
+                    })
+                })
+                .collect(),
+        )
+    }
+
     /// Encode a term mapping into `term → int | sorted[int]`, matching
     /// `IndexBuilder.get_terms`.
     fn encode_terms(
@@ -621,6 +685,7 @@ impl SearchIndex {
 
         let (objects, objtypes, objnames) = self.encode_objects(&fn2index);
         let indexentries = self.encode_index_entries(&fn2index);
+        let sourceobjects = self.encode_source_objects();
 
         let envversion = serde_json::json!({
             "sphinx": ENV_VERSION_SPHINX,
@@ -645,6 +710,7 @@ impl SearchIndex {
             "objects": objects,
             "objtypes": objtypes,
             "objnames": objnames,
+            "sourceobjects": sourceobjects,
             "indexentries": indexentries,
             "envversion": envversion,
         })
@@ -748,6 +814,7 @@ impl SearchIndex {
             idx.feed(docname, &tree);
         }
         idx.set_objects(env.domain_objects());
+        idx.set_source_objects(env.source_domain_objects());
         idx.set_index_entries(env.indexentries.clone().into_iter().collect());
         idx
     }
@@ -757,6 +824,9 @@ impl SearchIndex {
 mod tests {
     use super::*;
     use docutilsrs::parse_rst_with_source;
+    use crate::source_analysis::{
+        DeclarationKind, SourceLanguage, SourcePosition, SourceSpan,
+    };
 
     #[test]
     fn split_words_basic() {
@@ -942,6 +1012,65 @@ The widget handles rendering and layout.\n";
         let prefix_entries = json["objects"]["pkg.mod"].as_array().unwrap();
         assert_eq!(prefix_entries.len(), 1);
         assert_eq!(prefix_entries[0][4], "greet");
+    }
+
+    #[test]
+    fn source_objects_preserve_aliases_and_language_namespace_splitting() {
+        let rust = SourceObjectEntry {
+            noindex: false,
+            domain: "rust".to_owned(),
+            language: SourceLanguage::Rust,
+            kind: DeclarationKind::Struct,
+            name: "crate::api::Thing".to_owned(),
+            canonical_name: "crate::api::Thing".to_owned(),
+            aliases: vec!["crate::api::ThingAlias".to_owned()],
+            docname: "rust-api".to_owned(),
+            anchor: "rust-struct-crate-api-thing".to_owned(),
+            documentation: "A Rust thing.".to_owned(),
+            signature: Some("struct Thing".to_owned()),
+            source: SourceSpan::new(
+                "src/lib.rs",
+                SourcePosition { byte: 3, line: 1, column: 3 },
+                None,
+            ),
+            deprecated: false,
+        };
+        let lean = SourceObjectEntry {
+            noindex: false,
+            domain: "lean".to_owned(),
+            language: SourceLanguage::Lean,
+            kind: DeclarationKind::Structure,
+            name: "Demo.Widget".to_owned(),
+            canonical_name: "Demo.Widget".to_owned(),
+            aliases: Vec::new(),
+            docname: "lean-api".to_owned(),
+            anchor: "lean-structure-demo-widget".to_owned(),
+            documentation: "A Lean widget.".to_owned(),
+            signature: None,
+            source: SourceSpan::new(
+                "Demo.lean",
+                SourcePosition { byte: 0, line: 1, column: 0 },
+                None,
+            ),
+            deprecated: false,
+        };
+
+        let mut idx = SearchIndex::new();
+        for (docname, title) in [("rust-api", "Rust API"), ("lean-api", "Lean API")] {
+            idx.feed(docname, &parse_rst_with_source(&format!("{title}\n=====\n"), docname));
+        }
+        idx.set_source_objects(vec![rust, lean]);
+        let json = idx.to_json();
+        assert_eq!(json["objects"]["crate::api"][0][4], "Thing");
+        assert_eq!(json["objects"]["crate::api"][1][4], "ThingAlias");
+        assert_eq!(json["objects"]["Demo"][0][4], "Widget");
+        let source_objects = json["sourceobjects"].as_array().unwrap();
+        let rust_object = source_objects
+            .iter()
+            .find(|object| object["canonical_name"] == "crate::api::Thing")
+            .unwrap();
+        assert_eq!(rust_object["documentation"], "A Rust thing.");
+        assert_eq!(rust_object["source"]["path"], "src/lib.rs");
     }
 
     #[test]

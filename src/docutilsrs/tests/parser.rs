@@ -233,6 +233,60 @@ fn rst_role_renders_as_object_description() {
 }
 
 #[test]
+fn rust_and_lean_source_directives_preserve_kind_signature_and_nested_content() {
+    use docutilsrs::NodeKind;
+
+    let src = "\
+.. rust:function:: crate::api::answer() -> i32
+
+   Returns the answer.
+
+.. lean:theorem:: Demo.answer
+
+   The theorem documentation.
+";
+    let tree = parse_rst(src);
+    let descriptions: Vec<_> = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription {
+                classes,
+                sig_text,
+                ..
+            } => Some((id, classes.clone(), sig_text.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(descriptions.len(), 2);
+    assert!(descriptions[0].1.contains("rust"));
+    assert!(descriptions[0].1.contains("function"));
+    assert_eq!(descriptions[0].2, "rust:function crate::api::answer() -> i32");
+    assert!(descriptions[1].1.contains("lean"));
+    assert!(descriptions[1].1.contains("theorem"));
+    assert_eq!(descriptions[1].2, "lean:theorem Demo.answer");
+    assert!((0..tree.nodes_len()).any(|id| {
+        matches!(
+            &tree.node(id).kind,
+            NodeKind::Paragraph if tree.node(id).parent.is_some_and(|parent| parent == descriptions[0].0)
+        )
+    }));
+}
+
+#[test]
+fn rust_and_lean_source_directives_render_as_html_definitions() {
+    let source = ".. rust:function:: crate::api::answer<T>\n\n   Returns the answer.\n\n.. lean:theorem:: Demo.answer\n\n   The theorem documentation.\n";
+    let html = html5(
+        &parse_rst(source),
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
+    assert!(html.contains(r#"<dl class="rust rust function">"#), "got:\n{html}");
+    assert!(html.contains(r#"id="rust-crate-api-answer-t""#), "got:\n{html}");
+    assert!(html.contains("Returns the answer."), "got:\n{html}");
+    assert!(html.contains(r#"<dl class="lean lean theorem">"#), "got:\n{html}");
+    assert!(html.contains("The theorem documentation."), "got:\n{html}");
+}
+
+#[test]
 fn rst_directive_html5_renders_dl_dt_dd_with_anchor() {
     let src = ".. rst:directive:: toctree\n\n   Insert a toc tree.\n";
     let html = html5(

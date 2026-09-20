@@ -40,6 +40,10 @@ Options:
       --extensions <EXTENSIONS>       enable arbitrary extensions, used when --full is given
   -t, --templatedir <TEMPLATEDIR>     template directory for template files
       --use-python-impl               delegate to the upstream Python sphinx-apidoc
+      --source-mode <MODE>            source language to document; auto detects the input tree [default: python] [possible values: lean, python, rust, auto]
+      --manifest-path <PATH>          path to the Cargo manifest for Rust discovery
+      --package <PACKAGE>             Cargo package name to document
+      --features <FEATURES>           comma-separated Cargo features for Rust discovery
       --ext-autodoc                   enable autodoc extension, used when --full is given
       --ext-doctest                   enable doctest extension, used when --full is given
       --ext-intersphinx               enable intersphinx extension, used when --full is given

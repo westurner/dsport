@@ -49,6 +49,14 @@ sqlite-error-db = ["dep:rusqlite"]
 # Default feature set.
 default = ["syntax-highlighting", "search-stemming"]
 
+# Source-aware documentation backends. The language-neutral declaration model
+# remains available without either backend; these features only add the
+# adapter dependencies.
+rust-source-analysis = ["dep:rustdoc-types"]
+lean-source-analysis = ["dep:arborium", "dep:arborium-lean"]
+rust = ["rust-source-analysis"]
+lean = ["lean-source-analysis"]
+
 ## Test suite features
 
 # Gate cross-language parity tests (requires Python + upstream sphinx in PATH).
@@ -104,6 +112,9 @@ reqwest = { version = "0.11", default-features = false, features = [
     "blocking",
     "rustls-tls",
 ], optional = true }
+rustdoc-types = { version = "0.61", optional = true }
+arborium = { version = "2.18.2", optional = true }
+arborium-lean = { version = "2.18.2", optional = true }
 
 [dev-dependencies]
 insta = { workspace = true }
@@ -129,6 +140,11 @@ name = "otherdocs"
 path = "tests/otherdocs.rs"
 required-features = ["test-build-extdocs"]
 
+[[test]]
+name = "autodoc_cli"
+path = "tests/autodoc_cli.rs"
+required-features = ["rust-source-analysis", "lean-source-analysis"]
+
 [[bench]]
 name = "sphinxdocrs"
 harness = false
@@ -144,6 +160,10 @@ path = "src/bin/sphinx_quickstart.rs"
 [[bin]]
 name = "sphinx-apidoc-rs"
 path = "src/bin/sphinx_apidoc.rs"
+
+[[bin]]
+name = "sphinx-autodoc-rs"
+path = "src/bin/sphinx_autodoc.rs"
 
 [[bin]]
 name = "sphinx-autogen-rs"

@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::apidoc::settings::ApidocOptions;
+use crate::apidoc::settings::{ApidocOptions, SourceMode};
 use crate::apidoc::templates::ApidocTemplates;
 
 // ── Error ─────────────────────────────────────────────────────────────────────
@@ -22,6 +22,7 @@ use crate::apidoc::templates::ApidocTemplates;
 pub enum ApidocError {
     Io(io::Error),
     Template(jinja2rs::errors::Jinja2Error),
+    InvalidSource(String),
 }
 
 impl std::fmt::Display for ApidocError {
@@ -29,6 +30,7 @@ impl std::fmt::Display for ApidocError {
         match self {
             ApidocError::Io(e) => write!(f, "I/O error: {e}"),
             ApidocError::Template(e) => write!(f, "Template error: {e}"),
+            ApidocError::InvalidSource(message) => write!(f, "invalid source tree: {message}"),
         }
     }
 }
@@ -380,12 +382,238 @@ pub fn remove_old_files(
     Ok(())
 }
 
+fn effective_source_mode(root_path: &Path, opts: &ApidocOptions) -> Result<SourceMode, ApidocError> {
+    match opts.source_mode {
+        SourceMode::Auto => {
+            let has_rust = opts.cargo_manifest.is_some()
+                || root_path.join("Cargo.toml").is_file()
+                || !source_files(root_path, "rs", opts, &[]).is_empty();
+            let has_lean = (root_path.is_file()
+                && root_path.extension().is_some_and(|ext| ext == "lean"))
+                || !source_files(root_path, "lean", opts, &[]).is_empty();
+            match (has_rust, has_lean) {
+                (true, true) => Err(ApidocError::InvalidSource(
+                    "mixed Rust and Lean roots require an explicit --source-mode".to_owned(),
+                )),
+                (true, false) => Ok(SourceMode::Rust),
+                (false, true) => Ok(SourceMode::Lean),
+                (false, false) => Ok(SourceMode::Python),
+            }
+        }
+        mode => Ok(mode),
+    }
+}
+
+fn source_files(
+    root_path: &Path,
+    extension: &str,
+    opts: &ApidocOptions,
+    excludes: &[regex::Regex],
+) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if root_path.is_file() {
+        if root_path.extension().is_some_and(|ext| ext == extension)
+            && !is_excluded(root_path, excludes)
+        {
+            files.push(root_path.to_path_buf());
+        }
+        return files;
+    }
+
+    fn visit(
+        current: &Path,
+        extension: &str,
+        opts: &ApidocOptions,
+        excludes: &[regex::Regex],
+        files: &mut Vec<PathBuf>,
+    ) {
+        let Ok(entries) = current.read_dir() else { return };
+        let mut entries = entries.flatten().collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            if is_excluded(&path, excludes) {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(_) => continue,
+            };
+            if file_type.is_symlink() && !opts.follow_links {
+                continue;
+            }
+            if file_type.is_dir() {
+                if name.starts_with('.') || (!opts.include_private && name.starts_with('_')) {
+                    continue;
+                }
+                visit(&path, extension, opts, excludes, files);
+            } else if file_type.is_file()
+                && path.extension().is_some_and(|ext| ext == extension)
+                && (opts.include_private || !name.starts_with('_'))
+            {
+                files.push(path);
+            }
+        }
+    }
+
+    visit(root_path, extension, opts, excludes, &mut files);
+    files.sort();
+    files
+}
+
+fn rust_root(root_path: &Path, opts: &ApidocOptions) -> PathBuf {
+    let manifest = opts
+        .cargo_manifest
+        .clone()
+        .or_else(|| root_path.is_file().then(|| root_path.to_path_buf()))
+        .or_else(|| root_path.join("Cargo.toml").is_file().then(|| root_path.join("Cargo.toml")));
+    manifest
+        .as_deref()
+        .and_then(Path::parent)
+        .map(|root| root.join("src"))
+        .filter(|root| root.is_dir())
+        .unwrap_or_else(|| root_path.to_path_buf())
+}
+
+fn source_module_name(path: &Path, root: &Path, mode: SourceMode, crate_name: &str) -> String {
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    let mut parts = relative
+        .components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let filename = parts.pop().unwrap_or_else(|| "module".to_owned());
+    let stem = filename.strip_suffix(".rs").or_else(|| filename.strip_suffix(".lean")).unwrap_or(&filename);
+    if mode == SourceMode::Rust {
+        if stem == "lib" || stem == "main" {
+            parts.clear();
+        } else if stem == "mod" {
+            // `foo/mod.rs` names the `foo` module itself.
+        } else {
+            parts.push(stem.to_owned());
+        }
+        let mut name = parts.join("::");
+        if name.is_empty() {
+            name = crate_name.to_owned();
+        } else {
+            name = format!("{crate_name}::{name}");
+        }
+        name
+    } else {
+        if stem != "Main" {
+            parts.push(stem.to_owned());
+        }
+        if parts.is_empty() {
+            crate_name.to_owned()
+        } else {
+            parts.join(".")
+        }
+    }
+}
+
+fn create_source_file(
+    path: &Path,
+    root: &Path,
+    mode: SourceMode,
+    crate_name: &str,
+    opts: &ApidocOptions,
+) -> Result<(PathBuf, String), ApidocError> {
+    let module = source_module_name(path, root, mode, crate_name);
+    let directive = match mode {
+        SourceMode::Rust => "rust:module",
+        SourceMode::Lean => "lean:module",
+        SourceMode::Python | SourceMode::Auto => {
+            return Err(ApidocError::InvalidSource("Python has no source module mode".to_owned()))
+        }
+    };
+    let mode_name = match mode {
+        SourceMode::Rust => "rust",
+        SourceMode::Lean => "lean",
+        SourceMode::Python | SourceMode::Auto => unreachable!(),
+    };
+    let mut text = format!(
+        ".. Generated by sphinx-apidoc-rs (source-mode: {mode_name}).\n\n.. {directive}:: {module}\n"
+    );
+    text.push_str(&format!("\n   :source: {}\n", path.display()));
+    let docname = module.replace("::", ".");
+    let written = write_file(&docname, &text, opts)?;
+    Ok((written, docname))
+}
+
+/// Discover Rust or Lean source files and generate one native module
+/// directive per source file. The returned names are suitable for a toctree.
+pub fn recurse_source_tree(
+    root_path: &Path,
+    excludes: &[regex::Regex],
+    opts: &ApidocOptions,
+) -> Result<(Vec<PathBuf>, Vec<String>), ApidocError> {
+    let mode = effective_source_mode(root_path, opts)?;
+    let (root, extension, crate_name) = match mode {
+        SourceMode::Rust => {
+            let root = rust_root(root_path, opts);
+            let crate_name = opts
+                .cargo_package
+                .clone()
+                .or_else(|| root.parent().and_then(Path::file_name).map(|name| name.to_string_lossy().into_owned()))
+                .unwrap_or_else(|| "crate".to_owned());
+            (root, "rs", crate_name)
+        }
+        SourceMode::Lean => {
+            let root = if root_path.is_file() {
+                root_path.parent().unwrap_or(Path::new(".")).to_path_buf()
+            } else {
+                root_path.to_path_buf()
+            };
+            let crate_name = root
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Main".to_owned());
+            (root, "lean", crate_name)
+        }
+        SourceMode::Python | SourceMode::Auto => {
+            return Err(ApidocError::InvalidSource(
+                "recurse_source_tree requires Rust or Lean mode".to_owned(),
+            ))
+        }
+    };
+    let files = source_files(&root, extension, opts, excludes);
+    if files.is_empty() {
+        return Err(ApidocError::InvalidSource(format!(
+            "no .{extension} source files found under {}",
+            root.display()
+        )));
+    }
+    let mut written = Vec::new();
+    let mut modules = Vec::new();
+    for path in files {
+        let (file, module) = create_source_file(&path, &root, mode, &crate_name, opts)?;
+        written.push(file);
+        modules.push(module);
+    }
+    modules.sort();
+    modules.dedup();
+    Ok((written, modules))
+}
+
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 /// Mirrors `_generate.recurse_tree`.
 ///
 /// Returns `(written_files, top_level_module_names)`.
 pub fn recurse_tree(
+    root_path: &Path,
+    excludes: &[regex::Regex],
+    opts: &ApidocOptions,
+    templates: &ApidocTemplates,
+) -> Result<(Vec<PathBuf>, Vec<String>), ApidocError> {
+    if effective_source_mode(root_path, opts)? != SourceMode::Python {
+        return recurse_source_tree(root_path, excludes, opts);
+    }
+    recurse_python_tree(root_path, excludes, opts, templates)
+}
+
+fn recurse_python_tree(
     root_path: &Path,
     excludes: &[regex::Regex],
     opts: &ApidocOptions,
@@ -647,5 +875,47 @@ mod tests {
         remove_old_files(std::slice::from_ref(&keep), tmp.path(), "rst").unwrap();
         assert!(keep.exists());
         assert!(!stale.exists());
+    }
+
+    #[test]
+    fn source_modes_generate_native_module_directives() {
+        let tmp = TempDir::new().unwrap();
+        let rust_root = tmp.path().join("rust-crate/src");
+        let lean_root = tmp.path().join("lean-project");
+        let output = tmp.path().join("out");
+        std::fs::create_dir_all(&rust_root).unwrap();
+        std::fs::create_dir_all(&lean_root).unwrap();
+        std::fs::create_dir_all(&output).unwrap();
+        std::fs::write(rust_root.join("lib.rs"), "pub mod api;").unwrap();
+        std::fs::write(rust_root.join("api.rs"), "pub fn answer() -> i32 { 42 }").unwrap();
+        std::fs::write(lean_root.join("Demo.lean"), "def answer : Nat := 42").unwrap();
+
+        let mut rust_options = ApidocOptions::new(rust_root.clone(), output.clone());
+        rust_options.source_mode = SourceMode::Rust;
+        rust_options.cargo_package = Some("demo".to_owned());
+        rust_options.force = true;
+        rust_options.quiet = true;
+        let (rust_files, rust_modules) = recurse_tree(
+            &rust_root,
+            &[],
+            &rust_options,
+            &templates(),
+        )
+        .unwrap();
+        assert_eq!(rust_modules, vec!["demo", "demo.api"]);
+        assert_eq!(rust_files.len(), 2);
+        assert!(std::fs::read_to_string(output.join("demo.api.rst"))
+            .unwrap()
+            .contains(".. rust:module:: demo::api"));
+
+        let mut lean_options = ApidocOptions::new(lean_root.clone(), output.clone());
+        lean_options.source_mode = SourceMode::Lean;
+        lean_options.force = true;
+        lean_options.quiet = true;
+        let (_, lean_modules) = recurse_tree(&lean_root, &[], &lean_options, &templates()).unwrap();
+        assert_eq!(lean_modules, vec!["Demo"]);
+        assert!(std::fs::read_to_string(output.join("Demo.rst"))
+            .unwrap()
+            .contains(".. lean:module:: Demo"));
     }
 }

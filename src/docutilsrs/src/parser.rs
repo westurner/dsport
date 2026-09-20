@@ -2191,7 +2191,15 @@ fn parse_directive(
         | "c:macro" | "c:namespace-pop" | "c:namespace-push" | "c:struct" | "c:type" | "c:var"
         | "cpp:alias" | "cpp:class" | "cpp:concept" | "cpp:enum-class" | "cpp:enum-struct"
         | "cpp:enumerator" | "cpp:function" | "cpp:namespace-pop" | "cpp:namespace-push"
-        | "cpp:struct" | "cpp:type" | "cpp:var" | "js:class" | "js:function" | "confval"
+        | "cpp:struct" | "cpp:type" | "cpp:var" | "js:class" | "js:function"
+        | "rust:module" | "rust:function" | "rust:struct" | "rust:enum" | "rust:union"
+        | "rust:trait" | "rust:impl" | "rust:method" | "rust:associatedtype"
+        | "rust:associatedconst" | "rust:constant" | "rust:static" | "rust:type"
+        | "rust:macro" | "rust:variant" | "rust:field"
+        | "lean:module" | "lean:namespace" | "lean:def" | "lean:theorem" | "lean:lemma"
+        | "lean:inductive" | "lean:structure" | "lean:class" | "lean:instance"
+        | "lean:abbrev" | "lean:axiom" | "lean:opaque" | "lean:constructor"
+        | "lean:field" | "lean:notation" | "confval"
         | "data" | "envvar" | "event" | "exception" | "function" | "method" | "module"
         | "option" | "program" | "currentmodule" | "moduleauthor" => {
             let (objtype, sig) = if let Some(stripped) = name.strip_prefix("py:") {
@@ -2202,6 +2210,10 @@ fn parse_directive(
                 ("cpp", format!("cpp:{stripped} {}", args.trim()))
             } else if let Some(stripped) = name.strip_prefix("js:") {
                 ("js", format!("js:{stripped} {}", args.trim()))
+            } else if let Some(stripped) = name.strip_prefix("rust:") {
+                ("rust", format!("rust:{stripped} {}", args.trim()))
+            } else if let Some(stripped) = name.strip_prefix("lean:") {
+                ("lean", format!("lean:{stripped} {}", args.trim()))
             } else {
                 ("std", format!("{name} {}", args.trim()))
             };

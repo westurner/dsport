@@ -46,8 +46,11 @@ use serde::{Deserialize, Serialize};
 use crate::builders::BuildError;
 use crate::config::{ConfigVal, SphinxConfig};
 use crate::domains::{
-    IndexEntry, JsDomain, ObjectEntry, PendingXref, PyDomain, RstDomain, StdDomain, XrefResolution,
-    scan,
+    IndexEntry, ObjectEntry, PendingXref, StdDomain, JsDomain, LeanDomain,  PyDomain, RstDomain, RustDomain,
+    SourceObjectEntry, XrefResolution, scan,
+};
+use crate::source_analysis::{
+    AnalysisError, AnalysisSnapshot, SourceAnalyzer, SourceLanguage, source_input_hash,
 };
 
 // ── project shim ─────────────────────────────────────────────────────────────
@@ -215,6 +218,13 @@ pub struct BuildEnvironment {
     pub py_domain: PyDomain,
     /// The `js` domain: modules/functions/classes/methods/attributes/data (**H3e**).
     pub js_domain: JsDomain,
+    /// The `rust` domain: declarations lowered from rustdoc JSON (**H14c**).
+    pub rust_domain: RustDomain,
+    /// The `lean` domain: declarations lowered from Arborium (**H14d**).
+    pub lean_domain: LeanDomain,
+    /// Source-analysis snapshots retained for incremental invalidation and
+    /// backend diagnostics (**H14f**).
+    pub source_snapshots: HashMap<String, AnalysisSnapshot>,
     /// docname → cross-references recovered from that document's source
     /// during the read phase (**H5b**). See `crate::domains`' module doc
     /// for why this is a text-scan result rather than real `pending_xref`
@@ -314,6 +324,9 @@ impl BuildEnvironment {
             rst_domain: RstDomain::new(),
             py_domain: PyDomain::new(),
             js_domain: JsDomain::new(),
+            rust_domain: RustDomain::new(),
+            lean_domain: LeanDomain::new(),
+            source_snapshots: HashMap::new(),
             pending_xrefs: HashMap::new(),
             indexentries: HashMap::new(),
             events: EventsHandle::default(),
@@ -346,6 +359,94 @@ impl BuildEnvironment {
     /// Return the installed event bus handle, if any.
     pub fn events_handle(&self) -> Option<&crate::app_events::SharedEvents> {
         self.events.0.as_ref()
+    }
+
+    /// Register one analyzer snapshot against the document that requested
+    /// it. The analyzer remains responsible for acquisition and parsing;
+    /// the environment only owns the language-neutral records and cache
+    /// identity needed by domains and incremental builds.
+    pub fn note_source_snapshot(
+        &mut self,
+        docname: &str,
+        snapshot: AnalysisSnapshot,
+    ) -> Result<(), AnalysisError> {
+        if snapshot.source_root.is_empty() {
+            return Err(AnalysisError::InvalidRequest(
+                "source analysis snapshot has an empty source root".to_string(),
+            ));
+        }
+        match snapshot.language {
+            SourceLanguage::Rust => self
+                .rust_domain
+                .note_snapshot(docname, &snapshot.declarations),
+            SourceLanguage::Lean => self
+                .lean_domain
+                .note_snapshot(docname, &snapshot.declarations),
+            SourceLanguage::Python => {
+                return Err(AnalysisError::InvalidRequest(
+                    "Python snapshots are not registered by the Rust/Lean source domains"
+                        .to_string(),
+                ));
+            }
+        }
+        let metadata = self.domaindata.entry(snapshot.language.to_string()).or_default();
+        metadata.insert("backend".to_string(), snapshot.backend.clone());
+        metadata.insert("backend_version".to_string(), snapshot.backend_version.clone());
+        metadata.insert("source_root".to_string(), snapshot.source_root.clone());
+        metadata.insert("source_hash".to_string(), snapshot.source_hash.clone());
+        metadata.insert(
+            "schema_version".to_string(),
+            snapshot.schema_version.to_string(),
+        );
+        if !snapshot.request_identity.is_empty() {
+            metadata.insert(
+                "request_identity".to_string(),
+                snapshot.request_identity.clone(),
+            );
+        }
+        if let Some(toolchain) = &snapshot.toolchain {
+            metadata.insert("toolchain".to_string(), toolchain.clone());
+        }
+        self.source_snapshots.insert(docname.to_string(), snapshot);
+        Ok(())
+    }
+
+    /// Run a source analyzer and register its result in one operation.
+    pub fn analyze_source<A: SourceAnalyzer>(
+        &mut self,
+        docname: &str,
+        analyzer: &A,
+        request: &crate::source_analysis::SourceAnalysisRequest,
+    ) -> Result<(), AnalysisError> {
+        let mut snapshot = analyzer.analyze(request)?;
+        snapshot.set_request_identity(request);
+        self.note_source_snapshot(docname, snapshot)
+    }
+
+    /// Return whether a cached snapshot was produced for the same source
+    /// analysis configuration as `request`.
+    pub fn source_snapshot_matches_request(
+        &self,
+        docname: &str,
+        request: &crate::source_analysis::SourceAnalysisRequest,
+    ) -> bool {
+        self.source_snapshots
+            .get(docname)
+            .is_some_and(|snapshot| {
+                !snapshot.request_identity.is_empty()
+                    && snapshot.request_identity == request.cache_identity()
+                    && source_input_hash(request, snapshot.language)
+                        .is_ok_and(|hash| hash == snapshot.source_hash)
+            })
+    }
+
+    /// Rich source objects for search builders and API consumers. The
+    /// legacy [`domain_objects`](Self::domain_objects) projection remains
+    /// unchanged for Python/JS compatibility.
+    pub fn source_domain_objects(&self) -> Vec<SourceObjectEntry> {
+        let mut objects = self.rust_domain.source_objects();
+        objects.extend(self.lean_domain.source_objects());
+        objects
     }
 
     // ── document tracking ─────────────────────────────────────────────────────
@@ -1034,6 +1135,9 @@ impl BuildEnvironment {
         self.rst_domain.clear_doc(docname);
         self.py_domain.clear_doc(docname);
         self.js_domain.clear_doc(docname);
+        self.rust_domain.clear_doc(docname);
+        self.lean_domain.clear_doc(docname);
+        self.source_snapshots.remove(docname);
 
         for (name, sectionname) in scan::scan_labels(source) {
             let labelid = StdDomain::label_id(&name);
@@ -1100,6 +1204,12 @@ impl BuildEnvironment {
         for entry in self.js_domain.get_objects() {
             out.push(("js".to_string(), entry));
         }
+        for entry in self.rust_domain.get_objects() {
+            out.push(("rust".to_string(), entry));
+        }
+        for entry in self.lean_domain.get_objects() {
+            out.push(("lean".to_string(), entry));
+        }
         out
     }
 
@@ -1141,6 +1251,12 @@ impl BuildEnvironment {
                         .resolve_xref(self, docname, &xref.reftype, &xref.target),
                     "js" => self
                         .js_domain
+                        .resolve_xref(self, docname, &xref.reftype, &xref.target),
+                    "rust" => self
+                        .rust_domain
+                        .resolve_xref(self, docname, &xref.reftype, &xref.target),
+                    "lean" => self
+                        .lean_domain
                         .resolve_xref(self, docname, &xref.reftype, &xref.target),
                     _ => None,
                 };
@@ -1406,22 +1522,30 @@ impl BuildEnvironment {
                     &target,
                     explicit_title.is_some(),
                 ),
-                "rst" => self
-                    .rst_domain
+                "js" => self
+                    .js_domain
+                    .resolve_xref(self, docname, &reftype, &target),
+                "lean" => self
+                    .lean_domain
                     .resolve_xref(self, docname, &reftype, &target),
                 "py" => self
                     .py_domain
                     .resolve_xref(self, docname, &reftype, &target),
-                "js" => self
-                    .js_domain
+                "rst" => self
+                    .rst_domain
+                    .resolve_xref(self, docname, &reftype, &target),
+                "rust" => self
+                    .rust_domain
                     .resolve_xref(self, docname, &reftype, &target),
                 _ => None,
             };
 
             let unresolved_class = match domain.as_str() {
-                "rst" => format!("xref rst rst-{reftype}"),
-                "py" => format!("xref py py-{reftype}"),
                 "js" => format!("xref js js-{reftype}"),
+                "lean" => format!("xref lean lean-{reftype}"),
+                "py" => format!("xref py py-{reftype}"),
+                "rst" => format!("xref rst rst-{reftype}"),
+                "rust" => format!("xref rust rust-{reftype}"),
                 _ if reftype == "doc" => {
                     if resolved.is_some() {
                         "doc".to_string()
@@ -1437,7 +1561,7 @@ impl BuildEnvironment {
                     let title = if let Some(t) = &explicit_title {
                         t.clone()
                     } else if shorten {
-                        target.rsplit('.').next().unwrap_or(&target).to_string()
+                        shorten_xref_target(&target, &domain)
                     } else {
                         target.clone()
                     };
@@ -1457,9 +1581,11 @@ impl BuildEnvironment {
             };
 
             let resolved_class = match domain.as_str() {
-                "rst" => format!("rst rst-{reftype}"),
-                "py" => format!("py py-{reftype}"),
                 "js" => format!("js js-{reftype}"),
+                "lean" => format!("lean lean-{reftype}"),
+                "py" => format!("py py-{reftype}"),
+                "rst" => format!("rst rst-{reftype}"),
+                "rust" => format!("rust rust-{reftype}"),
                 _ if reftype == "doc" => "doc".to_string(),
                 _ => format!("std std-{reftype}"),
             };
@@ -1467,7 +1593,7 @@ impl BuildEnvironment {
             let title = if let Some(t) = &explicit_title {
                 t.clone()
             } else if shorten {
-                target.rsplit('.').next().unwrap_or(&target).to_string()
+                shorten_xref_target(&target, &domain)
             } else {
                 resolved.title.clone()
             };
@@ -1856,9 +1982,12 @@ impl BuildEnvironment {
         self.pending_xrefs.remove(docname);
         self.indexentries.remove(docname);
         self.std_domain.clear_doc(docname);
-        self.rst_domain.clear_doc(docname);
-        self.py_domain.clear_doc(docname);
         self.js_domain.clear_doc(docname);
+        self.lean_domain.clear_doc(docname);
+        self.py_domain.clear_doc(docname);
+        self.rst_domain.clear_doc(docname);
+        self.rust_domain.clear_doc(docname);
+        self.source_snapshots.remove(docname);
         if let Ok(path) = self.doctree_path(docname) {
             let _ = std::fs::remove_file(path);
         }
@@ -1887,9 +2016,12 @@ impl BuildEnvironment {
             numbered_toctrees: self.numbered_toctrees.clone(),
             domaindata: self.domaindata.clone(),
             std_domain: self.std_domain.clone(),
-            rst_domain: self.rst_domain.clone(),
-            py_domain: self.py_domain.clone(),
             js_domain: self.js_domain.clone(),
+            lean_domain: self.lean_domain.clone(),
+            py_domain: self.py_domain.clone(),
+            rst_domain: self.rst_domain.clone(),
+            rust_domain: self.rust_domain.clone(),
+            source_snapshots: self.source_snapshots.clone(),
             pending_xrefs: self.pending_xrefs.clone(),
             indexentries: self.indexentries.clone(),
         }
@@ -1921,6 +2053,9 @@ impl BuildEnvironment {
         self.rst_domain = p.rst_domain;
         self.py_domain = p.py_domain;
         self.js_domain = p.js_domain;
+        self.rust_domain = p.rust_domain;
+        self.lean_domain = p.lean_domain;
+        self.source_snapshots = p.source_snapshots;
         self.pending_xrefs = p.pending_xrefs;
         self.indexentries = p.indexentries;
         config_hash
@@ -1962,6 +2097,14 @@ impl BuildEnvironment {
         }
         Some(p)
     }
+}
+
+fn shorten_xref_target(target: &str, domain: &str) -> String {
+    let separator = match domain {
+        "rust" => "::",
+        _ => ".",
+    };
+    target.rsplit(separator).next().unwrap_or(target).to_string()
 }
 
 fn local_section_entries(
@@ -2087,7 +2230,7 @@ fn smartquote_text(text: &str) -> String {
 /// version is detected as stale (treated as absent) rather than
 /// misinterpreted by `serde_json` (which would otherwise silently accept
 /// a structurally-compatible-but-semantically-different old file).
-pub const ENV_PERSISTED_VERSION: u32 = 1;
+pub const ENV_PERSISTED_VERSION: u32 = 3;
 
 /// On-disk snapshot of the parts of [`BuildEnvironment`] that must
 /// survive between separate `sphinx-build-rs` invocations for
@@ -2124,9 +2267,12 @@ pub struct EnvPersisted {
     pub numbered_toctrees: HashSet<String>,
     pub domaindata: HashMap<String, HashMap<String, String>>,
     pub std_domain: StdDomain,
-    pub rst_domain: RstDomain,
-    pub py_domain: PyDomain,
     pub js_domain: JsDomain,
+    pub lean_domain: LeanDomain,
+    pub py_domain: PyDomain,
+    pub rst_domain: RstDomain,
+    pub rust_domain: RustDomain,
+    pub source_snapshots: HashMap<String, AnalysisSnapshot>,
     pub pending_xrefs: HashMap<String, Vec<PendingXref>>,
     pub indexentries: HashMap<String, Vec<IndexEntry>>,
 }
@@ -2768,11 +2914,43 @@ fn apply_module_section_ids(tree: &mut Doctree, source: &str) {
 mod tests {
     use super::*;
     use crate::config::SphinxConfig;
+    use crate::source_analysis::{
+        DeclarationKind, SourceAnalysisRequest, SourceDeclaration, SourcePosition, SourceSpan,
+        Visibility,
+    };
 
     fn make_env() -> BuildEnvironment {
         let config = SphinxConfig::new_defaults();
         let project = EnvProject::new("/tmp/src", &[(".rst", "restructuredtext")]);
         BuildEnvironment::new(config, project, "/tmp/src", "/tmp/doctrees")
+    }
+
+    fn source_snapshot() -> AnalysisSnapshot {
+        let declaration = SourceDeclaration::new(
+            SourceLanguage::Rust,
+            "test-backend",
+            "crate::api::answer",
+            "::",
+            DeclarationKind::Function,
+            Some("answer() -> i32".to_owned()),
+            Some("i32".to_owned()),
+            "Returns the answer.",
+            Visibility::Public,
+            SourceSpan::new(
+                "src/lib.rs",
+                SourcePosition { byte: 0, line: 1, column: 0 },
+                None,
+            ),
+        );
+        AnalysisSnapshot::new(
+            SourceLanguage::Rust,
+            "test-backend",
+            "1",
+            "/tmp/src",
+            "hash",
+            vec![declaration],
+            Vec::new(),
+        )
     }
 
     #[test]
@@ -2785,6 +2963,57 @@ mod tests {
     fn new_env_all_docs_empty() {
         let env = make_env();
         assert!(env.all_docs.is_empty());
+    }
+
+    #[test]
+    fn source_snapshots_feed_domains_and_persist_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let srcdir = dir.path().join("src");
+        let doctreedir = dir.path().join("doctrees");
+        std::fs::create_dir_all(&srcdir).unwrap();
+        let project = EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
+        let mut env = BuildEnvironment::new(
+            SphinxConfig::new_defaults(),
+            project.clone(),
+            &srcdir,
+            &doctreedir,
+        );
+        let request = SourceAnalysisRequest::new(&srcdir);
+        let json_path = srcdir.join("fixture.json");
+        std::fs::write(&json_path, b"initial source input").unwrap();
+        let mut request = request;
+        request.selected.push(json_path.clone());
+        let mut snapshot = source_snapshot();
+        snapshot.source_root = srcdir.to_string_lossy().into_owned();
+        snapshot.source_hash = source_input_hash(&request, SourceLanguage::Rust).unwrap();
+        snapshot.set_request_identity(&request);
+        env.note_source_snapshot("api", snapshot).unwrap();
+        assert_eq!(env.rust_domain.source_objects().len(), 1);
+        assert_eq!(env.source_snapshots.len(), 1);
+        assert_eq!(env.domaindata["rust"]["backend"], "test-backend");
+        assert!(env.source_snapshot_matches_request("api", &request));
+        let mut changed_request = request.clone();
+        changed_request.include_private = true;
+        assert!(!env.source_snapshot_matches_request("api", &changed_request));
+
+        let persisted = env.to_persisted();
+        let mut restored = BuildEnvironment::new(
+            SphinxConfig::new_defaults(),
+            project,
+            &srcdir,
+            &doctreedir,
+        );
+        restored.apply_persisted(persisted);
+        assert_eq!(restored.rust_domain.source_objects().len(), 1);
+        assert!(restored.source_snapshots.contains_key("api"));
+        assert!(restored.source_snapshot_matches_request("api", &request));
+
+        std::fs::write(&json_path, b"changed source input").unwrap();
+        assert!(!restored.source_snapshot_matches_request("api", &request));
+
+        restored.remove_doc("api");
+        assert!(restored.rust_domain.source_objects().is_empty());
+        assert!(restored.source_snapshots.is_empty());
     }
 
     #[test]

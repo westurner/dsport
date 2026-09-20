@@ -9,5 +9,5 @@ pub mod templates;
 
 pub use generate::{ApidocError, create_modules_toc_file, recurse_tree};
 pub use parser::{build_parser, parse_args};
-pub use settings::ApidocOptions;
+pub use settings::{ApidocOptions, SourceMode};
 pub use templates::ApidocTemplates;

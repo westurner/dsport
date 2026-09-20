@@ -23,8 +23,9 @@
 //! functions return `Ok(())` without copying, so a pure-Rust build still
 //! succeeds (only the theme assets are absent).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -39,7 +40,7 @@ struct ThemeLayer {
 }
 
 /// Result of resolving a theme: static dirs (base-first) + merged options.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 struct ResolvedTheme {
     layers: Vec<ThemeLayer>,
     /// Merged `theme_<option>` → value map (child overrides parent).
@@ -254,7 +255,27 @@ fn resolve_theme(
     theme_path_dirs: &[String],
     registered_themes: &[(String, std::path::PathBuf)],
 ) -> Option<ResolvedTheme> {
-    Python::attach(|py| -> PyResult<ResolvedTheme> {
+    type ThemeCacheKey = (String, Vec<String>, Vec<(String, String)>);
+    static CACHE: OnceLock<Mutex<HashMap<ThemeCacheKey, Option<ResolvedTheme>>>> = OnceLock::new();
+
+    let key = (
+        theme_name.to_owned(),
+        theme_path_dirs.to_vec(),
+        registered_themes
+            .iter()
+            .map(|(name, path)| (name.clone(), path.to_string_lossy().into_owned()))
+            .collect(),
+    );
+    let cacheable = theme_path_dirs.is_empty() && registered_themes.is_empty();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if cacheable
+        && let Ok(entries) = cache.lock()
+        && let Some(theme) = entries.get(&key)
+    {
+        return theme.clone();
+    }
+
+    let resolved = Python::attach(|py| -> PyResult<ResolvedTheme> {
         let globals = PyDict::new(py);
         py.run(
             &std::ffi::CString::new(RESOLVE_PY).unwrap(),
@@ -336,7 +357,14 @@ fn resolve_theme(
             template_dirs,
         })
     })
-    .ok()
+    .ok();
+
+    if cacheable
+        && let Ok(mut entries) = cache.lock()
+    {
+        entries.insert(key, resolved.clone());
+    }
+    resolved
 }
 
 /// Resolve the real theme's template directory chain (child-first) for

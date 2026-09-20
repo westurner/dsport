@@ -182,13 +182,13 @@ in the notes column of the relevant row.
 | `util/i18n.py` | `intl` | P2 | **done** | `CatalogInfo` (incl. `write_mo`), `CatalogRepository`, `docname_to_domain`, `DATE_FORMAT_MAPPINGS`, `split_date_format`, `ustrftime_to_babel`, `babel_format_date`, `format_date`, `encode_mo` / `decode_mo`. **Accepted deviations:** CLDR data limited to `en`/`de`/`ja` (others fall back to `en`, as upstream does for unknown locales); MO output is singular-only with an empty hash table; `.po` files are decoded as UTF-8 |
 | `roles.py` | `roles` | P3 | **partial** | pure-algorithm subset: `GENERIC_DOCROLES`, `SPECIFIC_DOCROLES`, `is_builtin_role`, `format_rfc_target`, `parse_emphasized_literal`, `XRefRoleConfig`, `DefaultRoleConfig`. **Gap:** role `run()` execution (→ **H5b**) |
 | `directives/` | `docutilsrs::plugins` + parser dispatch | P3 | **partial** | native registry now runs before built-ins; callable `app.add_directive` handlers return replacement RST. Full docutils Directive class/options/node execution remains (→ **H5a**) |
-| `domains/` | `domains` | P3 | **mirrored** | `std`/`rst`/`py`/`js` domain data, object aggregation, search metadata, and xref recovery are implemented (**H3**); Rust and Lean domain support is a separate planned extension (**H14**) |
+| `domains/` | `domains` | P3 | **mirrored** ✅ | `std`/`rst`/`py`/`js` domain data plus Rust/Lean source objects, language-aware xrefs, aliases, ambiguity handling, and search metadata are implemented (**H3**, **H14**); Lean remains syntax-level |
 | `environment/` | `environment` | P3 | **mirrored** ✅ | `BuildEnvironment`: `find_files` (**H2a**), doctree store `parse_doc`/`store_doctree`/`get_doctree`/`has_stored_doctree` (**H2b**), `read_all` read phase (**H2c**), `get_and_resolve_doctree` (**H2e**), `check_consistency` (**H2f**). **Gap:** `resolve_references`, `domains` (→ **H3**) |
 | `builders/` | `builders` | P3 | **partial** | `Builder` trait + `HtmlBuilder`, `LatexBuilder`, `ManpageBuilder`, `LinkcheckBuilder`, `JsonBuilder`, `TextBuilder`, `XmlBuilder`, `PseudoxmlBuilder` (**H7a**, done), `DirhtmlBuilder`, `SinglehtmlBuilder` (**H7b**, done), `GettextBuilder` (**H7c**, done), `ChangesBuilder`, minimal `EpubBuilder`, and minimal `TexinfoBuilder` (**H7d**, done), all dispatched by `SphinxApp`. **Gap:** full EPUB packaging/navigation, texinfo project metadata, and real HTML body/navigation/content parity. `doctest`/`coverage`/`qthelp`/`devhelp`/`htmlhelp`/`applehelp` are **keep-python** (**H7e**, decided) |
 | `application.py` | `application` | P3 | **partial** | `SphinxApp`: path validation, config, registry, env, extension loading, native events, `read()` (**H2**: `find_files` + `read_all`), and `build()` (`&mut self`, two-phase). **Gaps:** parallel build, incremental rebuild, and full i18n (→ **H4**, **H8**) |
 | `theming.py` | `theme`, `theme_static`, `theme_render` | P3 | **mirrored** ✅ | self-contained `sphinxdocrs_basic` theme + real third-party theme inheritance (`alabaster`/`basic`) rendered through `jinja2rs`; full per-page context (`pathto`/`hasdoc`/`toctree()`/`toc`/relbar/sidebars/`html_context`/`html-page-context`) (**H6**, done). **Accepted deviation:** `theme.conf`/`theme.toml` inheritance-chain parsing still goes through an embedded PyO3 bootstrap rather than pure Rust (**H6a**) |
 | `search/` | `search` | P3 | **done** | `SearchIndex`, `split_words`, `feed`, `to_json`, Snowball stemming for all 15 `sphinx.search` languages (**H1f**, via `stemmer.rs`). **Accepted deviation:** `rust_stemmers`' Dutch algorithm is the legacy `dutch_porter` Snowball revision, not the one `snowballstemmer.stemmer('dutch')` resolves to — patched via built-in `ParityOverrides` for Sphinx's own Dutch stopword vocabulary; broader vocabularies may need project-supplied overrides. `objects`/`objtypes`/`objnames`/`indexentries` now populated from domain data (**H3d**) — see the accepted deviations noted on that row in §3 |
-| `ext/autodoc/` | `autodoc` | P3 | **mirrored** ✅ | Python `document_module`/`document_module_auto`/`render_function`/`render_class` with a PyO3 runtime-import bridge and `ruff_python_parser` static fallback, option handling, type hints, decorators, `__all__`, and `autodoc_mock_imports` (**H9**, done). Rust/Lean source autodoc requires the language-neutral analyzer contract and source-specific renderers planned in **H14**. **Accepted Python deviations:** `:inherited-members:` parsed but not expanded; overload sets render only the last definition; `autodoc_typehints="description"` treated as `"signature"` |
+| `ext/autodoc/` | `autodoc` | P3 | **mirrored** ✅ | Python `document_module`/`document_module_auto`/`render_function`/`render_class` with a PyO3 runtime-import bridge and `ruff_python_parser` static fallback, option handling, type hints, decorators, `__all__`, and `autodoc_mock_imports` (**H9**, done). Source-neutral Rust/Lean autodoc renderers and CLI are implemented under **H14**. **Accepted Python deviations:** `:inherited-members:` parsed but not expanded; overload sets render only the last definition; `autodoc_typehints="description"` treated as `"signature"`. **Accepted source deviations:** Lean syntax-only extraction; mismatched rustdoc JSON schemas fail explicitly |
 | `ext/intersphinx/` | `intersphinx` | P3 | **partial** | `fetch_inventories`, `InvCache`, `Inventory` / `InventoryItem` / `InventoryError` (v1 + v2 `loads`, `load_file`), `dumps`. **Gap:** xref fallback — the parsed inventories are not consulted during reference resolution (→ **H5c**) |
 | `highlighting.py` | — | P3 | **partial** | `docutilsrs` code/code-block/sourcecode paths use native `pygmentsrs` with Python fallback; `automodule` output now enters that path; Sphinx aliases (`py`/`py3`/`python3`/`default`/`pycon3`), Python-console detection, and `guess` fallback are covered. Lexer-error logging, relaxed retry, and location-rich diagnostics remain (→ **H10**) |
 | `pycode/` | — | P3 | **keep-python** | superseded by `autodoc.rs` + `ruff_python_ast` |
@@ -204,7 +204,7 @@ in the notes column of the relevant row.
 | --- | --- | --- | --- | --- |
 | `sphinx-quickstart` | `sphinx-quickstart-rs` | `sphinx.cmd.quickstart` | **C1** | **done** — fully native |
 | `sphinx-build` | `sphinx-build-rs` | `sphinx.cmd.build` + `sphinx.cmd.make_mode` | **C2** | **partial** — `-M` make-mode native; `-b` native for `html`/`latex`/`man`/`linkcheck`; other builders delegate to Python |
-| `sphinx-apidoc` | `sphinx-apidoc-rs` | `sphinx.ext.apidoc` | **C3** | **done for Python** — module/package/TOC generation + `--full`; parity verified vs Python 9.1.0. Rust crate and Lean module discovery/templates are planned in **H14** |
+| `sphinx-apidoc` | `sphinx-apidoc-rs` | `sphinx.ext.apidoc` | **C3** | **done** — Python module/package/TOC generation + `--full` remain compatible; native Rust/Lean source discovery and generated module directives are implemented under **H14** |
 | `sphinx-autogen` | `sphinx-autogen-rs` | `sphinx.ext.autosummary.generate` | **C4** | **done** — RST scan, arg-parse, native stub generation |
 
 Every binary honours `--use-python-impl` and `SPHINXDOCRS_PY_FALLBACK=1`.
@@ -2202,6 +2202,19 @@ qualified declaration model, source locations, documentation text, aliases,
 and visibility policy. The implementation therefore has one analysis
 boundary and three consumers:
 
+**Implementation status (2026-09-20):** The native source declaration model,
+Rustdoc JSON and Arborium analyzers, Rust/Lean domains and xrefs, parser-native
+directives, persistence and source-byte invalidation, search metadata,
+source-neutral autodoc, standalone autodoc CLI, and source-mode apidoc are
+implemented behind the `rust-source-analysis` and `lean-source-analysis`
+features. The fixture gate is hermetic: it uses the pinned rustdoc-types
+format-61 schema. A locally available nightly rustdoc currently emits format
+60, so its live JSON is rejected as an intentional schema mismatch rather
+than accepted as parity. Lean extraction is syntax-level and does not provide
+elaboration or typeclass information. Automatic analyzer discovery from an
+arbitrary document read is still deferred; generated source entry points and
+explicit environment analysis requests are the supported integration path.
+
 1. **Domain and xref consumer:** registers declarations in the build
    environment and resolves roles such as `rust:func` or `lean:thm`.
 2. **Autodoc consumer:** renders declarations and their documentation into
@@ -2495,10 +2508,11 @@ Add source-specific templates and options:
 Generated files must be deterministic, preserve `--force`, `--dry-run`,
 `--remove-old`, exclusion, suffix, and template-dir semantics, and never
 overwrite a Python output tree with Rust or Lean files without an explicit
-mode. `--full` should add the required domain/source extension to the
-generated project configuration, while retaining the current Python quickstart
-path. Add a manifest/source-kind marker to generated files so a later run can
-detect a mode mismatch before deleting files.
+mode. `--full` retains the current Python quickstart configuration. In Rust and
+Lean mode it also emits the native source entry points and source-kind markers;
+the native builder registers the source domains by default, so no fictitious
+Python extension name is added to `conf.py`. A later run can detect a mode
+mismatch before deleting files from those markers.
 
 #### H14i -- tests, parity gates, and accepted deviations
 
@@ -2585,9 +2599,12 @@ their own sessions. This
 section is a concrete starting point for
 picking them back up, based on what these sessions learned about the
 codebase's actual shape (as opposed to `docutilsrs::doctree::NodeKind`
-in the abstract). H14 is the planned follow-up for Rust/Lean source
-analysis and documentation tooling; it is intentionally not counted as
-implemented by the current Python-only C3/H9 rows:
+in the abstract). H14 is now implemented for the native Rust/Lean
+source-analysis paths. Its remaining boundaries are recorded in the H14
+status note above: live rustdoc JSON must match the pinned `rustdoc-types`
+schema, Lean extraction is syntax-level, and generated source entry points
+are the supported automatic integration path rather than implicit analysis
+of arbitrary document reads:
 
 - **`epub` (H7d remainder).** The output is a zip archive
   (`crate::zip_writer` in `docutilsrs` already exists and is exercised

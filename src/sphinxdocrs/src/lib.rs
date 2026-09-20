@@ -50,6 +50,7 @@ pub mod registry;
 pub mod roles;
 pub mod scan;
 pub mod search;
+pub mod source_analysis;
 #[cfg(feature = "search-stemming")]
 pub mod stemmer;
 pub mod theme;

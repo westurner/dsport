@@ -359,9 +359,7 @@ fn resolve_theme(
     })
     .ok();
 
-    if cacheable
-        && let Ok(mut entries) = cache.lock()
-    {
+    if cacheable && let Ok(mut entries) = cache.lock() {
         entries.insert(key, resolved.clone());
     }
     resolved

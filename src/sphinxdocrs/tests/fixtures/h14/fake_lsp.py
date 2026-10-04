@@ -39,6 +39,27 @@ while True:
         break
     method = message.get("method")
     if "id" not in message:
+        if mode == "diagnostics" and method == "textDocument/didOpen":
+            uri = message["params"]["textDocument"]["uri"]
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "textDocument/publishDiagnostics",
+                    "params": {
+                        "uri": uri,
+                        "diagnostics": [
+                            {
+                                "range": {
+                                    "start": {"line": 0, "character": 4},
+                                    "end": {"line": 0, "character": 6},
+                                },
+                                "severity": 1,
+                                "message": "fixture diagnostic",
+                            }
+                        ],
+                    },
+                }
+            )
         continue
     if method == "initialize":
         result = {"capabilities": {"documentSymbolProvider": True}}

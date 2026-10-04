@@ -1474,6 +1474,31 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn fake_server_publish_diagnostics_are_normalized_into_snapshot() {
+        let workspace = TempDir::new().unwrap();
+        let source = workspace.path().join("lib.rs");
+        std::fs::write(&source, "pub fn answer() -> i32 { 42 }\n").unwrap();
+        let provider =
+            LspSnapshotProvider::new(fake_server_config(workspace.path(), "diagnostics"));
+        let mut request = SourceAnalysisRequest::new(workspace.path());
+        request.selected.push(source.clone());
+
+        let snapshot = provider.analyze(&request).unwrap();
+
+        assert_eq!(snapshot.diagnostics.len(), 1);
+        let diagnostic = &snapshot.diagnostics[0];
+        assert_eq!(diagnostic.severity, DiagnosticSeverity::Error);
+        assert_eq!(diagnostic.backend, "lsp");
+        assert_eq!(diagnostic.message, "fixture diagnostic");
+        let span = diagnostic.source.as_ref().unwrap();
+        assert_eq!(span.path, source.canonicalize().unwrap().to_string_lossy());
+        assert_eq!(span.start.line, 1);
+        assert_eq!(span.start.column, 4);
+        assert_eq!(span.end.unwrap().column, 6);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn fake_server_timeout_terminates_child() {
         let workspace = TempDir::new().unwrap();
         let source = workspace.path().join("lib.rs");
@@ -1539,7 +1564,7 @@ mod tests {
             ],
             workspace_root: workspace.to_path_buf(),
             language: SourceLanguage::Rust,
-            request_timeout: Duration::from_secs(1),
+            request_timeout: Duration::from_secs(3),
             allow_fallback: false,
             environment: vec![("PATH".into(), std::env::var("PATH").unwrap_or_default())],
             max_message_bytes: 1024 * 1024,

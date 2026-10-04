@@ -345,7 +345,7 @@ JSON and Arborium paths for ordinary builds.
 | `DocumentSymbol.detail`, `range`, `selectionRange` | Signatures, source spans, and declaration anchors | P0 | Detail/ranges are mapped; selection positions are retained as LSP attributes. Static declaration IDs and policy metadata remain authoritative in hybrid mode. |
 | `textDocument/hover` | Fill a missing description/type summary for a statically discovered declaration | P1 | Not implemented. Normalize plaintext/Markdown, apply only to empty static fields, track LSP provenance, and diagnose disagreement. Never silently replace static documentation. |
 | `textDocument/definition` | Optional “Defined in” source link or cross-file source location | P1 | Not implemented. Convert only in-workspace locations to Sphinx-relative source links; never publish editor `file://` URIs directly. |
-| `textDocument/publishDiagnostics` | Separate build diagnostics page/report, optionally grouped by file/severity | P1 | Notifications are decoded into `AnalysisDiagnostic`; dedicated mapping/report tests and a Sphinx diagnostics page are not implemented. Diagnostics should not become API prose by default. |
+| `textDocument/publishDiagnostics` | Separate build diagnostics page/report, optionally grouped by file/severity | P1 | Fake-server coverage verifies severity, message, and an in-workspace URI/range normalize into `AnalysisDiagnostic`; reporting policy/tests and a Sphinx diagnostics page remain open. Diagnostics should not become API prose by default. |
 | `textDocument/references` | “Used by” lists or reverse-reference reports | P2 | Not implemented. Keep opt-in because results can be large, server-dependent, and expensive. Do not use them to define API membership. |
 | `workspace/symbol` | Workspace-wide API index or namespace landing pages | P2 | Not implemented. Prefer static apidoc discovery for page membership; use workspace symbols only for explicitly requested enrichment/discovery. |
 | `textDocument/completion`, `signatureHelp`, `semanticTokens` | Interactive completion/signature/token display | Not a generated-doc priority | Better suited to editor integrations. Semantic tokens may eventually help render signatures, but must not be a prerequisite for generated docs. |
@@ -823,7 +823,7 @@ currently covers:
 - document symbol response
 - workspace symbol response
 - hover and definition response
-- diagnostics notification (notification decoding is implemented; dedicated mapping coverage remains to add)
+- diagnostics notification (severity, message, and in-workspace URI/range mapping)
 - delayed response and timeout
 - malformed JSON-RPC response
 - server crash during a request (pre-initialize crash coverage remains to add)
@@ -853,11 +853,12 @@ environment variable and report a skipped result when the server is unavailable.
 Current automated LSP tests cover fake-server initialize/document-symbol/shutdown,
 provider-scoped process reuse, timeout, crash during a request, framing limits,
 malformed JSON-RPC/version, UTF-16 position conversion, symbol-kind mapping,
-missing executable resolution, workspace escape rejection before spawn, and
-configuration/cache secrecy. The status command can invoke the shared fake server
-with `--live --live-fake`; the command remains process-free without that flag.
-Gaps include diagnostics notification fixtures, pre-initialize crash, true request
-cancellation, Windows process-tree cleanup, and cross-platform lifecycle tests.
+publishDiagnostics severity/message/source-span normalization, missing executable
+resolution, workspace escape rejection before spawn, and configuration/cache
+secrecy. The status command can invoke the shared fake server with `--live
+--live-fake`; the command remains process-free without that flag. Gaps include
+pre-initialize crash, true request cancellation, Windows process-tree cleanup,
+and cross-platform lifecycle tests.
 The full Sphinx library suite has known environment failures in Python 3.14
 `typing` import behavior, theme/config expectations, and a symlink fixture; the
 focused source-doc and LSP suites pass.

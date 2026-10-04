@@ -32,6 +32,7 @@ const MAX_SOURCE_FILES: usize = 2_048;
 const MAX_DIAGNOSTICS: usize = 10_000;
 const MAX_DIRECTORY_ENTRIES: usize = 100_000;
 const MAX_HOVER_REQUESTS: usize = 256;
+const MAX_DEFINITION_REQUESTS: usize = 256;
 const MAX_HOVER_CONTENT_BYTES: usize = 64 * 1024;
 const MAX_SERVER_INFO_FIELD_BYTES: usize = 256;
 const CLIENT_NAME: &str = "sphinxdocrs";
@@ -58,6 +59,7 @@ trait SourceLspClient {
         output: &mut Vec<AnalysisDiagnostic>,
     );
     fn supports_hover(&self) -> bool;
+    fn supports_definition(&self) -> bool;
     fn shutdown(&mut self);
 }
 
@@ -199,6 +201,7 @@ struct LspProcess {
     session_deadline: Instant,
     server_identity: String,
     hover_supported: bool,
+    definition_supported: bool,
     #[cfg(windows)]
     job: Option<WindowsJob>,
 }
@@ -316,6 +319,7 @@ impl LspProcess {
             session_deadline: Instant::now() + MAX_SESSION_DURATION,
             server_identity: "unreported".into(),
             hover_supported: false,
+            definition_supported: false,
             #[cfg(windows)]
             job,
         };
@@ -329,7 +333,8 @@ impl LspProcess {
                 "capabilities": {
                     "textDocument": {
                         "documentSymbol": { "hierarchicalDocumentSymbolSupport": true },
-                        "hover": { "contentFormat": ["markdown", "plaintext"] }
+                        "hover": { "contentFormat": ["markdown", "plaintext"] },
+                        "definition": { "linkSupport": true }
                     }
                 },
                 "clientInfo": { "name": CLIENT_NAME, "version": CLIENT_VERSION }
@@ -343,6 +348,9 @@ impl LspProcess {
         let capabilities = initialized.get("capabilities");
         process.hover_supported = capabilities
             .and_then(|capabilities| capabilities.get("hoverProvider"))
+            .is_some_and(|capability| !capability.is_null() && capability != false);
+        process.definition_supported = capabilities
+            .and_then(|capabilities| capabilities.get("definitionProvider"))
             .is_some_and(|capability| !capability.is_null() && capability != false);
         if !capabilities
             .and_then(|capabilities| capabilities.get("documentSymbolProvider"))
@@ -559,6 +567,10 @@ impl SourceLspClient for LspProcess {
 
     fn supports_hover(&self) -> bool {
         self.hover_supported
+    }
+
+    fn supports_definition(&self) -> bool {
+        self.definition_supported
     }
 
     fn shutdown(&mut self) {
@@ -816,6 +828,37 @@ fn diagnostic_path_from_uri(uri: &str, workspace_root: &Path) -> Option<PathBuf>
     path.starts_with(workspace_root).then_some(path)
 }
 
+fn definition_span_from_response(response: &Value, workspace_root: &Path) -> Option<SourceSpan> {
+    let workspace_root = workspace_root.canonicalize().ok()?;
+    if let Some(locations) = response.as_array() {
+        locations
+            .iter()
+            .find_map(|location| definition_span_from_location(location, &workspace_root))
+    } else {
+        definition_span_from_location(response, &workspace_root)
+    }
+}
+
+fn definition_span_from_location(location: &Value, workspace_root: &Path) -> Option<SourceSpan> {
+    let uri = location
+        .get("targetUri")
+        .or_else(|| location.get("uri"))?
+        .as_str()?;
+    let path = diagnostic_path_from_uri(uri, workspace_root)?;
+    let metadata = path.metadata().ok()?;
+    if metadata.len() > MAX_SOURCE_DOCUMENT_BYTES as u64 {
+        return None;
+    }
+    let source_text = std::fs::read_to_string(&path).ok()?;
+    let range = location
+        .get("targetSelectionRange")
+        .or_else(|| location.get("range"))
+        .or_else(|| location.get("targetRange"))?;
+    let (start, end) = positions_from_range(range, &source_text)?;
+    let relative_path = path.strip_prefix(workspace_root).ok()?;
+    Some(SourceSpan::new(relative_path, start, Some(end)))
+}
+
 fn hex_value(byte: u8) -> Option<u8> {
     match byte {
         b'0'..=b'9' => Some(byte - b'0'),
@@ -1062,6 +1105,8 @@ impl LspSnapshotProvider {
         let mut truncated = false;
         let mut hover_requests = 0usize;
         let mut hover_limit_reached = false;
+        let mut definition_requests = 0usize;
+        let mut definition_limit_reached = false;
         for path in &paths {
             let remaining =
                 MAX_DIAGNOSTICS.saturating_sub(declarations.len() + diagnostics.len() + 1);
@@ -1070,12 +1115,29 @@ impl LspSnapshotProvider {
                 break;
             }
             let hover_budget = MAX_HOVER_REQUESTS.saturating_sub(hover_requests);
-            let (mut found, mut reported, file_truncated, file_hover_requests, file_hover_limit) =
-                self.analyze_file(process, request, path, remaining, hover_budget)?;
+            let definition_budget = MAX_DEFINITION_REQUESTS.saturating_sub(definition_requests);
+            let (
+                mut found,
+                mut reported,
+                file_truncated,
+                file_hover_requests,
+                file_hover_limit,
+                file_definition_requests,
+                file_definition_limit,
+            ) = self.analyze_file(
+                process,
+                request,
+                path,
+                remaining,
+                hover_budget,
+                definition_budget,
+            )?;
             declarations.append(&mut found);
             diagnostics.append(&mut reported);
             hover_requests = hover_requests.saturating_add(file_hover_requests);
             hover_limit_reached |= file_hover_limit;
+            definition_requests = definition_requests.saturating_add(file_definition_requests);
+            definition_limit_reached |= file_definition_limit;
             if file_truncated {
                 truncated = true;
                 break;
@@ -1096,6 +1158,17 @@ impl LspSnapshotProvider {
                 backend: "lsp".into(),
                 message: format!(
                     "hover enrichment stopped at the {MAX_HOVER_REQUESTS}-request limit"
+                ),
+                source: None,
+                declaration: None,
+            });
+        }
+        if definition_limit_reached && declarations.len() + diagnostics.len() < MAX_DIAGNOSTICS {
+            diagnostics.push(AnalysisDiagnostic {
+                severity: DiagnosticSeverity::Info,
+                backend: "lsp".into(),
+                message: format!(
+                    "definition enrichment stopped at the {MAX_DEFINITION_REQUESTS}-request limit"
                 ),
                 source: None,
                 declaration: None,
@@ -1125,10 +1198,13 @@ impl LspSnapshotProvider {
         path: &Path,
         item_limit: usize,
         hover_limit: usize,
+        definition_limit: usize,
     ) -> Result<
         (
             Vec<SourceDeclaration>,
             Vec<AnalysisDiagnostic>,
+            bool,
+            usize,
             bool,
             usize,
             bool,
@@ -1179,7 +1255,10 @@ impl LspSnapshotProvider {
         let mut truncated = false;
         let mut hover_requests = 0usize;
         let mut hover_limit_reached = false;
+        let mut definition_requests = 0usize;
+        let mut definition_limit_reached = false;
         let hover_supported = process.supports_hover();
+        let definition_supported = process.supports_definition();
         while let Some((item, parent)) = stack.pop() {
             if declarations.len() + diagnostics.len() >= item_limit {
                 truncated = true;
@@ -1226,25 +1305,40 @@ impl LspSnapshotProvider {
                 })
                 .map(normalize_text)
                 .unwrap_or_default();
+            let symbol_position = item
+                .get("selectionRange")
+                .and_then(|selection_range| selection_range.get("start"))
+                .or_else(|| range.get("start"))
+                .cloned();
             if documentation.is_empty() && hover_supported {
                 if hover_requests >= hover_limit {
                     hover_limit_reached = true;
-                } else {
-                    let hover_position = item
-                        .get("selectionRange")
-                        .and_then(|selection_range| selection_range.get("start"))
-                        .or_else(|| range.get("start"))
-                        .cloned();
-                    if let Some(position) = hover_position {
-                        hover_requests += 1;
-                        let hover = process.request(
-                            "textDocument/hover",
-                            json!({"textDocument":{"uri":uri}, "position":position}),
-                        )?;
-                        documentation = hover_documentation(&hover).unwrap_or_default();
-                    }
+                } else if let Some(position) = symbol_position.as_ref() {
+                    hover_requests += 1;
+                    let hover = process.request(
+                        "textDocument/hover",
+                        json!({"textDocument":{"uri":uri}, "position":position}),
+                    )?;
+                    documentation = hover_documentation(&hover).unwrap_or_default();
                 }
             }
+            let definition_span = if definition_supported {
+                if definition_requests >= definition_limit {
+                    definition_limit_reached = true;
+                    None
+                } else if let Some(position) = symbol_position.as_ref() {
+                    definition_requests += 1;
+                    let definition = process.request(
+                        "textDocument/definition",
+                        json!({"textDocument":{"uri":uri}, "position":position}),
+                    )?;
+                    definition_span_from_response(&definition, &self.config.workspace_root)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             let (signature, type_text) = match kind {
                 DeclarationKind::Function | DeclarationKind::Method => (detail.clone(), None),
                 _ => (None, detail.clone()),
@@ -1262,6 +1356,27 @@ impl LspSnapshotProvider {
                 SourceSpan::new(path, start, Some(end)),
             );
             declaration.attributes.insert("lsp:uri".into(), uri.clone());
+            if let Some(span) = definition_span {
+                declaration
+                    .attributes
+                    .insert("lsp:definition_path".into(), span.path);
+                declaration.attributes.insert(
+                    "lsp:definition_start_line".into(),
+                    span.start.line.to_string(),
+                );
+                declaration.attributes.insert(
+                    "lsp:definition_start_column".into(),
+                    span.start.column.to_string(),
+                );
+                if let Some(end) = span.end {
+                    declaration
+                        .attributes
+                        .insert("lsp:definition_end_line".into(), end.line.to_string());
+                    declaration
+                        .attributes
+                        .insert("lsp:definition_end_column".into(), end.column.to_string());
+                }
+            }
             if let Some(selection_range) = item.get("selectionRange") {
                 if let Some((selection_start, selection_end)) =
                     positions_from_range(selection_range, &text)
@@ -1297,6 +1412,8 @@ impl LspSnapshotProvider {
             truncated,
             hover_requests,
             hover_limit_reached,
+            definition_requests,
+            definition_limit_reached,
         ))
     }
 }
@@ -1691,6 +1808,39 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn fake_server_records_workspace_relative_definition_location() {
+        let workspace = TempDir::new().unwrap();
+        let source = workspace.path().join("lib.rs");
+        std::fs::write(&source, "pub fn answer() -> i32 { 42 }\n").unwrap();
+        let provider = LspSnapshotProvider::new(fake_server_config(workspace.path(), "definition"));
+        let mut request = SourceAnalysisRequest::new(workspace.path());
+        request.selected.push(source);
+
+        let snapshot = provider.analyze(&request).unwrap();
+
+        let attributes = &snapshot.declarations[0].attributes;
+        assert_eq!(
+            attributes.get("lsp:definition_path").map(String::as_str),
+            Some("lib.rs")
+        );
+        assert_eq!(
+            attributes
+                .get("lsp:definition_start_line")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            attributes
+                .get("lsp:definition_start_column")
+                .map(String::as_str),
+            Some("4")
+        );
+        assert!(!attributes.contains_key("lsp:definition_uri"));
+        assert!(!attributes["lsp:definition_path"].starts_with("file://"));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn fake_server_timeout_terminates_child() {
         let workspace = TempDir::new().unwrap();
         let source = workspace.path().join("lib.rs");
@@ -1882,6 +2032,60 @@ mod tests {
             diagnostic_path_from_uri(&file_uri(&external).unwrap(), workspace.path()).is_none()
         );
         assert!(local_path_from_file_uri("file:///tmp/bad%Q0path").is_none());
+    }
+
+    #[test]
+    fn definition_locations_accept_links_but_reject_external_targets() {
+        let workspace = TempDir::new().unwrap();
+        let inside = workspace.path().join("inside.rs");
+        std::fs::write(&inside, "pub fn answer() {}\n").unwrap();
+        let outside = TempDir::new().unwrap();
+        let external = outside.path().join("external.rs");
+        std::fs::write(&external, "pub fn outside() {}\n").unwrap();
+        let location = json!({
+            "uri": file_uri(&inside).unwrap(),
+            "range": {
+                "start": {"line": 0, "character": 4},
+                "end": {"line": 0, "character": 6}
+            }
+        });
+        let location_link = json!({
+            "targetUri": file_uri(&inside).unwrap(),
+            "targetRange": {
+                "start": {"line": 0, "character": 0},
+                "end": {"line": 0, "character": 19}
+            },
+            "targetSelectionRange": {
+                "start": {"line": 0, "character": 4},
+                "end": {"line": 0, "character": 6}
+            }
+        });
+
+        let span = definition_span_from_response(
+            &json!([
+                {
+                    "uri": file_uri(&external).unwrap(),
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 6}
+                    }
+                },
+                location,
+            ]),
+            workspace.path(),
+        )
+        .unwrap();
+        assert_eq!(span.path, "inside.rs");
+        assert_eq!(span.start.column, 4);
+        assert_eq!(span.end.unwrap().column, 6);
+        assert!(definition_span_from_response(&location_link, workspace.path()).is_some());
+        assert!(
+            definition_span_from_response(
+                &json!({"uri": file_uri(&external).unwrap(), "range": {}}),
+                workspace.path()
+            )
+            .is_none()
+        );
     }
 
     #[test]

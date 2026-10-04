@@ -412,6 +412,7 @@ pub mod provider {
                 }
             }
             for (key, value) in lsp_declaration.attributes {
+                let key = key.strip_prefix("lsp:").unwrap_or(&key);
                 static_declaration
                     .attributes
                     .entry(format!("lsp:{key}"))
@@ -846,6 +847,11 @@ mod tests {
             ];
             widget.deprecated = self.kind != SourceBackendKind::Lsp;
             widget.noindex = self.kind != SourceBackendKind::Lsp;
+            if self.kind == SourceBackendKind::Lsp {
+                widget
+                    .attributes
+                    .insert("lsp:definition_path".into(), "src/implementation.rs".into());
+            }
             let create = make_declaration("demo::Widget::create", DeclarationKind::Method, 10);
             let delete = make_declaration("demo::Widget::delete", DeclarationKind::Method, 15);
             let alpha = make_declaration("demo::Alpha", DeclarationKind::Function, 0);
@@ -1052,6 +1058,23 @@ mod tests {
         );
         let static_snapshot = static_session.analyze(&request).unwrap();
         let hybrid_snapshot = hybrid_session.analyze(&request).unwrap();
+        let hybrid_widget = hybrid_snapshot
+            .declarations
+            .iter()
+            .find(|declaration| declaration.qualified_name == "demo::Widget")
+            .unwrap();
+        assert_eq!(
+            hybrid_widget
+                .attributes
+                .get("lsp:definition_path")
+                .map(String::as_str),
+            Some("src/implementation.rs")
+        );
+        assert!(
+            !hybrid_widget
+                .attributes
+                .contains_key("lsp:lsp:definition_path")
+        );
 
         let mut static_domain = RustDomain::new();
         static_domain.note_snapshot("api", &static_snapshot.declarations);

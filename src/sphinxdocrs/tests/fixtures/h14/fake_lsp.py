@@ -67,12 +67,22 @@ while True:
         capabilities = {"documentSymbolProvider": True}
         if mode == "hover":
             capabilities["hoverProvider"] = True
+        if mode == "definition":
+            capabilities["definitionProvider"] = True
         result = {
             "capabilities": capabilities,
             "serverInfo": {"name": "fake-lsp", "version": "fixture-1"},
         }
     elif method == "textDocument/hover" and mode == "hover":
         result = {"contents": {"kind": "markdown", "value": "Hover **answer**"}}
+    elif method == "textDocument/definition" and mode == "definition":
+        result = {
+            "uri": message["params"]["textDocument"]["uri"],
+            "range": {
+                "start": {"line": 0, "character": 4},
+                "end": {"line": 0, "character": 6},
+            },
+        }
     elif method == "textDocument/documentSymbol" and mode == "crash":
         sys.exit(3)
     elif method == "textDocument/documentSymbol" and mode == "timeout":

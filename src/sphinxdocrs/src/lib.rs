@@ -51,6 +51,7 @@ pub mod roles;
 pub mod scan;
 pub mod search;
 pub mod source_analysis;
+pub mod source_docs;
 #[cfg(feature = "search-stemming")]
 pub mod stemmer;
 pub mod theme;

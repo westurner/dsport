@@ -51,9 +51,9 @@ use std::path::{Path, PathBuf};
 use ruff_python_ast::{Expr, Parameters, Stmt, StmtClassDef, StmtFunctionDef};
 use ruff_python_parser::parse_module;
 
-use crate::source_analysis::{
-    AnalysisError, DeclarationKind, SourceAnalysisRequest, SourceAnalyzer, SourceDeclaration,
-    SourceLanguage, SourceSpan, Visibility,
+use crate::source_docs::{
+    AnalysisError, DeclarationKind, SourceAnalysisRequest, SourceDeclaration, SourceLanguage,
+    SourceSnapshotProvider, SourceSpan, Visibility,
 };
 
 /// Error type for autodoc extraction.
@@ -1071,7 +1071,7 @@ impl SourceAutodocRenderer for LeanSourceRenderer {
 
 /// Render a source snapshot into structured descriptions without exposing
 /// rustdoc or Arborium types to downstream consumers.
-pub fn document_source<A: SourceAnalyzer, R: SourceAutodocRenderer>(
+pub fn document_source<A: SourceSnapshotProvider + ?Sized, R: SourceAutodocRenderer>(
     request: &SourceAutodocRequest,
     analyzer: &A,
     renderer: &R,
@@ -1287,7 +1287,7 @@ mod tests {
 
     struct FixtureAnalyzer;
 
-    impl SourceAnalyzer for FixtureAnalyzer {
+    impl SourceSnapshotProvider for FixtureAnalyzer {
         fn analyze(
             &self,
             _request: &SourceAnalysisRequest,

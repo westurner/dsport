@@ -54,6 +54,8 @@ default = ["syntax-highlighting", "search-stemming"]
 # adapter dependencies.
 rust-source-analysis = ["dep:rustdoc-types"]
 lean-source-analysis = ["dep:arborium", "dep:arborium-lean"]
+# OS-native LSP descendant cleanup; Child::kill alone only targets the direct child.
+lsp-source-analysis = ["dep:libc", "dep:windows-sys"]
 rust = ["rust-source-analysis"]
 lean = ["lean-source-analysis"]
 
@@ -116,6 +118,19 @@ rustdoc-types = { version = "0.61", optional = true }
 arborium = { version = "2.18.2", optional = true }
 arborium-lean = { version = "2.18.2", optional = true }
 
+[target.'cfg(unix)'.dependencies]
+# std::process::Child::kill only reaches the direct child; libc is used by the
+# optional LSP client to signal the isolated Unix process group on timeout/drop.
+libc = { version = "0.2", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 insta = { workspace = true }
 rstest = { workspace = true }
@@ -172,3 +187,7 @@ path = "src/bin/sphinx_autogen.rs"
 [[bin]]
 name = "sphinx-errors-rs"
 path = "src/bin/sphinx_errors.rs"
+
+[[bin]]
+name = "sphinx-source-status"
+path = "src/bin/sphinx_source_port.rs"

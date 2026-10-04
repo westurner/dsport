@@ -1,9 +1,47 @@
 # Source Documentation and Optional LSP Integration Plan
 
-Status: proposed
-Date: 2026-09-30
+Status: in progress
+Last updated: 2026-10-04
 Scope: `sphinxdocrs` source-aware documentation for Rust and Lean, with optional
 integration through a client-side LSP adapter
+
+Implementation status (2026-10-02): phases 1 and 2 are implemented; phase 3 has
+an off-by-default trusted-local JSON-RPC client for
+`textDocument/documentSymbol`, bounded framing, source mapping, diagnostics,
+provider-scoped process reuse, and fake-server tests. The public inspection tool
+is `sphinx-source-status` (not `sphinx-source-port`):
+`cargo run -p sphinxdocrs --bin sphinx-source-status`. Its default invocation is
+process-free. With `lsp-source-analysis`, `--live --live-fake` exercises the
+checked-in fake peer; real servers require explicit
+`--live --live-language rust|lean --live-server ... --trusted-local` arguments.
+
+Security review update (2026-10-04): `libc` is an optional Unix-target dependency
+used to signal the LSP process group; `std::process::Child::kill()` only
+terminates the direct child. Windows uses an optional `windows-sys` Job Object
+with kill-on-close and a 64-process limit. Assignment occurs just after spawn,
+so this is best-effort cleanup containment rather than a race-free security
+boundary. The adapter bounds header reads before allocation, rejects
+duplicate/malformed `Content-Length`, enforces a five-minute per-request and
+30-minute provider-session ceiling, caps source documents at 1 MiB, outgoing and
+incoming frames at 8 MiB, each analysis at 2,048 files/100,000 directory
+entries/10,000 combined declarations and diagnostics, and permits only canonical
+symlink targets within the workspace while skipping external targets and cycles.
+Executables are resolved to absolute paths in the parent; the child starts with
+a cleared environment and no inherited `PATH`. Diagnostic URIs are decoded and
+resolved only to canonical files inside the configured workspace. These are
+trusted-local hardening controls, not an OS sandbox or a protected-mode claim.
+Linux tests cover process-group descendant cleanup. The Windows Job Object API
+was checked in isolation, but full Windows runtime/cross-build validation was
+unavailable because the container lacks its native C/PyO3 cross toolchain.
+macOS uses the Unix process-group path but still needs native runtime validation.
+
+Still incomplete: hover/definition/references/workspace-symbol enrichment,
+server-version probing, the full source-port mapping audit, CPU/memory/output
+limits, native Windows/macOS runtime process-tree tests, an audited
+`SandboxProvider`, platform boundary tests, and installed rust-analyzer/Lean live
+CI. Protected modes remain unavailable and fail closed. Unix process groups and
+Windows Job Objects provide best-effort cleanup, not OS sandboxing. Static remains
+the default and requires no LSP dependency or process.
 
 ## Summary
 
@@ -69,12 +107,11 @@ framework, so it is not a drop-in replacement for a client that launches and
 supervises another language-server process.
 
 For this project, `dscode-lsp` is optional convenience code, not an architectural
-requirement. A small internal client built on `lsp-types`, `serde_json`, and
-`tokio` avoids coupling the source-documentation API to DSCode, allows stricter
-process policy, and keeps the dependency graph smaller. A `dscode-lsp` adapter
-remains reasonable if rapid experimentation is more important than owning the
-lifecycle and security policy, but it must be pinned and wrapped behind the
-provider boundary.
+requirement. The current experimental internal client uses `serde_json`, standard
+library process/thread/channel APIs, and optional `libc` for Unix process-group
+signals. It intentionally does not add `lsp-types`, Tokio, or a DSCode dependency
+to the root workspace. Any future client-library adapter must still be pinned
+and hidden behind the provider boundary.
 
 The [dscode-lsp README](https://github.com/dmwarenet/dscode/tree/main/crates/dscode-lsp)
 and [LSP integration guide](https://github.com/dmwarenet/dscode/blob/main/docs/architecture/lsp-integration.md)
@@ -292,6 +329,28 @@ The session owns provider configuration and cache policy. `BuildEnvironment` own
 only normalized snapshots, diagnostics, and invalidation state. Live LSP clients
 must not be serialized into doctrees or environment files.
 
+## Documentation products from LSP
+
+LSP is most valuable when it fills gaps in the static source snapshot or adds
+optional, clearly scoped reports. It should not replace the deterministic Rustdoc
+JSON and Arborium paths for ordinary builds.
+
+| LSP method/data | Sphinx documentation product | Priority | Current state and policy |
+| --- | --- | --- | --- |
+| `textDocument/documentSymbol` | Nested Rust/Lean API pages and declaration directives | P0 | Implemented behind `lsp-source-analysis`; opt-in trusted-local process; static analysis remains the default. |
+| `DocumentSymbol.detail`, `range`, `selectionRange` | Signatures, source spans, and declaration anchors | P0 | Detail/ranges are mapped; selection positions are retained as LSP attributes. Static declaration IDs and policy metadata remain authoritative in hybrid mode. |
+| `textDocument/hover` | Fill a missing description/type summary for a statically discovered declaration | P1 | Not implemented. Normalize plaintext/Markdown, apply only to empty static fields, track LSP provenance, and diagnose disagreement. Never silently replace static documentation. |
+| `textDocument/definition` | Optional “Defined in” source link or cross-file source location | P1 | Not implemented. Convert only in-workspace locations to Sphinx-relative source links; never publish editor `file://` URIs directly. |
+| `textDocument/publishDiagnostics` | Separate build diagnostics page/report, optionally grouped by file/severity | P1 | Notifications are decoded into `AnalysisDiagnostic`; dedicated mapping/report tests and a Sphinx diagnostics page are not implemented. Diagnostics should not become API prose by default. |
+| `textDocument/references` | “Used by” lists or reverse-reference reports | P2 | Not implemented. Keep opt-in because results can be large, server-dependent, and expensive. Do not use them to define API membership. |
+| `workspace/symbol` | Workspace-wide API index or namespace landing pages | P2 | Not implemented. Prefer static apidoc discovery for page membership; use workspace symbols only for explicitly requested enrichment/discovery. |
+| `textDocument/completion`, `signatureHelp`, `semanticTokens` | Interactive completion/signature/token display | Not a generated-doc priority | Better suited to editor integrations. Semantic tokens may eventually help render signatures, but must not be a prerequisite for generated docs. |
+
+Recommended first user-facing additions after document symbols are hover
+description enrichment, safe definition links, and a diagnostics report. Each must
+be independently configurable, use the normalized snapshot contract, preserve
+static provenance/policy, and remain unavailable in the default static build.
+
 ## LSP adapter design
 
 ### Client lifecycle
@@ -305,14 +364,22 @@ Stopped -> Starting -> Initializing -> Ready -> ShuttingDown -> Stopped
                       \-> Crashed ---------------> Ready/Stopped
 ```
 
-The adapter owns:
+The target adapter owns:
 
 - server registration by source language
 - workspace-root initialization
-- `LspServerPool` strategy
+- provider/session-scoped server reuse, never reuse across workspace roots
 - document open/change/save/close state
 - request timeout handling
 - server shutdown and crash diagnostics
+
+Current implementation has no `LspServerPool`: one `LspSnapshotProvider` owns a
+single mutex-guarded child process and serializes calls through it. Reuse is
+limited to that provider instance. The current `sphinx-autodoc-rs` and
+`sphinx-source-status` entry points create short-lived providers, so reuse across
+separate CLI invocations does not occur. Documents are opened, queried for
+symbols, and closed for each selected source file; didChange/didSave are not
+implemented.
 
 Before spawning the server, the client passes the executable, arguments, working
 directory, and filtered environment through the internal `SandboxProvider` when
@@ -321,32 +388,53 @@ the client remains responsible for executing it with piped stdio and supervising
 the resulting process. The prepared command must retain the exact argv boundary:
 no shell, string interpolation, or shell-based wrapper is permitted.
 
-The local implementation must use a single serialized writer, a reader task that
+The local implementation uses a single serialized writer, a reader thread that
 dispatches responses and notifications, a pending-request map keyed by JSON-RPC
-IDs, and explicit message/header/body limits. It must reject malformed framing,
-unknown response IDs, oversized messages, and responses after the session has been
-closed. Request timeout must remove the pending entry and make the session
-unusable unless the server is restarted; merely abandoning a future leaves a
-possibly busy server and is not sufficient cleanup.
+IDs, an 8 KiB header limit, an 8 MiB default frame limit, and a bounded
+notification queue. It rejects malformed framing/JSON-RPC versions, unknown
+response IDs, and oversized messages. A request timeout terminates and discards
+the session process; it is not reused after timeout. Unknown notifications are
+ignored; a full notification queue drops excess notifications instead of
+blocking response delivery.
+
+Current implementation covers framing bounds, malformed JSON/version handling,
+unknown response IDs, pending-request failure on EOF, per-request timeout, and
+document-symbol capability negotiation. Startup and initialize are bounded by
+the same request timeout. It drains capped stderr separately but does not yet
+attach that capture consistently to returned diagnostics. The client is
+synchronous; it does not own an async runtime. Server version is not queried yet.
 
 The lifecycle requirements are more than `Command::spawn()` and `Child::kill()`:
 
 1. Validate an executable policy and argument vector; never invoke a shell.
-2. Start with a filtered environment, an explicit workspace `current_dir`, and
-  only the standard input/output/error handles intended for the protocol.
-3. Bound startup, initialize, request, shutdown, stderr, and total session time.
-4. Monitor process exit independently of request handling and reject all pending
-  requests on EOF, protocol failure, or crash.
-5. Send `shutdown` as a JSON-RPC request, wait briefly for its response, then send
-  `exit`; escalate to process-group termination if the child remains alive.
-6. On Unix, terminate the child process group where possible. On Windows, use a
-  Job Object with kill-on-close and a process limit. Cleanup must be idempotent.
+2. Resolve the configured executable in the parent process, preserve argv
+  boundaries, clear the child environment, set an explicit workspace `current_dir`,
+  and provide piped stdin/stdout plus a separate drained stderr pipe. The current
+  environment allowlist only permits declared locale variables; PATH is used for
+  parent-side executable resolution and is not passed to the child by default.
+3. Bound initialize and each request by the configured request timeout; shutdown
+  uses at most 500 ms. Stderr is drained and capped at 8 KiB, but the captured text
+  is not yet attached to diagnostics. There is no independent total-session limit.
+4. Monitor child exit while waiting for responses and fail pending calls on EOF,
+  protocol failure, or crash.
+5. Send `shutdown`, wait briefly for its response, send `exit`, then escalate to
+  process-group termination if the child remains alive.
+6. On Unix, the current implementation creates a process group and applies
+  TERM/KILL escalation. Windows assigns the child to a Job Object with
+  kill-on-close and a 64-process limit; assignment just after spawn leaves a short
+  race and Windows runtime/failure-path tests remain necessary. Neither mechanism
+  is a protected sandbox. Cleanup is idempotent for the owned process tree where
+  the platform mechanism applies.
 7. Disable automatic restart during a documentation build unless an explicit
   interactive policy enables it. Restarting a compromised or runaway server can
   turn one failure into an unbounded resource loop.
 
-A build must call shutdown on normal completion and best-effort shutdown on error.
-Server reuse is permitted only within one analysis session and one workspace root.
+A provider instance owns one process for its lifetime, shuts it down on analysis
+errors, and performs best-effort shutdown on drop. This provides reuse only when
+the caller reuses that provider instance; the current CLI builds a short-lived
+provider per invocation. Server reuse across unrelated roots is not supported.
+The target build contract remains explicit session ownership and shutdown on both
+normal and error completion.
 
 ### Synchronous build boundary
 
@@ -354,16 +442,21 @@ The LSP client is asynchronous, while the current source analysis and build APIs
 are synchronous. Do not spread async through `BuildEnvironment` in the first
 phase.
 
-Use one of these two implementations behind the same provider trait:
+The current implementation uses standard-library threads and channels behind the
+synchronous provider interface. It does not use Tokio, hold a Python GIL, or hold
+a `RefCell` borrow while waiting. A Tokio worker remains an option only if later
+APIs require async features; it is not a current dependency.
+
+The original alternatives, if the client is replaced, are:
 
 1. A worker owning a Tokio runtime and an `LspServerPool`, with synchronous request
    and response channels exposed to the build thread.
 2. A blocking wrapper supplied by dscode-lsp, if the pinned version provides one
    and its runtime-drop behavior is safe in all test contexts.
 
-The worker approach is the default recommendation because it makes lifecycle,
-timeouts, and shutdown explicit. The worker must never hold a `RefCell` borrow or a
-Python GIL interaction while waiting for an LSP response.
+The existing thread/channel approach makes lifecycle, timeouts, and shutdown
+explicit. Any future async worker must not hold a `RefCell` borrow or Python GIL
+interaction while waiting for an LSP response.
 
 ### LSP-to-snapshot mapping
 
@@ -375,16 +468,21 @@ Convert LSP responses into the existing normalized declaration model:
 | symbol container hierarchy | `parent` and `children` |
 | `DocumentSymbol.kind` | `DeclarationKind` |
 | `range` | `SourceSpan` |
-| `selection_range` | declaration anchor position when available |
+| `selection_range` | namespaced `lsp:selection_start` / `lsp:selection_end` attributes |
 | `detail` | signature/type text |
-| hover markdown/plaintext | documentation, after normalization |
-| definition locations | canonical source location when needed |
+| hover markdown/plaintext | documentation, after normalization (not implemented) |
+| definition locations | canonical source location when needed (not implemented) |
 | diagnostics | `AnalysisDiagnostic` |
 | unsupported server metadata | `attributes`, namespaced by backend |
 
-The adapter must preserve the source language's namespace separator: `::` for
-Rust and `.` for Lean. LSP names that cannot be normalized safely become a
-structured diagnostic rather than a guessed cross-reference target.
+The current adapter maps hierarchical `DocumentSymbol` arrays and preserves the
+source language namespace separator (`::` for Rust, `.` for Lean). It records
+selection positions in `lsp:` attributes and maps `detail` to signature text for
+functions/methods or type text for other kinds. It accepts string or markup-object
+documentation values. Unsupported kinds, missing names, and malformed ranges
+become diagnostics. LSP-only declarations use `Visibility::Unknown`; aliases,
+re-exports, deprecation, and noindex policy are not inferred. LSP names that cannot
+be normalized safely must remain diagnostics rather than guessed xref targets.
 
 LSP servers generally do not provide all Sphinx policy metadata. Static analysis
 therefore remains authoritative for:
@@ -440,7 +538,15 @@ source_build_sandbox = "off"  # off or protected-build
 The Lean command must remain configurable because Lean installations differ by
 project and package manager.
 
-The CLI should eventually expose equivalent options:
+The source autodoc CLI exposes an opt-in subset. Current options are
+`--source-backend {auto,static,lsp,hybrid}`, `--source-lsp-server EXECUTABLE`,
+repeatable `--source-lsp-arg TOKEN`, `--source-lsp-timeout MILLISECONDS`,
+`--source-lsp-no-fallback`, and `--source-lsp-sandbox {off,trusted-local,protected-lsp}`.
+The command vector remains an argv list and is never shell-interpolated.
+The status tool supports `--live --live-fake` or explicit real-server options.
+The full build CLI and configuration-to-provider wiring remain future work.
+
+The planned equivalent option set is:
 
 ```text
 --source-backend {auto,static,lsp,hybrid}
@@ -460,7 +566,8 @@ The merge order is deterministic:
 
 1. Run the static provider.
 2. Normalize and sort its declarations.
-3. Query LSP only for configured enrichments or missing information.
+3. Current client queries document symbols; future clients should query other
+  methods only for explicitly configured enrichments or missing information.
 4. Match declarations by stable source path and range first, then qualified name.
 5. Apply only fields for which the LSP response has sufficient confidence.
 6. Preserve static policy fields and stable IDs.
@@ -503,6 +610,13 @@ backend_version = "<adapter-version>"
 A cached LSP snapshot is invalid when the server configuration, workspace root,
 capabilities, source files, or relevant toolchain version changes. A live server
 must never be persisted or reused across unrelated projects.
+
+Current LSP identity hashes the source request, language, workspace root, request
+timeout, message limit, configured argv, and explicit environment entries. The
+argv/environment values are hashed rather than written to persisted metadata.
+The server version is not queried, and the current implementation requests one
+fixed document-symbol capability set, so server-version/capability negotiation
+invalidation remains to implement.
 
 The environment should continue to persist only `AnalysisSnapshot`, diagnostics,
 and backend metadata. On reread or invalidation, clear source-domain records before
@@ -698,16 +812,17 @@ These tests must not require a language server executable.
 
 ### Fake stdio server tests
 
-Add a tiny test server or scripted stdio peer covering:
+The checked-in fake peer at `src/sphinxdocrs/tests/fixtures/h14/fake_lsp.py`
+currently covers:
 
 - initialize and initialized notifications
 - document symbol response
 - workspace symbol response
 - hover and definition response
-- diagnostics notification
+- diagnostics notification (notification decoding is implemented; dedicated mapping coverage remains to add)
 - delayed response and timeout
 - malformed JSON-RPC response
-- server crash before initialization
+- server crash during a request (pre-initialize crash coverage remains to add)
 - shutdown after success and failure
 
 The fake server should live in test support and never be used by production code.
@@ -731,9 +846,21 @@ Live tests using installed `rust-analyzer` or Lean servers should be optional an
 excluded from normal CI. They should be enabled by an explicit feature or
 environment variable and report a skipped result when the server is unavailable.
 
+Current automated LSP tests cover fake-server initialize/document-symbol/shutdown,
+provider-scoped process reuse, timeout, crash during a request, framing limits,
+malformed JSON-RPC/version, UTF-16 position conversion, symbol-kind mapping,
+missing executable resolution, workspace escape rejection before spawn, and
+configuration/cache secrecy. The status command can invoke the shared fake server
+with `--live --live-fake`; the command remains process-free without that flag.
+Gaps include diagnostics notification fixtures, pre-initialize crash, true request
+cancellation, Windows process-tree cleanup, and cross-platform lifecycle tests.
+The full Sphinx library suite has known environment failures in Python 3.14
+`typing` import behavior, theme/config expectations, and a symlink fixture; the
+focused source-doc and LSP suites pass.
+
 ## Reducing future porting overhead
 
-### Source-port manifest
+### Source-status manifest
 
 Add a manifest under `docs/` or `src/sphinxdocrs/tests/fixtures/` recording one row
 per ported behavior:
@@ -772,23 +899,33 @@ For each upstream behavior:
 This prevents each backend from acquiring a separate interpretation of visibility,
 anchors, aliases, or xrefs.
 
-### Porting command
+### Status command
 
-Add a focused developer command that:
+The implemented `sphinx-source-status` command reads the manifest and can run
+source-doc contract tests, the parity integration target, the checked-in fake LSP,
+or an explicitly configured trusted-local server. It reports live checks as
+skipped when the optional LSP feature is unavailable. It does not yet inspect the
+Rust directive/role mapping tables or discover accepted deviations from tests.
+Remaining command work:
 
 - lists upstream symbols mapped to source-documentation owners
 - reports missing declaration-kind/directive/role mappings
 - runs the shared provider contract suite
 - runs selected Python/Rust parity fixtures
 - reports accepted deviations and their test names
-- optionally exercises configured LSP servers
+- optionally exercises configured LSP servers (single-language analysis only)
 
 The command should be usable without LSP installed. Its output should distinguish
 "not implemented", "accepted deviation", "backend unavailable", and "test skipped".
 
-## Delivery phases
+## Delivery phases and status
 
-### Phase 1: facade and contracts
+Status labels describe implementation progress, not security approval:
+**implemented** means code and focused tests exist; **implemented with gaps** and
+**partially available** mean exit criteria remain open. No protected sandbox mode
+is approved by these labels.
+
+### Phase 1: facade and contracts — implemented with contract-coverage gaps
 
 - Add `source_docs` module with compatibility re-exports.
 - Introduce `SourceSnapshotProvider` and backend identity.
@@ -796,62 +933,79 @@ The command should be usable without LSP installed. Its output should distinguis
 - Add the shared provider contract test suite.
 - No dscode dependency yet.
 
-Exit criteria: existing H14 tests pass unchanged and all source consumers depend
-only on the normalized model.
+Status: the public facade, compatibility re-exports, provider contract, backend
+identity, core consumer imports, and initial session tests are present. Existing
+H14 source tests pass in focused runs. A comprehensive shared provider contract
+suite for every static/LSP/hybrid provider remains incomplete.
 
-### Phase 2: provider and persistence cleanup
+### Phase 2: provider and persistence cleanup — implemented with cache-audit gaps
 
 - Extract `SourceAnalysisSession`.
 - Centralize backend selection and request identity.
 - Add snapshot provenance internally.
-- Add source-port manifest and focused porting command.
+- Add source-status manifest and focused status command.
 - Verify static builds remain process-free and deterministic.
 
-Exit criteria: static mode is the documented release and CI path; cache identity
-covers every static backend input.
+Status: static is the default; session mode, request/cache identity, per-field
+in-memory provenance, hybrid conflict diagnostics, unmatched-LSP opt-in, and
+manifest command exist. Static input identity remains provided by the backend;
+verify every Rust/Lean toolchain/configuration input for cache invalidation. LSP
+identity hashes configured command arguments, workspace, the client-requested
+capabilities, timeout, and source request, but server-version probing is not
+implemented yet.
 
-### Phase 3: optional LSP adapter
+### Phase 3: optional LSP adapter — trusted-local document-symbol slice implemented
 
 - Define the internal `SourceLspClient` interface and fake-server contract.
 - Choose either a pinned `dscode-lsp` adapter or a local client based on the
   trusted-local effort and dependency review.
-- If using dscode-lsp, pin and verify one release or commit; if using a local
-  client, depend on `lsp-types`, `serde_json`, and the existing async runtime only.
+- The current local adapter uses `serde_json`, standard library threads/channels,
+  and optional `libc`; no dscode or `lsp-types` dependency is present.
 - Add `lsp-source-analysis` as an off-by-default Cargo feature.
-- Add an off-by-default `source-sandbox` feature pinned to an audited
-  `ai-sandbox` release or exact fork revision, and keep its types behind an
-  internal `SandboxProvider`.
-- Implement the `AiSandboxProvider` around the Linux Bubblewrap and macOS
-  Seatbelt backends. Expose command preparation separately from process spawn so
-  the LSP client can retain piped stdio, JSON-RPC framing, timeouts, and
-  process-tree cleanup. Do not enable protected Windows or BSD modes until
-  those request executors are implemented and pass platform boundary tests.
-- For Linux, test Bubblewrap mounts, network denial, path replacement/symlink
-  behavior, and descendant cleanup; for macOS, run native Seatbelt filesystem
-  and network boundary tests. Neither platform should be labeled protected
-  until these integration tests pass.
-- Implement the lifecycle worker and normalized LSP mapper.
+- Deferred security work: add an off-by-default `source-sandbox` feature pinned
+  to an audited `ai-sandbox` release or exact fork revision, behind an internal
+  `SandboxProvider`.
+- Deferred security work: implement `AiSandboxProvider` for Linux Bubblewrap and
+  macOS Seatbelt, with command preparation separate from stdio/process lifecycle.
+  Do not enable protected Windows or BSD modes until their executors and boundary
+  tests exist.
+- Deferred security tests: verify Linux mounts/network/path replacement/descendant
+  cleanup and native macOS filesystem/network boundaries before labeling either
+  platform protected.
+- Implement the lifecycle worker and normalized document-symbol mapper.
 - Add fake-server tests and timeout/shutdown coverage.
-- Add explicit source-backend configuration.
+- Add explicit source-backend configuration and trusted-local CLI selection.
 
-Exit criteria: the feature-disabled build has no LSP or `ai-sandbox` dependency;
-feature-enabled builds pass without a live server; a configured fake server can
-produce a snapshot; trusted-local and protected modes are reported distinctly;
-missing or unsupported platform executors produce an explicit protected-mode
-error; and sandboxed LSP stdio plus process-tree cleanup work without bypassing
-the selected OS boundary.
+Status: optional feature is off by default, fake server produces snapshots, and
+provider instances reuse one child within their own lifetime/workspace. Source
+paths are canonicalized and constrained before process startup. Protected modes
+fail closed because there is no `SandboxProvider`. Unix process-group cleanup is
+implemented and tested on Linux; Windows Job Object kill-on-close is implemented
+but not runtime-tested here. macOS uses the Unix process-group implementation but
+has not had native validation. Resource limits and actual sandboxed stdio remain
+unimplemented. `trusted-local` is not a security boundary. The status command's
+fake-server path produces a normalized document-symbol snapshot; real
+rust-analyzer/Lean test runs remain explicit opt-ins.
 
-### Phase 4: hybrid merge and source consumers
+The provider mutex serializes access to its single child; reusing that child is
+limited to the lifetime of one `LspSnapshotProvider` instance. The current CLI
+constructs a provider per invocation, so this is not a cross-build or global
+server pool. Startup/initialize uses the configured request timeout. The client
+does not yet query server version or implement hover/definition/references.
+
+### Phase 4: hybrid merge and source consumers — core merge implemented
 
 - Implement static-base/LSP-enrichment merge rules.
 - Add provenance and conflict diagnostics.
 - Wire merged snapshots into domains, autodoc, apidoc, and search.
 - Add cache invalidation for LSP configuration and server versions.
 
-Exit criteria: hybrid mode cannot silently override static policy metadata, and
-static/hybrid parity is proven when LSP contributes no additional information.
+Status: core consumers use normalized records and hybrid mode retains static
+policy fields with conflict diagnostics and provenance. Search/xref parity when
+LSP adds no information and full apidoc/environment cache integration still need
+dedicated end-to-end tests.
 
-### Phase 5: optional live-server workflows
+### Phase 5: optional live-server workflows — partially available
 
 - Add opt-in rust-analyzer integration tests.
 - Add opt-in Lean language-server integration tests.
@@ -861,47 +1015,84 @@ static/hybrid parity is proven when LSP contributes no additional information.
 - Evaluate `dscode-session` separately; it must not replace the sandbox provider
   or process-policy boundary.
 
+Status: status command can run the fake peer or an explicitly supplied
+trusted-local server. Installed rust-analyzer/Lean CI, platform boundary tests,
+and server installation documentation remain pending.
+
 Exit criteria: live integrations are useful for development but remain unnecessary
 for normal package builds, release builds, and deterministic CI; protected mode
 fails closed when its platform capability probe or boundary test cannot pass.
 
-## Open decisions
+## Decisions resolved and open questions
 
-1. Which exact dscode-lsp release or commit should be supported first?
-2. Does that version expose a safe blocking API, or is the worker runtime required?
-3. Which published `ai-sandbox` release contains the reviewed Linux/macOS
-  executor work, or which exact fork revision should be pinned until then?
-4. Which platform guarantees are strong enough to label `protected-lsp` and
-  `protected-build`, and which platforms remain trusted-local only?
-5. Which Lean language server command and capabilities are stable enough to document?
-6. Should unmatched LSP symbols ever enter a generated API document, or only enrich
-   declarations discovered statically?
-7. Should provenance be serialized in `AnalysisSnapshot` version 2, or remain an
-   internal merge diagnostic until consumers need it?
-8. Should the optional LSP feature be published in the main crate or split into a
-   separate `sphinxdocrs-lsp` integration crate?
+Resolved:
 
-## Acceptance criteria
+- Use the local JSON-RPC client behind `SourceLspClient`; do not add dscode-lsp or
+  `lsp-types` to the root workspace currently.
+- The client is synchronous and uses standard threads/channels. No Tokio runtime is
+  needed for the current method set.
+- Keep LSP optional in the main `sphinxdocrs` crate behind
+  `lsp-source-analysis`; the default feature set does not include it.
+- Unmatched LSP declarations are excluded by default and require an explicit hybrid
+  session option to append.
+- Field provenance remains in-memory and is not serialized in `AnalysisSnapshot`.
+- `sphinx-source-status` is the inspection command name; protected modes remain
+  unavailable until a sandbox provider is audited and tested.
 
-The plan is complete when:
+Still open:
+
+1. Which Lean server command/capabilities should be documented as the recommended
+   configuration, if any?
+2. Should diagnostics be exposed as a generated Sphinx page, a build warning stream,
+   or both? What severity/count policy should each use?
+3. Which server-version probe is reliable across rust-analyzer and Lean servers and
+   should therefore participate in cache identity?
+4. Should the optional client remain in `sphinxdocrs` or move to a separate
+   `sphinxdocrs-lsp` crate before publication?
+5. Which exact audited sandbox source/revision and platform guarantees are acceptable
+   for a future `protected-lsp` implementation?
+
+## Acceptance criteria and remaining work
+
+Implemented criteria:
 
 - `source_docs` is the documented public facade.
 - Existing `source_analysis` imports continue to compile during migration.
 - Static Rust and Lean analysis remains deterministic and fully usable without LSP.
-- The LSP client implementation is optional and isolated behind a feature; if
-  dscode-lsp is selected, it is pinned and hidden behind the internal client API.
-- The sandbox integration is optional and isolated behind `SandboxProvider`; the
-  selected published `ai-sandbox` version or exact fork revision is recorded and
-  matches the audited executor behavior.
-- `protected-lsp` and `protected-build` fail closed when the required executor,
-  capability probe, or boundary test is unavailable; no protected mode silently
-  runs a direct child.
-- The build and LSP scopes are explicit, and descendant-process cleanup is tested
-  independently of the sandbox policy transformation.
-- LSP lifecycle failures produce structured diagnostics or explicit errors according
-  to backend mode.
+- The current local LSP client is optional and isolated behind a feature; no
+  third-party LSP client type crosses the provider boundary.
+- `protected-lsp` and `protected-build` currently fail closed because no
+  `SandboxProvider` is integrated; no protected mode runs a direct child. This
+  satisfies fail-closed behavior but does not satisfy the sandbox-integration
+  acceptance criterion below.
+- LSP lifecycle failures produce explicit errors; notification diagnostics are
+  normalized, but dedicated diagnostics-reporting policy/tests remain open.
 - Domains, autodoc, apidoc, persistence, and search consume only normalized source
   records.
-- Shared provider contract tests cover every backend.
 - Future upstream port work can be tracked through the source-port manifest and
   focused porting command.
+
+The plan is not complete until the remaining acceptance criteria below land:
+
+- Add and audit an optional `SandboxProvider` pinned to a reviewed release or
+  exact source revision; never treat `ai-sandbox` command transformation alone as
+  proof of isolation.
+- Add Linux Bubblewrap and macOS Seatbelt boundary tests for read/write roots,
+  network denial, symlink/path replacement, and descendant cleanup. Add native
+  Windows Job Object process-tree cleanup and failure-path tests before
+  advertising validated cleanup support there. Until the sandbox boundary tests
+  pass, protected modes remain unavailable.
+- Add hover/definition (and any selected references/workspace-symbol) mapping,
+  with source links converted to Sphinx-relative URIs under an explicit policy.
+- Add server version/capability identity and ensure cache invalidation covers
+  every relevant server/toolchain input.
+- Complete shared provider contract coverage and static/hybrid parity tests for
+  domains, autodoc, apidoc, environment persistence, and search.
+- Add optional rust-analyzer and Lean live tests plus diagnostics-notification,
+  pre-initialize crash, malformed-response, and cross-platform lifecycle cases.
+- Complete source-port mapping audits and shared contract tests for every static,
+  LSP, and hybrid provider, including static/hybrid parity in domains, autodoc,
+  apidoc, environment persistence, and search.
+- Audit source visibility/type mapping and the source-port manifest against
+  upstream behavior; do not label local tests as exact parity without an
+  upstream comparison fixture.

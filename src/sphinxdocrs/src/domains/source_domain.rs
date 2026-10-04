@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::environment::BuildEnvironment;
-use crate::source_analysis::{
+use crate::source_docs::{
     DeclarationKind, SourceDeclaration, SourceLanguage, SourceSpan, separator_for,
 };
 

@@ -4320,6 +4320,7 @@ dependencies = [
  "glob",
  "insta",
  "jinja2rs",
+ "libc",
  "markupsafers",
  "minijinja",
  "mockall",
@@ -4349,6 +4350,7 @@ dependencies = [
  "unicode-normalization",
  "unicode-width",
  "uuid",
+ "windows-sys 0.61.2",
  "wiremock",
 ]
 

@@ -265,6 +265,25 @@ impl Default for BackendPolicy {
     }
 }
 
+/// Backend family that produced a normalized source snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceBackendKind {
+    #[default]
+    Static,
+    Lsp,
+    Hybrid,
+}
+
+/// In-memory provenance for normalized snapshot fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SourceProvenance {
+    #[default]
+    Static,
+    Lsp,
+    MergedStaticLsp,
+}
+
 /// Input shared by all source analyzers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceAnalysisRequest {
@@ -335,6 +354,9 @@ impl SourceAnalysisRequest {
 pub struct AnalysisSnapshot {
     pub schema_version: u32,
     pub language: SourceLanguage,
+    /// Provider family, distinct from the concrete adapter in `backend`.
+    #[serde(default)]
+    pub backend_kind: SourceBackendKind,
     pub backend: String,
     pub backend_version: String,
     pub toolchain: Option<String>,
@@ -343,6 +365,10 @@ pub struct AnalysisSnapshot {
     /// Identity of the request options that produced this snapshot.
     #[serde(default)]
     pub request_identity: String,
+    /// Per-field origin metadata is intentionally process-local. It is
+    /// recomputed whenever providers produce or merge a snapshot.
+    #[serde(skip)]
+    pub provenance: BTreeMap<String, SourceProvenance>,
     pub declarations: Vec<SourceDeclaration>,
     pub diagnostics: Vec<AnalysisDiagnostic>,
 }
@@ -360,12 +386,14 @@ impl AnalysisSnapshot {
         let mut snapshot = Self {
             schema_version: SOURCE_ANALYSIS_SCHEMA_VERSION,
             language,
+            backend_kind: SourceBackendKind::Static,
             backend: backend.into(),
             backend_version: backend_version.into(),
             toolchain: None,
             source_root: normalize_path(source_root.as_ref()),
             source_hash: source_hash.into(),
             request_identity: String::new(),
+            provenance: BTreeMap::new(),
             declarations,
             diagnostics,
         };
@@ -376,6 +404,17 @@ impl AnalysisSnapshot {
     /// Associate this snapshot with the request that produced it.
     pub fn set_request_identity(&mut self, request: &SourceAnalysisRequest) {
         self.request_identity = request.cache_identity();
+    }
+
+    /// Set provenance for an individual declaration field.
+    pub fn set_provenance(
+        &mut self,
+        declaration_id: &str,
+        field: &str,
+        provenance: SourceProvenance,
+    ) {
+        self.provenance
+            .insert(format!("{declaration_id}.{field}"), provenance);
     }
 
     /// Normalize adapter output and impose deterministic ordering at the
@@ -424,13 +463,36 @@ impl AnalysisSnapshot {
     }
 }
 
-/// Source analyzer contract consumed by higher layers.
-pub trait SourceAnalyzer {
+/// Backend-neutral provider contract consumed by source-documentation layers.
+///
+/// `SourceAnalyzer` remains a compatibility re-export during migration.
+pub trait SourceSnapshotProvider {
     fn analyze(
         &self,
         request: &SourceAnalysisRequest,
     ) -> Result<AnalysisSnapshot, AnalysisError>;
+
+    fn backend_kind(&self) -> SourceBackendKind {
+        SourceBackendKind::Static
+    }
+
+    /// Identity of provider-specific configuration that affects snapshots.
+    fn cache_identity(&self, request: &SourceAnalysisRequest) -> String {
+        request.cache_identity()
+    }
+
+    /// Hash inputs consumed by this provider. LSP providers may override this
+    /// when their source set differs from the static Rustdoc/Lean inputs.
+    fn source_hash(
+        &self,
+        request: &SourceAnalysisRequest,
+        language: SourceLanguage,
+    ) -> Result<String, AnalysisError> {
+        source_input_hash(request, language)
+    }
 }
+
+pub use self::SourceSnapshotProvider as SourceAnalyzer;
 
 /// Errors that must not be converted into an empty successful domain.
 #[derive(Debug, thiserror::Error)]
@@ -691,7 +753,23 @@ mod tests {
         let bytes = serde_json::to_vec(&snapshot).unwrap();
         let restored: AnalysisSnapshot = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(restored.schema_version, SOURCE_ANALYSIS_SCHEMA_VERSION);
+        assert_eq!(restored.backend_kind, SourceBackendKind::Static);
+        let mut with_provenance = snapshot.clone();
+        let declaration_id = with_provenance.declarations[0].id.clone();
+        with_provenance.set_provenance(
+            &declaration_id,
+            "documentation",
+            SourceProvenance::Lsp,
+        );
+        let round_trip: AnalysisSnapshot =
+            serde_json::from_slice(&serde_json::to_vec(&with_provenance).unwrap()).unwrap();
+        assert!(round_trip.provenance.is_empty());
         assert_eq!(restored.declarations, snapshot.declarations);
+
+        let mut legacy = serde_json::to_value(&snapshot).unwrap();
+        legacy.as_object_mut().unwrap().remove("backend_kind");
+        let restored_legacy: AnalysisSnapshot = serde_json::from_value(legacy).unwrap();
+        assert_eq!(restored_legacy.backend_kind, SourceBackendKind::Static);
     }
 
     #[test]

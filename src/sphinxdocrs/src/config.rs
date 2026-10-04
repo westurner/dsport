@@ -863,6 +863,48 @@ impl SphinxConfig {
             Env,
             "Source file suffix to parser mapping",
         );
+        add(
+            "source_backend",
+            Str("static".into()),
+            Env,
+            "Source documentation backend: auto, static, lsp, or hybrid",
+        );
+        add(
+            "source_lsp_servers",
+            Map(Vec::new()),
+            Env,
+            "Language-server argv by source language",
+        );
+        add(
+            "source_lsp_timeout",
+            Int(30_000),
+            Env,
+            "Language-server request timeout in milliseconds",
+        );
+        add(
+            "source_lsp_allow_fallback",
+            Bool(true),
+            Env,
+            "Allow hybrid source analysis to fall back to static results",
+        );
+        add(
+            "source_lsp_workspace_root",
+            Null,
+            Env,
+            "Workspace root passed to configured language servers",
+        );
+        add(
+            "source_lsp_sandbox",
+            Str("off".into()),
+            Env,
+            "LSP process mode: off, trusted-local, or protected-lsp",
+        );
+        add(
+            "source_build_sandbox",
+            Str("off".into()),
+            Env,
+            "Build process mode: off or protected-build",
+        );
         add("version", Str(String::new()), Env, "Version string");
         add("release", Str(String::new()), Env, "Release string");
         add("today", Str(String::new()), Env, "Date override");
@@ -2235,6 +2277,9 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         let names: Vec<_> = cfg.iter().map(|cv| cv.name.clone()).collect();
         assert!(names.contains(&"project".to_string()));
         assert!(names.contains(&"language".to_string()));
+            assert!(names.contains(&"source_backend".to_string()));
+            assert!(names.contains(&"source_lsp_servers".to_string()));
+            assert!(names.contains(&"source_lsp_timeout".to_string()));
         assert!(names.contains(&"extensions".to_string()));
     }
 

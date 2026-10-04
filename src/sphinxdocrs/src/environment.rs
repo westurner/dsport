@@ -49,8 +49,9 @@ use crate::domains::{
     IndexEntry, ObjectEntry, PendingXref, StdDomain, JsDomain, LeanDomain,  PyDomain, RstDomain, RustDomain,
     SourceObjectEntry, XrefResolution, scan,
 };
-use crate::source_analysis::{
-    AnalysisError, AnalysisSnapshot, SourceAnalyzer, SourceLanguage, source_input_hash,
+use crate::source_docs::{
+    AnalysisError, AnalysisSnapshot, SourceAnalysisRequest, SourceLanguage,
+    SourceSnapshotProvider, source_input_hash,
 };
 
 // ── project shim ─────────────────────────────────────────────────────────────
@@ -391,6 +392,10 @@ impl BuildEnvironment {
         }
         let metadata = self.domaindata.entry(snapshot.language.to_string()).or_default();
         metadata.insert("backend".to_string(), snapshot.backend.clone());
+        metadata.insert(
+            "backend_kind".to_string(),
+            format!("{:?}", snapshot.backend_kind).to_lowercase(),
+        );
         metadata.insert("backend_version".to_string(), snapshot.backend_version.clone());
         metadata.insert("source_root".to_string(), snapshot.source_root.clone());
         metadata.insert("source_hash".to_string(), snapshot.source_hash.clone());
@@ -412,14 +417,15 @@ impl BuildEnvironment {
     }
 
     /// Run a source analyzer and register its result in one operation.
-    pub fn analyze_source<A: SourceAnalyzer>(
+    pub fn analyze_source<A: SourceSnapshotProvider>(
         &mut self,
         docname: &str,
         analyzer: &A,
-        request: &crate::source_analysis::SourceAnalysisRequest,
+        request: &SourceAnalysisRequest,
     ) -> Result<(), AnalysisError> {
         let mut snapshot = analyzer.analyze(request)?;
-        snapshot.set_request_identity(request);
+        snapshot.backend_kind = analyzer.backend_kind();
+        snapshot.request_identity = analyzer.cache_identity(request);
         self.note_source_snapshot(docname, snapshot)
     }
 
@@ -428,7 +434,7 @@ impl BuildEnvironment {
     pub fn source_snapshot_matches_request(
         &self,
         docname: &str,
-        request: &crate::source_analysis::SourceAnalysisRequest,
+        request: &SourceAnalysisRequest,
     ) -> bool {
         self.source_snapshots
             .get(docname)
@@ -438,6 +444,23 @@ impl BuildEnvironment {
                     && source_input_hash(request, snapshot.language)
                         .is_ok_and(|hash| hash == snapshot.source_hash)
             })
+    }
+
+    /// Return whether a cached snapshot matches both request inputs and the
+    /// identity of the provider that produced it.
+    pub fn source_snapshot_matches_provider<P: SourceSnapshotProvider>(
+        &self,
+        docname: &str,
+        provider: &P,
+        request: &SourceAnalysisRequest,
+    ) -> bool {
+        self.source_snapshots.get(docname).is_some_and(|snapshot| {
+            !snapshot.request_identity.is_empty()
+                && snapshot.request_identity == provider.cache_identity(request)
+                && provider
+                    .source_hash(request, snapshot.language)
+                    .is_ok_and(|hash| hash == snapshot.source_hash)
+        })
     }
 
     /// Rich source objects for search builders and API consumers. The

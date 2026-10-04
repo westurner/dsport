@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "upstream": "sphinx.domains.rust.RustDomain",
+      "owner": "source_docs::domain::RustDomain",
+      "backend": "static:rustdoc-json",
+      "contract": "normalized SourceDeclaration and AnalysisSnapshot",
+      "parity_fixture": "source_analysis::rust tests",
+      "status": "implemented",
+      "accepted_deviation": null,
+      "feature": "rust-source-analysis",
+      "lsp_method": null,
+      "required_capability": null,
+      "fallback": "static",
+      "provenance": "static",
+      "live_test": "skipped unless rust-analyzer is explicitly configured"
+    },
+    {
+      "upstream": "sphinx.domains.lean.LeanDomain",
+      "owner": "source_docs::domain::LeanDomain",
+      "backend": "static:arborium-lean",
+      "contract": "normalized SourceDeclaration and AnalysisSnapshot",
+      "parity_fixture": "source_analysis::lean tests",
+      "status": "accepted-deviation",
+      "accepted_deviation": "syntax-level declarations; no elaboration or kernel validation",
+      "feature": "lean-source-analysis",
+      "lsp_method": null,
+      "required_capability": null,
+      "fallback": "static",
+      "provenance": "static",
+      "live_test": "skipped unless Lean server is explicitly configured"
+    },
+    {
+      "upstream": "textDocument/documentSymbol",
+      "owner": "source_docs::lsp_backend::LspSnapshotProvider",
+      "backend": "lsp",
+      "contract": "AnalysisSnapshot",
+      "parity_fixture": "source_docs::lsp_backend::tests::fake_stdio_server_produces_normalized_snapshot_and_shuts_down",
+      "status": "implemented",
+      "accepted_deviation": null,
+      "feature": "lsp-source-analysis",
+      "lsp_method": "textDocument/documentSymbol",
+      "required_capability": "documentSymbolProvider",
+      "fallback": "hybrid static result; lsp mode errors",
+      "provenance": "lsp",
+      "live_test": "fake peer covered; rust-analyzer/Lean live tests skipped unless explicitly configured"
+    }
+  ]
+}

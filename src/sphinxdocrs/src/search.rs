@@ -824,7 +824,7 @@ impl SearchIndex {
 mod tests {
     use super::*;
     use docutilsrs::parse_rst_with_source;
-    use crate::source_analysis::{
+    use crate::source_docs::{
         DeclarationKind, SourceLanguage, SourcePosition, SourceSpan,
     };
 

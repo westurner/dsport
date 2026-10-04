@@ -957,11 +957,13 @@ incomplete.
 
 Status: static is the default; session mode, request/cache identity, per-field
 in-memory provenance, hybrid conflict diagnostics, unmatched-LSP opt-in, and
-manifest command exist. Static input identity remains provided by the backend;
-verify every Rust/Lean toolchain/configuration input for cache invalidation. LSP
-identity hashes configured command arguments, workspace, the client-requested
-capabilities, timeout, and source request, but server-version probing is not
-implemented yet.
+manifest command exist. Rustdoc provider identity includes the request,
+`rustdoc-types` backend version, rustdoc JSON format, and a hash of the optional
+toolchain identity. Lean provider identity includes the request and pinned
+Arborium grammar version; source bytes are independently verified through the
+source hash. LSP identity hashes configured command arguments, workspace, the
+client-requested capabilities, timeout, and source request, but server-version
+probing is not implemented yet.
 
 ### Phase 3: optional LSP adapter — trusted-local document-symbol slice implemented
 

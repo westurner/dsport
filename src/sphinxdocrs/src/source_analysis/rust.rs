@@ -124,6 +124,19 @@ impl SourceAnalyzer for RustdocJsonAnalyzer {
         })?;
         self.analyze_json_bytes(request, &json_path, &bytes)
     }
+
+    fn cache_identity(&self, request: &SourceAnalysisRequest) -> String {
+        let toolchain = self
+            .toolchain
+            .as_deref()
+            .map(|identity| hash_bytes(identity.as_bytes()))
+            .unwrap_or_else(|| "unspecified".to_string());
+        format!(
+            "rustdoc-json-v1:{}:{BACKEND_VERSION}:format-{}:toolchain-{toolchain}",
+            request.cache_identity(),
+            rustdoc::FORMAT_VERSION,
+        )
+    }
 }
 
 struct Lowerer<'a> {
@@ -681,6 +694,21 @@ mod tests {
         let request = SourceAnalysisRequest::new("target");
         let error = RustdocJsonAnalyzer::default().analyze(&request).unwrap_err();
         assert!(error.to_string().contains("no rustdoc JSON path supplied"));
+    }
+
+    #[test]
+    fn cache_identity_includes_rustdoc_schema_and_hashed_toolchain() {
+        let request = SourceAnalysisRequest::new("fixture");
+        let toolchain = RustdocJsonAnalyzer::new(Some("rustc-private-path".into()));
+        let changed_toolchain = RustdocJsonAnalyzer::new(Some("rustc-other".into()));
+        let unspecified_toolchain = RustdocJsonAnalyzer::default();
+        let identity = toolchain.cache_identity(&request);
+
+        assert!(identity.contains(BACKEND_VERSION));
+        assert!(identity.contains(&format!("format-{}", rustdoc::FORMAT_VERSION)));
+        assert!(!identity.contains("rustc-private-path"));
+        assert_ne!(identity, changed_toolchain.cache_identity(&request));
+        assert_ne!(identity, unspecified_toolchain.cache_identity(&request));
     }
 
     #[test]

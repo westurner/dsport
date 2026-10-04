@@ -88,6 +88,13 @@ impl SourceAnalyzer for ArboriumLeanAnalyzer {
         snapshot.set_request_identity(request);
         Ok(snapshot)
     }
+
+    fn cache_identity(&self, request: &SourceAnalysisRequest) -> String {
+        format!(
+            "lean-source-v1:{BACKEND_VERSION}:{}",
+            request.cache_identity()
+        )
+    }
 }
 
 struct Walker<'a> {
@@ -353,6 +360,19 @@ mod tests {
         let snapshot = ArboriumLeanAnalyzer.analyze(&request).unwrap();
         assert_eq!(snapshot.source_root, normalize_path(directory.path()));
         assert!(snapshot.declarations.iter().any(|declaration| declaration.qualified_name == "Demo.Basic.answer"));
+    }
+
+    #[test]
+    fn cache_identity_includes_lean_grammar_version_and_request_options() {
+        let request = SourceAnalysisRequest::new("fixture");
+        let analyzer = ArboriumLeanAnalyzer;
+        let identity = analyzer.cache_identity(&request);
+        let mut include_private = request.clone();
+        include_private.include_private = true;
+
+        assert!(identity.starts_with(&format!("lean-source-v1:{BACKEND_VERSION}:")));
+        assert_ne!(identity, analyzer.cache_identity(&include_private));
+        assert_ne!(identity, request.cache_identity());
     }
 
     #[test]

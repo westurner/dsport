@@ -918,16 +918,15 @@ anchors, aliases, or xrefs.
 The implemented `sphinx-source-status` command reads the manifest and can run
 source-doc contract tests, the parity integration target, the checked-in fake LSP,
 or an explicitly configured trusted-local server. It reports live checks as
-skipped when the optional LSP feature is unavailable. It does not yet inspect the
-Rust directive/role mapping tables or discover accepted deviations from tests.
+skipped when the optional LSP feature is unavailable. Its
+`--run-contract-tests` option runs the concrete Rust/Lean analyzer, source-doc
+session, and fake-LSP test suites with their backend features enabled. It does not
+yet inspect the Rust directive/role mapping tables or discover accepted
+deviations from tests.
 Remaining command work:
 
-- lists upstream symbols mapped to source-documentation owners
 - reports missing declaration-kind/directive/role mappings
-- runs the shared provider contract suite
-- runs selected Python/Rust parity fixtures
-- reports accepted deviations and their test names
-- optionally exercises configured LSP servers (single-language analysis only)
+- links accepted deviations to their test names
 
 The command should be usable without LSP installed. Its output should distinguish
 "not implemented", "accepted deviation", "backend unavailable", and "test skipped".

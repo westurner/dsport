@@ -69,6 +69,36 @@ struct Entry {
     live_test: String,
 }
 
+const CONTRACT_TEST_COMMANDS: &[&[&str]] = &[
+    &[
+        "test",
+        "-p",
+        "sphinxdocrs",
+        "--features",
+        "rust-source-analysis,lean-source-analysis,lsp-source-analysis",
+        "--lib",
+        "source_analysis",
+    ],
+    &[
+        "test",
+        "-p",
+        "sphinxdocrs",
+        "--features",
+        "rust-source-analysis,lean-source-analysis,lsp-source-analysis",
+        "--lib",
+        "source_docs::tests",
+    ],
+    &[
+        "test",
+        "-p",
+        "sphinxdocrs",
+        "--features",
+        "rust-source-analysis,lean-source-analysis,lsp-source-analysis",
+        "--lib",
+        "source_docs::lsp_backend::tests",
+    ],
+];
+
 fn main() -> ExitCode {
     match run(Args::parse()) {
         Ok(code) => code,
@@ -143,9 +173,12 @@ fn run(args: Args) -> Result<ExitCode, Box<dyn std::error::Error>> {
         println!("[test skipped] no live LSP process requested");
     }
     if args.run_contract_tests {
-        let code = cargo_test(&["test", "-p", "sphinxdocrs", "--lib", "source_docs::tests"])?;
-        if !code.success() {
-            return Ok(ExitCode::from(code.code().unwrap_or(1) as u8));
+        for arguments in CONTRACT_TEST_COMMANDS {
+            println!("[test] cargo {}", arguments.join(" "));
+            let code = cargo_test(arguments)?;
+            if !code.success() {
+                return Ok(ExitCode::from(code.code().unwrap_or(1) as u8));
+            }
         }
     }
     if args.run_parity {
@@ -271,5 +304,30 @@ mod tests {
                     | "test-skipped"
             ));
         }
+    }
+
+    #[test]
+    fn contract_test_commands_cover_all_source_backend_layers() {
+        assert!(
+            CONTRACT_TEST_COMMANDS
+                .iter()
+                .any(|arguments| { arguments.last() == Some(&"source_analysis") })
+        );
+        assert!(
+            CONTRACT_TEST_COMMANDS
+                .iter()
+                .any(|arguments| { arguments.last() == Some(&"source_docs::tests") })
+        );
+        assert!(
+            CONTRACT_TEST_COMMANDS
+                .iter()
+                .any(|arguments| { arguments.last() == Some(&"source_docs::lsp_backend::tests") })
+        );
+        assert!(CONTRACT_TEST_COMMANDS.iter().all(|arguments| {
+            arguments.windows(2).any(|pair| {
+                pair[0] == "--features"
+                    && pair[1] == "rust-source-analysis,lean-source-analysis,lsp-source-analysis"
+            })
+        }));
     }
 }

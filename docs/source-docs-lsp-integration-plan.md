@@ -30,10 +30,14 @@ Executables are resolved to absolute paths in the parent; the child starts with
 a cleared environment and no inherited `PATH`. Diagnostic URIs are decoded and
 resolved only to canonical files inside the configured workspace. These are
 trusted-local hardening controls, not an OS sandbox or a protected-mode claim.
-Linux tests cover process-group descendant cleanup. The Windows Job Object API
-was checked in isolation, but full Windows runtime/cross-build validation was
-unavailable because the container lacks its native C/PyO3 cross toolchain.
-macOS uses the Unix process-group path but still needs native runtime validation.
+Linux validation passes 16 LSP tests, including process-group descendant cleanup
+and internal-symlink/external-cycle discovery, plus 9 source-provider tests.
+Windows refuses startup if Job Object creation, configuration, or assignment
+fails, but assignment happens after spawn and leaves a brief pre-assignment race.
+The Windows Job Object API was checked in isolation; full Windows cross-build
+and runtime validation were unavailable because the container lacks its native
+C/PyO3 cross toolchain. macOS uses the Unix process-group path but still needs
+native runtime validation.
 
 Still incomplete: hover/definition/references/workspace-symbol enrichment,
 server-version probing, the full source-port mapping audit, CPU/memory/output

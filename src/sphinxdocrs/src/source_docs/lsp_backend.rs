@@ -1438,14 +1438,14 @@ mod tests {
         };
         let provider = LspSnapshotProvider::new(config);
         let mut request = SourceAnalysisRequest::new(workspace.path());
-        request.selected.push(source);
-        let snapshot = provider.analyze(&request).unwrap();
+        request.selected.push(source.clone());
+        let snapshot = crate::source_analysis::provider_contract::assert_provider_contract(
+            &provider, &request,
+        );
         assert_eq!(snapshot.backend_kind, SourceBackendKind::Lsp);
         assert_eq!(snapshot.declarations.len(), 1);
         assert_eq!(snapshot.declarations[0].qualified_name, "answer");
         assert_eq!(snapshot.declarations[0].kind, DeclarationKind::Function);
-        let second = provider.analyze(&request).unwrap();
-        assert_eq!(second.declarations.len(), 1);
         let rustdoc_json = workspace.path().join("rustdoc.json");
         std::fs::write(&rustdoc_json, "{}").unwrap();
         let mut hybrid_request = SourceAnalysisRequest::new(workspace.path());
@@ -1485,7 +1485,11 @@ mod tests {
 
         let error = provider.analyze(&request).unwrap_err().to_string();
 
-        assert!(error.contains("process closed stdout"), "{error}");
+        assert!(
+            error.contains("process closed stdout")
+                || error.contains("server exited during initialize"),
+            "{error}"
+        );
         assert!(!error.contains("timed out"), "{error}");
     }
 

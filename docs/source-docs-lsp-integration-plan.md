@@ -940,12 +940,12 @@ is approved by these labels.
 
 Status: the public facade, compatibility re-exports, provider contract, backend
 identity, core consumer imports, and initial session tests are present. Existing
-H14 source tests pass in focused runs. A shared fixture-backed contract suite now
-exercises static, LSP, and hybrid session modes for deterministic ordering, IDs
-and spans, aliases and child links, policy metadata, diagnostics, cache identity,
-and serialization. Applying these contracts to concrete Rustdoc, Lean, and live
-LSP adapters, including backend-specific visibility/filtering parity, remains
-incomplete.
+H14 source tests pass in focused runs. Shared provider-contract assertions now
+exercise the static, LSP, and hybrid session modes and the concrete Rustdoc JSON,
+Lean corpus, and fake stdio LSP providers. They check deterministic ordering,
+IDs and spans, aliases and child links, policy metadata, diagnostics, cache
+identity, and serialization. Upstream visibility/filtering parity and broader
+cross-consumer contract coverage remain incomplete.
 
 ### Phase 2: provider and persistence cleanup — implemented with cache-audit gaps
 

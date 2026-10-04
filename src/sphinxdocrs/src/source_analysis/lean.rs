@@ -385,9 +385,11 @@ mod tests {
     #[test]
     fn fixture_corpus_covers_declarations_comments_and_recoverable_errors() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/lean");
-        let snapshot = ArboriumLeanAnalyzer
-            .analyze(&SourceAnalysisRequest::new(&root))
-            .unwrap();
+        let request = SourceAnalysisRequest::new(&root);
+        let snapshot = crate::source_analysis::provider_contract::assert_provider_contract(
+            &ArboriumLeanAnalyzer,
+            &request,
+        );
         let names = snapshot
             .declarations
             .iter()

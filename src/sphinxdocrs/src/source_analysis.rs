@@ -808,6 +808,73 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod provider_contract {
+    use super::*;
+
+    pub(crate) fn assert_provider_contract(
+        provider: &dyn SourceSnapshotProvider,
+        request: &SourceAnalysisRequest,
+    ) -> AnalysisSnapshot {
+        let snapshot = provider.analyze(request).unwrap();
+        let repeated = provider.analyze(request).unwrap();
+
+        assert_eq!(snapshot.backend_kind, provider.backend_kind());
+        assert!(!snapshot.request_identity.is_empty());
+        assert_eq!(snapshot.request_identity, repeated.request_identity);
+        assert_eq!(snapshot.source_hash, repeated.source_hash);
+        assert_eq!(snapshot.declarations, repeated.declarations);
+        assert_eq!(snapshot.diagnostics, repeated.diagnostics);
+
+        let mut declarations = snapshot.declarations.clone();
+        declarations.sort_by(|left, right| {
+            left.qualified_name
+                .cmp(&right.qualified_name)
+                .then(left.kind.cmp(&right.kind))
+                .then(left.id.cmp(&right.id))
+        });
+        assert_eq!(snapshot.declarations, declarations);
+        let mut ids = snapshot
+            .declarations
+            .iter()
+            .map(|declaration| declaration.id.as_str())
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        assert!(ids.windows(2).all(|pair| pair[0] != pair[1]));
+        for declaration in &snapshot.declarations {
+            assert_eq!(
+                declaration.id,
+                stable_declaration_id(
+                    declaration.language,
+                    &declaration.qualified_name,
+                    &declaration.kind,
+                )
+            );
+            assert!(!declaration.source.path.is_empty());
+            assert!(declaration.source.start.line > 0);
+            assert!(declaration.aliases.windows(2).all(|pair| pair[0] < pair[1]));
+            assert!(declaration.children.windows(2).all(|pair| pair[0] < pair[1]));
+        }
+
+        let mut diagnostics = snapshot.diagnostics.clone();
+        diagnostics.sort_by(|left, right| {
+            left.backend
+                .cmp(&right.backend)
+                .then(left.message.cmp(&right.message))
+        });
+        assert_eq!(snapshot.diagnostics, diagnostics);
+
+        let encoded = serde_json::to_vec(&snapshot).unwrap();
+        let decoded: AnalysisSnapshot = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded.backend_kind, snapshot.backend_kind);
+        assert_eq!(decoded.backend, snapshot.backend);
+        assert_eq!(decoded.request_identity, snapshot.request_identity);
+        assert_eq!(decoded.declarations, snapshot.declarations);
+        assert_eq!(decoded.diagnostics, snapshot.diagnostics);
+        snapshot
+    }
+}
+
 #[cfg(feature = "rust-source-analysis")]
 pub mod rust;
 

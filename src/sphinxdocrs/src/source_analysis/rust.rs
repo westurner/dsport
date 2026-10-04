@@ -743,6 +743,12 @@ mod tests {
         let bytes = fs::read(&json_path).unwrap();
         let request = SourceAnalysisRequest::new(&fixture_root);
         let analyzer = RustdocJsonAnalyzer::new(Some("fixture-toolchain".to_string()));
+        let mut provider_request = request.clone();
+        provider_request.selected.push(json_path.clone());
+        crate::source_analysis::provider_contract::assert_provider_contract(
+            &analyzer,
+            &provider_request,
+        );
         let first = analyzer.analyze_json_bytes(&request, &json_path, &bytes).unwrap();
         let second = analyzer.analyze_json_bytes(&request, &json_path, &bytes).unwrap();
         assert_eq!(first.declarations, second.declarations);

@@ -1474,6 +1474,23 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn fake_server_exit_during_initialize_returns_error_without_timeout() {
+        let workspace = TempDir::new().unwrap();
+        let source = workspace.path().join("lib.rs");
+        std::fs::write(&source, "pub fn answer() {}\n").unwrap();
+        let provider =
+            LspSnapshotProvider::new(fake_server_config(workspace.path(), "initialize-crash"));
+        let mut request = SourceAnalysisRequest::new(workspace.path());
+        request.selected.push(source);
+
+        let error = provider.analyze(&request).unwrap_err().to_string();
+
+        assert!(error.contains("process closed stdout"), "{error}");
+        assert!(!error.contains("timed out"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn fake_server_publish_diagnostics_are_normalized_into_snapshot() {
         let workspace = TempDir::new().unwrap();
         let source = workspace.path().join("lib.rs");

@@ -61,7 +61,9 @@ while True:
                 }
             )
         continue
-    if method == "initialize":
+    if method == "initialize" and mode == "initialize-crash":
+        sys.exit(4)
+    elif method == "initialize":
         result = {"capabilities": {"documentSymbolProvider": True}}
     elif method == "textDocument/documentSymbol" and mode == "crash":
         sys.exit(3)

@@ -826,7 +826,7 @@ currently covers:
 - diagnostics notification (severity, message, and in-workspace URI/range mapping)
 - delayed response and timeout
 - malformed JSON-RPC response
-- server crash during a request (pre-initialize crash coverage remains to add)
+- server crash during initialize and during a request
 - shutdown after success and failure
 
 The fake server should live in test support and never be used by production code.
@@ -857,8 +857,8 @@ publishDiagnostics severity/message/source-span normalization, missing executabl
 resolution, workspace escape rejection before spawn, and configuration/cache
 secrecy. The status command can invoke the shared fake server with `--live
 --live-fake`; the command remains process-free without that flag. Gaps include
-pre-initialize crash, true request cancellation, Windows process-tree cleanup,
-and cross-platform lifecycle tests.
+true request cancellation, Windows process-tree cleanup, and cross-platform
+lifecycle tests.
 The full Sphinx library suite has known environment failures in Python 3.14
 `typing` import behavior, theme/config expectations, and a symlink fixture; the
 focused source-doc and LSP suites pass.

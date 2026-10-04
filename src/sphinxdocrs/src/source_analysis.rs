@@ -365,6 +365,9 @@ pub struct AnalysisSnapshot {
     /// Identity of the request options that produced this snapshot.
     #[serde(default)]
     pub request_identity: String,
+    /// Identity of provider configuration and implementation used for analysis.
+    #[serde(default)]
+    pub provider_identity: String,
     /// Per-field origin metadata is intentionally process-local. It is
     /// recomputed whenever providers produce or merge a snapshot.
     #[serde(skip)]
@@ -393,6 +396,7 @@ impl AnalysisSnapshot {
             source_root: normalize_path(source_root.as_ref()),
             source_hash: source_hash.into(),
             request_identity: String::new(),
+            provider_identity: String::new(),
             provenance: BTreeMap::new(),
             declarations,
             diagnostics,
@@ -768,8 +772,10 @@ mod tests {
 
         let mut legacy = serde_json::to_value(&snapshot).unwrap();
         legacy.as_object_mut().unwrap().remove("backend_kind");
+        legacy.as_object_mut().unwrap().remove("provider_identity");
         let restored_legacy: AnalysisSnapshot = serde_json::from_value(legacy).unwrap();
         assert_eq!(restored_legacy.backend_kind, SourceBackendKind::Static);
+        assert!(restored_legacy.provider_identity.is_empty());
     }
 
     #[test]
@@ -827,7 +833,7 @@ pub(crate) mod provider_contract {
         let repeated = provider.analyze(request).unwrap();
 
         assert_eq!(snapshot.backend_kind, provider.backend_kind());
-        assert!(!snapshot.request_identity.is_empty());
+        assert_eq!(snapshot.request_identity, request.cache_identity());
         assert_eq!(snapshot.request_identity, repeated.request_identity);
         assert_eq!(snapshot.source_hash, repeated.source_hash);
         assert_eq!(snapshot.declarations, repeated.declarations);
@@ -876,6 +882,7 @@ pub(crate) mod provider_contract {
         assert_eq!(decoded.backend_kind, snapshot.backend_kind);
         assert_eq!(decoded.backend, snapshot.backend);
         assert_eq!(decoded.request_identity, snapshot.request_identity);
+        assert_eq!(decoded.provider_identity, snapshot.provider_identity);
         assert_eq!(decoded.declarations, snapshot.declarations);
         assert_eq!(decoded.diagnostics, snapshot.diagnostics);
         snapshot

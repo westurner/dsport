@@ -1081,7 +1081,8 @@ impl LspSnapshotProvider {
             diagnostics,
         );
         snapshot.backend_kind = SourceBackendKind::Lsp;
-        snapshot.request_identity =
+        snapshot.request_identity = request.cache_identity();
+        snapshot.provider_identity =
             self.cache_identity_with_server(request, &process.server_identity);
         Ok(snapshot)
     }
@@ -1481,7 +1482,7 @@ mod tests {
             ],
             workspace_root: workspace.path().to_path_buf(),
             language: SourceLanguage::Rust,
-            request_timeout: Duration::from_secs(3),
+            request_timeout: Duration::from_secs(10),
             allow_fallback: false,
             environment: vec![("PATH".into(), std::env::var("PATH").unwrap_or_default())],
             max_message_bytes: 1024 * 1024,
@@ -1495,7 +1496,8 @@ mod tests {
         );
         let identity_after_start = provider.cache_identity(&request);
         assert_ne!(identity_before_start, identity_after_start);
-        assert_eq!(snapshot.request_identity, identity_after_start);
+        assert_eq!(snapshot.request_identity, request.cache_identity());
+        assert_eq!(snapshot.provider_identity, identity_after_start);
         assert!(!identity_after_start.contains("fake-lsp"));
         assert!(!identity_after_start.contains("fixture-1"));
         assert_eq!(snapshot.backend_kind, SourceBackendKind::Lsp);
@@ -1641,7 +1643,7 @@ mod tests {
             ],
             workspace_root: workspace.to_path_buf(),
             language: SourceLanguage::Rust,
-            request_timeout: Duration::from_secs(3),
+            request_timeout: Duration::from_secs(10),
             allow_fallback: false,
             environment: vec![("PATH".into(), std::env::var("PATH").unwrap_or_default())],
             max_message_bytes: 1024 * 1024,

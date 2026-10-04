@@ -409,6 +409,12 @@ impl BuildEnvironment {
                 snapshot.request_identity.clone(),
             );
         }
+        if !snapshot.provider_identity.is_empty() {
+            metadata.insert(
+                "provider_identity".to_string(),
+                snapshot.provider_identity.clone(),
+            );
+        }
         if let Some(toolchain) = &snapshot.toolchain {
             metadata.insert("toolchain".to_string(), toolchain.clone());
         }
@@ -425,7 +431,8 @@ impl BuildEnvironment {
     ) -> Result<(), AnalysisError> {
         let mut snapshot = analyzer.analyze(request)?;
         snapshot.backend_kind = analyzer.backend_kind();
-        snapshot.request_identity = analyzer.cache_identity(request);
+        snapshot.request_identity = request.cache_identity();
+        snapshot.provider_identity = analyzer.cache_identity(request);
         self.note_source_snapshot(docname, snapshot)
     }
 
@@ -455,8 +462,13 @@ impl BuildEnvironment {
         request: &SourceAnalysisRequest,
     ) -> bool {
         self.source_snapshots.get(docname).is_some_and(|snapshot| {
-            !snapshot.request_identity.is_empty()
-                && snapshot.request_identity == provider.cache_identity(request)
+            let provider_identity = if snapshot.provider_identity.is_empty() {
+                &snapshot.request_identity
+            } else {
+                &snapshot.provider_identity
+            };
+            !provider_identity.is_empty()
+                && provider_identity == &provider.cache_identity(request)
                 && provider
                     .source_hash(request, snapshot.language)
                     .is_ok_and(|hash| hash == snapshot.source_hash)
@@ -3037,6 +3049,40 @@ mod tests {
         restored.remove_doc("api");
         assert!(restored.rust_domain.source_objects().is_empty());
         assert!(restored.source_snapshots.is_empty());
+    }
+
+    #[cfg(feature = "rust-source-analysis")]
+    #[test]
+    fn provider_cache_identity_preserves_request_identity_and_toolchain_invalidation() {
+        use crate::source_analysis::rust::RustdocJsonAnalyzer;
+
+        let fixture_root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/rust");
+        let json_path = fixture_root.parent().unwrap().join("rustdoc.json");
+        let mut request = SourceAnalysisRequest::new(&fixture_root);
+        request.selected.push(json_path);
+        let analyzer = RustdocJsonAnalyzer::new(Some("fixture-toolchain-a".into()));
+        let mut env = make_env();
+
+        env.analyze_source("api", &analyzer, &request).unwrap();
+
+        let snapshot = env.source_snapshots.get("api").unwrap();
+        assert_eq!(snapshot.request_identity, request.cache_identity());
+        assert_eq!(snapshot.provider_identity, analyzer.cache_identity(&request));
+        assert_eq!(
+            env.domaindata["rust"]["provider_identity"],
+            analyzer.cache_identity(&request)
+        );
+        assert!(env.source_snapshot_matches_request("api", &request));
+        assert!(env.source_snapshot_matches_provider("api", &analyzer, &request));
+        let changed_toolchain = RustdocJsonAnalyzer::new(Some("fixture-toolchain-b".into()));
+        assert!(!env.source_snapshot_matches_provider("api", &changed_toolchain, &request));
+
+        let mut restored = make_env();
+        restored.apply_persisted(env.to_persisted());
+        assert!(restored.source_snapshot_matches_request("api", &request));
+        assert!(restored.source_snapshot_matches_provider("api", &analyzer, &request));
+        assert!(!restored.source_snapshot_matches_provider("api", &changed_toolchain, &request));
     }
 
     #[test]

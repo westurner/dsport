@@ -969,11 +969,15 @@ manifest command exist. Rustdoc provider identity includes the request,
 `rustdoc-types` backend version, rustdoc JSON format, and a hash of the optional
 toolchain identity. Lean provider identity includes the request and pinned
 Arborium grammar version; source bytes are independently verified through the
-source hash. LSP identity hashes configured command arguments, workspace,
-client-requested capabilities, timeout, and source request, plus the optional
-serverInfo name/version after initialization. The server version is not
-available to a cold cache check until that process starts; capability identity
-and serverInfo-free servers remain cache-audit gaps.
+source hash. Snapshots persist separate `request_identity` and `provider_identity`
+values: request-only cache checks compare source/configuration inputs, while
+provider-aware checks also invalidate when backend configuration or implementation
+changes. The environment regression test verifies both keys survive persistence.
+LSP provider identity hashes configured command arguments, workspace,
+client-requested capabilities, timeout, and the optional serverInfo name/version
+after initialization. The server version is not available to a cold cache check
+until that process starts; capability identity and serverInfo-free servers remain
+cache-audit gaps.
 
 ### Phase 3: optional LSP adapter — trusted-local document-symbol slice implemented
 

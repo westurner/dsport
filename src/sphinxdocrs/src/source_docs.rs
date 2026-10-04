@@ -96,7 +96,7 @@ pub mod provider {
                         .ok_or_else(|| unavailable("lsp", "no LSP provider is configured"))?;
                     let mut snapshot = self.run_provider(provider.as_ref(), request)?;
                     snapshot.backend_kind = SourceBackendKind::Lsp;
-                    snapshot.request_identity = self.cache_identity(request);
+                    snapshot.provider_identity = self.cache_identity(request);
                     Ok(snapshot)
                 }
                 SourceBackendMode::Hybrid => self.run_hybrid(request),
@@ -121,7 +121,8 @@ pub mod provider {
         ) -> Result<AnalysisSnapshot, AnalysisError> {
             let mut snapshot = provider.analyze(request)?;
             snapshot.backend_kind = provider.backend_kind();
-            snapshot.request_identity = provider.cache_identity(request);
+            snapshot.request_identity = request.cache_identity();
+            snapshot.provider_identity = provider.cache_identity(request);
             let provenance = match provider.backend_kind() {
                 SourceBackendKind::Static => super::model::SourceProvenance::Static,
                 SourceBackendKind::Lsp => super::model::SourceProvenance::Lsp,
@@ -170,7 +171,7 @@ pub mod provider {
                     source: None,
                     declaration: None,
                 });
-                snapshot.request_identity = self.cache_identity(request);
+                snapshot.provider_identity = self.cache_identity(request);
                 snapshot.provenance.clear();
                 let declaration_ids = snapshot
                     .declarations
@@ -246,7 +247,7 @@ pub mod provider {
                     }
                 }
             }
-            snapshot.request_identity = self.cache_identity(request);
+            snapshot.provider_identity = self.cache_identity(request);
             snapshot.normalize_and_sort();
             Ok(snapshot)
         }
@@ -912,7 +913,8 @@ mod tests {
         assert_eq!(snapshot.diagnostics, repeated.diagnostics);
         assert_eq!(snapshot.provenance, repeated.provenance);
         assert_eq!(snapshot.backend_kind, provider.backend_kind());
-        assert_eq!(snapshot.request_identity, provider.cache_identity(request));
+        assert_eq!(snapshot.request_identity, request.cache_identity());
+        assert_eq!(snapshot.provider_identity, provider.cache_identity(request));
 
         let names = snapshot
             .declarations
@@ -995,6 +997,7 @@ mod tests {
         assert_eq!(decoded.declarations, snapshot.declarations);
         assert_eq!(decoded.diagnostics, snapshot.diagnostics);
         assert_eq!(decoded.request_identity, snapshot.request_identity);
+        assert_eq!(decoded.provider_identity, snapshot.provider_identity);
         assert_eq!(decoded.backend_kind, snapshot.backend_kind);
     }
 

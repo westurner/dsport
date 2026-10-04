@@ -39,7 +39,7 @@ and runtime validation were unavailable because the container lacks its native
 C/PyO3 cross toolchain. macOS uses the Unix process-group path but still needs
 native runtime validation.
 
-Still incomplete: hover/definition/references/workspace-symbol enrichment,
+Still incomplete: definition/references/workspace-symbol enrichment,
 cold-start server-version and capability cache validation, the full source-port
 mapping audit, CPU/memory/output limits, native Windows/macOS runtime
 process-tree tests, an audited `SandboxProvider`, platform boundary tests, and
@@ -344,16 +344,16 @@ JSON and Arborium paths for ordinary builds.
 | --- | --- | --- | --- |
 | `textDocument/documentSymbol` | Nested Rust/Lean API pages and declaration directives | P0 | Implemented behind `lsp-source-analysis`; opt-in trusted-local process; static analysis remains the default. |
 | `DocumentSymbol.detail`, `range`, `selectionRange` | Signatures, source spans, and declaration anchors | P0 | Detail/ranges are mapped; selection positions are retained as LSP attributes. Static declaration IDs and policy metadata remain authoritative in hybrid mode. |
-| `textDocument/hover` | Fill a missing description/type summary for a statically discovered declaration | P1 | Not implemented. Normalize plaintext/Markdown, apply only to empty static fields, track LSP provenance, and diagnose disagreement. Never silently replace static documentation. |
+| `textDocument/hover` | Fill a missing description/type summary for a statically discovered declaration | P1 | Implemented behind `hoverProvider`: queried only when symbol documentation is empty, normalizes plaintext/Markdown/marked strings, caps each result at 64 KiB and each analysis at 256 requests, and feeds hybrid mode only when static docs are empty. |
 | `textDocument/definition` | Optional “Defined in” source link or cross-file source location | P1 | Not implemented. Convert only in-workspace locations to Sphinx-relative source links; never publish editor `file://` URIs directly. |
 | `textDocument/publishDiagnostics` | Separate build diagnostics page/report, optionally grouped by file/severity | P1 | Fake-server coverage verifies severity, message, and an in-workspace URI/range normalize into `AnalysisDiagnostic`; reporting policy/tests and a Sphinx diagnostics page remain open. Diagnostics should not become API prose by default. |
 | `textDocument/references` | “Used by” lists or reverse-reference reports | P2 | Not implemented. Keep opt-in because results can be large, server-dependent, and expensive. Do not use them to define API membership. |
 | `workspace/symbol` | Workspace-wide API index or namespace landing pages | P2 | Not implemented. Prefer static apidoc discovery for page membership; use workspace symbols only for explicitly requested enrichment/discovery. |
 | `textDocument/completion`, `signatureHelp`, `semanticTokens` | Interactive completion/signature/token display | Not a generated-doc priority | Better suited to editor integrations. Semantic tokens may eventually help render signatures, but must not be a prerequisite for generated docs. |
 
-Recommended first user-facing additions after document symbols are hover
-description enrichment, safe definition links, and a diagnostics report. Each must
-be independently configurable, use the normalized snapshot contract, preserve
+Recommended next user-facing additions after document symbols and hover
+enrichment are safe definition links and a diagnostics report. Each must be
+independently configurable, use the normalized snapshot contract, preserve
 static provenance/policy, and remain unavailable in the default static build.
 
 ## LSP adapter design
@@ -478,7 +478,7 @@ Convert LSP responses into the existing normalized declaration model:
 | `range` | `SourceSpan` |
 | `selection_range` | namespaced `lsp:selection_start` / `lsp:selection_end` attributes |
 | `detail` | signature/type text |
-| hover markdown/plaintext | documentation, after normalization (not implemented) |
+| hover markdown/plaintext | documentation, after normalization; capability-gated and implemented |
 | definition locations | canonical source location when needed (not implemented) |
 | diagnostics | `AnalysisDiagnostic` |
 | unsupported server metadata | `attributes`, namespaced by backend |
@@ -829,8 +829,7 @@ currently covers:
 
 - initialize and initialized notifications
 - document symbol response
-- workspace symbol response
-- hover and definition response
+- hover response in the explicit hover fixture mode
 - diagnostics notification (severity, message, and in-workspace URI/range mapping)
 - delayed response and timeout
 - malformed JSON-RPC response
@@ -1017,7 +1016,8 @@ limited to the lifetime of one `LspSnapshotProvider` instance. The current CLI
 constructs a provider per invocation, so this is not a cross-build or global
 server pool. Startup/initialize uses the configured request timeout. The client
 hashes optional serverInfo name/version values into the provider identity after
-initialize; it does not implement hover/definition/references.
+initialize. Capability-gated hover fills missing symbol documentation with a
+256-request per-analysis limit; definition/references remain unimplemented.
 
 ### Phase 4: hybrid merge and source consumers — core merge implemented
 
@@ -1112,8 +1112,8 @@ The plan is not complete until the remaining acceptance criteria below land:
   Windows Job Object process-tree cleanup and failure-path tests before
   advertising validated cleanup support there. Until the sandbox boundary tests
   pass, protected modes remain unavailable.
-- Add hover/definition (and any selected references/workspace-symbol) mapping,
-  with source links converted to Sphinx-relative URIs under an explicit policy.
+- Add definition (and any selected references/workspace-symbol) mapping, with
+  source links converted to Sphinx-relative URIs under an explicit policy.
 - Complete cache invalidation for the requested capability set and cold-start
   server versions. Optional `serverInfo` is now hashed after initialization, but
   it is unavailable before a new provider launches and is absent from some

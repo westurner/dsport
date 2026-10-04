@@ -31,6 +31,8 @@ const MAX_SESSION_DURATION: Duration = Duration::from_secs(30 * 60);
 const MAX_SOURCE_FILES: usize = 2_048;
 const MAX_DIAGNOSTICS: usize = 10_000;
 const MAX_DIRECTORY_ENTRIES: usize = 100_000;
+const MAX_HOVER_REQUESTS: usize = 256;
+const MAX_HOVER_CONTENT_BYTES: usize = 64 * 1024;
 const MAX_SERVER_INFO_FIELD_BYTES: usize = 256;
 const CLIENT_NAME: &str = "sphinxdocrs";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -55,6 +57,7 @@ trait SourceLspClient {
         limit: usize,
         output: &mut Vec<AnalysisDiagnostic>,
     );
+    fn supports_hover(&self) -> bool;
     fn shutdown(&mut self);
 }
 
@@ -195,6 +198,7 @@ struct LspProcess {
     terminated: bool,
     session_deadline: Instant,
     server_identity: String,
+    hover_supported: bool,
     #[cfg(windows)]
     job: Option<WindowsJob>,
 }
@@ -311,6 +315,7 @@ impl LspProcess {
             terminated: false,
             session_deadline: Instant::now() + MAX_SESSION_DURATION,
             server_identity: "unreported".into(),
+            hover_supported: false,
             #[cfg(windows)]
             job,
         };
@@ -322,7 +327,10 @@ impl LspProcess {
                 "rootUri": root_uri,
                 "workspaceFolders": [{ "uri": root_uri, "name": "workspace" }],
                 "capabilities": {
-                    "textDocument": { "documentSymbol": { "hierarchicalDocumentSymbolSupport": true } }
+                    "textDocument": {
+                        "documentSymbol": { "hierarchicalDocumentSymbolSupport": true },
+                        "hover": { "contentFormat": ["markdown", "plaintext"] }
+                    }
                 },
                 "clientInfo": { "name": CLIENT_NAME, "version": CLIENT_VERSION }
             }),
@@ -332,8 +340,11 @@ impl LspProcess {
             return Err(protocol_error("initialize returned a non-object result"));
         }
         process.server_identity = initialize_server_identity(&initialized);
-        if !initialized
-            .get("capabilities")
+        let capabilities = initialized.get("capabilities");
+        process.hover_supported = capabilities
+            .and_then(|capabilities| capabilities.get("hoverProvider"))
+            .is_some_and(|capability| !capability.is_null() && capability != false);
+        if !capabilities
             .and_then(|capabilities| capabilities.get("documentSymbolProvider"))
             .is_some_and(|capability| !capability.is_null() && capability != false)
         {
@@ -544,6 +555,10 @@ impl SourceLspClient for LspProcess {
         output: &mut Vec<AnalysisDiagnostic>,
     ) {
         LspProcess::take_diagnostics(self, workspace_root, limit, output)
+    }
+
+    fn supports_hover(&self) -> bool {
+        self.hover_supported
     }
 
     fn shutdown(&mut self) {
@@ -1045,6 +1060,8 @@ impl LspSnapshotProvider {
         let mut declarations = Vec::new();
         let mut diagnostics = Vec::new();
         let mut truncated = false;
+        let mut hover_requests = 0usize;
+        let mut hover_limit_reached = false;
         for path in &paths {
             let remaining =
                 MAX_DIAGNOSTICS.saturating_sub(declarations.len() + diagnostics.len() + 1);
@@ -1052,10 +1069,13 @@ impl LspSnapshotProvider {
                 truncated = true;
                 break;
             }
-            let (mut found, mut reported, file_truncated) =
-                self.analyze_file(process, request, path, remaining)?;
+            let hover_budget = MAX_HOVER_REQUESTS.saturating_sub(hover_requests);
+            let (mut found, mut reported, file_truncated, file_hover_requests, file_hover_limit) =
+                self.analyze_file(process, request, path, remaining, hover_budget)?;
             declarations.append(&mut found);
             diagnostics.append(&mut reported);
+            hover_requests = hover_requests.saturating_add(file_hover_requests);
+            hover_limit_reached |= file_hover_limit;
             if file_truncated {
                 truncated = true;
                 break;
@@ -1066,6 +1086,17 @@ impl LspSnapshotProvider {
                 severity: DiagnosticSeverity::Warning,
                 backend: "lsp".into(),
                 message: format!("LSP snapshot truncated at the {MAX_DIAGNOSTICS}-item limit"),
+                source: None,
+                declaration: None,
+            });
+        }
+        if hover_limit_reached && declarations.len() + diagnostics.len() < MAX_DIAGNOSTICS {
+            diagnostics.push(AnalysisDiagnostic {
+                severity: DiagnosticSeverity::Info,
+                backend: "lsp".into(),
+                message: format!(
+                    "hover enrichment stopped at the {MAX_HOVER_REQUESTS}-request limit"
+                ),
                 source: None,
                 declaration: None,
             });
@@ -1093,7 +1124,17 @@ impl LspSnapshotProvider {
         request: &SourceAnalysisRequest,
         path: &Path,
         item_limit: usize,
-    ) -> Result<(Vec<SourceDeclaration>, Vec<AnalysisDiagnostic>, bool), AnalysisError> {
+        hover_limit: usize,
+    ) -> Result<
+        (
+            Vec<SourceDeclaration>,
+            Vec<AnalysisDiagnostic>,
+            bool,
+            usize,
+            bool,
+        ),
+        AnalysisError,
+    > {
         let uri = file_uri(path)?;
         let mut text = String::new();
         std::fs::File::open(path)
@@ -1136,6 +1177,9 @@ impl LspSnapshotProvider {
             stack.push((item.clone(), None::<String>));
         }
         let mut truncated = false;
+        let mut hover_requests = 0usize;
+        let mut hover_limit_reached = false;
+        let hover_supported = process.supports_hover();
         while let Some((item, parent)) = stack.pop() {
             if declarations.len() + diagnostics.len() >= item_limit {
                 truncated = true;
@@ -1173,7 +1217,7 @@ impl LspSnapshotProvider {
                 .get("detail")
                 .and_then(Value::as_str)
                 .map(normalize_text);
-            let documentation = item
+            let mut documentation = item
                 .get("documentation")
                 .and_then(|value| {
                     value
@@ -1182,6 +1226,25 @@ impl LspSnapshotProvider {
                 })
                 .map(normalize_text)
                 .unwrap_or_default();
+            if documentation.is_empty() && hover_supported {
+                if hover_requests >= hover_limit {
+                    hover_limit_reached = true;
+                } else {
+                    let hover_position = item
+                        .get("selectionRange")
+                        .and_then(|selection_range| selection_range.get("start"))
+                        .or_else(|| range.get("start"))
+                        .cloned();
+                    if let Some(position) = hover_position {
+                        hover_requests += 1;
+                        let hover = process.request(
+                            "textDocument/hover",
+                            json!({"textDocument":{"uri":uri}, "position":position}),
+                        )?;
+                        documentation = hover_documentation(&hover).unwrap_or_default();
+                    }
+                }
+            }
             let (signature, type_text) = match kind {
                 DeclarationKind::Function | DeclarationKind::Method => (detail.clone(), None),
                 _ => (None, detail.clone()),
@@ -1228,7 +1291,13 @@ impl LspSnapshotProvider {
         process.take_diagnostics(&self.config.workspace_root, remaining, &mut diagnostics);
         truncated |= stack.len() > 0;
         let _ = request;
-        Ok((declarations, diagnostics, truncated))
+        Ok((
+            declarations,
+            diagnostics,
+            truncated,
+            hover_requests,
+            hover_limit_reached,
+        ))
     }
 }
 
@@ -1438,6 +1507,34 @@ fn utf16_column_to_byte(line: &str, column: usize) -> Option<usize> {
     (units == column).then_some(line.len())
 }
 
+fn hover_documentation(result: &Value) -> Option<String> {
+    let contents = result.get("contents")?;
+    let mut values = Vec::new();
+    match contents {
+        Value::String(value) => values.push(value.as_str()),
+        Value::Object(object) => values.push(object.get("value")?.as_str()?),
+        Value::Array(items) => {
+            for item in items {
+                match item {
+                    Value::String(value) => values.push(value.as_str()),
+                    Value::Object(object) => {
+                        if let Some(value) = object.get("value").and_then(Value::as_str) {
+                            values.push(value);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => return None,
+    }
+    if values.iter().map(|value| value.len()).sum::<usize>() > MAX_HOVER_CONTENT_BYTES {
+        return None;
+    }
+    let normalized = normalize_text(&values.join("\n\n"));
+    (!normalized.is_empty() && normalized.len() <= MAX_HOVER_CONTENT_BYTES).then_some(normalized)
+}
+
 fn unsupported_symbol(path: &Path, message: &str) -> AnalysisDiagnostic {
     AnalysisDiagnostic {
         severity: DiagnosticSeverity::Warning,
@@ -1578,6 +1675,22 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn fake_server_hover_fills_missing_symbol_documentation() {
+        let workspace = TempDir::new().unwrap();
+        let source = workspace.path().join("lib.rs");
+        std::fs::write(&source, "pub fn answer() -> i32 { 42 }\n").unwrap();
+        let provider = LspSnapshotProvider::new(fake_server_config(workspace.path(), "hover"));
+        let mut request = SourceAnalysisRequest::new(workspace.path());
+        request.selected.push(source);
+
+        let snapshot = provider.analyze(&request).unwrap();
+
+        assert_eq!(snapshot.declarations.len(), 1);
+        assert_eq!(snapshot.declarations[0].documentation, "Hover **answer**");
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn fake_server_timeout_terminates_child() {
         let workspace = TempDir::new().unwrap();
         let source = workspace.path().join("lib.rs");
@@ -1684,6 +1797,27 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("timeout must be between"));
+    }
+
+    #[test]
+    fn hover_documentation_normalizes_supported_content_and_rejects_oversized_text() {
+        assert_eq!(
+            hover_documentation(&json!({
+                "contents": {"kind": "markdown", "value": " **docs**\n"}
+            }))
+            .as_deref(),
+            Some("**docs**")
+        );
+        assert_eq!(
+            hover_documentation(&json!({
+                "contents": ["summary", {"language": "rust", "value": "fn answer()"}]
+            }))
+            .as_deref(),
+            Some("summary\n\nfn answer()")
+        );
+        assert!(hover_documentation(&json!({"contents": null})).is_none());
+        let oversized = "x".repeat(MAX_HOVER_CONTENT_BYTES + 1);
+        assert!(hover_documentation(&json!({"contents": oversized})).is_none());
     }
 
     #[test]

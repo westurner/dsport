@@ -64,7 +64,10 @@ while True:
     if method == "initialize" and mode == "initialize-crash":
         sys.exit(4)
     elif method == "initialize":
-        result = {"capabilities": {"documentSymbolProvider": True}}
+        result = {
+            "capabilities": {"documentSymbolProvider": True},
+            "serverInfo": {"name": "fake-lsp", "version": "fixture-1"},
+        }
     elif method == "textDocument/documentSymbol" and mode == "crash":
         sys.exit(3)
     elif method == "textDocument/documentSymbol" and mode == "timeout":

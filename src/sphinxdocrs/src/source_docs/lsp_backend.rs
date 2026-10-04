@@ -31,6 +31,7 @@ const MAX_SESSION_DURATION: Duration = Duration::from_secs(30 * 60);
 const MAX_SOURCE_FILES: usize = 2_048;
 const MAX_DIAGNOSTICS: usize = 10_000;
 const MAX_DIRECTORY_ENTRIES: usize = 100_000;
+const MAX_SERVER_INFO_FIELD_BYTES: usize = 256;
 const CLIENT_NAME: &str = "sphinxdocrs";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -193,6 +194,7 @@ struct LspProcess {
     config: LspServerConfig,
     terminated: bool,
     session_deadline: Instant,
+    server_identity: String,
     #[cfg(windows)]
     job: Option<WindowsJob>,
 }
@@ -308,6 +310,7 @@ impl LspProcess {
             config,
             terminated: false,
             session_deadline: Instant::now() + MAX_SESSION_DURATION,
+            server_identity: "unreported".into(),
             #[cfg(windows)]
             job,
         };
@@ -328,6 +331,7 @@ impl LspProcess {
             process.terminate();
             return Err(protocol_error("initialize returned a non-object result"));
         }
+        process.server_identity = initialize_server_identity(&initialized);
         if !initialized
             .get("capabilities")
             .and_then(|capabilities| capabilities.get("documentSymbolProvider"))
@@ -847,6 +851,30 @@ fn protocol_error(message: &str) -> AnalysisError {
     }
 }
 
+fn initialize_server_identity(initialized: &Value) -> String {
+    let Some(server_info) = initialized.get("serverInfo") else {
+        return "unreported".into();
+    };
+    let Some(name) = server_info.get("name").and_then(Value::as_str) else {
+        return "unreported".into();
+    };
+    let version = server_info
+        .get("version")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if name.is_empty()
+        || name.len() > MAX_SERVER_INFO_FIELD_BYTES
+        || version.len() > MAX_SERVER_INFO_FIELD_BYTES
+    {
+        return "unreported".into();
+    }
+    let mut identity = Vec::with_capacity(name.len() + version.len() + 1);
+    identity.extend_from_slice(name.as_bytes());
+    identity.push(0);
+    identity.extend_from_slice(version.as_bytes());
+    format!("reported-{}", hash_bytes(&identity))
+}
+
 pub struct LspSnapshotProvider {
     config: LspServerConfig,
     process: Mutex<Option<LspProcess>>,
@@ -899,6 +927,17 @@ impl LspSnapshotProvider {
             bytes.push(0);
         }
         hash_bytes(&bytes)
+    }
+
+    fn cache_identity_with_server(
+        &self,
+        request: &SourceAnalysisRequest,
+        server_identity: &str,
+    ) -> String {
+        format!(
+            "lsp:{}:server={server_identity}",
+            self.configuration_identity(request)
+        )
     }
 
     fn source_paths(&self, request: &SourceAnalysisRequest) -> Result<Vec<PathBuf>, AnalysisError> {
@@ -1042,7 +1081,8 @@ impl LspSnapshotProvider {
             diagnostics,
         );
         snapshot.backend_kind = SourceBackendKind::Lsp;
-        snapshot.request_identity = self.cache_identity(request);
+        snapshot.request_identity =
+            self.cache_identity_with_server(request, &process.server_identity);
         Ok(snapshot)
     }
 
@@ -1219,7 +1259,17 @@ impl SourceSnapshotProvider for LspSnapshotProvider {
     }
 
     fn cache_identity(&self, request: &SourceAnalysisRequest) -> String {
-        format!("lsp:{}", self.configuration_identity(request))
+        let server_identity = self
+            .process
+            .lock()
+            .ok()
+            .and_then(|process| {
+                process
+                    .as_ref()
+                    .map(|process| process.server_identity.clone())
+            })
+            .unwrap_or_else(|| "unreported".into());
+        self.cache_identity_with_server(request, &server_identity)
     }
 
     fn source_hash(
@@ -1439,9 +1489,15 @@ mod tests {
         let provider = LspSnapshotProvider::new(config);
         let mut request = SourceAnalysisRequest::new(workspace.path());
         request.selected.push(source.clone());
+        let identity_before_start = provider.cache_identity(&request);
         let snapshot = crate::source_analysis::provider_contract::assert_provider_contract(
             &provider, &request,
         );
+        let identity_after_start = provider.cache_identity(&request);
+        assert_ne!(identity_before_start, identity_after_start);
+        assert_eq!(snapshot.request_identity, identity_after_start);
+        assert!(!identity_after_start.contains("fake-lsp"));
+        assert!(!identity_after_start.contains("fixture-1"));
         assert_eq!(snapshot.backend_kind, SourceBackendKind::Lsp);
         assert_eq!(snapshot.declarations.len(), 1);
         assert_eq!(snapshot.declarations[0].qualified_name, "answer");
@@ -1702,6 +1758,31 @@ mod tests {
         let identity = provider.cache_identity(&request);
         assert!(identity.starts_with("lsp:"));
         assert!(!identity.contains("do-not-print"));
+    }
+
+    #[test]
+    fn initialize_server_info_is_optional_bounded_and_hashed() {
+        let reported = initialize_server_identity(&json!({
+            "serverInfo": {"name": "rust-analyzer", "version": "2026-10-04"}
+        }));
+        let changed_version = initialize_server_identity(&json!({
+            "serverInfo": {"name": "rust-analyzer", "version": "next"}
+        }));
+
+        assert!(reported.starts_with("reported-"));
+        assert!(!reported.contains("rust-analyzer"));
+        assert!(!reported.contains("2026-10-04"));
+        assert_ne!(reported, changed_version);
+        assert_eq!(initialize_server_identity(&json!({})), "unreported");
+        assert_eq!(
+            initialize_server_identity(&json!({"serverInfo":{"name":""}})),
+            "unreported"
+        );
+        let long_name = "x".repeat(MAX_SERVER_INFO_FIELD_BYTES + 1);
+        assert_eq!(
+            initialize_server_identity(&json!({"serverInfo":{"name":long_name}})),
+            "unreported"
+        );
     }
 
     #[cfg(unix)]

@@ -40,12 +40,13 @@ C/PyO3 cross toolchain. macOS uses the Unix process-group path but still needs
 native runtime validation.
 
 Still incomplete: hover/definition/references/workspace-symbol enrichment,
-server-version probing, the full source-port mapping audit, CPU/memory/output
-limits, native Windows/macOS runtime process-tree tests, an audited
-`SandboxProvider`, platform boundary tests, and installed rust-analyzer/Lean live
-CI. Protected modes remain unavailable and fail closed. Unix process groups and
-Windows Job Objects provide best-effort cleanup, not OS sandboxing. Static remains
-the default and requires no LSP dependency or process.
+cold-start server-version and capability cache validation, the full source-port
+mapping audit, CPU/memory/output limits, native Windows/macOS runtime
+process-tree tests, an audited `SandboxProvider`, platform boundary tests, and
+installed rust-analyzer/Lean live CI. Protected modes remain unavailable and fail
+closed. Unix process groups and Windows Job Objects provide best-effort cleanup,
+not OS sandboxing. Static remains the default and requires no LSP dependency or
+process.
 
 ## Summary
 
@@ -406,7 +407,10 @@ unknown response IDs, pending-request failure on EOF, per-request timeout, and
 document-symbol capability negotiation. Startup and initialize are bounded by
 the same request timeout. It drains capped stderr separately but does not yet
 attach that capture consistently to returned diagnostics. The client is
-synchronous; it does not own an async runtime. Server version is not queried yet.
+synchronous; it does not own an async runtime. It hashes the optional
+`InitializeResult.serverInfo` name/version into provider identity after startup;
+servers that omit the field remain unreported until another version source is
+configured.
 
 The lifecycle requirements are more than `Command::spawn()` and `Child::kill()`:
 
@@ -618,9 +622,13 @@ must never be persisted or reused across unrelated projects.
 Current LSP identity hashes the source request, language, workspace root, request
 timeout, message limit, configured argv, and explicit environment entries. The
 argv/environment values are hashed rather than written to persisted metadata.
-The server version is not queried, and the current implementation requests one
-fixed document-symbol capability set, so server-version/capability negotiation
-invalidation remains to implement.
+When supplied, the standard `InitializeResult.serverInfo` name/version is also
+hashed; raw server strings are not persisted, and missing, malformed, or
+oversized fields produce an `unreported` identity. The provider learns this only
+after launching the server, so a cold provider cannot validate a persisted
+snapshot's server version before startup; servers omitting `serverInfo` remain
+configuration-keyed. The client still requests one fixed document-symbol
+capability set, whose identity and cold-cache invalidation remain to implement.
 
 The environment should continue to persist only `AnalysisSnapshot`, diagnostics,
 and backend metadata. On reread or invalidation, clear source-domain records before
@@ -961,9 +969,11 @@ manifest command exist. Rustdoc provider identity includes the request,
 `rustdoc-types` backend version, rustdoc JSON format, and a hash of the optional
 toolchain identity. Lean provider identity includes the request and pinned
 Arborium grammar version; source bytes are independently verified through the
-source hash. LSP identity hashes configured command arguments, workspace, the
-client-requested capabilities, timeout, and source request, but server-version
-probing is not implemented yet.
+source hash. LSP identity hashes configured command arguments, workspace,
+client-requested capabilities, timeout, and source request, plus the optional
+serverInfo name/version after initialization. The server version is not
+available to a cold cache check until that process starts; capability identity
+and serverInfo-free servers remain cache-audit gaps.
 
 ### Phase 3: optional LSP adapter — trusted-local document-symbol slice implemented
 
@@ -1002,14 +1012,16 @@ The provider mutex serializes access to its single child; reusing that child is
 limited to the lifetime of one `LspSnapshotProvider` instance. The current CLI
 constructs a provider per invocation, so this is not a cross-build or global
 server pool. Startup/initialize uses the configured request timeout. The client
-does not yet query server version or implement hover/definition/references.
+hashes optional serverInfo name/version values into the provider identity after
+initialize; it does not implement hover/definition/references.
 
 ### Phase 4: hybrid merge and source consumers — core merge implemented
 
 - Implement static-base/LSP-enrichment merge rules.
 - Add provenance and conflict diagnostics.
 - Wire merged snapshots into domains, autodoc, apidoc, and search.
-- Add cache invalidation for LSP configuration and server versions.
+- Complete cache invalidation for LSP configuration, capabilities, and server
+  versions, including cold-provider behavior.
 
 Status: core consumers use normalized records and hybrid mode retains static
 policy fields with conflict diagnostics and provenance. Search/xref parity when
@@ -1047,6 +1059,9 @@ Resolved:
 - Unmatched LSP declarations are excluded by default and require an explicit hybrid
   session option to append.
 - Field provenance remains in-memory and is not serialized in `AnalysisSnapshot`.
+- Use optional `InitializeResult.serverInfo.name/version` as the LSP server
+  identity probe; hash reported values, and use `unreported` when absent or
+  invalid. The value is learned only after startup.
 - `sphinx-source-status` is the inspection command name; protected modes remain
   unavailable until a sandbox provider is audited and tested.
 
@@ -1056,11 +1071,9 @@ Still open:
    configuration, if any?
 2. Should diagnostics be exposed as a generated Sphinx page, a build warning stream,
    or both? What severity/count policy should each use?
-3. Which server-version probe is reliable across rust-analyzer and Lean servers and
-   should therefore participate in cache identity?
-4. Should the optional client remain in `sphinxdocrs` or move to a separate
+3. Should the optional client remain in `sphinxdocrs` or move to a separate
    `sphinxdocrs-lsp` crate before publication?
-5. Which exact audited sandbox source/revision and platform guarantees are acceptable
+4. Which exact audited sandbox source/revision and platform guarantees are acceptable
    for a future `protected-lsp` implementation?
 
 ## Acceptance criteria and remaining work
@@ -1095,8 +1108,10 @@ The plan is not complete until the remaining acceptance criteria below land:
   pass, protected modes remain unavailable.
 - Add hover/definition (and any selected references/workspace-symbol) mapping,
   with source links converted to Sphinx-relative URIs under an explicit policy.
-- Add server version/capability identity and ensure cache invalidation covers
-  every relevant server/toolchain input.
+- Complete cache invalidation for the requested capability set and cold-start
+  server versions. Optional `serverInfo` is now hashed after initialization, but
+  it is unavailable before a new provider launches and is absent from some
+  servers.
 - Complete shared provider contract coverage and static/hybrid parity tests for
   domains, autodoc, apidoc, environment persistence, and search.
 - Add optional rust-analyzer and Lean live tests plus diagnostics-notification,

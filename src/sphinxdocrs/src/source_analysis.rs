@@ -808,7 +808,14 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        feature = "rust-source-analysis",
+        feature = "lean-source-analysis",
+        feature = "lsp-source-analysis"
+    )
+))]
 pub(crate) mod provider_contract {
     use super::*;
 

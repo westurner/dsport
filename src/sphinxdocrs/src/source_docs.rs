@@ -692,6 +692,9 @@ mod tests {
     use std::path::Path;
 
     use crate::config::{ConfigVal, SphinxConfig};
+    use crate::domains::{Domain, RustDomain};
+    use crate::environment::{BuildEnvironment, EnvProject};
+    use crate::search::SearchIndex;
 
     use super::provider::{SourceAnalysisSession, SourceBackendMode, SourceSnapshotProvider};
     use super::{
@@ -1023,6 +1026,59 @@ mod tests {
         assert_provider_contract(&static_session, &request);
         assert_provider_contract(&lsp_session, &request);
         assert_provider_contract(&hybrid_session, &request);
+    }
+
+    #[test]
+    fn static_and_hybrid_consumers_match_when_lsp_adds_no_declarations() {
+        let request = SourceAnalysisRequest::new("src");
+        let static_session = SourceAnalysisSession::new(
+            SourceBackendMode::Static,
+            Some(contract_provider(
+                "contract-static",
+                SourceBackendKind::Static,
+            )),
+            None,
+        );
+        let hybrid_session = SourceAnalysisSession::new(
+            SourceBackendMode::Hybrid,
+            Some(contract_provider(
+                "contract-static",
+                SourceBackendKind::Static,
+            )),
+            Some(contract_provider("contract-lsp", SourceBackendKind::Lsp)),
+        );
+        let static_snapshot = static_session.analyze(&request).unwrap();
+        let hybrid_snapshot = hybrid_session.analyze(&request).unwrap();
+
+        let mut static_domain = RustDomain::new();
+        static_domain.note_snapshot("api", &static_snapshot.declarations);
+        let mut hybrid_domain = RustDomain::new();
+        hybrid_domain.note_snapshot("api", &hybrid_snapshot.declarations);
+        let static_objects = static_domain.source_objects();
+        let hybrid_objects = hybrid_domain.source_objects();
+        assert_eq!(static_objects, hybrid_objects);
+        assert!(!static_objects.is_empty());
+
+        let mut static_search = SearchIndex::new();
+        static_search.set_source_objects(static_objects);
+        let mut hybrid_search = SearchIndex::new();
+        hybrid_search.set_source_objects(hybrid_objects);
+        assert_eq!(static_search.to_json(), hybrid_search.to_json());
+
+        let workspace = tempfile::tempdir().unwrap();
+        let environment = BuildEnvironment::new(
+            SphinxConfig::new_defaults(),
+            EnvProject::new(workspace.path(), &[(".rst", "restructuredtext")]),
+            workspace.path(),
+            workspace.path().join("doctrees"),
+        );
+        let static_target = static_domain
+            .resolve_xref(&environment, "index", "meth", "demo::Widget::create")
+            .unwrap();
+        let hybrid_target = hybrid_domain
+            .resolve_xref(&environment, "index", "meth", "demo::Widget::create")
+            .unwrap();
+        assert_eq!(static_target, hybrid_target);
     }
 
     #[test]

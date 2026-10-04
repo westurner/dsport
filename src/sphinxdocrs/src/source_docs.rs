@@ -793,6 +793,238 @@ mod tests {
         })
     }
 
+    struct ContractProvider {
+        backend: &'static str,
+        kind: SourceBackendKind,
+    }
+
+    impl SourceSnapshotProvider for ContractProvider {
+        fn analyze(
+            &self,
+            request: &SourceAnalysisRequest,
+        ) -> Result<AnalysisSnapshot, AnalysisError> {
+            let make_declaration = |name: &str, kind, byte| {
+                SourceDeclaration::new(
+                    SourceLanguage::Rust,
+                    self.backend,
+                    name,
+                    "::",
+                    kind,
+                    None,
+                    None,
+                    "fixture docs",
+                    if self.kind == SourceBackendKind::Lsp {
+                        Visibility::Unknown
+                    } else {
+                        Visibility::Public
+                    },
+                    SourceSpan::new(
+                        "src/lib.rs",
+                        SourcePosition {
+                            byte,
+                            line: 1,
+                            column: byte,
+                        },
+                        None,
+                    ),
+                )
+            };
+            let mut widget = make_declaration("demo::Widget", DeclarationKind::Struct, 5);
+            widget.aliases = vec![
+                "demo::Zed".into(),
+                "demo::Alias".into(),
+                "demo::Alias".into(),
+            ];
+            widget.children = vec![
+                "demo::Widget::delete".into(),
+                "demo::Widget::create".into(),
+                "demo::Widget::create".into(),
+            ];
+            widget.deprecated = self.kind != SourceBackendKind::Lsp;
+            widget.noindex = self.kind != SourceBackendKind::Lsp;
+            let create = make_declaration("demo::Widget::create", DeclarationKind::Method, 10);
+            let delete = make_declaration("demo::Widget::delete", DeclarationKind::Method, 15);
+            let alpha = make_declaration("demo::Alpha", DeclarationKind::Function, 0);
+
+            let mut snapshot = AnalysisSnapshot::new(
+                SourceLanguage::Rust,
+                self.backend,
+                "contract-fixture-v1",
+                &request.source_root,
+                "contract-source-hash",
+                Vec::new(),
+                Vec::new(),
+            );
+            snapshot.declarations = vec![widget, delete, alpha, create];
+            snapshot.diagnostics = vec![
+                AnalysisDiagnostic {
+                    severity: DiagnosticSeverity::Warning,
+                    backend: self.backend.into(),
+                    message: "zeta contract diagnostic".into(),
+                    source: None,
+                    declaration: None,
+                },
+                AnalysisDiagnostic {
+                    severity: DiagnosticSeverity::Info,
+                    backend: self.backend.into(),
+                    message: "alpha contract diagnostic".into(),
+                    source: None,
+                    declaration: None,
+                },
+            ];
+            Ok(snapshot)
+        }
+
+        fn backend_kind(&self) -> SourceBackendKind {
+            self.kind
+        }
+
+        fn cache_identity(&self, request: &SourceAnalysisRequest) -> String {
+            format!("{}:{}", self.backend, request.cache_identity())
+        }
+
+        fn source_hash(
+            &self,
+            _request: &SourceAnalysisRequest,
+            _language: SourceLanguage,
+        ) -> Result<String, AnalysisError> {
+            Ok("contract-source-hash".into())
+        }
+    }
+
+    fn contract_provider(
+        backend: &'static str,
+        kind: SourceBackendKind,
+    ) -> Box<dyn SourceSnapshotProvider> {
+        Box::new(ContractProvider { backend, kind })
+    }
+
+    fn assert_provider_contract(
+        provider: &dyn SourceSnapshotProvider,
+        request: &SourceAnalysisRequest,
+    ) {
+        let snapshot = provider.analyze(request).unwrap();
+        let repeated = provider.analyze(request).unwrap();
+        assert_eq!(snapshot.declarations, repeated.declarations);
+        assert_eq!(snapshot.diagnostics, repeated.diagnostics);
+        assert_eq!(snapshot.provenance, repeated.provenance);
+        assert_eq!(snapshot.backend_kind, provider.backend_kind());
+        assert_eq!(snapshot.request_identity, provider.cache_identity(request));
+
+        let names = snapshot
+            .declarations
+            .iter()
+            .map(|declaration| declaration.qualified_name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "demo::Alpha",
+                "demo::Widget",
+                "demo::Widget::create",
+                "demo::Widget::delete",
+            ]
+        );
+        for declaration in &snapshot.declarations {
+            assert_eq!(
+                declaration.id,
+                super::model::stable_declaration_id(
+                    declaration.language,
+                    &declaration.qualified_name,
+                    &declaration.kind,
+                )
+            );
+            assert_eq!(declaration.source.path, "src/lib.rs");
+            assert!(declaration.source.start.line > 0);
+            assert!(declaration.aliases.windows(2).all(|pair| pair[0] < pair[1]));
+            assert!(
+                declaration
+                    .children
+                    .windows(2)
+                    .all(|pair| pair[0] < pair[1])
+            );
+        }
+        let widget = snapshot
+            .declarations
+            .iter()
+            .find(|declaration| declaration.qualified_name == "demo::Widget")
+            .unwrap();
+        assert_eq!(widget.parent.as_deref(), Some("demo"));
+        assert_eq!(widget.aliases, ["demo::Alias", "demo::Zed"]);
+        assert_eq!(
+            widget.children,
+            ["demo::Widget::create", "demo::Widget::delete"]
+        );
+        match snapshot.backend_kind {
+            SourceBackendKind::Static | SourceBackendKind::Hybrid => {
+                assert_eq!(widget.visibility, Visibility::Public);
+                assert!(widget.deprecated);
+                assert!(widget.noindex);
+            }
+            SourceBackendKind::Lsp => {
+                assert_eq!(widget.visibility, Visibility::Unknown);
+                assert!(!widget.deprecated);
+                assert!(!widget.noindex);
+            }
+        }
+        let mut sorted_diagnostics = snapshot.diagnostics.clone();
+        sorted_diagnostics.sort_by(|left, right| {
+            left.backend
+                .cmp(&right.backend)
+                .then(left.message.cmp(&right.message))
+        });
+        assert_eq!(snapshot.diagnostics, sorted_diagnostics);
+        assert!(
+            snapshot
+                .diagnostics
+                .iter()
+                .any(|diagnostic| { diagnostic.message == "alpha contract diagnostic" })
+        );
+        assert!(
+            snapshot
+                .diagnostics
+                .iter()
+                .any(|diagnostic| { diagnostic.message == "zeta contract diagnostic" })
+        );
+
+        let encoded = serde_json::to_vec(&snapshot).unwrap();
+        let decoded: AnalysisSnapshot = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded.declarations, snapshot.declarations);
+        assert_eq!(decoded.diagnostics, snapshot.diagnostics);
+        assert_eq!(decoded.request_identity, snapshot.request_identity);
+        assert_eq!(decoded.backend_kind, snapshot.backend_kind);
+    }
+
+    #[test]
+    fn shared_provider_contract_holds_for_static_lsp_and_hybrid_sessions() {
+        let request = SourceAnalysisRequest::new("src");
+        let static_session = SourceAnalysisSession::new(
+            SourceBackendMode::Static,
+            Some(contract_provider(
+                "contract-static",
+                SourceBackendKind::Static,
+            )),
+            None,
+        );
+        let lsp_session = SourceAnalysisSession::new(
+            SourceBackendMode::Lsp,
+            None,
+            Some(contract_provider("contract-lsp", SourceBackendKind::Lsp)),
+        );
+        let hybrid_session = SourceAnalysisSession::new(
+            SourceBackendMode::Hybrid,
+            Some(contract_provider(
+                "contract-static",
+                SourceBackendKind::Static,
+            )),
+            Some(contract_provider("contract-lsp", SourceBackendKind::Lsp)),
+        );
+
+        assert_provider_contract(&static_session, &request);
+        assert_provider_contract(&lsp_session, &request);
+        assert_provider_contract(&hybrid_session, &request);
+    }
+
     #[test]
     fn static_mode_never_requires_or_uses_lsp_provider() {
         let session = SourceAnalysisSession::new(

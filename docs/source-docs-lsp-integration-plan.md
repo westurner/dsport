@@ -178,9 +178,9 @@ LSP process manager or a cross-platform security guarantee:
   protected execution through this API.
 - `SandboxExecRequest::spawn()` inherits stdin/stdout/stderr. `run(timeout)`
   supervises and kills only the direct child on timeout; `wait()` has no
-  timeout. Neither provides piped LSP stdio, process-group/job cleanup, or
-  descendant-process limits. The LSP adapter must own that lifecycle and must
-  not use these methods as a substitute for its JSON-RPC process manager.
+  timeout. The reviewed extension adds `spawn_with_stdio()` for piped
+  stdin/stdout/stderr, but no process-group/job cleanup or descendant-process
+  limits. The LSP adapter must own that lifecycle and drain the pipes.
 - The command policy now rejects executable-prefix aliases for Allows, requires
   exact literal argument tokens, applies component-aware cwd and path checks,
   gives matching Deny/restriction rules precedence, and detects absolute-path
@@ -210,8 +210,9 @@ pub trait SandboxProvider {
 
 The provider owns version pinning, capability probes, workspace-root
 canonicalization, private temporary-directory setup, environment filtering, and
-fail-closed policy selection. The LSP client still owns stdio pipes, JSON-RPC
-framing, request timeouts, process-group cleanup, and shutdown. A build runner
+fail-closed policy selection. The executor now exposes `spawn_with_stdio()`;
+the LSP client owns JSON-RPC framing, request timeouts, process-group cleanup,
+pipe draining, and shutdown. A build runner
 may use the same provider to wrap the `sphinxdocrs` process itself. Do not nest a
 second sandbox around an LSP server unless the platform-specific interaction has
 been tested; prefer one outer build sandbox with inherited child confinement, or
@@ -221,9 +222,9 @@ The initial Cargo integration should be optional and pinned to the exact audited
 source. Do not assume the crates.io `=0.2.1` package contains commit
 `4cef879225e3bd177aa2fff1ca7d8771ae108a67`; either publish and audit a release
 that includes the required fixes or pin the reviewed fork/revision. The provider
-can reuse the Linux Bubblewrap and macOS Seatbelt command transformations, but
-must add capability checks, root/environment policy, LSP-specific piped stdio,
-timeouts, and descendant-process cleanup. Protected mode must return
+can reuse the Linux Bubblewrap and macOS Seatbelt transformations and the new
+`spawn_with_stdio()` entry point, but must add capability checks, root/environment
+policy, timeouts, and descendant-process cleanup. Protected mode must return
 `SandboxUnavailable` on unsupported platforms or failed probes; it must never
 downgrade to the direct command. An explicitly named `unsafe-local` mode may
 bypass the provider for trusted development only.
@@ -718,9 +719,9 @@ isolated temporary mount points, clears inherited environment, and supports
 network namespace isolation; macOS builds a Seatbelt policy. The provider must
 still prove the concrete workspace/home/temp exposure, enforce an explicit
 environment allowlist, validate symlink behavior and writable-root boundaries,
-and supervise descendants. The crate currently supplies no CPU, memory, output,
-or process-count limits, and its LSP-facing request methods do not support
-piped stdio or process-group/job cleanup.
+and supervise descendants. The reviewed extension supplies piped stdio and
+scoped read-only roots, but no CPU, memory, output, or process-count limits and
+no process-group/job cleanup.
 
 ### `ai-sandbox` integration audit
 
@@ -733,13 +734,13 @@ README:
 | Area | What `ai-sandbox` supplies | Required `sphinxdocrs` work or current limitation |
 | --- | --- | --- |
 | Policy model | read-only, workspace-write, network enum, path checks, command safety check, exact argument literals, executable alias protection, Deny precedence, absolute-path chmod guard | validate canonical roots and symlink policy at the provider boundary; policy matching is not OS isolation |
-| Linux | Bubblewrap executor and namespace capability probe; explicit RO/RW mounts; isolated `/tmp`, `/home`, `/root`; selected environment filtering; NoAccess network namespace; fail-closed unsupported network/filesystem policies | no Landlock syscall enforcement or seccomp filter; no resource limits; writable-root path replacement TOCTOU remains; integration must test mount exposure, filesystem boundaries, network denial, and descendant behavior |
-| macOS | Seatbelt command transformation and `sandbox-exec` launch; quoted policy paths; NoAccess/Localhost/FullAccess policy generation; Proxy rejected | add native boundary tests for filesystem/network behavior, child inheritance, path escapes, and unavailable/rejected `sandbox-exec` |
+| Linux | Audited Bubblewrap executor and namespace capability probe; the unpublished local extension adds explicit `ReadOnlyWithRoots` mounts and parent creation to the existing workspace-write, isolated `/tmp`/`/home`/`/root`, environment-filtering, and NoAccess network support | no Landlock syscall enforcement or seccomp filter; no resource limits; mount-path replacement TOCTOU remains; namespace creation is unavailable in this current container, so runtime boundary tests skipped |
+| macOS | Audited Seatbelt command transformation and `sandbox-exec`; the unpublished local extension adds scoped read-only-root rules; policy paths are quoted and Proxy is rejected | add native boundary tests for filesystem/network behavior, child inheritance, path escapes, and unavailable/rejected `sandbox-exec` |
 | Windows | restricted-token, ACL, and process-launch implementation exists; tests ensure protected policies do not select unrestricted launch | `SandboxExecRequest` currently reports backend unsupported on Windows; wire it to process creation, add Job Object kill-on-close/process limits, and validate filesystem/network semantics |
 | BSD | Capsicum/pledge policy helpers and enforcement adapter functions; pledge setup is represented in child execution APIs | `SandboxExecRequest` currently reports backend unsupported on FreeBSD/OpenBSD; prove the target child enters the capability boundary and test filesystem/network behavior before enabling provider support |
-| Execution | `SandboxExecRequest::spawn()`, `run(timeout)`, and `wait()` execute the immutable prepared command; `run` terminates the direct child on timeout | stdio is inherited; `wait` is unbounded; `run` does not provide process-group/job or descendant cleanup. LSP must retain stdio framing and lifecycle ownership, likely via a provider API that prepares the sandbox command separately from spawning |
+| Execution | Unpublished local extension adds `SandboxExecRequest::spawn_with_stdio()` for piped stdin/stdout/stderr; existing `spawn()`, `run(timeout)`, and `wait()` retain their behavior | caller must drain stderr/stdout; sandbox API still has no process-group/job or descendant cleanup. LSP retains timeout, framing, shutdown, and tree cleanup ownership |
 | Fallbacks | unsupported protected execution returns an explicit error; Linux spawn runs a Bubblewrap capability probe; unavailable Linux/macOS transformations fail closed | keep provider-level capability reporting explicit; never fall through to a direct command when protected mode is selected |
-| Supply chain | crate manifest remains `0.2.1`; audited workspace commit is `4cef879225e3bd177aa2fff1ca7d8771ae108a67` | crates.io `=0.2.1` does not identify this commit; publish/verify a release or pin the reviewed fork/revision, record the source and lockfile, and run supported-platform adversarial CI |
+| Supply chain | crate manifest remains `0.2.1`; original audited workspace commit is `4cef879225e3bd177aa2fff1ca7d8771ae108a67`; the local nested review checkout has executor extension commit `fffaac01b5ed98bf74ce6bf9fa0f86eb09efb3c0` | the extension commit is not published or reachable from the configured remote and is not a root dependency; publish/pin it or choose a portable vendoring/submodule strategy before wiring `sphinxdocrs` |
 
 The integration must start with the Linux Bubblewrap capability probe (and an
 equivalent native Seatbelt probe/test on macOS), then verify that a disposable
@@ -783,8 +784,8 @@ Linux and Seatbelt execution on macOS, but does not remove the need for explicit
 workspace binds, an empty or allowlisted home, a private temporary directory,
 filtered environment variables, network denial, resource limits, and fail-closed
 behavior when the requested isolation cannot be established. Its request
-executor is not wired for Windows or BSD, and its process API has no LSP stdio,
-process-group/job cleanup, or descendant/resource limits. If those guarantees
+executor is not wired for Windows or BSD; its new API provides LSP stdio pipes,
+but still lacks process-group/job cleanup or descendant/resource limits. If those guarantees
 cannot be provided on a platform, the LSP backend should be unavailable there
 rather than silently downgraded to an unsandboxed process when the caller
 selected a protected mode. An explicitly named `unsafe-local` mode could permit

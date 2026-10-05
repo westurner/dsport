@@ -865,9 +865,10 @@ Current automated LSP tests cover fake-server initialize/document-symbol/shutdow
 provider-scoped process reuse, timeout, crash during a request, framing limits,
 malformed JSON-RPC/version, UTF-16 position conversion, symbol-kind mapping,
 publishDiagnostics severity/message/source-span normalization, missing executable
-resolution, workspace escape rejection before spawn, and configuration/cache
-secrecy. The status command can invoke the shared fake server with `--live
---live-fake`; the command remains process-free without that flag. Gaps include
+resolution, workspace escape rejection before spawn, child environment
+allowlisting/current-directory enforcement, and configuration/cache secrecy. The
+status command can invoke the shared fake server with `--live --live-fake`; the
+command remains process-free without that flag. Gaps include
 true request cancellation, Windows process-tree cleanup, and cross-platform
 lifecycle tests.
 The full Sphinx library suite has known environment failures in Python 3.14

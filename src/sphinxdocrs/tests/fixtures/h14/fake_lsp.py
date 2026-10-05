@@ -1,10 +1,20 @@
 import json
+import os
 import sys
 import time
 import subprocess
 
 mode = sys.argv[1] if len(sys.argv) > 1 else "symbols"
 counter = sys.argv[2] if len(sys.argv) > 2 else None
+if mode == "environment-check":
+    expected_cwd = sys.argv[2] if len(sys.argv) > 2 else ""
+    if (
+        os.getcwd() != expected_cwd
+        or "PATH" in os.environ
+        or "UNTRUSTED_LSP_SECRET" in os.environ
+        or os.environ.get("LANG") != "C"
+    ):
+        sys.exit(5)
 if counter and mode == "symbols":
     try:
         starts = int(open(counter, encoding="utf-8").read())

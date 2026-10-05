@@ -1816,6 +1816,30 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn child_environment_is_allowlisted_and_working_directory_is_workspace() {
+        let workspace = TempDir::new().unwrap();
+        let source = workspace.path().join("lib.rs");
+        std::fs::write(&source, "pub fn answer() {}\n").unwrap();
+        let mut config = fake_server_config(workspace.path(), "environment-check");
+        config
+            .command
+            .push(workspace.path().to_string_lossy().into_owned());
+        config.environment = vec![
+            ("PATH".into(), std::env::var("PATH").unwrap_or_default()),
+            ("UNTRUSTED_LSP_SECRET".into(), "must-not-leak".into()),
+            ("LANG".into(), "C".into()),
+        ];
+        let provider = LspSnapshotProvider::new(config);
+        let mut request = SourceAnalysisRequest::new(workspace.path());
+        request.selected.push(source);
+
+        let snapshot = provider.analyze(&request).unwrap();
+
+        assert_eq!(snapshot.declarations.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn fake_server_publish_diagnostics_are_normalized_into_snapshot() {
         let workspace = TempDir::new().unwrap();
         let source = workspace.path().join("lib.rs");

@@ -261,6 +261,30 @@ pub mod provider {
             SourceAnalysisSession::analyze(self, request)
         }
 
+        fn prepare_for_cache(&self) -> Result<(), AnalysisError> {
+            match self.mode {
+                SourceBackendMode::Auto | SourceBackendMode::Static => {
+                    if let Some(provider) = &self.static_provider {
+                        provider.prepare_for_cache()?;
+                    }
+                }
+                SourceBackendMode::Lsp => self
+                    .lsp_provider
+                    .as_ref()
+                    .ok_or_else(|| unavailable("lsp", "no LSP provider is configured"))?
+                    .prepare_for_cache()?,
+                SourceBackendMode::Hybrid => {
+                    if let Some(provider) = &self.static_provider {
+                        provider.prepare_for_cache()?;
+                    }
+                    if let Some(provider) = &self.lsp_provider {
+                        provider.prepare_for_cache()?;
+                    }
+                }
+            }
+            Ok(())
+        }
+
         fn backend_kind(&self) -> SourceBackendKind {
             match self.mode {
                 SourceBackendMode::Auto | SourceBackendMode::Static => SourceBackendKind::Static,

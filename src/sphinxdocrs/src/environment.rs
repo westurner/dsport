@@ -467,7 +467,8 @@ impl BuildEnvironment {
             } else {
                 &snapshot.provider_identity
             };
-            !provider_identity.is_empty()
+            provider.prepare_for_cache().is_ok()
+                && !provider_identity.is_empty()
                 && provider_identity == &provider.cache_identity(request)
                 && provider
                     .source_hash(request, snapshot.language)
@@ -3083,6 +3084,60 @@ mod tests {
         assert!(restored.source_snapshot_matches_request("api", &request));
         assert!(restored.source_snapshot_matches_provider("api", &analyzer, &request));
         assert!(!restored.source_snapshot_matches_provider("api", &changed_toolchain, &request));
+    }
+
+    #[cfg(all(feature = "rust-source-analysis", feature = "lsp-source-analysis", unix))]
+    #[test]
+    fn cold_lsp_provider_initializes_identity_before_persisted_cache_match() {
+        use crate::source_docs::lsp_backend::{LspServerConfig, LspSnapshotProvider};
+        use crate::source_analysis::SourceLanguage;
+
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        let doctreedir = directory.path().join("doctrees");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let source = workspace.join("lib.rs");
+        std::fs::write(&source, "pub fn answer() -> i32 { 42 }\n").unwrap();
+        let fake_server =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/fake_lsp.py");
+        let config = LspServerConfig {
+            command: vec![
+                "python3".into(),
+                fake_server.to_string_lossy().into_owned(),
+                "symbols".into(),
+            ],
+            workspace_root: workspace.clone(),
+            language: SourceLanguage::Rust,
+            request_timeout: std::time::Duration::from_secs(10),
+            allow_fallback: false,
+            environment: Vec::new(),
+            max_message_bytes: 1024 * 1024,
+        };
+        let request = {
+            let mut request = SourceAnalysisRequest::new(&workspace);
+            request.selected.push(source);
+            request
+        };
+        let project = EnvProject::new(&workspace, &[(".rst", "restructuredtext")]);
+        let mut env = BuildEnvironment::new(
+            SphinxConfig::new_defaults(),
+            project.clone(),
+            &workspace,
+            &doctreedir,
+        );
+        let original_provider = LspSnapshotProvider::new(config.clone());
+        env.analyze_source("api", &original_provider, &request).unwrap();
+        let persisted = env.to_persisted();
+        let mut restored = BuildEnvironment::new(
+            SphinxConfig::new_defaults(),
+            project,
+            &workspace,
+            &doctreedir,
+        );
+        restored.apply_persisted(persisted);
+
+        let cold_provider = LspSnapshotProvider::new(config);
+        assert!(restored.source_snapshot_matches_provider("api", &cold_provider, &request));
     }
 
     #[test]

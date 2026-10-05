@@ -513,6 +513,13 @@ pub trait SourceSnapshotProvider {
         request: &SourceAnalysisRequest,
     ) -> Result<AnalysisSnapshot, AnalysisError>;
 
+    /// Prepare lazy provider state needed to determine cache identity.
+    /// Static providers do no work; process-backed providers may initialize a
+    /// configured server when callers explicitly request provider-aware reuse.
+    fn prepare_for_cache(&self) -> Result<(), AnalysisError> {
+        Ok(())
+    }
+
     fn backend_kind(&self) -> SourceBackendKind {
         SourceBackendKind::Static
     }

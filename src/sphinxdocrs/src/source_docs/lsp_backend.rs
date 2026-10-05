@@ -1476,6 +1476,17 @@ impl SourceSnapshotProvider for LspSnapshotProvider {
         }
     }
 
+    fn prepare_for_cache(&self) -> Result<(), AnalysisError> {
+        let mut slot = self
+            .process
+            .lock()
+            .map_err(|_| protocol_error("LSP session lock poisoned"))?;
+        if slot.is_none() {
+            *slot = Some(LspProcess::start(self.config.clone())?);
+        }
+        Ok(())
+    }
+
     fn backend_kind(&self) -> SourceBackendKind {
         SourceBackendKind::Lsp
     }

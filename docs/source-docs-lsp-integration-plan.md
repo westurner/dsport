@@ -41,8 +41,7 @@ C/PyO3 cross toolchain. macOS uses the Unix process-group path but still needs
 native runtime validation.
 
 Still incomplete: Sphinx-relative definition-link rendering,
-references/workspace-symbol enrichment,
-cold-start server-version and capability cache validation, the full source-port
+references/workspace-symbol enrichment, the full source-port
 mapping audit, CPU/memory/output limits, native Windows/macOS runtime
 process-tree tests, an audited `SandboxProvider`, platform boundary tests, and
 installed rust-analyzer/Lean live CI. Protected modes remain unavailable and fail
@@ -628,9 +627,11 @@ rather than written to persisted metadata. After initialize, the standard
 `InitializeResult.serverInfo` name/version and the advertised document-symbol,
 hover, and definition flags are hashed; raw server strings are not persisted,
 and missing, malformed, or oversized serverInfo produces an `unreported` version
-component. A cold provider learns these values only after launching the server,
-so it cannot validate a persisted provider identity before startup. Servers that
-omit serverInfo still contribute their advertised capability flags.
+component. Provider-aware cache matching calls `prepare_for_cache`, which
+initializes and retains the configured server before comparing these values.
+This permits persisted cache hits without reanalyzing documents but still incurs
+server startup. Servers that omit serverInfo still contribute advertised
+capability flags.
 
 The environment should continue to persist only `AnalysisSnapshot`, diagnostics,
 and backend metadata. On reread or invalidation, clear source-domain records before
@@ -977,9 +978,9 @@ provider-aware checks also invalidate when backend configuration or implementati
 changes. The environment regression test verifies both keys survive persistence.
 LSP provider identity hashes configured command arguments, workspace, a versioned
 client capability profile, timeout, and post-initialize serverInfo/capabilities.
-The advertised identity is unavailable to a cold cache check until that process
-starts, so persisted LSP snapshots may require startup before they can be
-validated.
+Provider-aware cache checks initialize and retain a cold LSP process before
+comparing its identity, allowing persisted hits without reopening source
+documents but still requiring server startup.
 
 ### Phase 3: optional LSP adapter — trusted-local enrichment slice implemented with gaps
 
@@ -1103,6 +1104,9 @@ Implemented criteria:
   normalized and tested. Diagnostics remain in snapshots by default, with no
   generated page or build warning until a separately configurable output policy
   is designed.
+- Snapshots persist request and provider identities separately; provider-aware
+  cache checks initialize a cold LSP server before comparing server/version and
+  capability identity, while request-only/static cache checks remain process-free.
 - Domains, autodoc, apidoc, persistence, and search consume only normalized source
   records.
 - Future upstream port work can be tracked through the source-port manifest and
@@ -1120,10 +1124,6 @@ The plan is not complete until the remaining acceptance criteria below land:
   pass, protected modes remain unavailable.
 - Render normalized in-workspace definition locations as Sphinx-relative links
   under an explicit policy; add any selected references/workspace-symbol mapping.
-- Validate cold-cache behavior for server versions and advertised capabilities.
-  These values are hashed after initialization, but are unavailable before a
-  new provider launches; serverInfo is optional while the capability flags are
-  still hashed when present.
 - Complete shared provider contract coverage and static/hybrid parity tests for
   domains, autodoc, apidoc, environment persistence, and search.
 - Add optional rust-analyzer and Lean live tests plus diagnostics-notification,

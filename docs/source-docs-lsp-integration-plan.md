@@ -1034,10 +1034,10 @@ remain unimplemented.
 
 Status: core consumers use normalized records and hybrid mode retains static
 policy fields with conflict diagnostics and provenance. Search/xref parity when
-LSP adds no declarations now has a focused test comparing source-domain objects,
-search-index JSON, and Rust method xref targets for static and hybrid sessions.
-Full autodoc/apidoc/environment cache parity and end-to-end tests across all
-consumers remain open.
+LSP adds no declarations now has a focused test comparing structured autodoc and
+rendered RST, source-domain objects, search-index JSON, and Rust method xref
+targets for static and hybrid sessions. Full apidoc/environment cache parity and
+end-to-end tests across all consumers remain open.
 
 ### Phase 5: optional live-server workflows — partially available
 

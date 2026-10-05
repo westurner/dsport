@@ -693,6 +693,9 @@ mod tests {
     use std::collections::HashMap;
     use std::path::Path;
 
+    use crate::autodoc::{
+        RustSourceRenderer, SourceAutodocRequest, document_source, render_source_rst,
+    };
     use crate::config::{ConfigVal, SphinxConfig};
     use crate::domains::{Domain, RustDomain};
     use crate::environment::{BuildEnvironment, EnvProject};
@@ -1058,6 +1061,28 @@ mod tests {
         );
         let static_snapshot = static_session.analyze(&request).unwrap();
         let hybrid_snapshot = hybrid_session.analyze(&request).unwrap();
+
+        let mut static_autodoc_request = SourceAutodocRequest::new("src", SourceLanguage::Rust);
+        static_autodoc_request.analysis = request.clone();
+        let hybrid_autodoc_request = static_autodoc_request.clone();
+        let static_descriptions = document_source(
+            &static_autodoc_request,
+            &static_session,
+            &RustSourceRenderer,
+        )
+        .unwrap();
+        let hybrid_descriptions = document_source(
+            &hybrid_autodoc_request,
+            &hybrid_session,
+            &RustSourceRenderer,
+        )
+        .unwrap();
+        assert_eq!(static_descriptions, hybrid_descriptions);
+        assert_eq!(
+            render_source_rst(&static_descriptions),
+            render_source_rst(&hybrid_descriptions)
+        );
+
         let hybrid_widget = hybrid_snapshot
             .declarations
             .iter()

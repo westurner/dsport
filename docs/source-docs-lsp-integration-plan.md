@@ -5,11 +5,12 @@ Last updated: 2026-10-04
 Scope: `sphinxdocrs` source-aware documentation for Rust and Lean, with optional
 integration through a client-side LSP adapter
 
-Implementation status (2026-10-02): phases 1 and 2 are implemented; phase 3 has
-an off-by-default trusted-local JSON-RPC client for
-`textDocument/documentSymbol`, bounded framing, source mapping, diagnostics,
-provider-scoped process reuse, and fake-server tests. The public inspection tool
-is `sphinx-source-status` (not `sphinx-source-port`):
+Implementation status (2026-10-04): phases 1 and 2 are implemented with contract
+and cache-audit gaps. Phase 3 has an off-by-default trusted-local JSON-RPC client
+for document symbols, capability-gated hover and definition lookup, normalized
+diagnostics, bounded framing/resources, provider-scoped process reuse, and
+fake-server coverage. The public inspection tool is `sphinx-source-status` (not
+`sphinx-source-port`):
 `cargo run -p sphinxdocrs --bin sphinx-source-status`. Its default invocation is
 process-free. With `lsp-source-analysis`, `--live --live-fake` exercises the
 checked-in fake peer; real servers require explicit
@@ -347,15 +348,15 @@ JSON and Arborium paths for ordinary builds.
 | `DocumentSymbol.detail`, `range`, `selectionRange` | Signatures, source spans, and declaration anchors | P0 | Detail/ranges are mapped; selection positions are retained as LSP attributes. Static declaration IDs and policy metadata remain authoritative in hybrid mode. |
 | `textDocument/hover` | Fill a missing description/type summary for a statically discovered declaration | P1 | Implemented behind `hoverProvider`: queried only when symbol documentation is empty, normalizes plaintext/Markdown/marked strings, caps each result at 64 KiB and each analysis at 256 requests, and feeds hybrid mode only when static docs are empty. |
 | `textDocument/definition` | Optional “Defined in” source link or cross-file source location | P1 | Implemented as workspace-relative definition path/range attributes from `Location` or `LocationLink`; non-file and external targets are ignored. Rendering Sphinx-relative source links remains open; never publish editor `file://` URIs directly. |
-| `textDocument/publishDiagnostics` | Separate build diagnostics page/report, optionally grouped by file/severity | P1 | Fake-server coverage verifies severity, message, and an in-workspace URI/range normalize into `AnalysisDiagnostic`; reporting policy/tests and a Sphinx diagnostics page remain open. Diagnostics should not become API prose by default. |
+| `textDocument/publishDiagnostics` | Normalized build diagnostic data; no user-facing page or warning by default | P1 | Fake-server coverage verifies severity, message, and an in-workspace URI/range normalize into `AnalysisDiagnostic`; `sphinx-source-status --live` reports counts. Keep diagnostics snapshot-only until an explicit severity/output policy is added; never turn them into API prose. |
 | `textDocument/references` | “Used by” lists or reverse-reference reports | P2 | Not implemented. Keep opt-in because results can be large, server-dependent, and expensive. Do not use them to define API membership. |
 | `workspace/symbol` | Workspace-wide API index or namespace landing pages | P2 | Not implemented. Prefer static apidoc discovery for page membership; use workspace symbols only for explicitly requested enrichment/discovery. |
 | `textDocument/completion`, `signatureHelp`, `semanticTokens` | Interactive completion/signature/token display | Not a generated-doc priority | Better suited to editor integrations. Semantic tokens may eventually help render signatures, but must not be a prerequisite for generated docs. |
 
-Recommended next user-facing additions after document symbols and hover
-enrichment are Sphinx-relative definition links and a diagnostics report. Each must be
-independently configurable, use the normalized snapshot contract, preserve
-static provenance/policy, and remain unavailable in the default static build.
+Recommended next user-facing addition after document symbols and hover
+enrichment is Sphinx-relative definition links, behind an explicit rendering
+policy that preserves static provenance and remains unavailable in the default
+static build.
 
 ## LSP adapter design
 
@@ -980,7 +981,7 @@ The advertised identity is unavailable to a cold cache check until that process
 starts, so persisted LSP snapshots may require startup before they can be
 validated.
 
-### Phase 3: optional LSP adapter — trusted-local document-symbol slice implemented
+### Phase 3: optional LSP adapter — trusted-local enrichment slice implemented with gaps
 
 - Define the internal `SourceLspClient` interface and fake-server contract.
 - Choose either a pinned `dscode-lsp` adapter or a local client based on the
@@ -1048,8 +1049,7 @@ end-to-end tests across all consumers remain open.
 - Evaluate `dscode-session` separately; it must not replace the sandbox provider
   or process-policy boundary.
 
-Status: status command can run the fake peer or an explicitly supplied
-and server installation documentation remain pending.
+Status: the status command can run the fake peer or an explicitly supplied
 trusted-local server. A feature-gated CLI test exercises the checked-in fake peer
 without external server configuration. Installed rust-analyzer/Lean CI, native
 platform boundary tests, and server installation documentation remain pending.
@@ -1081,11 +1081,9 @@ Still open:
 
 1. Which Lean server command/capabilities should be documented as the recommended
    configuration, if any?
-2. Should diagnostics be exposed as a generated Sphinx page, a build warning stream,
-   or both? What severity/count policy should each use?
-3. Should the optional client remain in `sphinxdocrs` or move to a separate
+2. Should the optional client remain in `sphinxdocrs` or move to a separate
    `sphinxdocrs-lsp` crate before publication?
-4. Which exact audited sandbox source/revision and platform guarantees are acceptable
+3. Which exact audited sandbox source/revision and platform guarantees are acceptable
    for a future `protected-lsp` implementation?
 
 ## Acceptance criteria and remaining work
@@ -1102,7 +1100,9 @@ Implemented criteria:
   satisfies fail-closed behavior but does not satisfy the sandbox-integration
   acceptance criterion below.
 - LSP lifecycle failures produce explicit errors; notification diagnostics are
-  normalized, but dedicated diagnostics-reporting policy/tests remain open.
+  normalized and tested. Diagnostics remain in snapshots by default, with no
+  generated page or build warning until a separately configurable output policy
+  is designed.
 - Domains, autodoc, apidoc, persistence, and search consume only normalized source
   records.
 - Future upstream port work can be tracked through the source-port manifest and

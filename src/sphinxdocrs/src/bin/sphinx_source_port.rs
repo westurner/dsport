@@ -151,6 +151,7 @@ fn run(args: Args) -> Result<ExitCode, Box<dyn std::error::Error>> {
         println!("  provenance: {}", entry.provenance);
         if let Some(deviation) = &entry.accepted_deviation {
             println!("  deviation: {deviation}");
+            println!("  deviation fixture: {}", entry.parity_fixture);
         }
         if let Some(method) = &entry.lsp_method {
             println!(
@@ -457,6 +458,17 @@ mod tests {
         assert_eq!(diagnostics.status, "implemented");
         assert!(diagnostics.required_capability.is_none());
         assert!(diagnostics.provenance.contains("diagnostic"));
+
+        let lean_deviation = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.status == "accepted-deviation")
+            .unwrap();
+        assert!(lean_deviation.accepted_deviation.is_some());
+        assert_eq!(
+            lean_deviation.parity_fixture,
+            "source_analysis::lean::tests::fixture_corpus_covers_declarations_comments_and_recoverable_errors"
+        );
     }
 
     #[test]

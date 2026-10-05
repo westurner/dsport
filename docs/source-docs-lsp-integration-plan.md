@@ -927,9 +927,7 @@ renderers and xref-role mappings, reporting missing entries without treating
 other-language kinds as gaps. Status output includes provenance, and the
 manifest now records separate hover, definition, and publish-diagnostics entries
 with their capabilities, fallback policies, and fixture coverage.
-Remaining command work:
-
-- links accepted deviations to their test names
+Accepted deviations are shown with their manifest fixture/test reference.
 
 The command should be usable without LSP installed. Its output should distinguish
 "not implemented", "accepted deviation", "backend unavailable", and "test skipped".

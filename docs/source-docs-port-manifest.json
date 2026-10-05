@@ -21,7 +21,7 @@
       "owner": "source_docs::domain::LeanDomain",
       "backend": "static:arborium-lean",
       "contract": "normalized SourceDeclaration and AnalysisSnapshot",
-      "parity_fixture": "source_analysis::lean tests",
+      "parity_fixture": "source_analysis::lean::tests::fixture_corpus_covers_declarations_comments_and_recoverable_errors",
       "status": "accepted-deviation",
       "accepted_deviation": "syntax-level declarations; no elaboration or kernel validation",
       "feature": "lean-source-analysis",

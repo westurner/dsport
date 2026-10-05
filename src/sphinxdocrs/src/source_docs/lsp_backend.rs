@@ -37,6 +37,7 @@ const MAX_HOVER_CONTENT_BYTES: usize = 64 * 1024;
 const MAX_SERVER_INFO_FIELD_BYTES: usize = 256;
 const CLIENT_NAME: &str = "sphinxdocrs";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const CLIENT_CAPABILITY_PROFILE: &str = "document-symbol-hover-definition-v1";
 
 #[derive(Debug, Clone)]
 pub struct LspServerConfig {
@@ -200,6 +201,7 @@ struct LspProcess {
     terminated: bool,
     session_deadline: Instant,
     server_identity: String,
+    server_capability_identity: String,
     hover_supported: bool,
     definition_supported: bool,
     #[cfg(windows)]
@@ -318,6 +320,7 @@ impl LspProcess {
             terminated: false,
             session_deadline: Instant::now() + MAX_SESSION_DURATION,
             server_identity: "unreported".into(),
+            server_capability_identity: "unreported".into(),
             hover_supported: false,
             definition_supported: false,
             #[cfg(windows)]
@@ -345,6 +348,7 @@ impl LspProcess {
             return Err(protocol_error("initialize returned a non-object result"));
         }
         process.server_identity = initialize_server_identity(&initialized);
+        process.server_capability_identity = initialize_capability_identity(&initialized);
         let capabilities = initialized.get("capabilities");
         process.hover_supported = capabilities
             .and_then(|capabilities| capabilities.get("hoverProvider"))
@@ -933,6 +937,24 @@ fn initialize_server_identity(initialized: &Value) -> String {
     format!("reported-{}", hash_bytes(&identity))
 }
 
+fn initialize_capability_identity(initialized: &Value) -> String {
+    let Some(capabilities) = initialized.get("capabilities").and_then(Value::as_object) else {
+        return "unreported".into();
+    };
+    let supported = |name: &str| {
+        capabilities
+            .get(name)
+            .is_some_and(|capability| !capability.is_null() && capability != false)
+    };
+    let identity = format!(
+        "documentSymbol={};hover={};definition={}",
+        supported("documentSymbolProvider"),
+        supported("hoverProvider"),
+        supported("definitionProvider"),
+    );
+    format!("reported-{}", hash_bytes(identity.as_bytes()))
+}
+
 pub struct LspSnapshotProvider {
     config: LspServerConfig,
     process: Mutex<Option<LspProcess>>,
@@ -968,8 +990,17 @@ impl LspSnapshotProvider {
     }
 
     fn configuration_identity(&self, request: &SourceAnalysisRequest) -> String {
+        self.configuration_identity_for_profile(request, CLIENT_CAPABILITY_PROFILE)
+    }
+
+    fn configuration_identity_for_profile(
+        &self,
+        request: &SourceAnalysisRequest,
+        capability_profile: &str,
+    ) -> String {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(request.cache_identity().as_bytes());
+        bytes.extend_from_slice(capability_profile.as_bytes());
         bytes.extend_from_slice(self.config.language.to_string().as_bytes());
         bytes.extend_from_slice(self.config.workspace_root.to_string_lossy().as_bytes());
         bytes.extend_from_slice(&self.config.request_timeout.as_millis().to_le_bytes());
@@ -991,9 +1022,10 @@ impl LspSnapshotProvider {
         &self,
         request: &SourceAnalysisRequest,
         server_identity: &str,
+        server_capability_identity: &str,
     ) -> String {
         format!(
-            "lsp:{}:server={server_identity}",
+            "lsp:{}:server={server_identity}:capabilities={server_capability_identity}",
             self.configuration_identity(request)
         )
     }
@@ -1186,8 +1218,11 @@ impl LspSnapshotProvider {
         );
         snapshot.backend_kind = SourceBackendKind::Lsp;
         snapshot.request_identity = request.cache_identity();
-        snapshot.provider_identity =
-            self.cache_identity_with_server(request, &process.server_identity);
+        snapshot.provider_identity = self.cache_identity_with_server(
+            request,
+            &process.server_identity,
+            &process.server_capability_identity,
+        );
         Ok(snapshot)
     }
 
@@ -1446,17 +1481,20 @@ impl SourceSnapshotProvider for LspSnapshotProvider {
     }
 
     fn cache_identity(&self, request: &SourceAnalysisRequest) -> String {
-        let server_identity = self
+        let (server_identity, server_capability_identity) = self
             .process
             .lock()
             .ok()
             .and_then(|process| {
-                process
-                    .as_ref()
-                    .map(|process| process.server_identity.clone())
+                process.as_ref().map(|process| {
+                    (
+                        process.server_identity.clone(),
+                        process.server_capability_identity.clone(),
+                    )
+                })
             })
-            .unwrap_or_else(|| "unreported".into());
-        self.cache_identity_with_server(request, &server_identity)
+            .unwrap_or_else(|| ("unreported".into(), "unreported".into()));
+        self.cache_identity_with_server(request, &server_identity, &server_capability_identity)
     }
 
     fn source_hash(
@@ -2123,6 +2161,27 @@ mod tests {
             initialize_server_identity(&json!({"serverInfo":{"name":long_name}})),
             "unreported"
         );
+    }
+
+    #[test]
+    fn capability_identities_change_with_client_profile_and_server_flags() {
+        let workspace = TempDir::new().unwrap();
+        let request = SourceAnalysisRequest::new(workspace.path());
+        let provider = LspSnapshotProvider::new(fake_server_config(workspace.path(), "normal"));
+        assert_ne!(
+            provider.configuration_identity_for_profile(&request, "profile-a"),
+            provider.configuration_identity_for_profile(&request, "profile-b")
+        );
+
+        let document_symbols = initialize_capability_identity(&json!({
+            "capabilities": {"documentSymbolProvider": true}
+        }));
+        let with_hover = initialize_capability_identity(&json!({
+            "capabilities": {"documentSymbolProvider": true, "hoverProvider": true}
+        }));
+        assert!(document_symbols.starts_with("reported-"));
+        assert_ne!(document_symbols, with_hover);
+        assert_eq!(initialize_capability_identity(&json!({})), "unreported");
     }
 
     #[cfg(unix)]

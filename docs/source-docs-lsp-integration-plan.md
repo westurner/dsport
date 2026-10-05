@@ -621,15 +621,15 @@ capabilities, source files, or relevant toolchain version changes. A live server
 must never be persisted or reused across unrelated projects.
 
 Current LSP identity hashes the source request, language, workspace root, request
-timeout, message limit, configured argv, and explicit environment entries. The
-argv/environment values are hashed rather than written to persisted metadata.
-When supplied, the standard `InitializeResult.serverInfo` name/version is also
-hashed; raw server strings are not persisted, and missing, malformed, or
-oversized fields produce an `unreported` identity. The provider learns this only
-after launching the server, so a cold provider cannot validate a persisted
-snapshot's server version before startup; servers omitting `serverInfo` remain
-configuration-keyed. The client still requests one fixed document-symbol
-capability set, whose identity and cold-cache invalidation remain to implement.
+timeout, message limit, configured argv, explicit environment entries, and a
+versioned client capability profile. The argv/environment values are hashed
+rather than written to persisted metadata. After initialize, the standard
+`InitializeResult.serverInfo` name/version and the advertised document-symbol,
+hover, and definition flags are hashed; raw server strings are not persisted,
+and missing, malformed, or oversized serverInfo produces an `unreported` version
+component. A cold provider learns these values only after launching the server,
+so it cannot validate a persisted provider identity before startup. Servers that
+omit serverInfo still contribute their advertised capability flags.
 
 The environment should continue to persist only `AnalysisSnapshot`, diagnostics,
 and backend metadata. On reread or invalidation, clear source-domain records before
@@ -974,11 +974,11 @@ source hash. Snapshots persist separate `request_identity` and `provider_identit
 values: request-only cache checks compare source/configuration inputs, while
 provider-aware checks also invalidate when backend configuration or implementation
 changes. The environment regression test verifies both keys survive persistence.
-LSP provider identity hashes configured command arguments, workspace,
-client-requested capabilities, timeout, and the optional serverInfo name/version
-after initialization. The server version is not available to a cold cache check
-until that process starts; capability identity and serverInfo-free servers remain
-cache-audit gaps.
+LSP provider identity hashes configured command arguments, workspace, a versioned
+client capability profile, timeout, and post-initialize serverInfo/capabilities.
+The advertised identity is unavailable to a cold cache check until that process
+starts, so persisted LSP snapshots may require startup before they can be
+validated.
 
 ### Phase 3: optional LSP adapter — trusted-local document-symbol slice implemented
 
@@ -1118,10 +1118,10 @@ The plan is not complete until the remaining acceptance criteria below land:
   pass, protected modes remain unavailable.
 - Render normalized in-workspace definition locations as Sphinx-relative links
   under an explicit policy; add any selected references/workspace-symbol mapping.
-- Complete cache invalidation for the requested capability set and cold-start
-  server versions. Optional `serverInfo` is now hashed after initialization, but
-  it is unavailable before a new provider launches and is absent from some
-  servers.
+- Validate cold-cache behavior for server versions and advertised capabilities.
+  These values are hashed after initialization, but are unavailable before a
+  new provider launches; serverInfo is optional while the capability flags are
+  still hashed when present.
 - Complete shared provider contract coverage and static/hybrid parity tests for
   domains, autodoc, apidoc, environment persistence, and search.
 - Add optional rust-analyzer and Lean live tests plus diagnostics-notification,

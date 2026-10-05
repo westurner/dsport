@@ -1049,8 +1049,10 @@ end-to-end tests across all consumers remain open.
   or process-policy boundary.
 
 Status: status command can run the fake peer or an explicitly supplied
-trusted-local server. Installed rust-analyzer/Lean CI, platform boundary tests,
 and server installation documentation remain pending.
+trusted-local server. A feature-gated CLI test exercises the checked-in fake peer
+without external server configuration. Installed rust-analyzer/Lean CI, native
+platform boundary tests, and server installation documentation remain pending.
 
 Exit criteria: live integrations are useful for development but remain unnecessary
 for normal package builds, release builds, and deterministic CI; protected mode

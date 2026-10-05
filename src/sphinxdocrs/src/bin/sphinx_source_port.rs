@@ -402,6 +402,12 @@ mod tests {
         }
     }
 
+    #[cfg(all(feature = "lsp-source-analysis", unix))]
+    #[test]
+    fn fake_live_check_runs_with_checked_in_peer() {
+        run_fake_live_check().unwrap();
+    }
+
     #[test]
     fn contract_test_commands_cover_all_source_backend_layers() {
         assert!(

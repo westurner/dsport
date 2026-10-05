@@ -1,0 +1,255 @@
+//! Process Hardening Module
+//!
+//! Provides process-level security hardening across platforms.
+
+#[allow(unused_imports)]
+use std::ffi::OsString;
+
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
+
+/// Perform process hardening at startup
+///
+/// This should be called pre-main() (using `#[ctor::ctor]`) to perform
+/// various process hardening steps:
+/// - Disabling core dumps
+/// - Disabling ptrace attach on Linux and macOS
+/// - Removing dangerous environment variables (LD_PRELOAD, DYLD_*)
+pub fn pre_main_hardening() {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pre_main_hardening_linux();
+
+    #[cfg(target_os = "macos")]
+    pre_main_hardening_macos();
+
+    #[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
+    pre_main_hardening_bsd();
+
+    #[cfg(windows)]
+    pre_main_hardening_windows();
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const PRCTL_FAILED_EXIT_CODE: i32 = 5;
+
+#[cfg(target_os = "macos")]
+const PTRACE_DENY_ATTACH_FAILED_EXIT_CODE: i32 = 6;
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+const SET_RLIMIT_CORE_FAILED_EXIT_CODE: i32 = 7;
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(crate) fn pre_main_hardening_linux() {
+    // Disable ptrace attach / mark process non-dumpable
+    let ret_code = unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) };
+    if ret_code != 0 {
+        eprintln!(
+            "ERROR: prctl(PR_SET_DUMPABLE, 0) failed: {}",
+            std::io::Error::last_os_error()
+        );
+        std::process::exit(PRCTL_FAILED_EXIT_CODE);
+    }
+
+    // Set core file size limit to 0
+    set_core_file_size_limit_to_zero();
+
+    // Clear LD_* environment variables
+    let ld_keys = env_keys_with_prefix(std::env::vars_os(), b"LD_");
+    for key in ld_keys {
+        unsafe {
+            std::env::remove_var(key);
+        }
+    }
+}
+
+#[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
+pub(crate) fn pre_main_hardening_bsd() {
+    set_core_file_size_limit_to_zero();
+
+    let ld_keys = env_keys_with_prefix(std::env::vars_os(), b"LD_");
+    for key in ld_keys {
+        unsafe {
+            std::env::remove_var(key);
+        }
+    }
+
+    // OpenBSD-specific: use pledge if available
+    #[cfg(target_os = "openbsd")]
+    {
+        // pledge() is called at runtime per-command, not at init
+        // This is handled by the sandbox module
+    }
+
+    // FreeBSD-specific: basic hardening via setrlimit
+    #[cfg(target_os = "freebsd")]
+    {
+        // FreeBSD supports capsicum for sandboxing
+        // The actual sandboxing is handled by the sandbox module
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn pre_main_hardening_macos() {
+    // Prevent debuggers from attaching
+    let ret_code = unsafe { libc::ptrace(libc::PT_DENY_ATTACH, 0, std::ptr::null_mut(), 0) };
+    if ret_code == -1 {
+        eprintln!(
+            "ERROR: ptrace(PT_DENY_ATTACH) failed: {}",
+            std::io::Error::last_os_error()
+        );
+        std::process::exit(PTRACE_DENY_ATTACH_FAILED_EXIT_CODE);
+    }
+
+    // Set core file size limit to 0
+    set_core_file_size_limit_to_zero();
+
+    // Remove DYLD_* environment variables
+    let dyld_keys = env_keys_with_prefix(std::env::vars_os(), b"DYLD_");
+    for key in dyld_keys {
+        unsafe {
+            std::env::remove_var(key);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn set_core_file_size_limit_to_zero() {
+    let rlim = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+
+    let ret_code = unsafe { libc::setrlimit(libc::RLIMIT_CORE, &rlim) };
+    if ret_code != 0 {
+        eprintln!(
+            "ERROR: setrlimit(RLIMIT_CORE) failed: {}",
+            std::io::Error::last_os_error()
+        );
+        std::process::exit(SET_RLIMIT_CORE_FAILED_EXIT_CODE);
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn pre_main_hardening_windows() {
+    // Windows-specific hardening can be added here
+    // For now, this is a placeholder
+}
+
+#[cfg(unix)]
+fn env_keys_with_prefix<I>(vars: I, prefix: &[u8]) -> Vec<OsString>
+where
+    I: IntoIterator<Item = (OsString, OsString)>,
+{
+    vars.into_iter()
+        .filter_map(|(key, _)| {
+            key.as_os_str()
+                .as_bytes()
+                .starts_with(prefix)
+                .then_some(key)
+        })
+        .collect()
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    #[test]
+    fn test_env_keys_with_prefix_filters_only_matching_keys() {
+        let ld_test_var = OsStr::from_bytes(b"LD_TEST");
+        let vars = vec![
+            (OsString::from("PATH"), OsString::from("/usr/bin")),
+            (ld_test_var.to_os_string(), OsString::from("1")),
+            (OsString::from("DYLD_FOO"), OsString::from("bar")),
+        ];
+
+        let keys = env_keys_with_prefix(vars, b"LD_");
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].as_os_str(), ld_test_var);
+    }
+
+    // ============================================================================
+    // 破坏性测试 - 进程加固验证
+    // ============================================================================
+
+    #[test]
+    fn test_env_filter_ld_preload() {
+        // 测试 LD_PRELOAD 过滤
+        let vars = vec![
+            (OsString::from("PATH"), OsString::from("/usr/bin")),
+            (
+                OsString::from("LD_PRELOAD"),
+                OsString::from("/tmp/malicious.so"),
+            ),
+            (OsString::from("LD_LIBRARY_PATH"), OsString::from("/tmp")),
+            (OsString::from("LD_DEBUG"), OsString::from("all")),
+            (OsString::from("LD_AUDIT"), OsString::from("/tmp/audit.so")),
+        ];
+
+        let keys = env_keys_with_prefix(vars, b"LD_");
+        // 应该过滤掉所有 LD_* 变量
+        assert!(keys.len() >= 4, "Should filter LD_* variables");
+    }
+
+    #[test]
+    fn test_env_filter_dyld() {
+        // 测试 DYLD_* 过滤 (macOS)
+        #[cfg(target_os = "macos")]
+        {
+            let vars = vec![
+                (OsString::from("PATH"), OsString::from("/usr/bin")),
+                (
+                    OsString::from("DYLD_INSERT_LIBRARIES"),
+                    OsString::from("/tmp/malicious.dylib"),
+                ),
+                (OsString::from("DYLD_LIBRARY_PATH"), OsString::from("/tmp")),
+                (
+                    OsString::from("DYLD_FRAMEWORK_PATH"),
+                    OsString::from("/tmp"),
+                ),
+            ];
+
+            let keys = env_keys_with_prefix(vars, b"DYLD_");
+            assert!(keys.len() >= 3, "Should filter DYLD_* variables on macOS");
+        }
+    }
+
+    #[test]
+    fn test_env_filter_case_sensitivity() {
+        // 测试大小写敏感性 - ld_ 不应该被匹配
+        let vars = vec![
+            (OsString::from("PATH"), OsString::from("/usr/bin")),
+            (
+                OsString::from("ld_preload"),
+                OsString::from("/tmp/malicious.so"),
+            ),
+            (
+                OsString::from("Ld_Preload"),
+                OsString::from("/tmp/malicious.so"),
+            ),
+        ];
+
+        let keys = env_keys_with_prefix(vars, b"LD_");
+        // 只有大写的 LD_ 才会被匹配
+        assert_eq!(keys.len(), 0, "Should be case-sensitive");
+    }
+
+    #[test]
+    fn test_env_filter_empty_prefix() {
+        // 测试空前缀
+        let vars = vec![(OsString::from("PATH"), OsString::from("/usr/bin"))];
+
+        let keys = env_keys_with_prefix(vars, b"");
+        // 空前缀应该返回所有键
+        assert!(!keys.is_empty());
+    }
+}

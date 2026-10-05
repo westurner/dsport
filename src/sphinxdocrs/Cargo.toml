@@ -56,6 +56,7 @@ rust-source-analysis = ["dep:rustdoc-types"]
 lean-source-analysis = ["dep:arborium", "dep:arborium-lean"]
 # OS-native LSP descendant cleanup; Child::kill alone only targets the direct child.
 lsp-source-analysis = ["dep:libc", "dep:windows-sys"]
+source-sandbox = ["lsp-source-analysis", "dep:ai-sandbox"]
 rust = ["rust-source-analysis"]
 lean = ["lean-source-analysis"]
 
@@ -117,6 +118,10 @@ reqwest = { version = "0.11", default-features = false, features = [
 rustdoc-types = { version = "0.61", optional = true }
 arborium = { version = "2.18.2", optional = true }
 arborium-lean = { version = "2.18.2", optional = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+# Pinned workspace snapshot of the reviewed executor extension; off by default.
+ai-sandbox = { path = "../ai-sandbox", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 # std::process::Child::kill only reaches the direct child; libc is used by the

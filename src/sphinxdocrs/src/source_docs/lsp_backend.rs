@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use super::config::SourceDocsSettings;
+use super::config::{SourceDocsSettings, SourceSandboxMode};
 use super::model::{
     AnalysisDiagnostic, AnalysisError, AnalysisSnapshot, DeclarationKind, DiagnosticSeverity,
     SourceAnalysisRequest, SourceBackendKind, SourceDeclaration, SourceLanguage, SourcePosition,
@@ -48,6 +48,86 @@ pub struct LspServerConfig {
     pub allow_fallback: bool,
     pub environment: Vec<(String, String)>,
     pub max_message_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LspExecutionMode {
+    TrustedLocal,
+    ProtectedLsp {
+        read_only_roots: Vec<PathBuf>,
+        environment: Vec<(String, String)>,
+    },
+}
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+trait SandboxProvider {
+    fn spawn_lsp(
+        &self,
+        config: &LspServerConfig,
+        executable: &Path,
+        read_only_roots: &[PathBuf],
+        environment: &[(String, String)],
+    ) -> Result<Child, AnalysisError>;
+}
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+struct AiSandboxProvider;
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+impl SandboxProvider for AiSandboxProvider {
+    fn spawn_lsp(
+        &self,
+        config: &LspServerConfig,
+        executable: &Path,
+        read_only_roots: &[PathBuf],
+        environment: &[(String, String)],
+    ) -> Result<Child, AnalysisError> {
+        Self::prepare_lsp(config, executable, read_only_roots, environment)?
+            .spawn_with_stdio_in_process_group()
+            .map_err(|error| unavailable("sandbox", &error.to_string()))
+    }
+}
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+impl AiSandboxProvider {
+    fn prepare_lsp(
+        config: &LspServerConfig,
+        executable: &Path,
+        read_only_roots: &[PathBuf],
+        environment: &[(String, String)],
+    ) -> Result<ai_sandbox::SandboxExecRequest, AnalysisError> {
+        use ai_sandbox::{
+            FileSystemSandboxPolicy, NetworkSandboxPolicy, SandboxCommand, SandboxManager,
+            SandboxPolicy,
+        };
+
+        let command = SandboxCommand {
+            program: executable.as_os_str().to_owned(),
+            args: config.command.iter().skip(1).cloned().collect(),
+            cwd: config.workspace_root.clone(),
+            env: environment.iter().cloned().collect(),
+        };
+        let policy = SandboxPolicy::ReadOnly {
+            file_system: FileSystemSandboxPolicy::ReadOnly,
+            network_access: NetworkSandboxPolicy::NoAccess,
+        };
+        let request = SandboxManager::new()
+            .create_exec_request_with_read_only_roots(command, policy, read_only_roots.to_vec())
+            .map_err(|error| unavailable("sandbox", &error.to_string()))?;
+        Ok(request)
+    }
 }
 
 trait SourceLspClient {
@@ -94,6 +174,14 @@ impl LspServerConfig {
             return Err(AnalysisError::InvalidRequest(format!(
                 "LSP timeout must be between 1 and {MAX_REQUEST_TIMEOUT_MS} milliseconds"
             )));
+        }
+        if settings.lsp_sandbox == SourceSandboxMode::ProtectedLsp
+            && settings.lsp_read_only_roots.is_empty()
+        {
+            return Err(unavailable(
+                &language.to_string(),
+                "protected-lsp requires explicit read-only toolchain roots",
+            ));
         }
         Ok(Self {
             command,
@@ -209,7 +297,10 @@ struct LspProcess {
 }
 
 impl LspProcess {
-    fn start(mut config: LspServerConfig) -> Result<Self, AnalysisError> {
+    fn start(
+        mut config: LspServerConfig,
+        execution: LspExecutionMode,
+    ) -> Result<Self, AnalysisError> {
         if !cfg!(any(unix, windows)) {
             return Err(unavailable(
                 "platform",
@@ -235,30 +326,62 @@ impl LspProcess {
             AnalysisError::InvalidRequest("LSP command argv is empty".to_string())
         })?;
         let executable = resolve_executable(executable, &config.workspace_root)?;
-        let mut command = Command::new(executable);
-        command
-            .args(&config.command[1..])
-            .current_dir(&config.workspace_root)
-            .env_clear()
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        for (key, value) in &config.environment {
-            if key.starts_with("LC_") || key == "LANG" {
-                command.env(key, value);
+        let mut child = match execution {
+            LspExecutionMode::TrustedLocal => {
+                let mut command = Command::new(&executable);
+                command
+                    .args(&config.command[1..])
+                    .current_dir(&config.workspace_root)
+                    .env_clear()
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+                for (key, value) in &config.environment {
+                    if key.starts_with("LC_") || key == "LANG" {
+                        command.env(key, value);
+                    }
+                }
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::CommandExt;
+                    command.process_group(0);
+                }
+                command
+                    .spawn()
+                    .map_err(|error| AnalysisError::BackendUnavailable {
+                        backend: "lsp".to_string(),
+                        message: format!("failed to start configured server: {error}"),
+                    })?
             }
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
-        let mut child = command
-            .spawn()
-            .map_err(|error| AnalysisError::BackendUnavailable {
-                backend: "lsp".to_string(),
-                message: format!("failed to start configured server: {error}"),
-            })?;
+            LspExecutionMode::ProtectedLsp {
+                read_only_roots,
+                environment,
+            } => {
+                #[cfg(all(
+                    feature = "source-sandbox",
+                    any(target_os = "linux", target_os = "macos")
+                ))]
+                {
+                    AiSandboxProvider.spawn_lsp(
+                        &config,
+                        &executable,
+                        &read_only_roots,
+                        &environment,
+                    )?
+                }
+                #[cfg(not(all(
+                    feature = "source-sandbox",
+                    any(target_os = "linux", target_os = "macos")
+                )))]
+                {
+                    let _ = (read_only_roots, environment, executable);
+                    return Err(unavailable(
+                        "sandbox",
+                        "protected LSP is unsupported on this platform or feature set",
+                    ));
+                }
+            }
+        };
         #[cfg(windows)]
         // Assignment is immediately after spawn; this guarantees cleanup of
         // descendants after assignment, but is not a sandbox boundary.
@@ -957,13 +1080,16 @@ fn initialize_capability_identity(initialized: &Value) -> String {
 
 pub struct LspSnapshotProvider {
     config: LspServerConfig,
+    execution: LspExecutionMode,
     process: Mutex<Option<LspProcess>>,
 }
 
 impl LspSnapshotProvider {
+    #[cfg(test)]
     pub(crate) fn new(config: LspServerConfig) -> Self {
         Self {
             config,
+            execution: LspExecutionMode::TrustedLocal,
             process: Mutex::new(None),
         }
     }
@@ -973,20 +1099,55 @@ impl LspSnapshotProvider {
         language: SourceLanguage,
         source_root: &Path,
     ) -> Result<Self, AnalysisError> {
-        if !matches!(
-            settings.lsp_sandbox,
-            super::config::SourceSandboxMode::TrustedLocal
-        ) {
+        let config = LspServerConfig::from_settings(settings, language, source_root)?;
+        if settings.lsp_sandbox == SourceSandboxMode::ProtectedLsp
+            && settings.lsp_read_only_roots.is_empty()
+        {
             return Err(unavailable(
                 &language.to_string(),
-                "set source_lsp_sandbox = 'trusted-local' to enable process startup",
+                "protected-lsp requires explicit read-only toolchain roots",
             ));
         }
-        Ok(Self::new(LspServerConfig::from_settings(
-            settings,
-            language,
-            source_root,
-        )?))
+        let execution = match settings.lsp_sandbox {
+            SourceSandboxMode::TrustedLocal => LspExecutionMode::TrustedLocal,
+            SourceSandboxMode::ProtectedLsp => {
+                #[cfg(all(
+                    feature = "source-sandbox",
+                    any(target_os = "linux", target_os = "macos")
+                ))]
+                {
+                    LspExecutionMode::ProtectedLsp {
+                        read_only_roots: settings.lsp_read_only_roots.clone(),
+                        environment: settings
+                            .lsp_sandbox_environment
+                            .iter()
+                            .map(|(key, value)| (key.clone(), value.clone()))
+                            .collect(),
+                    }
+                }
+                #[cfg(not(all(
+                    feature = "source-sandbox",
+                    any(target_os = "linux", target_os = "macos")
+                )))]
+                {
+                    return Err(unavailable(
+                        &language.to_string(),
+                        "protected-lsp requires source-sandbox on Linux or macOS",
+                    ));
+                }
+            }
+            SourceSandboxMode::Off => {
+                return Err(unavailable(
+                    &language.to_string(),
+                    "set source_lsp_sandbox to trusted-local or protected-lsp to enable startup",
+                ));
+            }
+        };
+        Ok(Self {
+            config,
+            execution,
+            process: Mutex::new(None),
+        })
     }
 
     fn configuration_identity(&self, request: &SourceAnalysisRequest) -> String {
@@ -1014,6 +1175,25 @@ impl LspSnapshotProvider {
             bytes.push(b'=');
             bytes.extend_from_slice(value.as_bytes());
             bytes.push(0);
+        }
+        match &self.execution {
+            LspExecutionMode::TrustedLocal => bytes.extend_from_slice(b"trusted-local"),
+            LspExecutionMode::ProtectedLsp {
+                read_only_roots,
+                environment,
+            } => {
+                bytes.extend_from_slice(b"protected-lsp");
+                for root in read_only_roots {
+                    bytes.extend_from_slice(root.to_string_lossy().as_bytes());
+                    bytes.push(0);
+                }
+                for (key, value) in environment {
+                    bytes.extend_from_slice(key.as_bytes());
+                    bytes.push(b'=');
+                    bytes.extend_from_slice(value.as_bytes());
+                    bytes.push(0);
+                }
+            }
         }
         hash_bytes(&bytes)
     }
@@ -1462,7 +1642,7 @@ impl SourceSnapshotProvider for LspSnapshotProvider {
             .map_err(|_| protocol_error("LSP session lock poisoned"))?;
         let mut process = match slot.take() {
             Some(process) => process,
-            None => LspProcess::start(self.config.clone())?,
+            None => LspProcess::start(self.config.clone(), self.execution.clone())?,
         };
         match self.analyze_with_process(&mut process, request) {
             Ok(snapshot) => {
@@ -1482,7 +1662,10 @@ impl SourceSnapshotProvider for LspSnapshotProvider {
             .lock()
             .map_err(|_| protocol_error("LSP session lock poisoned"))?;
         if slot.is_none() {
-            *slot = Some(LspProcess::start(self.config.clone())?);
+            *slot = Some(LspProcess::start(
+                self.config.clone(),
+                self.execution.clone(),
+            )?);
         }
         Ok(())
     }
@@ -2207,7 +2390,6 @@ mod tests {
             provider.configuration_identity_for_profile(&request, "profile-a"),
             provider.configuration_identity_for_profile(&request, "profile-b")
         );
-
         let document_symbols = initialize_capability_identity(&json!({
             "capabilities": {"documentSymbolProvider": true}
         }));
@@ -2217,6 +2399,159 @@ mod tests {
         assert!(document_symbols.starts_with("reported-"));
         assert_ne!(document_symbols, with_hover);
         assert_eq!(initialize_capability_identity(&json!({})), "unreported");
+    }
+
+    #[cfg(all(feature = "source-sandbox", target_os = "linux"))]
+    #[test]
+    fn sandbox_provider_prepares_read_only_networkless_lsp_command() {
+        let workspace = TempDir::new().unwrap();
+        let toolchain = TempDir::new().unwrap();
+        let config = LspServerConfig {
+            command: vec!["/usr/bin/cat".into()],
+            workspace_root: workspace.path().to_path_buf(),
+            language: SourceLanguage::Rust,
+            request_timeout: Duration::from_secs(1),
+            allow_fallback: false,
+            environment: Vec::new(),
+            max_message_bytes: 1024 * 1024,
+        };
+        let request = AiSandboxProvider::prepare_lsp(
+            &config,
+            Path::new("/usr/bin/cat"),
+            &[toolchain.path().to_path_buf()],
+            &[("LANG".into(), "C".into())],
+        )
+        .unwrap();
+        let workspace = workspace
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let toolchain = toolchain
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+
+        assert_eq!(request.sandbox, ai_sandbox::SandboxType::LinuxSeccomp);
+        assert_eq!(
+            request.network_policy,
+            ai_sandbox::NetworkSandboxPolicy::NoAccess
+        );
+        assert!(
+            request
+                .command
+                .windows(3)
+                .any(|parts| { parts == ["--ro-bind", workspace.as_str(), workspace.as_str()] })
+        );
+        assert!(
+            request
+                .command
+                .windows(3)
+                .any(|parts| { parts == ["--ro-bind", toolchain.as_str(), toolchain.as_str()] })
+        );
+        assert!(!request.command.iter().any(|argument| argument == "--bind"));
+        assert!(
+            request
+                .command
+                .iter()
+                .any(|argument| argument == "--unshare-net")
+        );
+    }
+
+    #[cfg(all(feature = "source-sandbox", target_os = "linux"))]
+    #[test]
+    fn protected_lsp_fake_server_never_falls_back_when_sandbox_unavailable() {
+        let workspace = TempDir::new().unwrap();
+        let source = workspace.path().join("lib.rs");
+        let counter = workspace.path().join("server-started");
+        std::fs::write(&source, "pub fn answer() {}\n").unwrap();
+        let fake_server =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/fake_lsp.py");
+        let mut settings = SourceDocsSettings::default();
+        settings.backend = super::super::provider::SourceBackendMode::Lsp;
+        settings.lsp_sandbox = SourceSandboxMode::ProtectedLsp;
+        settings.lsp_timeout_ms = 3_000;
+        settings.lsp_servers.insert(
+            "rust".into(),
+            vec![
+                "python3".into(),
+                fake_server.to_string_lossy().into_owned(),
+                "symbols".into(),
+                counter.to_string_lossy().into_owned(),
+            ],
+        );
+        settings
+            .lsp_read_only_roots
+            .push(PathBuf::from("/usr/local"));
+        settings
+            .lsp_sandbox_environment
+            .insert("LANG".into(), "C".into());
+        let provider =
+            LspSnapshotProvider::from_settings(&settings, SourceLanguage::Rust, workspace.path())
+                .unwrap();
+        let mut request = SourceAnalysisRequest::new(workspace.path());
+        request.selected.push(source);
+
+        match provider.analyze(&request) {
+            Ok(snapshot) => {
+                assert_eq!(snapshot.declarations.len(), 1);
+                assert!(counter.exists());
+            }
+            Err(error) => {
+                assert!(error.to_string().contains("sandbox"), "{error}");
+                assert!(
+                    !counter.exists(),
+                    "protected mode launched without a sandbox"
+                );
+            }
+        }
+    }
+
+    #[cfg(all(feature = "source-sandbox", target_os = "linux"))]
+    #[test]
+    fn protected_lsp_settings_select_explicit_root_policy_without_starting() {
+        let workspace = TempDir::new().unwrap();
+        let toolchain = workspace.path().join("toolchain");
+        std::fs::create_dir_all(&toolchain).unwrap();
+        let mut settings = SourceDocsSettings::default();
+        settings.backend = super::super::provider::SourceBackendMode::Lsp;
+        settings.lsp_sandbox = SourceSandboxMode::ProtectedLsp;
+        settings
+            .lsp_servers
+            .insert("rust".into(), vec!["rust-analyzer".into()]);
+        settings.lsp_read_only_roots.push(toolchain.clone());
+
+        let provider =
+            LspSnapshotProvider::from_settings(&settings, SourceLanguage::Rust, workspace.path())
+                .unwrap();
+
+        assert_eq!(
+            provider.execution,
+            LspExecutionMode::ProtectedLsp {
+                read_only_roots: vec![toolchain],
+                environment: Vec::new(),
+            }
+        );
+        assert!(provider.process.lock().unwrap().is_none());
+
+        let mut missing_roots = settings;
+        missing_roots.lsp_read_only_roots.clear();
+        let error = match LspSnapshotProvider::from_settings(
+            &missing_roots,
+            SourceLanguage::Rust,
+            workspace.path(),
+        ) {
+            Ok(_) => panic!("protected provider accepted an empty toolchain root list"),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("explicit read-only toolchain roots")
+        );
     }
 
     #[cfg(unix)]

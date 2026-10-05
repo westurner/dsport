@@ -894,6 +894,18 @@ impl SphinxConfig {
             "Workspace root passed to configured language servers",
         );
         add(
+            "source_lsp_read_only_roots",
+            List(Vec::new()),
+            Env,
+            "Additional absolute read-only roots exposed to protected language servers",
+        );
+        add(
+            "source_lsp_sandbox_environment",
+            Map(Vec::new()),
+            Env,
+            "Explicit environment allowlist for protected language servers",
+        );
+        add(
             "source_lsp_sandbox",
             Str("off".into()),
             Env,

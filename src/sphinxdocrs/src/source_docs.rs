@@ -514,6 +514,8 @@ pub mod config {
         pub lsp_timeout_ms: u64,
         pub lsp_allow_fallback: bool,
         pub lsp_workspace_root: Option<PathBuf>,
+        pub lsp_read_only_roots: Vec<PathBuf>,
+        pub lsp_sandbox_environment: BTreeMap<String, String>,
         pub lsp_sandbox: SourceSandboxMode,
         pub build_sandbox: SourceBuildSandboxMode,
     }
@@ -526,6 +528,8 @@ pub mod config {
                 lsp_timeout_ms: 30_000,
                 lsp_allow_fallback: true,
                 lsp_workspace_root: None,
+                lsp_read_only_roots: Vec::new(),
+                lsp_sandbox_environment: BTreeMap::new(),
                 lsp_sandbox: SourceSandboxMode::Off,
                 build_sandbox: SourceBuildSandboxMode::Off,
             }
@@ -592,6 +596,50 @@ pub mod config {
                     }
                 };
             }
+            if let Some(value) = config.get("source_lsp_read_only_roots") {
+                let ConfigVal::List(roots) = value else {
+                    return Err(
+                        "source_lsp_read_only_roots must be a list of absolute paths".into(),
+                    );
+                };
+                for root in roots {
+                    let Some(root) = root.as_str() else {
+                        return Err(
+                            "source_lsp_read_only_roots entries must be path strings".into()
+                        );
+                    };
+                    let root = PathBuf::from(root);
+                    if !root.is_absolute() || root == PathBuf::from("/") {
+                        return Err(
+                            "source_lsp_read_only_roots entries must be absolute non-root paths"
+                                .into(),
+                        );
+                    }
+                    settings.lsp_read_only_roots.push(root);
+                }
+            }
+            if let Some(value) = config.get("source_lsp_sandbox_environment") {
+                let ConfigVal::Map(entries) = value else {
+                    return Err("source_lsp_sandbox_environment must be a mapping".into());
+                };
+                for (key, value) in entries {
+                    let value = value.as_str().ok_or_else(|| {
+                        format!("source_lsp_sandbox_environment[{key:?}] must be a string")
+                    })?;
+                    if key.is_empty()
+                        || key.contains('=')
+                        || key.contains('\0')
+                        || value.contains('\0')
+                    {
+                        return Err(format!(
+                            "source_lsp_sandbox_environment[{key:?}] has an invalid key or NUL value"
+                        ));
+                    }
+                    settings
+                        .lsp_sandbox_environment
+                        .insert(key, value.to_string());
+                }
+            }
             if let Some(value) = config.get("source_lsp_sandbox") {
                 settings.lsp_sandbox = match value.as_str().unwrap_or("off") {
                     "off" => SourceSandboxMode::Off,
@@ -608,9 +656,18 @@ pub mod config {
                 };
             }
             if settings.lsp_sandbox == SourceSandboxMode::ProtectedLsp {
-                return Err(
-                    "protected-lsp is unavailable: no audited sandbox provider is enabled".into(),
-                );
+                if !cfg!(feature = "source-sandbox") {
+                    return Err("protected-lsp requires the optional source-sandbox feature".into());
+                }
+                if !cfg!(any(target_os = "linux", target_os = "macos")) {
+                    return Err("protected-lsp is unsupported on this platform".into());
+                }
+                if settings.lsp_read_only_roots.is_empty() {
+                    return Err(
+                        "protected-lsp requires source_lsp_read_only_roots for toolchain access"
+                            .into(),
+                    );
+                }
             }
             if settings.build_sandbox == SourceBuildSandboxMode::ProtectedBuild {
                 return Err(
@@ -623,7 +680,7 @@ pub mod config {
         /// A stable cache component that does not reveal command arguments.
         pub fn lsp_configuration_identity(&self, language: &str) -> String {
             let mut value = format!(
-                "backend={:?};timeout={};fallback={};root={};sandbox={:?};build_sandbox={:?}",
+                "backend={:?};timeout={};fallback={};root={};sandbox={:?};build_sandbox={:?};",
                 self.backend,
                 self.lsp_timeout_ms,
                 self.lsp_allow_fallback,
@@ -633,6 +690,12 @@ pub mod config {
                 self.lsp_sandbox,
                 self.build_sandbox,
             );
+            for root in &self.lsp_read_only_roots {
+                value.push_str(&format!("ro-root={};", root.to_string_lossy()));
+            }
+            for (key, environment_value) in &self.lsp_sandbox_environment {
+                value.push_str(&format!("sandbox-env={key}={environment_value};"));
+            }
             if let Some(command) = self.lsp_servers.get(language) {
                 for arg in command {
                     for byte in arg.as_bytes() {
@@ -1361,7 +1424,7 @@ mod tests {
             HashMap::new(),
         ))
         .unwrap_err();
-        assert!(error.contains("no audited sandbox provider"));
+        assert!(error.contains("protected-lsp"));
 
         let mut raw = HashMap::new();
         raw.insert("source_lsp_timeout".into(), ConfigVal::Int(0));
@@ -1371,5 +1434,87 @@ mod tests {
         ))
         .unwrap_err();
         assert!(error.contains("positive integer"));
+    }
+
+    #[test]
+    fn protected_lsp_read_only_roots_are_absolute_and_affect_identity() {
+        let mut raw = HashMap::new();
+        raw.insert(
+            "source_lsp_read_only_roots".into(),
+            ConfigVal::List(vec![ConfigVal::Str("/opt/rust-toolchain".into())]),
+        );
+        let settings = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+            raw,
+            HashMap::new(),
+        ))
+        .unwrap();
+        assert_eq!(
+            settings.lsp_read_only_roots,
+            [Path::new("/opt/rust-toolchain")]
+        );
+
+        let mut changed = settings.clone();
+        changed
+            .lsp_read_only_roots
+            .push(Path::new("/opt/rust-src").to_path_buf());
+        assert_ne!(
+            settings.lsp_configuration_identity("rust"),
+            changed.lsp_configuration_identity("rust")
+        );
+
+        let mut invalid = HashMap::new();
+        invalid.insert(
+            "source_lsp_read_only_roots".into(),
+            ConfigVal::List(vec![ConfigVal::Str("../toolchain".into())]),
+        );
+        let error = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+            invalid,
+            HashMap::new(),
+        ))
+        .unwrap_err();
+        assert!(error.contains("absolute non-root paths"));
+    }
+
+    #[cfg(feature = "source-sandbox")]
+    #[test]
+    fn protected_lsp_settings_parse_explicit_roots_and_environment_allowlist() {
+        let mut raw = HashMap::new();
+        raw.insert(
+            "source_lsp_sandbox".into(),
+            ConfigVal::Str("protected-lsp".into()),
+        );
+        raw.insert(
+            "source_lsp_read_only_roots".into(),
+            ConfigVal::List(vec![ConfigVal::Str("/opt/rust-toolchain".into())]),
+        );
+        raw.insert(
+            "source_lsp_sandbox_environment".into(),
+            ConfigVal::Map(vec![(
+                "RUSTUP_HOME".into(),
+                ConfigVal::Str("/opt/rust-toolchain/rustup".into()),
+            )]),
+        );
+
+        let settings = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+            raw,
+            HashMap::new(),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            settings.lsp_sandbox,
+            super::config::SourceSandboxMode::ProtectedLsp
+        );
+        assert_eq!(
+            settings.lsp_read_only_roots,
+            [Path::new("/opt/rust-toolchain")]
+        );
+        assert_eq!(
+            settings
+                .lsp_sandbox_environment
+                .get("RUSTUP_HOME")
+                .map(String::as_str),
+            Some("/opt/rust-toolchain/rustup")
+        );
     }
 }

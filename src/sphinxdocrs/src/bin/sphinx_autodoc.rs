@@ -11,13 +11,12 @@ use sphinxdocrs::autodoc::RustSourceRenderer;
 use sphinxdocrs::autodoc::SourceAutodocRequest;
 #[cfg(any(feature = "rust-source-analysis", feature = "lean-source-analysis"))]
 use sphinxdocrs::autodoc::{document_source, render_source_rst};
-#[cfg(any(
-    feature = "rust-source-analysis",
-    feature = "lean-source-analysis",
-    feature = "lsp-source-analysis"
-))]
+#[cfg(any(feature = "rust-source-analysis", feature = "lean-source-analysis"))]
 use sphinxdocrs::source_analysis::SourceLanguage;
-#[cfg(feature = "lsp-source-analysis")]
+#[cfg(all(
+    feature = "lsp-source-analysis",
+    any(feature = "rust-source-analysis", feature = "lean-source-analysis")
+))]
 use sphinxdocrs::source_docs::{
     SourceAnalysisSession, SourceBackendMode, SourceDocsSettings, SourceSandboxMode,
     lsp_provider_from_settings,
@@ -38,7 +37,10 @@ enum BackendMode {
     Hybrid,
 }
 
-#[cfg(feature = "lsp-source-analysis")]
+#[cfg(all(
+    feature = "lsp-source-analysis",
+    any(feature = "rust-source-analysis", feature = "lean-source-analysis")
+))]
 impl From<BackendMode> for SourceBackendMode {
     fn from(value: BackendMode) -> Self {
         match value {
@@ -94,6 +96,12 @@ struct Args {
     /// Explicitly permit launching a trusted local language server.
     #[arg(long = "source-lsp-sandbox", value_enum, default_value_t = CliSandbox::Off)]
     source_lsp_sandbox: CliSandbox,
+    /// Additional absolute roots mounted read-only for protected LSP.
+    #[arg(long = "source-lsp-read-only-root", action = clap::ArgAction::Append)]
+    source_lsp_read_only_roots: Vec<PathBuf>,
+    /// Explicit environment allowlist entry for protected LSP, in KEY=VALUE form.
+    #[arg(long = "source-lsp-sandbox-env", action = clap::ArgAction::Append)]
+    source_lsp_sandbox_environment: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
@@ -236,7 +244,10 @@ fn render_lean(args: &Args) -> Result<String, String> {
     }
 }
 
-#[cfg(feature = "lsp-source-analysis")]
+#[cfg(all(
+    feature = "lsp-source-analysis",
+    any(feature = "rust-source-analysis", feature = "lean-source-analysis")
+))]
 fn source_session(
     args: &Args,
     language: SourceLanguage,
@@ -245,9 +256,6 @@ fn source_session(
     let Some(executable) = &args.source_lsp_server else {
         return Err("--source-lsp-server is required for lsp/hybrid mode".into());
     };
-    if !matches!(args.source_lsp_sandbox, CliSandbox::TrustedLocal) {
-        return Err("starting an LSP server requires --source-lsp-sandbox trusted-local; protected-lsp is unavailable".into());
-    }
     let mut settings = SourceDocsSettings::default();
     settings.backend = match args.source_backend {
         BackendMode::Lsp => SourceBackendMode::Lsp,
@@ -255,7 +263,11 @@ fn source_session(
     };
     settings.lsp_timeout_ms = args.source_lsp_timeout;
     settings.lsp_allow_fallback = !args.source_lsp_no_fallback;
-    settings.lsp_sandbox = SourceSandboxMode::TrustedLocal;
+    settings.lsp_sandbox = sandbox_mode_from_cli(args.source_lsp_sandbox);
+    settings.lsp_read_only_roots = args.source_lsp_read_only_roots.clone();
+    for (key, value) in parse_sandbox_environment(&args.source_lsp_sandbox_environment)? {
+        settings.lsp_sandbox_environment.insert(key, value);
+    }
     let mut command = vec![executable.clone()];
     command.extend(args.source_lsp_args.iter().cloned());
     settings.lsp_servers.insert(language.to_string(), command);
@@ -272,4 +284,106 @@ fn source_session(
         static_provider,
         Some(lsp),
     ))
+}
+
+#[cfg(all(
+    feature = "lsp-source-analysis",
+    any(feature = "rust-source-analysis", feature = "lean-source-analysis")
+))]
+fn sandbox_mode_from_cli(value: CliSandbox) -> SourceSandboxMode {
+    match value {
+        CliSandbox::Off => SourceSandboxMode::Off,
+        CliSandbox::TrustedLocal => SourceSandboxMode::TrustedLocal,
+        CliSandbox::ProtectedLsp => SourceSandboxMode::ProtectedLsp,
+    }
+}
+
+#[cfg(any(
+    test,
+    all(
+        feature = "lsp-source-analysis",
+        any(feature = "rust-source-analysis", feature = "lean-source-analysis")
+    )
+))]
+fn parse_sandbox_environment(entries: &[String]) -> Result<Vec<(String, String)>, String> {
+    entries
+        .iter()
+        .map(|entry| {
+            let (key, value) = entry
+                .split_once('=')
+                .filter(|(key, value)| !key.is_empty() && !value.contains('\0'))
+                .ok_or_else(|| {
+                    "--source-lsp-sandbox-env must use KEY=VALUE with a nonempty key".to_string()
+                })?;
+            if key.contains('\0') {
+                return Err("--source-lsp-sandbox-env keys cannot contain NUL".into());
+            }
+            Ok((key.to_string(), value.to_string()))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn protected_sandbox_args_accept_repeatable_roots_and_environment() {
+        let args = Args::try_parse_from([
+            "sphinx-autodoc-rs",
+            "src",
+            "--source-backend",
+            "lsp",
+            "--source-lsp-server",
+            "rust-analyzer",
+            "--source-lsp-sandbox",
+            "protected-lsp",
+            "--source-lsp-read-only-root",
+            "/opt/rust-toolchain",
+            "--source-lsp-read-only-root",
+            "/opt/rust-src",
+            "--source-lsp-sandbox-env",
+            "PATH=/opt/rust-toolchain/bin",
+            "--source-lsp-sandbox-env",
+            "RUSTUP_HOME=/opt/rust-toolchain/rustup",
+        ])
+        .unwrap();
+
+        assert_eq!(args.source_lsp_read_only_roots.len(), 2);
+        assert!(matches!(args.source_lsp_sandbox, CliSandbox::ProtectedLsp));
+        assert_eq!(
+            parse_sandbox_environment(&args.source_lsp_sandbox_environment).unwrap(),
+            [
+                ("PATH".into(), "/opt/rust-toolchain/bin".into()),
+                ("RUSTUP_HOME".into(), "/opt/rust-toolchain/rustup".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn protected_sandbox_environment_rejects_malformed_entries() {
+        for entry in [
+            "=value",
+            "missing-separator",
+            "KEY=value\0injected",
+            "KEY\0injected=value",
+        ] {
+            assert!(
+                parse_sandbox_environment(&[entry.into()]).is_err(),
+                "{entry:?}"
+            );
+        }
+    }
+
+    #[cfg(all(
+        feature = "lsp-source-analysis",
+        any(feature = "rust-source-analysis", feature = "lean-source-analysis")
+    ))]
+    #[test]
+    fn protected_sandbox_cli_mode_maps_to_protected_policy() {
+        assert!(matches!(
+            sandbox_mode_from_cli(CliSandbox::ProtectedLsp),
+            SourceSandboxMode::ProtectedLsp
+        ));
+    }
 }

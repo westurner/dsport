@@ -5,7 +5,7 @@ Last updated: 2026-10-05
 Scope: `sphinxdocrs` source-aware documentation for Rust and Lean, with optional
 integration through a client-side LSP adapter
 
-Implementation status (2026-10-04): phases 1 and 2 are implemented with contract
+Implementation status (2026-10-05): phases 1 and 2 are implemented with contract
 and cache-audit gaps. Phase 3 has an off-by-default trusted-local JSON-RPC client
 for document symbols, capability-gated hover and definition lookup, normalized
 diagnostics, bounded framing/resources, provider-scoped process reuse, and
@@ -31,9 +31,10 @@ Executables are resolved to absolute paths in the parent; the child starts with
 a cleared environment and no inherited `PATH`. Diagnostic URIs are decoded and
 resolved only to canonical files inside the configured workspace. These are
 trusted-local hardening controls, not an OS sandbox or a protected-mode claim.
-Linux validation passes 25 LSP tests, including process-group descendant cleanup,
-internal-symlink/external-cycle discovery, hover, definitions, and diagnostics,
-plus 11 source-doc session/consumer tests.
+Linux validation passes 28 LSP tests, including process-group descendant cleanup,
+internal-symlink/external-cycle discovery, hover, definitions, diagnostics, and
+protected-provider fail-closed behavior, plus 13 source-doc session/consumer tests
+and three protected CLI argument tests.
 Windows refuses startup if Job Object creation, configuration, or assignment
 fails, but assignment happens after spawn and leaves a brief pre-assignment race.
 The Windows Job Object API was checked in isolation; full Windows cross-build
@@ -41,23 +42,28 @@ and runtime validation were unavailable because the container lacks its native
 C/PyO3 cross toolchain. macOS uses the Unix process-group path but still needs
 native runtime validation.
 
-Sandbox executor update (2026-10-05): the nested reviewed checkout has local
-commit `fffaac01b5ed98bf74ce6bf9fa0f86eb09efb3c0`, adding explicit read-only roots
-for Bubblewrap/Seatbelt policy generation and `SandboxExecRequest::spawn_with_stdio()`.
-Its full library suite passes 166 tests. Namespace-dependent Bubblewrap runtime
-and boundary tests skip in this container because the capability probe cannot
-create namespaces. The commit is not published/reachable from the configured
-remote and is not wired into the root workspace, so protected modes remain
-fail-closed pending a portable source-integration decision.
+Sandbox executor update (2026-10-05): the reviewed `ai-sandbox` 0.2.1 source is
+vendored at `src/ai-sandbox`, including local extensions `fffaac0` (explicit
+read-only roots and piped stdio) and `8a03e7f` (piped stdio in a Unix process
+group). The optional `source-sandbox` feature wires an internal `SandboxProvider`
+for protected LSP on Linux/macOS. It applies a no-network policy, workspace plus
+explicit read-only roots, and only explicitly configured child environment
+entries; execution uses piped stdio and Unix process-group cleanup. Protected
+provider errors and failed capability probes never fall back to direct execution.
+The executor's 166 library tests pass, as do the root protected CLI/provider
+tests and feature build. Bubblewrap runtime and boundary validation remain
+unverified here because the container cannot create the required namespaces.
+Protected LSP is therefore integrated but not runtime-validated in this
+environment; this does not enable or claim a protected build sandbox.
 
 Still incomplete: Sphinx-relative definition-link rendering,
 references/workspace-symbol enrichment, the full source-port
 mapping audit, CPU/memory/output limits, native Windows/macOS runtime
-process-tree tests, an audited `SandboxProvider`, platform boundary tests, and
-installed rust-analyzer/Lean live CI. Protected modes remain unavailable and fail
-closed. Unix process groups and Windows Job Objects provide best-effort cleanup,
-not OS sandboxing. Static remains the default and requires no LSP dependency or
-process.
+process-tree tests, Bubblewrap/Seatbelt boundary tests on supported hosts, and
+installed rust-analyzer/Lean live CI. Protected-build remains unavailable and
+fails closed. Unix process groups and Windows Job Objects alone provide
+best-effort cleanup, not filesystem/network sandboxing. Static remains the
+default and requires no LSP dependency or process.
 
 ## Summary
 
@@ -403,7 +409,9 @@ directory, and filtered environment through the internal `SandboxProvider` when
 the selected backend mode requires protection. `ai-sandbox` prepares the command;
 the client remains responsible for executing it with piped stdio and supervising
 the resulting process. The prepared command must retain the exact argv boundary:
-no shell, string interpolation, or shell-based wrapper is permitted.
+no shell, string interpolation, or shell-based wrapper is permitted. Protected
+LSP is opt-in through `source-sandbox` and accepts additional read-only roots and
+`KEY=VALUE` child environment entries explicitly; errors fail closed.
 
 The local implementation uses a single serialized writer, a reader thread that
 dispatches responses and notifications, a pending-request map keyed by JSON-RPC
@@ -429,9 +437,10 @@ The lifecycle requirements are more than `Command::spawn()` and `Child::kill()`:
 1. Validate an executable policy and argument vector; never invoke a shell.
 2. Resolve the configured executable in the parent process, preserve argv
   boundaries, clear the child environment, set an explicit workspace `current_dir`,
-  and provide piped stdin/stdout plus a separate drained stderr pipe. The current
-  environment allowlist only permits declared locale variables; PATH is used for
-  parent-side executable resolution and is not passed to the child by default.
+  and provide piped stdin/stdout plus a separate drained stderr pipe. Trusted-local
+  mode only permits declared locale variables; protected LSP passes only the
+  explicitly configured sandbox environment entries. PATH is used for parent-side
+  executable resolution and is not passed to the child by default.
 3. Bound initialize and each request by the configured request timeout; shutdown
   uses at most 500 ms. Stderr is drained and capped at 8 KiB, but the captured text
   is not yet attached to diagnostics. There is no independent total-session limit.
@@ -442,9 +451,11 @@ The lifecycle requirements are more than `Command::spawn()` and `Child::kill()`:
 6. On Unix, the current implementation creates a process group and applies
   TERM/KILL escalation. Windows assigns the child to a Job Object with
   kill-on-close and a 64-process limit; assignment just after spawn leaves a short
-  race and Windows runtime/failure-path tests remain necessary. Neither mechanism
-  is a protected sandbox. Cleanup is idempotent for the owned process tree where
-  the platform mechanism applies.
+  race and Windows runtime/failure-path tests remain necessary. These cleanup
+  mechanisms alone are not protected filesystem or network sandboxes; the optional
+  `ai-sandbox` provider adds policy confinement only on its supported Linux/macOS
+  path. Cleanup is idempotent for the owned process tree where the platform
+  mechanism applies.
 7. Disable automatic restart during a documentation build unless an explicit
   interactive policy enables it. Restarting a compromised or runaway server can
   turn one failure into an unbounded resource loop.
@@ -1126,14 +1137,15 @@ Implemented criteria:
 
 The plan is not complete until the remaining acceptance criteria below land:
 
-- Add and audit an optional `SandboxProvider` pinned to a reviewed release or
-  exact source revision; never treat `ai-sandbox` command transformation alone as
-  proof of isolation.
+- Complete the audit of the optional `SandboxProvider`, pinned to the vendored
+  reviewed source revision; never treat `ai-sandbox` command transformation alone
+  as proof of isolation.
 - Add Linux Bubblewrap and macOS Seatbelt boundary tests for read/write roots,
   network denial, symlink/path replacement, and descendant cleanup. Add native
   Windows Job Object process-tree cleanup and failure-path tests before
-  advertising validated cleanup support there. Until the sandbox boundary tests
-  pass, protected modes remain unavailable.
+  advertising validated cleanup support there. Protected LSP is wired but not
+  runtime-validated in this container; failed capability probes remain fail-closed.
+  Protected-build remains unavailable.
 - Render normalized in-workspace definition locations as Sphinx-relative links
   under an explicit policy; add any selected references/workspace-symbol mapping.
 - Complete shared provider contract coverage and static/hybrid parity tests for

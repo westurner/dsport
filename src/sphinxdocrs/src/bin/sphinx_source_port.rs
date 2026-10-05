@@ -66,6 +66,7 @@ struct Entry {
     lsp_method: Option<String>,
     required_capability: Option<String>,
     fallback: String,
+    provenance: String,
     live_test: String,
 }
 
@@ -142,6 +143,7 @@ fn run(args: Args) -> Result<ExitCode, Box<dyn std::error::Error>> {
             "  fixture: {}; fallback: {}",
             entry.parity_fixture, entry.fallback
         );
+        println!("  provenance: {}", entry.provenance);
         if let Some(deviation) = &entry.accepted_deviation {
             println!("  deviation: {deviation}");
         }
@@ -329,5 +331,38 @@ mod tests {
                     && pair[1] == "rust-source-analysis,lean-source-analysis,lsp-source-analysis"
             })
         }));
+    }
+
+    #[test]
+    fn manifest_records_implemented_lsp_method_policies() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/source-docs-port-manifest.json");
+        let manifest: Manifest =
+            serde_json::from_slice(&std::fs::read(manifest_path).unwrap()).unwrap();
+        let entry_for = |method| {
+            manifest
+                .entries
+                .iter()
+                .find(|entry| entry.lsp_method.as_deref() == Some(method))
+                .unwrap_or_else(|| panic!("missing LSP manifest entry for {method}"))
+        };
+
+        let hover = entry_for("textDocument/hover");
+        assert_eq!(hover.status, "implemented");
+        assert_eq!(hover.required_capability.as_deref(), Some("hoverProvider"));
+        assert!(hover.provenance.contains("lsp"));
+
+        let definition = entry_for("textDocument/definition");
+        assert_eq!(definition.status, "accepted-deviation");
+        assert_eq!(
+            definition.required_capability.as_deref(),
+            Some("definitionProvider")
+        );
+        assert!(definition.accepted_deviation.is_some());
+
+        let diagnostics = entry_for("textDocument/publishDiagnostics");
+        assert_eq!(diagnostics.status, "implemented");
+        assert!(diagnostics.required_capability.is_none());
+        assert!(diagnostics.provenance.contains("diagnostic"));
     }
 }

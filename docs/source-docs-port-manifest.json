@@ -45,6 +45,51 @@
       "fallback": "hybrid static result; lsp mode errors",
       "provenance": "lsp",
       "live_test": "fake peer covered; rust-analyzer/Lean live tests skipped unless explicitly configured"
+    },
+    {
+      "upstream": "textDocument/hover",
+      "owner": "source_docs::lsp_backend::LspSnapshotProvider",
+      "backend": "lsp",
+      "contract": "fill documentation only when DocumentSymbol documentation is empty; 64 KiB content and 256 request caps",
+      "parity_fixture": "source_docs::lsp_backend::tests::fake_server_hover_fills_missing_symbol_documentation",
+      "status": "implemented",
+      "accepted_deviation": null,
+      "feature": "lsp-source-analysis",
+      "lsp_method": "textDocument/hover",
+      "required_capability": "hoverProvider",
+      "fallback": "retain static documentation; omit hover if unsupported or invalid",
+      "provenance": "lsp only when filling an empty field",
+      "live_test": "fake peer covered; real servers remain explicit opt-ins"
+    },
+    {
+      "upstream": "textDocument/definition",
+      "owner": "source_docs::lsp_backend::LspSnapshotProvider",
+      "backend": "lsp",
+      "contract": "canonical in-workspace definition path and source span attributes; no rendered Sphinx link",
+      "parity_fixture": "source_docs::lsp_backend::tests::fake_server_records_workspace_relative_definition_location",
+      "status": "accepted-deviation",
+      "accepted_deviation": "stores safe workspace-relative location metadata; Sphinx-relative link rendering remains open",
+      "feature": "lsp-source-analysis",
+      "lsp_method": "textDocument/definition",
+      "required_capability": "definitionProvider",
+      "fallback": "omit location when unsupported, external, or invalid",
+      "provenance": "lsp namespaced attributes",
+      "live_test": "fake peer covered; real servers remain explicit opt-ins"
+    },
+    {
+      "upstream": "textDocument/publishDiagnostics",
+      "owner": "source_docs::lsp_backend::LspProcess::take_diagnostics",
+      "backend": "lsp",
+      "contract": "normalize severity, message, and canonical in-workspace source span into AnalysisDiagnostic",
+      "parity_fixture": "source_docs::lsp_backend::tests::fake_server_publish_diagnostics_are_normalized_into_snapshot",
+      "status": "implemented",
+      "accepted_deviation": null,
+      "feature": "lsp-source-analysis",
+      "lsp_method": "textDocument/publishDiagnostics",
+      "required_capability": null,
+      "fallback": "ignore unsupported notifications; bound notification count",
+      "provenance": "lsp diagnostic",
+      "live_test": "fake peer covered; diagnostics report/page remains open"
     }
   ]
 }

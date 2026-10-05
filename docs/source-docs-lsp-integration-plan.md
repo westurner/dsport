@@ -921,13 +921,14 @@ or an explicitly configured trusted-local server. It reports live checks as
 skipped when the optional LSP feature is unavailable. Its
 `--run-contract-tests` option runs the concrete Rust/Lean analyzer, source-doc
 session, and fake-LSP test suites with their backend features enabled. It does not
-yet inspect the Rust directive/role mapping tables or discover accepted
-deviations from tests. Status output includes provenance, and the manifest now
-records separate hover, definition, and publish-diagnostics entries with their
-capabilities, fallback policies, and fixture coverage.
+yet discover accepted deviations from tests. Its `--audit-mappings` option
+checks the language-specific declaration kinds against the actual autodoc
+renderers and xref-role mappings, reporting missing entries without treating
+other-language kinds as gaps. Status output includes provenance, and the
+manifest now records separate hover, definition, and publish-diagnostics entries
+with their capabilities, fallback policies, and fixture coverage.
 Remaining command work:
 
-- reports missing declaration-kind/directive/role mappings
 - links accepted deviations to their test names
 
 The command should be usable without LSP installed. Its output should distinguish

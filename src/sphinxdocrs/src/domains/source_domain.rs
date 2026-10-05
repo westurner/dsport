@@ -109,6 +109,55 @@ impl SourceDomain {
         objects
     }
 
+    /// Return the actual registered reference-role spellings that accept a
+    /// declaration kind. Used by status tooling to audit xref coverage.
+    pub fn reference_roles_for_kind(&self, kind: &DeclarationKind) -> Vec<&'static str> {
+        let candidates: &[&str] = match self.language {
+            SourceLanguage::Rust => &[
+                "associatedconst",
+                "associatedtype",
+                "const",
+                "enum",
+                "field",
+                "func",
+                "impl",
+                "macro",
+                "meth",
+                "mod",
+                "static",
+                "struct",
+                "trait",
+                "type",
+                "union",
+                "variant",
+            ],
+            SourceLanguage::Lean => &[
+                "abbrev",
+                "axiom",
+                "class",
+                "constructor",
+                "def",
+                "field",
+                "inductive",
+                "instance",
+                "lemma",
+                "mod",
+                "notation",
+                "ns",
+                "opaque",
+                "structure",
+                "theorem",
+                "thm",
+            ],
+            SourceLanguage::Python => &[],
+        };
+        candidates
+            .iter()
+            .copied()
+            .filter(|role| self.accepts(role, kind))
+            .collect()
+    }
+
     fn rebuild_aliases(&mut self) {
         self.aliases.clear();
         for (index, record) in self.records.iter().enumerate() {

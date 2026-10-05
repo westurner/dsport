@@ -80,6 +80,43 @@ pub enum DeclarationKind {
 }
 
 impl DeclarationKind {
+    /// Enumerate the fixed source declaration kinds that require mappings.
+    /// `Other` carries arbitrary backend labels and is intentionally excluded.
+    pub fn known_kinds() -> impl Iterator<Item = Self> {
+        [
+            Self::Abbrev,
+            Self::AssociatedConstant,
+            Self::AssociatedType,
+            Self::Axiom,
+            Self::Class,
+            Self::Constant,
+            Self::Definition,
+            Self::Enum,
+            Self::Example,
+            Self::Field,
+            Self::Function,
+            Self::Impl,
+            Self::Inductive,
+            Self::Instance,
+            Self::Lemma,
+            Self::Macro,
+            Self::Method,
+            Self::Module,
+            Self::Namespace,
+            Self::Notation,
+            Self::Opaque,
+            Self::Static,
+            Self::Struct,
+            Self::Structure,
+            Self::Theorem,
+            Self::Trait,
+            Self::TypeAlias,
+            Self::Union,
+            Self::Variant,
+        ]
+        .into_iter()
+    }
+
     /// Stable label used in IDs, diagnostics, and search object types.
     pub fn as_str(&self) -> &str {
         match self {

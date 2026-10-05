@@ -5,9 +5,12 @@ use std::process::{Command, ExitCode};
 
 use clap::Parser;
 use serde::Deserialize;
+use sphinxdocrs::autodoc::{LeanSourceRenderer, RustSourceRenderer, SourceAutodocRenderer};
+use sphinxdocrs::domains::source_domain::SourceDomain;
+use sphinxdocrs::source_docs::{DeclarationKind, SourceLanguage};
 
 #[cfg(feature = "lsp-source-analysis")]
-use sphinxdocrs::source_docs::{SourceAnalysisRequest, SourceLanguage};
+use sphinxdocrs::source_docs::SourceAnalysisRequest;
 #[cfg(feature = "lsp-source-analysis")]
 use sphinxdocrs::source_docs::{
     SourceBackendMode, SourceDocsSettings, SourceSandboxMode, lsp_provider_from_settings,
@@ -25,6 +28,8 @@ struct Args {
     run_contract_tests: bool,
     #[arg(long)]
     run_parity: bool,
+    #[arg(long)]
+    audit_mappings: bool,
     /// Run an explicit fake or configured live-server request; otherwise no process starts.
     #[arg(long)]
     live: bool,
@@ -159,6 +164,17 @@ fn run(args: Args) -> Result<ExitCode, Box<dyn std::error::Error>> {
         println!("  live: {}", entry.live_test);
     }
 
+    if args.audit_mappings {
+        let gaps = source_mapping_gaps();
+        if gaps.is_empty() {
+            println!("[implemented] all known source kinds have directive and xref mappings");
+        } else {
+            for gap in gaps {
+                println!("[not implemented] {gap}");
+            }
+        }
+    }
+
     if args.live {
         if args.live_fake {
             #[cfg(feature = "lsp-source-analysis")]
@@ -284,6 +300,83 @@ fn cargo_test(arguments: &[&str]) -> Result<std::process::ExitStatus, std::io::E
         .status()
 }
 
+fn source_mapping_gaps() -> Vec<String> {
+    mapping_gaps_for(SourceLanguage::Rust, &RustSourceRenderer)
+        .into_iter()
+        .chain(mapping_gaps_for(SourceLanguage::Lean, &LeanSourceRenderer))
+        .collect()
+}
+
+fn mapping_gaps_for<R: SourceAutodocRenderer>(
+    language: SourceLanguage,
+    renderer: &R,
+) -> Vec<String> {
+    let domain = SourceDomain::new(language);
+    DeclarationKind::known_kinds()
+        .filter(|kind| kind_applies_to_language(language, kind))
+        .filter_map(|kind| {
+            let mut missing = Vec::new();
+            if renderer.directive_for(&kind).is_none() {
+                missing.push("autodoc directive");
+            }
+            if domain.reference_roles_for_kind(&kind).is_empty() {
+                missing.push("xref role");
+            }
+            (!missing.is_empty()).then(|| {
+                format!(
+                    "{language} {}: missing {}",
+                    kind.as_str(),
+                    missing.join(", ")
+                )
+            })
+        })
+        .collect()
+}
+
+fn kind_applies_to_language(language: SourceLanguage, kind: &DeclarationKind) -> bool {
+    match language {
+        SourceLanguage::Rust => matches!(
+            kind,
+            DeclarationKind::AssociatedConstant
+                | DeclarationKind::AssociatedType
+                | DeclarationKind::Constant
+                | DeclarationKind::Enum
+                | DeclarationKind::Field
+                | DeclarationKind::Function
+                | DeclarationKind::Impl
+                | DeclarationKind::Macro
+                | DeclarationKind::Method
+                | DeclarationKind::Module
+                | DeclarationKind::Static
+                | DeclarationKind::Struct
+                | DeclarationKind::Trait
+                | DeclarationKind::TypeAlias
+                | DeclarationKind::Union
+                | DeclarationKind::Variant
+        ),
+        SourceLanguage::Lean => matches!(
+            kind,
+            DeclarationKind::Abbrev
+                | DeclarationKind::Axiom
+                | DeclarationKind::Class
+                | DeclarationKind::Definition
+                | DeclarationKind::Example
+                | DeclarationKind::Field
+                | DeclarationKind::Inductive
+                | DeclarationKind::Instance
+                | DeclarationKind::Lemma
+                | DeclarationKind::Module
+                | DeclarationKind::Namespace
+                | DeclarationKind::Notation
+                | DeclarationKind::Opaque
+                | DeclarationKind::Structure
+                | DeclarationKind::Theorem
+                | DeclarationKind::Variant
+        ),
+        SourceLanguage::Python => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,5 +457,18 @@ mod tests {
         assert_eq!(diagnostics.status, "implemented");
         assert!(diagnostics.required_capability.is_none());
         assert!(diagnostics.provenance.contains("diagnostic"));
+    }
+
+    #[test]
+    fn mapping_audit_reports_actual_missing_directive_and_role_mappings() {
+        let gaps = source_mapping_gaps();
+
+        assert!(
+            gaps.iter()
+                .any(|gap| { gap == "lean example: missing xref role" })
+        );
+        assert!(!gaps.iter().any(|gap| gap.starts_with("rust example:")));
+        assert!(!gaps.iter().any(|gap| gap.starts_with("rust abbrev:")));
+        assert!(!gaps.iter().any(|gap| gap.starts_with("lean function:")));
     }
 }

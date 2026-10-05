@@ -1,7 +1,7 @@
 # Source Documentation and Optional LSP Integration Plan
 
 Status: in progress
-Last updated: 2026-10-04
+Last updated: 2026-10-05
 Scope: `sphinxdocrs` source-aware documentation for Rust and Lean, with optional
 integration through a client-side LSP adapter
 
@@ -31,14 +31,24 @@ Executables are resolved to absolute paths in the parent; the child starts with
 a cleared environment and no inherited `PATH`. Diagnostic URIs are decoded and
 resolved only to canonical files inside the configured workspace. These are
 trusted-local hardening controls, not an OS sandbox or a protected-mode claim.
-Linux validation passes 16 LSP tests, including process-group descendant cleanup
-and internal-symlink/external-cycle discovery, plus 9 source-provider tests.
+Linux validation passes 25 LSP tests, including process-group descendant cleanup,
+internal-symlink/external-cycle discovery, hover, definitions, and diagnostics,
+plus 11 source-doc session/consumer tests.
 Windows refuses startup if Job Object creation, configuration, or assignment
 fails, but assignment happens after spawn and leaves a brief pre-assignment race.
 The Windows Job Object API was checked in isolation; full Windows cross-build
 and runtime validation were unavailable because the container lacks its native
 C/PyO3 cross toolchain. macOS uses the Unix process-group path but still needs
 native runtime validation.
+
+Sandbox executor update (2026-10-05): the nested reviewed checkout has local
+commit `fffaac01b5ed98bf74ce6bf9fa0f86eb09efb3c0`, adding explicit read-only roots
+for Bubblewrap/Seatbelt policy generation and `SandboxExecRequest::spawn_with_stdio()`.
+Its full library suite passes 166 tests. Namespace-dependent Bubblewrap runtime
+and boundary tests skip in this container because the capability probe cannot
+create namespaces. The commit is not published/reachable from the configured
+remote and is not wired into the root workspace, so protected modes remain
+fail-closed pending a portable source-integration decision.
 
 Still incomplete: Sphinx-relative definition-link rendering,
 references/workspace-symbol enrichment, the full source-port

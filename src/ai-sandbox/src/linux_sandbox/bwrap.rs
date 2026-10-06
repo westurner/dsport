@@ -8,6 +8,13 @@ use which::which;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProcfsMountMode {
+    #[default]
+    Mounted,
+    Omitted,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum BwrapBuildError {
     #[error("bubblewrap cannot enforce network policy {0:?}")]
@@ -232,7 +239,7 @@ fn mount_path(path: &Path) -> Result<String, BwrapBuildError> {
         .ok_or_else(|| BwrapBuildError::InvalidMountPath(canonical))
 }
 
-fn add_system_mounts(mut args: BwrapArgs) -> BwrapArgs {
+fn add_system_mounts(mut args: BwrapArgs, procfs: ProcfsMountMode) -> BwrapArgs {
     for path in ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc"] {
         let path = Path::new(path);
         if path.exists() {
@@ -240,9 +247,11 @@ fn add_system_mounts(mut args: BwrapArgs) -> BwrapArgs {
         }
     }
 
-    args.dev("/dev")
-        .proc("/proc")
-        .tmp_dir("/tmp")
+    args = args.dev("/dev");
+    if procfs == ProcfsMountMode::Mounted {
+        args = args.proc("/proc");
+    }
+    args.tmp_dir("/tmp")
         .tmp_dir("/home")
         .tmp_dir("/root")
         .unshare_user()
@@ -252,14 +261,25 @@ fn add_system_mounts(mut args: BwrapArgs) -> BwrapArgs {
         .die_with_parent()
 }
 
-fn add_process_isolation(args: BwrapArgs) -> BwrapArgs {
-    args.dev("/dev")
-        .proc("/proc")
-        .unshare_user()
+fn add_process_isolation(args: BwrapArgs, procfs: ProcfsMountMode) -> BwrapArgs {
+    let args = args.dev("/dev");
+    let args = if procfs == ProcfsMountMode::Mounted {
+        args.proc("/proc")
+    } else {
+        args
+    };
+    args.unshare_user()
         .unshare_pid()
         .unshare_ipc()
         .new_session()
         .die_with_parent()
+}
+
+pub(super) fn create_capability_probe_command_args(procfs: ProcfsMountMode) -> Vec<String> {
+    add_system_mounts(BwrapArgs::new(), procfs)
+        .separator()
+        .command(vec!["/usr/bin/true".to_string()])
+        .build()
 }
 
 /// Create a read-only Bubblewrap command with an isolated temporary directory.
@@ -269,7 +289,14 @@ pub fn create_readonly_bwrap_command(
     env: &[(String, String)],
     network_access: crate::NetworkSandboxPolicy,
 ) -> Result<Vec<String>, BwrapBuildError> {
-    create_readonly_bwrap_command_with_roots(argv, cwd, &[], env, network_access)
+    create_readonly_bwrap_command_with_roots_and_procfs(
+        argv,
+        cwd,
+        &[],
+        env,
+        network_access,
+        ProcfsMountMode::Mounted,
+    )
 }
 
 /// Create a read-only Bubblewrap command with additional explicit read-only roots.
@@ -281,8 +308,29 @@ pub fn create_readonly_bwrap_command_with_roots(
     env: &[(String, String)],
     network_access: crate::NetworkSandboxPolicy,
 ) -> Result<Vec<String>, BwrapBuildError> {
+    create_readonly_bwrap_command_with_roots_and_procfs(
+        argv,
+        cwd,
+        read_only_roots,
+        env,
+        network_access,
+        ProcfsMountMode::Mounted,
+    )
+}
+
+/// Create a read-only Bubblewrap command with explicit procfs mount behavior.
+/// Omitting procfs preserves PID isolation but applications requiring `/proc`
+/// will not work.
+pub fn create_readonly_bwrap_command_with_roots_and_procfs(
+    argv: Vec<String>,
+    cwd: &Path,
+    read_only_roots: &[PathBuf],
+    env: &[(String, String)],
+    network_access: crate::NetworkSandboxPolicy,
+    procfs: ProcfsMountMode,
+) -> Result<Vec<String>, BwrapBuildError> {
     let cwd = mount_path(cwd)?;
-    let mut args = add_system_mounts(BwrapArgs::new())
+    let mut args = add_system_mounts(BwrapArgs::new(), procfs)
         .ro_bind(Path::new(&cwd), Path::new(&cwd))
         .cwd(Path::new(&cwd))
         .clear_env();
@@ -302,8 +350,26 @@ pub fn create_workspace_bwrap_command(
     env: &[(String, String)],
     network_access: crate::NetworkSandboxPolicy,
 ) -> Result<Vec<String>, BwrapBuildError> {
+    create_workspace_bwrap_command_with_procfs(
+        argv,
+        cwd,
+        writable_roots,
+        env,
+        network_access,
+        ProcfsMountMode::Mounted,
+    )
+}
+
+pub fn create_workspace_bwrap_command_with_procfs(
+    argv: Vec<String>,
+    cwd: &Path,
+    writable_roots: &[PathBuf],
+    env: &[(String, String)],
+    network_access: crate::NetworkSandboxPolicy,
+    procfs: ProcfsMountMode,
+) -> Result<Vec<String>, BwrapBuildError> {
     let cwd = mount_path(cwd)?;
-    let mut args = add_system_mounts(BwrapArgs::new())
+    let mut args = add_system_mounts(BwrapArgs::new(), procfs)
         .ro_bind(Path::new(&cwd), Path::new(&cwd))
         .cwd(Path::new(&cwd));
 
@@ -330,12 +396,29 @@ pub fn create_full_access_bwrap_command(
     env: &[(String, String)],
     network_access: crate::NetworkSandboxPolicy,
 ) -> Result<Vec<String>, BwrapBuildError> {
+    create_full_access_bwrap_command_with_procfs(
+        argv,
+        cwd,
+        env,
+        network_access,
+        ProcfsMountMode::Mounted,
+    )
+}
+
+pub fn create_full_access_bwrap_command_with_procfs(
+    argv: Vec<String>,
+    cwd: &Path,
+    env: &[(String, String)],
+    network_access: crate::NetworkSandboxPolicy,
+    procfs: ProcfsMountMode,
+) -> Result<Vec<String>, BwrapBuildError> {
     let cwd = mount_path(cwd)?;
     let mut args = add_process_isolation(
         BwrapArgs::new()
             .rw_bind(Path::new("/"), Path::new("/"))
             .cwd(Path::new(&cwd))
             .clear_env(),
+        procfs,
     );
     args = add_network_policy(args, network_access)?;
     for (key, value) in filtered_environment(env) {
@@ -472,6 +555,34 @@ mod tests {
 
         assert!(args.contains(&"--chdir".to_string()));
         assert!(args.contains(&"--ro-bind".to_string()));
+    }
+
+    #[test]
+    fn readonly_builder_can_omit_proc_without_dropping_pid_isolation() {
+        let cwd = std::env::current_dir().unwrap();
+        let command = |procfs| {
+            create_readonly_bwrap_command_with_roots_and_procfs(
+                vec!["/usr/bin/true".into()],
+                &cwd,
+                &[],
+                &[],
+                crate::NetworkSandboxPolicy::NoAccess,
+                procfs,
+            )
+            .unwrap()
+        };
+        let omitted = command(ProcfsMountMode::Omitted);
+        let mounted = command(ProcfsMountMode::Mounted);
+        let separator = omitted.iter().position(|arg| arg == "--").unwrap();
+
+        assert!(!omitted[..separator].iter().any(|arg| arg == "--proc"));
+        assert!(omitted[..separator]
+            .iter()
+            .any(|arg| arg == "--unshare-pid"));
+        assert!(omitted[..separator]
+            .iter()
+            .any(|arg| arg == "--unshare-net"));
+        assert!(mounted.iter().any(|arg| arg == "--proc"));
     }
 
     #[test]

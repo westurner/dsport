@@ -1,11 +1,11 @@
 # Source Documentation and Optional LSP Integration Plan
 
 Status: in progress
-Last updated: 2026-10-05
+Last updated: 2026-10-06
 Scope: `sphinxdocrs` source-aware documentation for Rust and Lean, with optional
 integration through a client-side LSP adapter
 
-Implementation status (2026-10-05): phases 1 and 2 are implemented with contract
+Implementation status (2026-10-06): phases 1 and 2 are implemented with contract
 and cache-audit gaps. Phase 3 has an off-by-default trusted-local JSON-RPC client
 for document symbols, capability-gated hover and definition lookup, normalized
 diagnostics, bounded framing/resources, provider-scoped process reuse, and
@@ -42,7 +42,7 @@ and runtime validation were unavailable because the container lacks its native
 C/PyO3 cross toolchain. macOS uses the Unix process-group path but still needs
 native runtime validation.
 
-Sandbox executor update (2026-10-05): the reviewed `ai-sandbox` 0.2.1 source is
+Sandbox executor update (2026-10-06): the reviewed `ai-sandbox` 0.2.1 source is
 vendored at `src/ai-sandbox`, including local extensions `fffaac0` (explicit
 read-only roots and piped stdio) and `8a03e7f` (piped stdio in a Unix process
 group). The optional `source-sandbox` feature wires an internal `SandboxProvider`
@@ -50,11 +50,13 @@ for protected LSP on Linux/macOS. It applies a no-network policy, workspace plus
 explicit read-only roots, and only explicitly configured child environment
 entries; execution uses piped stdio and Unix process-group cleanup. Protected
 provider errors and failed capability probes never fall back to direct execution.
-The executor's 166 library tests pass, as do the root protected CLI/provider
-tests and feature build. Bubblewrap runtime and boundary validation remain
-unverified here because the container cannot create the required namespaces.
-Protected LSP is therefore integrated but not runtime-validated in this
-environment; this does not enable or claim a protected build sandbox.
+The executor's 170 library tests pass, as do the root protected CLI/provider
+tests and feature build. Linux protected LSP now omits the child procfs mount
+while retaining its private PID namespace. A real no-proc Bubblewrap child and
+the checked-in fake LSP both run in this container; the earlier proc-mounted
+path is still rejected by the outer runtime. Real rust-analyzer/Lean compatibility
+without `/proc` remains unverified, so servers that require it may fail. This
+does not enable or claim a protected build sandbox.
 
 Still incomplete: Sphinx-relative definition-link rendering,
 references/workspace-symbol enrichment, the full source-port

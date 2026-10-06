@@ -14,6 +14,8 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
+use crate::linux_sandbox::ProcfsMountMode;
+
 /// Platform-specific sandbox types
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SandboxType {
@@ -253,6 +255,7 @@ pub struct SandboxExecRequest {
     pub sandbox_policy: SandboxPolicy,
     pub file_system_policy: FileSystemSandboxPolicy,
     pub network_policy: NetworkSandboxPolicy,
+    pub procfs_mount_mode: ProcfsMountMode,
     pub arg0: Option<String>,
     execution: PreparedExecution,
 }
@@ -263,6 +266,7 @@ struct PreparedExecution {
     cwd: PathBuf,
     env: HashMap<String, String>,
     sandbox: SandboxType,
+    procfs_mount_mode: ProcfsMountMode,
 }
 
 impl SandboxExecRequest {
@@ -277,8 +281,10 @@ impl SandboxExecRequest {
         match self.execution.sandbox {
             #[cfg(target_os = "linux")]
             SandboxType::LinuxSeccomp => {
-                crate::linux_sandbox::ensure_bwrap_support()
-                    .map_err(SandboxExecutionError::Unsupported)?;
+                crate::linux_sandbox::ensure_bwrap_support_with_procfs(
+                    self.execution.procfs_mount_mode,
+                )
+                .map_err(SandboxExecutionError::Unsupported)?;
                 self.spawn_transformed()
             }
             #[cfg(target_os = "macos")]
@@ -327,8 +333,10 @@ impl SandboxExecRequest {
         match self.execution.sandbox {
             #[cfg(target_os = "linux")]
             SandboxType::LinuxSeccomp => {
-                crate::linux_sandbox::ensure_bwrap_support()
-                    .map_err(SandboxExecutionError::Unsupported)?;
+                crate::linux_sandbox::ensure_bwrap_support_with_procfs(
+                    self.execution.procfs_mount_mode,
+                )
+                .map_err(SandboxExecutionError::Unsupported)?;
                 self.spawn_transformed_with_stdio(process_group)
             }
             #[cfg(target_os = "macos")]
@@ -555,6 +563,15 @@ impl SandboxManager {
         command: SandboxCommand,
         policy: SandboxPolicy,
     ) -> Result<SandboxExecRequest, SandboxTransformError> {
+        self.create_exec_request_with_procfs_mode(command, policy, ProcfsMountMode::Mounted)
+    }
+
+    fn create_exec_request_with_procfs_mode(
+        &self,
+        command: SandboxCommand,
+        policy: SandboxPolicy,
+        procfs_mount_mode: ProcfsMountMode,
+    ) -> Result<SandboxExecRequest, SandboxTransformError> {
         // SECURITY: Validate policy before creating execution request
         if !policy.is_safe() {
             return Err(SandboxTransformError::UnsafePolicy(
@@ -571,7 +588,7 @@ impl SandboxManager {
         if matches!(sandbox, SandboxType::None) {
             return Err(SandboxTransformError::PlatformNotSupported);
         }
-        self.transform_command(command, policy, sandbox, None)
+        self.transform_command_with_procfs_mode(command, policy, sandbox, None, procfs_mount_mode)
     }
 
     /// Create a read-only sandbox request with explicitly mounted additional roots.
@@ -579,7 +596,37 @@ impl SandboxManager {
         &self,
         command: SandboxCommand,
         policy: SandboxPolicy,
+        read_only_roots: Vec<PathBuf>,
+    ) -> Result<SandboxExecRequest, SandboxTransformError> {
+        self.create_exec_request_with_read_only_roots_and_procfs_mode(
+            command,
+            policy,
+            read_only_roots,
+            ProcfsMountMode::Mounted,
+        )
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn create_exec_request_with_read_only_roots_without_proc(
+        &self,
+        command: SandboxCommand,
+        policy: SandboxPolicy,
+        read_only_roots: Vec<PathBuf>,
+    ) -> Result<SandboxExecRequest, SandboxTransformError> {
+        self.create_exec_request_with_read_only_roots_and_procfs_mode(
+            command,
+            policy,
+            read_only_roots,
+            ProcfsMountMode::Omitted,
+        )
+    }
+
+    fn create_exec_request_with_read_only_roots_and_procfs_mode(
+        &self,
+        command: SandboxCommand,
+        policy: SandboxPolicy,
         mut read_only_roots: Vec<PathBuf>,
+        procfs_mount_mode: ProcfsMountMode,
     ) -> Result<SandboxExecRequest, SandboxTransformError> {
         let SandboxPolicy::ReadOnly {
             file_system: FileSystemSandboxPolicy::ReadOnly,
@@ -596,12 +643,13 @@ impl SandboxManager {
             ));
         }
         read_only_roots.push(command.cwd.clone());
-        self.create_exec_request(
+        self.create_exec_request_with_procfs_mode(
             command,
             SandboxPolicy::ReadOnly {
                 file_system: FileSystemSandboxPolicy::ReadOnlyWithRoots { read_only_roots },
                 network_access,
             },
+            procfs_mount_mode,
         )
     }
 
@@ -612,6 +660,23 @@ impl SandboxManager {
         policy: SandboxPolicy,
         sandbox: SandboxType,
         _linux_sandbox_exe: Option<&Path>,
+    ) -> Result<SandboxExecRequest, SandboxTransformError> {
+        self.transform_command_with_procfs_mode(
+            command,
+            policy,
+            sandbox,
+            _linux_sandbox_exe,
+            ProcfsMountMode::Mounted,
+        )
+    }
+
+    fn transform_command_with_procfs_mode(
+        &self,
+        command: SandboxCommand,
+        policy: SandboxPolicy,
+        sandbox: SandboxType,
+        _linux_sandbox_exe: Option<&Path>,
+        procfs_mount_mode: ProcfsMountMode,
     ) -> Result<SandboxExecRequest, SandboxTransformError> {
         let SandboxCommand {
             program,
@@ -659,7 +724,8 @@ impl SandboxManager {
             SandboxType::LinuxSeccomp => {
                 let exe = crate::linux_sandbox::find_system_bwrap_in_path()
                     .ok_or(SandboxTransformError::BubblewrapUnavailable)?;
-                let args = create_linux_bwrap_args(&argv, &cwd, &_env_pairs, &policy)?;
+                let args =
+                    create_linux_bwrap_args(&argv, &cwd, &_env_pairs, &policy, procfs_mount_mode)?;
                 let mut full_command = vec![exe.to_string_lossy().to_string()];
                 full_command.extend(args);
                 Ok((full_command, Some("bwrap".to_string())))
@@ -679,12 +745,14 @@ impl SandboxManager {
             sandbox_policy: policy.clone(),
             file_system_policy: policy.filesystem_policy(),
             network_policy: policy.network_policy(),
+            procfs_mount_mode,
             arg0: arg0_override,
             execution: PreparedExecution {
                 command: argv,
                 cwd,
                 env,
                 sandbox,
+                procfs_mount_mode,
             },
         })
     }
@@ -791,40 +859,46 @@ fn create_linux_bwrap_args(
     cwd: &Path,
     env: &[(String, String)],
     policy: &SandboxPolicy,
+    procfs_mount_mode: ProcfsMountMode,
 ) -> Result<Vec<String>, SandboxTransformError> {
     let result = match policy.filesystem_policy() {
         FileSystemSandboxPolicy::FullAccess => {
-            crate::linux_sandbox::bwrap::create_full_access_bwrap_command(
+            crate::linux_sandbox::bwrap::create_full_access_bwrap_command_with_procfs(
                 argv.to_vec(),
                 cwd,
                 env,
                 policy.network_policy(),
+                procfs_mount_mode,
             )
         }
         FileSystemSandboxPolicy::ReadOnly => {
-            crate::linux_sandbox::bwrap::create_readonly_bwrap_command(
+            crate::linux_sandbox::bwrap::create_readonly_bwrap_command_with_roots_and_procfs(
                 argv.to_vec(),
                 cwd,
+                &[],
                 env,
                 policy.network_policy(),
+                procfs_mount_mode,
             )
         }
         FileSystemSandboxPolicy::ReadOnlyWithRoots { read_only_roots } => {
-            crate::linux_sandbox::bwrap::create_readonly_bwrap_command_with_roots(
+            crate::linux_sandbox::bwrap::create_readonly_bwrap_command_with_roots_and_procfs(
                 argv.to_vec(),
                 cwd,
                 &read_only_roots,
                 env,
                 policy.network_policy(),
+                procfs_mount_mode,
             )
         }
         FileSystemSandboxPolicy::WorkspaceWrite { writable_roots } => {
-            crate::linux_sandbox::bwrap::create_workspace_bwrap_command(
+            crate::linux_sandbox::bwrap::create_workspace_bwrap_command_with_procfs(
                 argv.to_vec(),
                 cwd,
                 &writable_roots,
                 env,
                 policy.network_policy(),
+                procfs_mount_mode,
             )
         }
         FileSystemSandboxPolicy::External => {
@@ -859,12 +933,14 @@ mod tests {
             sandbox_policy: SandboxPolicy::default(),
             file_system_policy: FileSystemSandboxPolicy::ReadOnly,
             network_policy: NetworkSandboxPolicy::NoAccess,
+            procfs_mount_mode: ProcfsMountMode::Mounted,
             arg0: None,
             execution: PreparedExecution {
                 command: vec!["/usr/bin/printf".to_string(), "safe".to_string()],
                 cwd: PathBuf::from("/"),
                 env,
                 sandbox: SandboxType::LinuxSeccomp,
+                procfs_mount_mode: ProcfsMountMode::Mounted,
             },
         };
 
@@ -905,14 +981,77 @@ mod tests {
             sandbox_policy: SandboxPolicy::default(),
             file_system_policy: FileSystemSandboxPolicy::ReadOnly,
             network_policy: NetworkSandboxPolicy::NoAccess,
+            procfs_mount_mode: ProcfsMountMode::Mounted,
             arg0: None,
             execution: PreparedExecution {
                 command: vec![program.to_string()],
                 cwd: std::env::current_dir().unwrap(),
                 env: HashMap::new(),
                 sandbox,
+                procfs_mount_mode: ProcfsMountMode::Mounted,
             },
         }
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn spawn_with_stdio_runs_private_pid_namespace_without_proc_mount() {
+        if let Err(error) =
+            crate::linux_sandbox::ensure_bwrap_support_with_procfs(ProcfsMountMode::Omitted)
+        {
+            eprintln!("skipping no-proc Bubblewrap runtime test: {error}");
+            return;
+        }
+
+        let cwd = std::env::current_dir().unwrap();
+        let request = SandboxManager::new()
+            .create_exec_request_with_read_only_roots_without_proc(
+                SandboxCommand {
+                    program: OsString::from("/usr/bin/true"),
+                    args: Vec::new(),
+                    cwd,
+                    env: HashMap::new(),
+                },
+                SandboxPolicy::ReadOnly {
+                    file_system: FileSystemSandboxPolicy::ReadOnly,
+                    network_access: NetworkSandboxPolicy::NoAccess,
+                },
+                Vec::new(),
+            )
+            .unwrap();
+        let mut child = request.spawn_with_stdio().unwrap();
+        assert!(child.wait().unwrap().success());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn read_only_request_can_omit_proc_without_dropping_namespace_isolation() {
+        let cwd = std::env::current_dir().unwrap();
+        let request = SandboxManager::new()
+            .create_exec_request_with_read_only_roots_without_proc(
+                SandboxCommand {
+                    program: OsString::from("/usr/bin/true"),
+                    args: Vec::new(),
+                    cwd,
+                    env: HashMap::new(),
+                },
+                SandboxPolicy::ReadOnly {
+                    file_system: FileSystemSandboxPolicy::ReadOnly,
+                    network_access: NetworkSandboxPolicy::NoAccess,
+                },
+                Vec::new(),
+            )
+            .unwrap();
+
+        assert_eq!(request.procfs_mount_mode, ProcfsMountMode::Omitted);
+        let args = request
+            .command_for_spawn()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let separator = args.iter().position(|arg| arg == "--").unwrap();
+        assert!(!args[..separator].iter().any(|arg| arg == "--proc"));
+        assert!(args[..separator].iter().any(|arg| arg == "--unshare-pid"));
+        assert!(args[..separator].iter().any(|arg| arg == "--unshare-net"));
     }
 
     #[cfg(target_os = "linux")]
@@ -1081,6 +1220,7 @@ mod tests {
                 ]
                 .into(),
                 sandbox: SandboxType::None,
+                procfs_mount_mode: ProcfsMountMode::Mounted,
             },
             ..request_for_process_tests("/bin/sh", SandboxType::None)
         };

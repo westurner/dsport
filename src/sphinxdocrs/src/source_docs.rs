@@ -679,8 +679,15 @@ pub mod config {
 
         /// A stable cache component that does not reveal command arguments.
         pub fn lsp_configuration_identity(&self, language: &str) -> String {
+            let procfs_mode = if self.lsp_sandbox == SourceSandboxMode::ProtectedLsp
+                && cfg!(target_os = "linux")
+            {
+                "omitted"
+            } else {
+                "not-applicable"
+            };
             let mut value = format!(
-                "backend={:?};timeout={};fallback={};root={};sandbox={:?};build_sandbox={:?};",
+                "backend={:?};timeout={};fallback={};root={};sandbox={:?};build_sandbox={:?};procfs={};",
                 self.backend,
                 self.lsp_timeout_ms,
                 self.lsp_allow_fallback,
@@ -689,6 +696,7 @@ pub mod config {
                     .map_or_else(String::new, |path| path.to_string_lossy().into_owned()),
                 self.lsp_sandbox,
                 self.build_sandbox,
+                procfs_mode,
             );
             for root in &self.lsp_read_only_roots {
                 value.push_str(&format!("ro-root={};", root.to_string_lossy()));
@@ -1443,6 +1451,10 @@ mod tests {
             "source_lsp_read_only_roots".into(),
             ConfigVal::List(vec![ConfigVal::Str("/opt/rust-toolchain".into())]),
         );
+        raw.insert(
+            "source_lsp_sandbox".into(),
+            ConfigVal::Str("protected-lsp".into()),
+        );
         let settings = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
             raw,
             HashMap::new(),
@@ -1452,7 +1464,6 @@ mod tests {
             settings.lsp_read_only_roots,
             [Path::new("/opt/rust-toolchain")]
         );
-
         let mut changed = settings.clone();
         changed
             .lsp_read_only_roots

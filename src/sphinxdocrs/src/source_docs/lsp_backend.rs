@@ -123,9 +123,20 @@ impl AiSandboxProvider {
             file_system: FileSystemSandboxPolicy::ReadOnly,
             network_access: NetworkSandboxPolicy::NoAccess,
         };
-        let request = SandboxManager::new()
-            .create_exec_request_with_read_only_roots(command, policy, read_only_roots.to_vec())
-            .map_err(|error| unavailable("sandbox", &error.to_string()))?;
+        let manager = SandboxManager::new();
+        #[cfg(target_os = "linux")]
+        let request = manager.create_exec_request_with_read_only_roots_without_proc(
+            command,
+            policy,
+            read_only_roots.to_vec(),
+        );
+        #[cfg(target_os = "macos")]
+        let request = manager.create_exec_request_with_read_only_roots(
+            command,
+            policy,
+            read_only_roots.to_vec(),
+        );
+        let request = request.map_err(|error| unavailable("sandbox", &error.to_string()))?;
         Ok(request)
     }
 }
@@ -1183,6 +1194,8 @@ impl LspSnapshotProvider {
                 environment,
             } => {
                 bytes.extend_from_slice(b"protected-lsp");
+                #[cfg(target_os = "linux")]
+                bytes.extend_from_slice(b"procfs-omitted");
                 for root in read_only_roots {
                     bytes.extend_from_slice(root.to_string_lossy().as_bytes());
                     bytes.push(0);
@@ -2437,6 +2450,10 @@ mod tests {
 
         assert_eq!(request.sandbox, ai_sandbox::SandboxType::LinuxSeccomp);
         assert_eq!(
+            request.procfs_mount_mode,
+            ai_sandbox::linux_sandbox::ProcfsMountMode::Omitted
+        );
+        assert_eq!(
             request.network_policy,
             ai_sandbox::NetworkSandboxPolicy::NoAccess
         );
@@ -2466,10 +2483,13 @@ mod tests {
     fn protected_lsp_fake_server_never_falls_back_when_sandbox_unavailable() {
         let workspace = TempDir::new().unwrap();
         let source = workspace.path().join("lib.rs");
-        let counter = workspace.path().join("server-started");
         std::fs::write(&source, "pub fn answer() {}\n").unwrap();
         let fake_server =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/fake_lsp.py");
+        let sandbox_available = ai_sandbox::linux_sandbox::ensure_bwrap_support_with_procfs(
+            ai_sandbox::linux_sandbox::ProcfsMountMode::Omitted,
+        )
+        .is_ok();
         let mut settings = SourceDocsSettings::default();
         settings.backend = super::super::provider::SourceBackendMode::Lsp;
         settings.lsp_sandbox = SourceSandboxMode::ProtectedLsp;
@@ -2480,12 +2500,14 @@ mod tests {
                 "python3".into(),
                 fake_server.to_string_lossy().into_owned(),
                 "symbols".into(),
-                counter.to_string_lossy().into_owned(),
             ],
         );
         settings
             .lsp_read_only_roots
             .push(PathBuf::from("/usr/local"));
+        settings
+            .lsp_read_only_roots
+            .push(fake_server.parent().unwrap().to_path_buf());
         settings
             .lsp_sandbox_environment
             .insert("LANG".into(), "C".into());
@@ -2497,15 +2519,18 @@ mod tests {
 
         match provider.analyze(&request) {
             Ok(snapshot) => {
+                assert!(
+                    sandbox_available,
+                    "protected LSP ran without a successful sandbox probe"
+                );
                 assert_eq!(snapshot.declarations.len(), 1);
-                assert!(counter.exists());
             }
             Err(error) => {
-                assert!(error.to_string().contains("sandbox"), "{error}");
                 assert!(
-                    !counter.exists(),
-                    "protected mode launched without a sandbox"
+                    !sandbox_available,
+                    "no-proc sandbox probe succeeded: {error}"
                 );
+                assert!(error.to_string().contains("sandbox"), "{error}");
             }
         }
     }

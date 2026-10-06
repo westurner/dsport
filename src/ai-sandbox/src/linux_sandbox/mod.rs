@@ -8,7 +8,7 @@ mod landlock;
 
 pub mod bwrap;
 
-pub use bwrap::BwrapBuildError;
+pub use bwrap::{BwrapBuildError, ProcfsMountMode};
 
 pub use bsd::{
     create_freebsd_sandbox_args, create_pledge_promises_from_policy, execute_with_capsicum,
@@ -50,27 +50,26 @@ pub fn system_bwrap_warning() -> Option<String> {
 
 /// Verify that Bubblewrap can create the namespaces required by the executor.
 pub fn ensure_bwrap_support() -> Result<(), String> {
-    ensure_bwrap_support_with(find_system_bwrap_in_path)
+    ensure_bwrap_support_with_procfs(ProcfsMountMode::Mounted)
 }
 
+pub fn ensure_bwrap_support_with_procfs(procfs: ProcfsMountMode) -> Result<(), String> {
+    ensure_bwrap_support_with_procfs_and(find_system_bwrap_in_path, procfs)
+}
+
+#[cfg(test)]
 fn ensure_bwrap_support_with(find: impl FnOnce() -> Option<PathBuf>) -> Result<(), String> {
+    ensure_bwrap_support_with_procfs_and(find, ProcfsMountMode::Mounted)
+}
+
+fn ensure_bwrap_support_with_procfs_and(
+    find: impl FnOnce() -> Option<PathBuf>,
+    procfs: ProcfsMountMode,
+) -> Result<(), String> {
     let executable =
         find().ok_or_else(|| "bubblewrap executable was not found in PATH".to_string())?;
     let status = Command::new(&executable)
-        .args([
-            "--unshare-user",
-            "--unshare-pid",
-            "--unshare-ipc",
-            "--ro-bind",
-            "/usr",
-            "/usr",
-            "--proc",
-            "/proc",
-            "--dev",
-            "/dev",
-            "--",
-            "/usr/bin/true",
-        ])
+        .args(bwrap::create_capability_probe_command_args(procfs))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -125,6 +124,19 @@ mod bwrap_support_tests {
 
         std::fs::remove_dir_all(success_dir).unwrap();
         std::fs::remove_dir_all(failure_dir).unwrap();
+    }
+
+    #[test]
+    fn no_proc_capability_probe_preserves_pid_namespace_without_proc_mount() {
+        let args = bwrap::create_capability_probe_command_args(ProcfsMountMode::Omitted);
+        let separator = args.iter().position(|arg| arg == "--").unwrap();
+        let setup_args = &args[..separator];
+
+        assert!(!setup_args.iter().any(|arg| arg == "--proc"));
+        assert!(setup_args.iter().any(|arg| arg == "--unshare-pid"));
+        assert!(setup_args.iter().any(|arg| arg == "--unshare-user"));
+        assert!(setup_args.iter().any(|arg| arg == "--unshare-ipc"));
+        assert!(args[separator + 1..].contains(&"/usr/bin/true".to_string()));
     }
 }
 

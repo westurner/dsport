@@ -50,7 +50,7 @@ for protected LSP on Linux/macOS. It applies a no-network policy, workspace plus
 explicit read-only roots, and only explicitly configured child environment
 entries; execution uses piped stdio and Unix process-group cleanup. Protected
 provider errors and failed capability probes never fall back to direct execution.
-The executor's 170 library tests pass, as do the root protected CLI/provider
+The executor's 171 library tests pass, as do the root protected CLI/provider
 tests and feature build. Linux protected LSP now omits the child procfs mount
 while retaining its private PID namespace. A real no-proc Bubblewrap child and
 the checked-in fake LSP both run in this container; the earlier proc-mounted
@@ -752,18 +752,27 @@ The reviewed implementation is commit
 `4cef879225e3bd177aa2fff1ca7d8771ae108a67` in the workspace, with crate version
 `0.2.1`. It is a usable Linux/macOS executor foundation, not a drop-in LSP
 process manager or a cross-platform security claim that can be copied from its
-README:
+README. The vendored snapshot also includes an opt-in Linux procfs-omission
+mode: Bubblewrap retains its private PID namespace, while `/proc` is not mounted
+into the child filesystem.
 
 | Area | What `ai-sandbox` supplies | Required `sphinxdocrs` work or current limitation |
 | --- | --- | --- |
 | Policy model | read-only, workspace-write, network enum, path checks, command safety check, exact argument literals, executable alias protection, Deny precedence, absolute-path chmod guard | validate canonical roots and symlink policy at the provider boundary; policy matching is not OS isolation |
-| Linux | Audited Bubblewrap executor and namespace capability probe; the unpublished local extension adds explicit `ReadOnlyWithRoots` mounts and parent creation to the existing workspace-write, isolated `/tmp`/`/home`/`/root`, environment-filtering, and NoAccess network support | no Landlock syscall enforcement or seccomp filter; no resource limits; mount-path replacement TOCTOU remains; namespace creation is unavailable in this current container, so runtime boundary tests skipped |
-| macOS | Audited Seatbelt command transformation and `sandbox-exec`; the unpublished local extension adds scoped read-only-root rules; policy paths are quoted and Proxy is rejected | add native boundary tests for filesystem/network behavior, child inheritance, path escapes, and unavailable/rejected `sandbox-exec` |
+| Linux | Audited Bubblewrap executor and namespace capability probe; vendored extensions add explicit `ReadOnlyWithRoots`, piped stdio, process-group spawning, and opt-in procfs omission while preserving private PID isolation | no Landlock syscall enforcement or seccomp filter; no resource limits; mount-path replacement TOCTOU remains; no-proc launch, fake-LSP startup, and denial of workspace writes were validated here, but real rust-analyzer/Lean compatibility and network/path boundary tests remain open |
+| macOS | Audited Seatbelt command transformation and `sandbox-exec`; the vendored executor adds scoped read-only-root rules; policy paths are quoted and Proxy is rejected | add native boundary tests for filesystem/network behavior, child inheritance, path escapes, and unavailable/rejected `sandbox-exec` |
 | Windows | restricted-token, ACL, and process-launch implementation exists; tests ensure protected policies do not select unrestricted launch | `SandboxExecRequest` currently reports backend unsupported on Windows; wire it to process creation, add Job Object kill-on-close/process limits, and validate filesystem/network semantics |
 | BSD | Capsicum/pledge policy helpers and enforcement adapter functions; pledge setup is represented in child execution APIs | `SandboxExecRequest` currently reports backend unsupported on FreeBSD/OpenBSD; prove the target child enters the capability boundary and test filesystem/network behavior before enabling provider support |
-| Execution | Unpublished local extension adds `SandboxExecRequest::spawn_with_stdio()` for piped stdin/stdout/stderr; existing `spawn()`, `run(timeout)`, and `wait()` retain their behavior | caller must drain stderr/stdout; sandbox API still has no process-group/job or descendant cleanup. LSP retains timeout, framing, shutdown, and tree cleanup ownership |
+| Execution | Vendored extensions add `SandboxExecRequest::spawn_with_stdio()` and Unix process-group spawning; existing `spawn()`, `run(timeout)`, and `wait()` retain their behavior | caller must drain stderr/stdout; no CPU, memory, output, or process-count limits. LSP retains timeout, framing, shutdown, and tree cleanup ownership |
 | Fallbacks | unsupported protected execution returns an explicit error; Linux spawn runs a Bubblewrap capability probe; unavailable Linux/macOS transformations fail closed | keep provider-level capability reporting explicit; never fall through to a direct command when protected mode is selected |
-| Supply chain | crate manifest remains `0.2.1`; original audited workspace commit is `4cef879225e3bd177aa2fff1ca7d8771ae108a67`; the local nested review checkout has executor extension commit `fffaac01b5ed98bf74ce6bf9fa0f86eb09efb3c0` | the extension commit is not published or reachable from the configured remote and is not a root dependency; publish/pin it or choose a portable vendoring/submodule strategy before wiring `sphinxdocrs` |
+| Supply chain | crate manifest remains `0.2.1`; `src/ai-sandbox/VENDORED.md` records the audited upstream base and local extension revisions; `sphinxdocrs` consumes the snapshot through an optional Linux/macOS path dependency | refreshes must update the vendored provenance and rerun executor/provider tests; Bubblewrap is intentionally not fetched from a mutable Git dependency or nested submodule |
+
+Portable dependency decision (2026-10-06): keep `ai-sandbox` as an in-tree,
+provenance-documented source snapshot at `src/ai-sandbox`, excluded from workspace
+members and enabled only by the optional `source-sandbox` feature. This makes
+builds independent of an unpublished fork, network access, and submodule
+initialization while keeping the audited source revision reviewable. Refreshes
+must update `VENDORED.md` and validate the local executor extensions.
 
 The integration must start with the Linux Bubblewrap capability probe (and an
 equivalent native Seatbelt probe/test on macOS), then verify that a disposable
@@ -1015,30 +1024,35 @@ documents but still requiring server startup.
 - The current local adapter uses `serde_json`, standard library threads/channels,
   and optional `libc`; no dscode or `lsp-types` dependency is present.
 - Add `lsp-source-analysis` as an off-by-default Cargo feature.
-- Deferred security work: add an off-by-default `source-sandbox` feature pinned
-  to an audited `ai-sandbox` release or exact fork revision, behind an internal
-  `SandboxProvider`.
-- Deferred security work: implement `AiSandboxProvider` for Linux Bubblewrap and
-  macOS Seatbelt, with command preparation separate from stdio/process lifecycle.
-  Do not enable protected Windows or BSD modes until their executors and boundary
-  tests exist.
-- Deferred security tests: verify Linux mounts/network/path replacement/descendant
-  cleanup and native macOS filesystem/network boundaries before labeling either
-  platform protected.
+- The optional `source-sandbox` feature vendors the reviewed executor behind an
+  internal `SandboxProvider`; Linux uses Bubblewrap and macOS uses Seatbelt.
+  Protected Windows and BSD modes remain unavailable pending verified executors
+  and boundary tests.
+- Linux protected LSP omits the child procfs mount to support nested containers
+  that reject a fresh procfs mount. The private PID namespace, no-network policy,
+  explicit read-only roots, and fail-closed probe remain enabled. Servers that
+  require `/proc` may not work; a trivial child, fake LSP, and read-only workspace
+  write denial are validated without it so far.
+- Remaining security tests: verify Linux read/write roots, network denial,
+  symlink/path replacement, and descendant cleanup; add native macOS
+  filesystem/network boundary tests before making broader platform claims.
 - Implement the lifecycle worker and normalized document-symbol mapper.
 - Add fake-server tests and timeout/shutdown coverage.
 - Add explicit source-backend configuration and trusted-local CLI selection.
 
-Status: optional feature is off by default, fake server produces snapshots, and
-provider instances reuse one child within their own lifetime/workspace. Source
-paths are canonicalized and constrained before process startup. Protected modes
-fail closed because there is no `SandboxProvider`. Unix process-group cleanup is
-implemented and tested on Linux; Windows Job Object kill-on-close is implemented
-but not runtime-tested here. macOS uses the Unix process-group implementation but
-has not had native validation. Resource limits and actual sandboxed stdio remain
-unimplemented. `trusted-local` is not a security boundary. The status command's
-fake-server path produces a normalized document-symbol snapshot; real
-rust-analyzer/Lean test runs remain explicit opt-ins.
+Status: `source-sandbox` remains off by default; protected Linux/macOS startup
+uses an internal provider and fails closed on unavailable capability probes.
+Linux no-proc startup passed trivial-child, fake-LSP snapshot, and read-only
+workspace write-denial tests in this container. Provider instances reuse one
+child within their own lifetime/workspace. Source paths are canonicalized and
+constrained before process startup. Unix process-group cleanup is implemented
+and tested on Linux;
+Windows Job Object kill-on-close is implemented but not runtime-tested here.
+macOS uses the Unix process-group implementation but has not had native
+validation. CPU/memory/output limits and real rust-analyzer/Lean no-proc
+compatibility remain unverified. `trusted-local` is not a security boundary.
+The status command's fake-server path produces a normalized document-symbol
+snapshot; real server runs remain explicit opt-ins.
 
 The provider mutex serializes access to its single child; reusing that child is
 limited to the lifetime of one `LspSnapshotProvider` instance. The current CLI
@@ -1145,9 +1159,10 @@ The plan is not complete until the remaining acceptance criteria below land:
 - Add Linux Bubblewrap and macOS Seatbelt boundary tests for read/write roots,
   network denial, symlink/path replacement, and descendant cleanup. Add native
   Windows Job Object process-tree cleanup and failure-path tests before
-  advertising validated cleanup support there. Protected LSP is wired but not
-  runtime-validated in this container; failed capability probes remain fail-closed.
-  Protected-build remains unavailable.
+  advertising validated cleanup support there. Linux no-proc Bubblewrap startup
+  and fake-LSP integration pass here; real rust-analyzer/Lean compatibility and
+  the broader boundaries remain unverified. Failed capability probes remain
+  fail-closed. Protected-build remains unavailable.
 - Render normalized in-workspace definition locations as Sphinx-relative links
   under an explicit policy; add any selected references/workspace-symbol mapping.
 - Complete shared provider contract coverage and static/hybrid parity tests for

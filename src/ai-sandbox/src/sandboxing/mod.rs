@@ -267,6 +267,7 @@ struct PreparedExecution {
     env: HashMap<String, String>,
     sandbox: SandboxType,
     procfs_mount_mode: ProcfsMountMode,
+    network_policy: NetworkSandboxPolicy,
 }
 
 impl SandboxExecRequest {
@@ -281,8 +282,9 @@ impl SandboxExecRequest {
         match self.execution.sandbox {
             #[cfg(target_os = "linux")]
             SandboxType::LinuxSeccomp => {
-                crate::linux_sandbox::ensure_bwrap_support_with_procfs(
+                crate::linux_sandbox::ensure_bwrap_support_with_procfs_and_network(
                     self.execution.procfs_mount_mode,
+                    self.execution.network_policy == NetworkSandboxPolicy::NoAccess,
                 )
                 .map_err(SandboxExecutionError::Unsupported)?;
                 self.spawn_transformed()
@@ -333,8 +335,9 @@ impl SandboxExecRequest {
         match self.execution.sandbox {
             #[cfg(target_os = "linux")]
             SandboxType::LinuxSeccomp => {
-                crate::linux_sandbox::ensure_bwrap_support_with_procfs(
+                crate::linux_sandbox::ensure_bwrap_support_with_procfs_and_network(
                     self.execution.procfs_mount_mode,
+                    self.execution.network_policy == NetworkSandboxPolicy::NoAccess,
                 )
                 .map_err(SandboxExecutionError::Unsupported)?;
                 self.spawn_transformed_with_stdio(process_group)
@@ -753,6 +756,7 @@ impl SandboxManager {
                 env,
                 sandbox,
                 procfs_mount_mode,
+                network_policy: policy.network_policy(),
             },
         })
     }
@@ -941,6 +945,7 @@ mod tests {
                 env,
                 sandbox: SandboxType::LinuxSeccomp,
                 procfs_mount_mode: ProcfsMountMode::Mounted,
+                network_policy: NetworkSandboxPolicy::NoAccess,
             },
         };
 
@@ -989,15 +994,17 @@ mod tests {
                 env: HashMap::new(),
                 sandbox,
                 procfs_mount_mode: ProcfsMountMode::Mounted,
+                network_policy: NetworkSandboxPolicy::NoAccess,
             },
         }
     }
     #[cfg(target_os = "linux")]
     #[test]
     fn spawn_with_stdio_runs_private_pid_namespace_without_proc_mount() {
-        if let Err(error) =
-            crate::linux_sandbox::ensure_bwrap_support_with_procfs(ProcfsMountMode::Omitted)
-        {
+        if let Err(error) = crate::linux_sandbox::ensure_bwrap_support_with_procfs_and_network(
+            ProcfsMountMode::Omitted,
+            true,
+        ) {
             eprintln!("skipping no-proc Bubblewrap runtime test: {error}");
             return;
         }
@@ -1025,9 +1032,10 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn no_proc_read_only_sandbox_denies_workspace_writes() {
-        if let Err(error) =
-            crate::linux_sandbox::ensure_bwrap_support_with_procfs(ProcfsMountMode::Omitted)
-        {
+        if let Err(error) = crate::linux_sandbox::ensure_bwrap_support_with_procfs_and_network(
+            ProcfsMountMode::Omitted,
+            true,
+        ) {
             eprintln!("skipping no-proc Bubblewrap boundary test: {error}");
             return;
         }
@@ -1078,6 +1086,57 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn no_proc_networkless_sandbox_cannot_reach_parent_loopback() {
+        let python = Path::new("/usr/bin/python3");
+        if !python.is_file() {
+            eprintln!("skipping no-proc network boundary test: /usr/bin/python3 is unavailable");
+            return;
+        }
+        if let Err(error) = crate::linux_sandbox::ensure_bwrap_support_with_procfs_and_network(
+            ProcfsMountMode::Omitted,
+            true,
+        ) {
+            eprintln!("skipping no-proc network boundary test: {error}");
+            return;
+        }
+
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let request = SandboxManager::new()
+            .create_exec_request_with_read_only_roots_without_proc(
+                SandboxCommand {
+                    program: python.as_os_str().to_owned(),
+                    args: vec![
+                        "-c".into(),
+                        "import socket,sys; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', int(sys.argv[1])))".into(),
+                        port.to_string(),
+                    ],
+                    cwd: std::env::current_dir().unwrap(),
+                    env: HashMap::new(),
+                },
+                SandboxPolicy::ReadOnly {
+                    file_system: FileSystemSandboxPolicy::ReadOnly,
+                    network_access: NetworkSandboxPolicy::NoAccess,
+                },
+                Vec::new(),
+            )
+            .unwrap();
+        let child = request.spawn_with_stdio().unwrap();
+        let output = child.wait_with_output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        assert!(
+            !output.status.success(),
+            "child connected to the parent listener"
+        );
+        assert!(
+            stderr.contains("ConnectionRefusedError") || stderr.contains("Network is unreachable"),
+            "unexpected network failure: {stderr}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn read_only_request_can_omit_proc_without_dropping_namespace_isolation() {
         let cwd = std::env::current_dir().unwrap();
         let request = SandboxManager::new()
@@ -1114,7 +1173,10 @@ mod tests {
         use std::io::Write;
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        if let Err(error) = crate::linux_sandbox::ensure_bwrap_support() {
+        if let Err(error) = crate::linux_sandbox::ensure_bwrap_support_with_procfs_and_network(
+            ProcfsMountMode::Mounted,
+            true,
+        ) {
             eprintln!("skipping Bubblewrap runtime test: {error}");
             return;
         }
@@ -1275,6 +1337,7 @@ mod tests {
                 .into(),
                 sandbox: SandboxType::None,
                 procfs_mount_mode: ProcfsMountMode::Mounted,
+                network_policy: NetworkSandboxPolicy::NoAccess,
             },
             ..request_for_process_tests("/bin/sh", SandboxType::None)
         };
@@ -2048,7 +2111,12 @@ mod tests {
         use std::fs;
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        if crate::linux_sandbox::ensure_bwrap_support().is_err() {
+        if crate::linux_sandbox::ensure_bwrap_support_with_procfs_and_network(
+            ProcfsMountMode::Mounted,
+            true,
+        )
+        .is_err()
+        {
             eprintln!("skipping Linux boundary test: Bubblewrap namespaces are unavailable");
             return;
         }

@@ -54,22 +54,33 @@ pub fn ensure_bwrap_support() -> Result<(), String> {
 }
 
 pub fn ensure_bwrap_support_with_procfs(procfs: ProcfsMountMode) -> Result<(), String> {
-    ensure_bwrap_support_with_procfs_and(find_system_bwrap_in_path, procfs)
+    ensure_bwrap_support_with_procfs_and(find_system_bwrap_in_path, procfs, false)
+}
+
+pub fn ensure_bwrap_support_with_procfs_and_network(
+    procfs: ProcfsMountMode,
+    isolate_network: bool,
+) -> Result<(), String> {
+    ensure_bwrap_support_with_procfs_and(find_system_bwrap_in_path, procfs, isolate_network)
 }
 
 #[cfg(test)]
 fn ensure_bwrap_support_with(find: impl FnOnce() -> Option<PathBuf>) -> Result<(), String> {
-    ensure_bwrap_support_with_procfs_and(find, ProcfsMountMode::Mounted)
+    ensure_bwrap_support_with_procfs_and(find, ProcfsMountMode::Mounted, false)
 }
 
 fn ensure_bwrap_support_with_procfs_and(
     find: impl FnOnce() -> Option<PathBuf>,
     procfs: ProcfsMountMode,
+    isolate_network: bool,
 ) -> Result<(), String> {
     let executable =
         find().ok_or_else(|| "bubblewrap executable was not found in PATH".to_string())?;
     let status = Command::new(&executable)
-        .args(bwrap::create_capability_probe_command_args(procfs))
+        .args(bwrap::create_capability_probe_command_args(
+            procfs,
+            isolate_network,
+        ))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -128,7 +139,7 @@ mod bwrap_support_tests {
 
     #[test]
     fn no_proc_capability_probe_preserves_pid_namespace_without_proc_mount() {
-        let args = bwrap::create_capability_probe_command_args(ProcfsMountMode::Omitted);
+        let args = bwrap::create_capability_probe_command_args(ProcfsMountMode::Omitted, true);
         let separator = args.iter().position(|arg| arg == "--").unwrap();
         let setup_args = &args[..separator];
 
@@ -136,6 +147,7 @@ mod bwrap_support_tests {
         assert!(setup_args.iter().any(|arg| arg == "--unshare-pid"));
         assert!(setup_args.iter().any(|arg| arg == "--unshare-user"));
         assert!(setup_args.iter().any(|arg| arg == "--unshare-ipc"));
+        assert!(setup_args.iter().any(|arg| arg == "--unshare-net"));
         assert!(args[separator + 1..].contains(&"/usr/bin/true".to_string()));
     }
 }

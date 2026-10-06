@@ -275,9 +275,17 @@ fn add_process_isolation(args: BwrapArgs, procfs: ProcfsMountMode) -> BwrapArgs 
         .die_with_parent()
 }
 
-pub(super) fn create_capability_probe_command_args(procfs: ProcfsMountMode) -> Vec<String> {
-    add_system_mounts(BwrapArgs::new(), procfs)
-        .separator()
+pub(super) fn create_capability_probe_command_args(
+    procfs: ProcfsMountMode,
+    isolate_network: bool,
+) -> Vec<String> {
+    let args = add_system_mounts(BwrapArgs::new(), procfs);
+    let args = if isolate_network {
+        args.unshare_net()
+    } else {
+        args
+    };
+    args.separator()
         .command(vec!["/usr/bin/true".to_string()])
         .build()
 }

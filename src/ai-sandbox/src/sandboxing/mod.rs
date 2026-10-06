@@ -1135,6 +1135,64 @@ mod tests {
         );
     }
 
+    #[cfg(all(target_os = "linux", unix))]
+    #[test]
+    fn no_proc_read_only_sandbox_cannot_follow_symlink_outside_workspace() {
+        use std::os::unix::fs::symlink;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        if let Err(error) = crate::linux_sandbox::ensure_bwrap_support_with_procfs_and_network(
+            ProcfsMountMode::Omitted,
+            true,
+        ) {
+            eprintln!("skipping no-proc symlink boundary test: {error}");
+            return;
+        }
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let sandbox_root = std::env::temp_dir().join(format!("ai-sandbox-symlink-{unique}"));
+        let workspace = sandbox_root.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(sandbox_root.clone());
+
+        let outside = sandbox_root.join("outside-secret");
+        let secret = "outside-workspace-secret";
+        std::fs::write(&outside, secret).unwrap();
+        let escape = workspace.join("escape");
+        symlink(&outside, &escape).unwrap();
+
+        let request = SandboxManager::new()
+            .create_exec_request_with_read_only_roots_without_proc(
+                SandboxCommand {
+                    program: OsString::from("/usr/bin/cat"),
+                    args: vec![escape.to_string_lossy().into_owned()],
+                    cwd: workspace,
+                    env: HashMap::new(),
+                },
+                SandboxPolicy::ReadOnly {
+                    file_system: FileSystemSandboxPolicy::ReadOnly,
+                    network_access: NetworkSandboxPolicy::NoAccess,
+                },
+                Vec::new(),
+            )
+            .unwrap();
+        let child = request.spawn_with_stdio().unwrap();
+        let output = child.wait_with_output().unwrap();
+
+        assert!(!output.status.success());
+        assert!(!String::from_utf8_lossy(&output.stdout).contains(secret));
+        assert_eq!(std::fs::read_to_string(outside).unwrap(), secret);
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn read_only_request_can_omit_proc_without_dropping_namespace_isolation() {

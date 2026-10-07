@@ -461,7 +461,7 @@ impl LspProcess {
             job,
         };
         let root_uri = file_uri(&process.config.workspace_root)?;
-        let initialized = process.request(
+        let initialized = match process.request(
             "initialize",
             json!({
                 "processId": std::process::id(),
@@ -476,7 +476,20 @@ impl LspProcess {
                 },
                 "clientInfo": { "name": CLIENT_NAME, "version": CLIENT_VERSION }
             }),
-        )?;
+        ) {
+            Ok(initialized) => initialized,
+            Err(error) => {
+                process.terminate();
+                let stderr = process.stderr_tail.trim();
+                if stderr.is_empty() {
+                    return Err(error);
+                }
+                return Err(AnalysisError::BackendUnavailable {
+                    backend: "lsp".into(),
+                    message: format!("{error}; server stderr: {stderr}"),
+                });
+            }
+        };
         if !initialized.is_object() {
             process.terminate();
             return Err(protocol_error("initialize returned a non-object result"));
@@ -2007,6 +2020,7 @@ mod tests {
                 || error.contains("server exited during initialize"),
             "{error}"
         );
+        assert!(error.contains("fixture initialize failure"), "{error}");
         assert!(!error.contains("timed out"), "{error}");
     }
 
@@ -2108,13 +2122,38 @@ mod tests {
         assert!(!attributes["lsp:definition_path"].starts_with("file://"));
     }
 
-    #[cfg(unix)]
+    #[cfg(all(feature = "source-sandbox", target_os = "linux"))]
     #[test]
-    fn configured_rust_analyzer_live_returns_document_symbols() {
+    fn protected_rust_analyzer_live_returns_document_symbols_without_proc() {
         let Ok(server) = std::env::var("SPHINXDOCRS_RUST_ANALYZER") else {
             eprintln!("skipping rust-analyzer live test: SPHINXDOCRS_RUST_ANALYZER is unset");
             return;
         };
+        let server = PathBuf::from(server)
+            .canonicalize()
+            .expect("SPHINXDOCRS_RUST_ANALYZER must name an executable");
+        let home = PathBuf::from(std::env::var_os("HOME").expect("HOME is required"));
+        let cargo_home = PathBuf::from(
+            std::env::var_os("CARGO_HOME").unwrap_or_else(|| home.join(".cargo").into_os_string()),
+        );
+        let rustup_home = PathBuf::from(
+            std::env::var_os("RUSTUP_HOME")
+                .unwrap_or_else(|| home.join(".rustup").into_os_string()),
+        );
+        let toolchain_bin = server
+            .parent()
+            .expect("rust-analyzer must have a parent directory");
+        let toolchain_lib = toolchain_bin
+            .parent()
+            .expect("rust-analyzer toolchain bin must have a parent directory")
+            .join("lib");
+        let path = std::env::join_paths([
+            cargo_home.join("bin"),
+            toolchain_bin.to_path_buf(),
+            PathBuf::from("/usr/bin"),
+            PathBuf::from("/bin"),
+        ])
+        .expect("test PATH entries must be valid");
         let workspace = TempDir::new().unwrap();
         let source_root = workspace.path().join("src");
         std::fs::create_dir_all(&source_root).unwrap();
@@ -2128,11 +2167,25 @@ mod tests {
 
         let mut settings = SourceDocsSettings::default();
         settings.backend = super::super::provider::SourceBackendMode::Lsp;
-        settings.lsp_sandbox = SourceSandboxMode::TrustedLocal;
+        settings.lsp_sandbox = SourceSandboxMode::ProtectedLsp;
         settings.lsp_timeout_ms = 120_000;
+        let server_command = vec![
+            "/usr/bin/env".into(),
+            format!("HOME={}", home.display()),
+            format!("PATH={}", path.to_string_lossy()),
+            format!("CARGO_HOME={}", cargo_home.display()),
+            format!("RUSTUP_HOME={}", rustup_home.display()),
+            format!("LD_LIBRARY_PATH={}", toolchain_lib.display()),
+            "CARGO_TARGET_DIR=/tmp/rust-analyzer-target".into(),
+            server.to_string_lossy().into_owned(),
+        ];
+        settings.lsp_servers.insert("rust".into(), server_command);
         settings
-            .lsp_servers
-            .insert("rust".into(), vec![server, "--stdio".into()]);
+            .lsp_read_only_roots
+            .extend([cargo_home, rustup_home]);
+        settings
+            .lsp_sandbox_environment
+            .insert("LANG".into(), "C".into());
         let provider =
             LspSnapshotProvider::from_settings(&settings, SourceLanguage::Rust, workspace.path())
                 .unwrap();

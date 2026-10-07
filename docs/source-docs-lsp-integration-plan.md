@@ -22,10 +22,11 @@ Still incomplete: Sphinx-relative definition-link rendering, references and
 workspace-symbol enrichment, the full source-port mapping audit, resource limits,
 native macOS/Windows runtime validation, adversarial Linux/macOS boundary tests,
 and installed rust-analyzer/Lean live CI. No-proc Bubblewrap, fake-LSP startup,
-read-only write denial, and parent-loopback network denial pass in this container;
-real language servers may require `/proc` and remain unverified. Protected-build
-remains unavailable and fails closed. Static remains the default and requires no
-LSP dependency or process.
+read-only write denial, and parent-loopback network denial pass in this container.
+The opt-in protected no-proc rust-analyzer 1.96.1 test passes when the explicit
+command wrapper supplies its toolchain library path. Lean and other server
+versions remain unverified. Protected-build remains unavailable and fails
+closed. Static remains the default and requires no LSP dependency or process.
 
 ## Summary
 
@@ -986,7 +987,7 @@ policy fields with conflict diagnostics and provenance. Search/xref parity when
 LSP adds no information and full apidoc/environment cache integration still need
 dedicated end-to-end tests.
 
-### Phase 5: optional live-server workflows — Rust test added; live run pending
+### Phase 5: optional live-server workflows — Rust validated locally; CI pending
 
 - Add opt-in rust-analyzer integration tests (`SPHINXDOCRS_RUST_ANALYZER` supplies
   the executable path; unset means the test skips).
@@ -999,11 +1000,12 @@ dedicated end-to-end tests.
   or process-policy boundary.
 
 Status: status command can run the fake peer or an explicitly supplied
-trusted-local server. Opt-in Rust and Lean live tests accept caller-configured
-commands and skip by default. Neither live server was available for execution
-here; installed-server CI, real-server compatibility with Linux's no-proc mode,
-broader platform boundary tests, and server installation documentation remain
-pending.
+trusted-local server. The opt-in rust-analyzer 1.96.1 test passes in protected
+Linux no-proc mode; its explicit `/usr/bin/env` argv supplies the installed
+toolchain's `LD_LIBRARY_PATH`, without relaxing the sandbox environment filter.
+The Lean live test accepts a JSON argv array and skips when no command is
+configured. Installed-server CI, broader version/project compatibility,
+platform boundary tests, and server installation documentation remain pending.
 
 Exit criteria: live integrations are useful for development but remain unnecessary
 for normal package builds, release builds, and deterministic CI; protected mode

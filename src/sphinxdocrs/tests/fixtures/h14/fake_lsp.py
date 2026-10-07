@@ -72,6 +72,8 @@ while True:
             )
         continue
     if method == "initialize" and mode == "initialize-crash":
+        sys.stderr.write("fixture initialize failure\n")
+        sys.stderr.flush()
         sys.exit(4)
     elif method == "initialize":
         capabilities = {"documentSymbolProvider": True}

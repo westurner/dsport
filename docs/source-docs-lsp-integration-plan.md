@@ -452,8 +452,8 @@ Convert LSP responses into the existing normalized declaration model:
 | `range` | `SourceSpan` |
 | `selection_range` | namespaced `lsp:selection_start` / `lsp:selection_end` attributes |
 | `detail` | signature/type text |
-| hover markdown/plaintext | documentation, after normalization (not implemented) |
-| definition locations | canonical source location when needed (not implemented) |
+| hover markdown/plaintext | normalized documentation for declarations lacking static documentation |
+| definition locations | safe workspace-relative path and span metadata; not rendered as a documentation link by default |
 | diagnostics | `AnalysisDiagnostic` |
 | unsupported server metadata | `attributes`, namespaced by backend |
 

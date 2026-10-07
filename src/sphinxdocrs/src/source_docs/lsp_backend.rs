@@ -2151,6 +2151,44 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn configured_lean_server_live_returns_document_symbols() {
+        let Ok(command) = std::env::var("SPHINXDOCRS_LEAN_LSP_COMMAND") else {
+            eprintln!(
+                "skipping Lean live test: SPHINXDOCRS_LEAN_LSP_COMMAND is unset (expected JSON argv)"
+            );
+            return;
+        };
+        let command: Vec<String> = serde_json::from_str(&command)
+            .expect("SPHINXDOCRS_LEAN_LSP_COMMAND must be a JSON string array");
+        assert!(!command.is_empty(), "Lean LSP argv must not be empty");
+
+        let workspace = TempDir::new().unwrap();
+        let source = workspace.path().join("Main.lean");
+        std::fs::write(&source, "def lspLiveProbe : Nat := 42\n").unwrap();
+
+        let mut settings = SourceDocsSettings::default();
+        settings.backend = super::super::provider::SourceBackendMode::Lsp;
+        settings.lsp_sandbox = SourceSandboxMode::TrustedLocal;
+        settings.lsp_timeout_ms = 120_000;
+        settings.lsp_servers.insert("lean".into(), command);
+        let provider =
+            LspSnapshotProvider::from_settings(&settings, SourceLanguage::Lean, workspace.path())
+                .unwrap();
+        let mut request = SourceAnalysisRequest::new(workspace.path());
+        request.selected.push(source);
+
+        let snapshot = provider.analyze(&request).unwrap();
+
+        assert!(
+            snapshot
+                .declarations
+                .iter()
+                .any(|declaration| { declaration.qualified_name.ends_with("lspLiveProbe") })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn fake_server_timeout_terminates_child() {
         let workspace = TempDir::new().unwrap();
         let source = workspace.path().join("lib.rs");

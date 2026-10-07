@@ -990,7 +990,8 @@ dedicated end-to-end tests.
 
 - Add opt-in rust-analyzer integration tests (`SPHINXDOCRS_RUST_ANALYZER` supplies
   the executable path; unset means the test skips).
-- Add opt-in Lean language-server integration tests.
+- Add opt-in Lean language-server integration tests
+  (`SPHINXDOCRS_LEAN_LSP_COMMAND` supplies a JSON argv array; unset means skip).
 - Document server installation and project-specific commands.
 - Add opt-in `ai-sandbox` boundary tests for LSP-only and whole-build scopes on
   each supported platform.
@@ -998,11 +999,11 @@ dedicated end-to-end tests.
   or process-policy boundary.
 
 Status: status command can run the fake peer or an explicitly supplied
-trusted-local server. The opt-in Rust live test exists, but was not run here
-because `rust-analyzer` resolves to a rustup shim whose component is unavailable.
-Lean server command selection, installed rust-analyzer/Lean CI, real-server
-compatibility with Linux's no-proc mode, broader platform boundary tests, and
-server installation documentation remain pending.
+trusted-local server. Opt-in Rust and Lean live tests accept caller-configured
+commands and skip by default. Neither live server was available for execution
+here; installed-server CI, real-server compatibility with Linux's no-proc mode,
+broader platform boundary tests, and server installation documentation remain
+pending.
 
 Exit criteria: live integrations are useful for development but remain unnecessary
 for normal package builds, release builds, and deterministic CI; protected mode
@@ -1030,14 +1031,14 @@ Resolved:
   server versions. Missing `serverInfo` remains explicitly unreported.
 - Keep the optional client inside `sphinxdocrs` until its API is stable enough to
   justify a separate crate.
+- Do not prescribe one Lean server command; live tests accept the project's
+  explicit JSON argv so Lake/toolchain setup remains caller-controlled.
 - `sphinx-source-status` is the inspection command name. Protected LSP is opt-in
   and fails closed; protected-build remains unavailable.
 
 Still open:
 
-1. Which Lean server command/capabilities should be documented as the recommended
-   configuration, if any?
-2. What evidence should gate making the experimental source-doc APIs stable before
+1. What evidence should gate making the experimental source-doc APIs stable before
   publication?
 
 ## Acceptance criteria and remaining work

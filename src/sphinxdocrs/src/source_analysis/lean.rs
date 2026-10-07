@@ -24,15 +24,15 @@ pub const BACKEND_VERSION: &str = "2.18.2";
 pub struct ArboriumLeanAnalyzer;
 
 impl SourceAnalyzer for ArboriumLeanAnalyzer {
-    fn analyze(
-        &self,
-        request: &SourceAnalysisRequest,
-    ) -> Result<AnalysisSnapshot, AnalysisError> {
+    fn analyze(&self, request: &SourceAnalysisRequest) -> Result<AnalysisSnapshot, AnalysisError> {
         let files = source_files(request)?;
         if files.is_empty() {
             return Err(AnalysisError::BackendUnavailable {
                 backend: BACKEND.to_string(),
-                message: format!("no .lean source files found under {}", request.source_root.display()),
+                message: format!(
+                    "no .lean source files found under {}",
+                    request.source_root.display()
+                ),
             });
         }
 
@@ -45,17 +45,24 @@ impl SourceAnalyzer for ArboriumLeanAnalyzer {
                 message: error.to_string(),
             })?;
             hash_input.extend_from_slice(&bytes);
-            let source = String::from_utf8_lossy(&bytes).replace("\r\n", "\n").replace('\r', "\n");
+            let source = String::from_utf8_lossy(&bytes)
+                .replace("\r\n", "\n")
+                .replace('\r', "\n");
             let mut parser = Parser::new();
             let language = Language::new(arborium_lean::language());
-            parser.set_language(&language).map_err(|error| AnalysisError::BackendUnavailable {
-                backend: BACKEND.to_string(),
-                message: error.to_string(),
-            })?;
-            let tree = parser.parse(source.as_bytes(), None).ok_or_else(|| AnalysisError::Parse {
-                backend: BACKEND.to_string(),
-                message: format!("{}: parser returned no tree", path.display()),
-            })?;
+            parser
+                .set_language(&language)
+                .map_err(|error| AnalysisError::BackendUnavailable {
+                    backend: BACKEND.to_string(),
+                    message: error.to_string(),
+                })?;
+            let tree =
+                parser
+                    .parse(source.as_bytes(), None)
+                    .ok_or_else(|| AnalysisError::Parse {
+                        backend: BACKEND.to_string(),
+                        message: format!("{}: parser returned no tree", path.display()),
+                    })?;
             if tree.root_node().has_error() {
                 diagnostics.push(AnalysisDiagnostic {
                     severity: DiagnosticSeverity::Warning,
@@ -120,7 +127,8 @@ impl<'a> Walker<'a> {
             if let Some(name) = name {
                 let full_name = if keyword == "namespace"
                     && section.is_none()
-                    && namespace.is_some_and(|current| current.rsplit('.').next() == Some(name.as_str()))
+                    && namespace
+                        .is_some_and(|current| current.rsplit('.').next() == Some(name.as_str()))
                 {
                     namespace.unwrap_or_default().to_string()
                 } else {
@@ -140,11 +148,18 @@ impl<'a> Walker<'a> {
                             Some(normalize_text(self.source_slice(node))),
                             Some(normalize_text(self.source_slice(node))),
                             documentation_before(self.source, node.start_byte()),
-                            if is_private { Visibility::Private } else { Visibility::Public },
+                            if is_private {
+                                Visibility::Private
+                            } else {
+                                Visibility::Public
+                            },
                             span,
                         );
-                        if let Some(attributes) = attributes_before(self.source, node.start_byte()) {
-                            declaration.attributes.insert("attributes".to_string(), attributes);
+                        if let Some(attributes) = attributes_before(self.source, node.start_byte())
+                        {
+                            declaration
+                                .attributes
+                                .insert("attributes".to_string(), attributes);
                         }
                         self.declarations.push(declaration);
                     }
@@ -165,9 +180,7 @@ impl<'a> Walker<'a> {
     }
 
     fn source_slice(&self, node: Node<'_>) -> &str {
-        self.source
-            .get(node.byte_range())
-            .unwrap_or_default()
+        self.source.get(node.byte_range()).unwrap_or_default()
     }
 }
 
@@ -178,13 +191,18 @@ fn source_files(request: &SourceAnalysisRequest) -> Result<Vec<PathBuf>, Analysi
         vec![request.source_root.clone()]
     } else {
         let mut files = Vec::new();
-        collect_lean_files(&request.source_root, &mut files).map_err(|error| AnalysisError::Io {
-            path: request.source_root.display().to_string(),
-            message: error.to_string(),
+        collect_lean_files(&request.source_root, &mut files).map_err(|error| {
+            AnalysisError::Io {
+                path: request.source_root.display().to_string(),
+                message: error.to_string(),
+            }
         })?;
         files
     };
-    files.retain(|path| path.extension().is_some_and(|extension| extension == "lean"));
+    files.retain(|path| {
+        path.extension()
+            .is_some_and(|extension| extension == "lean")
+    });
     files.sort();
     files.dedup();
     Ok(files)
@@ -195,7 +213,10 @@ fn collect_lean_files(root: &Path, output: &mut Vec<PathBuf>) -> Result<(), std:
         let path = entry?.path();
         if path.is_dir() {
             collect_lean_files(&path, output)?;
-        } else if path.extension().is_some_and(|extension| extension == "lean") {
+        } else if path
+            .extension()
+            .is_some_and(|extension| extension == "lean")
+        {
             output.push(path);
         }
     }
@@ -215,33 +236,67 @@ fn module_name(root: &Path, path: &Path) -> Option<String> {
 }
 
 fn header_keyword(source: &str) -> Option<&'static str> {
-    let mut line = source.lines().find(|line| {
-        let line = line.trim();
-        !line.is_empty() && !line.starts_with("/-") && !line.starts_with("--") && !line.starts_with("@[")
-    })?.trim_start();
+    let mut line = source
+        .lines()
+        .find(|line| {
+            let line = line.trim();
+            !line.is_empty()
+                && !line.starts_with("/-")
+                && !line.starts_with("--")
+                && !line.starts_with("@[")
+        })?
+        .trim_start();
     for modifier in [
-        "private ", "protected ", "scoped ", "unsafe ", "noncomputable ", "partial ", "mutual ",
+        "private ",
+        "protected ",
+        "scoped ",
+        "unsafe ",
+        "noncomputable ",
+        "partial ",
+        "mutual ",
     ] {
         if let Some(rest) = line.strip_prefix(modifier) {
             line = rest.trim_start();
         }
     }
     [
-        "namespace", "section", "def", "theorem", "lemma", "example", "inductive", "structure",
-        "class", "instance", "abbrev", "axiom", "opaque", "notation", "module",
+        "namespace",
+        "section",
+        "def",
+        "theorem",
+        "lemma",
+        "example",
+        "inductive",
+        "structure",
+        "class",
+        "instance",
+        "abbrev",
+        "axiom",
+        "opaque",
+        "notation",
+        "module",
     ]
     .into_iter()
-    .find(|keyword| line == *keyword || line.starts_with(&format!("{keyword} ")) || line.starts_with(&format!("{keyword}\t")))
+    .find(|keyword| {
+        line == *keyword
+            || line.starts_with(&format!("{keyword} "))
+            || line.starts_with(&format!("{keyword}\t"))
+    })
 }
 
 fn declaration_name(source: &str, keyword: &str) -> Option<String> {
-    let line = source.lines().find(|line| line.trim_start().starts_with(keyword))?.trim();
+    let line = source
+        .lines()
+        .find(|line| line.trim_start().starts_with(keyword))?
+        .trim();
     let rest = line.strip_prefix(keyword)?.trim_start();
     if rest.is_empty() || rest.starts_with(':') || rest.starts_with("=>") {
         return None;
     }
     let name = rest
-        .split(|character: char| character.is_whitespace() || matches!(character, ':' | '(' | '{' | '[' | '=' | ','))
+        .split(|character: char| {
+            character.is_whitespace() || matches!(character, ':' | '(' | '{' | '[' | '=' | ',')
+        })
         .find(|part| !part.is_empty())?;
     Some(name.trim_matches('`').to_string())
 }
@@ -330,8 +385,16 @@ fn file_span(path: &Path, source: &str) -> SourceSpan {
     let column = source.rsplit('\n').next().map_or(0, str::len);
     SourceSpan::new(
         path,
-        SourcePosition { byte: 0, line: 1, column: 0 },
-        Some(SourcePosition { byte: end, line, column }),
+        SourcePosition {
+            byte: 0,
+            line: 1,
+            column: 0,
+        },
+        Some(SourcePosition {
+            byte: end,
+            line,
+            column,
+        }),
     )
 }
 
@@ -359,7 +422,12 @@ mod tests {
         let request = SourceAnalysisRequest::new(directory.path());
         let snapshot = ArboriumLeanAnalyzer.analyze(&request).unwrap();
         assert_eq!(snapshot.source_root, normalize_path(directory.path()));
-        assert!(snapshot.declarations.iter().any(|declaration| declaration.qualified_name == "Demo.Basic.answer"));
+        assert!(
+            snapshot
+                .declarations
+                .iter()
+                .any(|declaration| declaration.qualified_name == "Demo.Basic.answer")
+        );
     }
 
     #[test]
@@ -406,7 +474,10 @@ mod tests {
             "Malformed.Broken",
             "Malformed.Broken.incomplete",
         ] {
-            assert!(names.contains(expected), "missing declaration {expected}: {names:?}");
+            assert!(
+                names.contains(expected),
+                "missing declaration {expected}: {names:?}"
+            );
         }
         let add = snapshot
             .declarations
@@ -414,9 +485,17 @@ mod tests {
             .find(|declaration| declaration.qualified_name == "Demo.Arithmetic.add")
             .unwrap();
         assert!(add.documentation.contains("Add two natural numbers"));
-        assert!(add.source.end.as_ref().is_some_and(|end| end.byte > add.source.start.byte));
-        assert!(snapshot.diagnostics.iter().any(|diagnostic| {
-            diagnostic.message.contains("recoverable syntax errors")
-        }));
+        assert!(
+            add.source
+                .end
+                .as_ref()
+                .is_some_and(|end| end.byte > add.source.start.byte)
+        );
+        assert!(
+            snapshot
+                .diagnostics
+                .iter()
+                .any(|diagnostic| { diagnostic.message.contains("recoverable syntax errors") })
+        );
     }
 }

@@ -288,6 +288,9 @@ pub fn parse_conf_third_party_imports(conf_py: &Path) -> Vec<String> {
 /// Return `true` if `module` is importable by the current `python3`.
 pub fn python_module_importable(module: &str) -> bool {
     Command::new("python3")
+        // Cargo runs integration tests from the package root, where the
+        // local `locale` module can shadow Python's standard-library module.
+        .current_dir(std::env::temp_dir())
         .args(["-c", &format!("import {module}")])
         .output()
         .map(|o| o.status.success())

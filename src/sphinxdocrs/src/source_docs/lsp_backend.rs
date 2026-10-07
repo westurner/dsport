@@ -2110,6 +2110,47 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn configured_rust_analyzer_live_returns_document_symbols() {
+        let Ok(server) = std::env::var("SPHINXDOCRS_RUST_ANALYZER") else {
+            eprintln!("skipping rust-analyzer live test: SPHINXDOCRS_RUST_ANALYZER is unset");
+            return;
+        };
+        let workspace = TempDir::new().unwrap();
+        let source_root = workspace.path().join("src");
+        std::fs::create_dir_all(&source_root).unwrap();
+        std::fs::write(
+            workspace.path().join("Cargo.toml"),
+            "[package]\nname = \"lsp-live-fixture\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        let source = source_root.join("lib.rs");
+        std::fs::write(&source, "pub fn lsp_live_probe() -> u32 { 42 }\n").unwrap();
+
+        let mut settings = SourceDocsSettings::default();
+        settings.backend = super::super::provider::SourceBackendMode::Lsp;
+        settings.lsp_sandbox = SourceSandboxMode::TrustedLocal;
+        settings.lsp_timeout_ms = 120_000;
+        settings
+            .lsp_servers
+            .insert("rust".into(), vec![server, "--stdio".into()]);
+        let provider =
+            LspSnapshotProvider::from_settings(&settings, SourceLanguage::Rust, workspace.path())
+                .unwrap();
+        let mut request = SourceAnalysisRequest::new(workspace.path());
+        request.selected.push(source);
+
+        let snapshot = provider.analyze(&request).unwrap();
+
+        assert!(
+            snapshot
+                .declarations
+                .iter()
+                .any(|declaration| { declaration.qualified_name.ends_with("lsp_live_probe") })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn fake_server_timeout_terminates_child() {
         let workspace = TempDir::new().unwrap();
         let source = workspace.path().join("lib.rs");

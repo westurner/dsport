@@ -177,7 +177,8 @@ mod tests {
     fn configured_pages_validates_shapes_and_duplicates() {
         let src = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
-        let project = crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
 
         let env = crate::environment::BuildEnvironment::new(
             man_pages_config(vec![valid_man_page("index", "tool", "1")]),
@@ -185,7 +186,13 @@ mod tests {
             src.path(),
             out.path(),
         );
-        assert_eq!(ManpageBuilder::configured_pages(&env).unwrap().unwrap().len(), 1);
+        assert_eq!(
+            ManpageBuilder::configured_pages(&env)
+                .unwrap()
+                .unwrap()
+                .len(),
+            1
+        );
 
         let duplicate = crate::environment::BuildEnvironment::new(
             man_pages_config(vec![
@@ -196,16 +203,21 @@ mod tests {
             src.path(),
             out.path(),
         );
-        assert!(ManpageBuilder::configured_pages(&duplicate)
-            .unwrap_err()
-            .to_string()
-            .contains("duplicate"));
+        assert!(
+            ManpageBuilder::configured_pages(&duplicate)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate")
+        );
 
         for entry in [
             ConfigVal::Str("not-a-sequence".into()),
             ConfigVal::List(vec![]),
             ConfigVal::List(vec![ConfigVal::Str("index".into())]),
-            ConfigVal::List(vec![ConfigVal::Str("index".into()), ConfigVal::Str("tool".into())]),
+            ConfigVal::List(vec![
+                ConfigVal::Str("index".into()),
+                ConfigVal::Str("tool".into()),
+            ]),
             ConfigVal::List(vec![
                 ConfigVal::Str("index".into()),
                 ConfigVal::Str("tool".into()),
@@ -228,7 +240,8 @@ mod tests {
         let src = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
         std::fs::write(src.path().join("index.rst"), "Tool\n====\n\nA tool.\n").unwrap();
-        let project = crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
 
         let env = crate::environment::BuildEnvironment::new(
             man_pages_config(vec![valid_man_page("index", "tool", "1")]),
@@ -236,7 +249,9 @@ mod tests {
             src.path(),
             out.path(),
         );
-        let result = ManpageBuilder::new().build_all(src.path(), out.path(), &env).unwrap();
+        let result = ManpageBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
         assert_eq!(result.written, 1);
         assert!(out.path().join("tool.1").is_file());
 
@@ -246,7 +261,9 @@ mod tests {
             src.path(),
             out.path(),
         );
-        let result = ManpageBuilder::new().build_all(src.path(), out.path(), &no_pages).unwrap();
+        let result = ManpageBuilder::new()
+            .build_all(src.path(), out.path(), &no_pages)
+            .unwrap();
         assert_eq!(result.written, 0);
     }
 
@@ -255,7 +272,8 @@ mod tests {
         let src = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
         std::fs::write(src.path().join("index.rst"), "Tool\n====\n").unwrap();
-        let project = crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
         let env = crate::environment::BuildEnvironment::new(
             man_pages_config(vec![valid_man_page("index", "tool", "1")]),
             project,
@@ -264,7 +282,9 @@ mod tests {
         );
         let tree = env.parse_doc("index").unwrap();
         env.store_doctree("index", &tree).unwrap();
-        let result = ManpageBuilder::new().build_all(src.path(), out.path(), &env).unwrap();
+        let result = ManpageBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
         assert_eq!(result.written, 1);
     }
 }

@@ -324,8 +324,10 @@ mod tests {
         assert!(combined.contains("Homepage."));
         assert!(combined.contains("Some info."));
         // `index` renders before `about` in document order.
-        assert!(combined.find("id=\"document-index\"").unwrap()
-            < combined.find("id=\"document-about\"").unwrap());
+        assert!(
+            combined.find("id=\"document-index\"").unwrap()
+                < combined.find("id=\"document-about\"").unwrap()
+        );
     }
 
     #[test]

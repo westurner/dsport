@@ -217,7 +217,9 @@ impl LatexBuilder {
         )
     }
 
-    fn configured_documents(env: &BuildEnvironment) -> Option<Vec<(String, String, String, String, String)>> {
+    fn configured_documents(
+        env: &BuildEnvironment,
+    ) -> Option<Vec<(String, String, String, String, String)>> {
         let Some(ConfigVal::List(entries)) = env.config.get("latex_documents") else {
             return None;
         };

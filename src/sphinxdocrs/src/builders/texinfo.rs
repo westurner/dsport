@@ -115,7 +115,8 @@ mod tests {
         std::fs::create_dir_all(src.path().join("guide")).unwrap();
         std::fs::write(src.path().join("index.rst"), "Index\n=====\n").unwrap();
         std::fs::write(src.path().join("guide/intro.rst"), "Intro\n=====\n").unwrap();
-        let project = crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+        let project =
+            crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
         let mut env = BuildEnvironment::new(
             crate::config::SphinxConfig::new_defaults(),
             project,
@@ -123,14 +124,30 @@ mod tests {
             out.path(),
         );
         let builder = TexinfoBuilder::new();
-        assert_eq!(builder.build_all(src.path(), out.path(), &env).unwrap().written, 2);
+        assert_eq!(
+            builder
+                .build_all(src.path(), out.path(), &env)
+                .unwrap()
+                .written,
+            2
+        );
 
         env.all_docs.insert("guide/intro".into(), 1);
         env.all_docs.insert("index".into(), 1);
         let second_out = TempDir::new().unwrap();
-        assert_eq!(builder.build_all(src.path(), second_out.path(), &env).unwrap().written, 2);
+        assert_eq!(
+            builder
+                .build_all(src.path(), second_out.path(), &env)
+                .unwrap()
+                .written,
+            2
+        );
 
         env.all_docs.insert("missing".into(), 1);
-        assert!(builder.build_all(src.path(), second_out.path(), &env).is_err());
+        assert!(
+            builder
+                .build_all(src.path(), second_out.path(), &env)
+                .is_err()
+        );
     }
 }

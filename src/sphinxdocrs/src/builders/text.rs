@@ -157,10 +157,21 @@ mod tests {
         let config = crate::config::SphinxConfig::new_defaults();
         let project =
             crate::environment::EnvProject::new(tmp.path(), &[(".rst", "restructuredtext")]);
-        let mut env = crate::environment::BuildEnvironment::new(config, project, tmp.path(), &outdir);
+        let mut env =
+            crate::environment::BuildEnvironment::new(config, project, tmp.path(), &outdir);
         env.all_docs.insert("index".into(), 1);
-        assert_eq!(TextBuilder::new().build_all(tmp.path(), &outdir, &env).unwrap().written, 1);
+        assert_eq!(
+            TextBuilder::new()
+                .build_all(tmp.path(), &outdir, &env)
+                .unwrap()
+                .written,
+            1
+        );
         env.all_docs.insert("missing".into(), 1);
-        assert!(TextBuilder::new().build_all(tmp.path(), &outdir, &env).is_err());
+        assert!(
+            TextBuilder::new()
+                .build_all(tmp.path(), &outdir, &env)
+                .is_err()
+        );
     }
 }

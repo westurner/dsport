@@ -42,12 +42,11 @@ impl RustdocJsonAnalyzer {
         json_path: &Path,
         bytes: &[u8],
     ) -> Result<AnalysisSnapshot, AnalysisError> {
-        let rustdoc_crate: rustdoc::Crate = serde_json::from_slice(bytes).map_err(|error| {
-            AnalysisError::Parse {
+        let rustdoc_crate: rustdoc::Crate =
+            serde_json::from_slice(bytes).map_err(|error| AnalysisError::Parse {
                 backend: BACKEND.to_string(),
                 message: format!("{}: {error}", json_path.display()),
-            }
-        })?;
+            })?;
         if rustdoc_crate.format_version != rustdoc::FORMAT_VERSION {
             return Err(AnalysisError::BackendUnavailable {
                 backend: BACKEND.to_string(),
@@ -88,7 +87,10 @@ impl RustdocJsonAnalyzer {
 
     fn json_path(request: &SourceAnalysisRequest) -> Option<PathBuf> {
         if request.source_root.is_file()
-            && request.source_root.extension().is_some_and(|ext| ext == "json")
+            && request
+                .source_root
+                .extension()
+                .is_some_and(|ext| ext == "json")
         {
             return Some(request.source_root.clone());
         }
@@ -101,10 +103,7 @@ impl RustdocJsonAnalyzer {
 }
 
 impl SourceAnalyzer for RustdocJsonAnalyzer {
-    fn analyze(
-        &self,
-        request: &SourceAnalysisRequest,
-    ) -> Result<AnalysisSnapshot, AnalysisError> {
+    fn analyze(&self, request: &SourceAnalysisRequest) -> Result<AnalysisSnapshot, AnalysisError> {
         let Some(json_path) = Self::json_path(request) else {
             let policy = match request.backend_policy {
                 BackendPolicy::Required => "required",
@@ -151,7 +150,11 @@ struct Lowerer<'a> {
 }
 
 impl<'a> Lowerer<'a> {
-    fn new(rustdoc_crate: &'a rustdoc::Crate, source_root: &'a Path, include_private: bool) -> Self {
+    fn new(
+        rustdoc_crate: &'a rustdoc::Crate,
+        source_root: &'a Path,
+        include_private: bool,
+    ) -> Self {
         Self {
             rustdoc_crate,
             source_root,
@@ -181,13 +184,7 @@ impl<'a> Lowerer<'a> {
             .and_then(|summary| summary.path.first())
             .cloned()
             .unwrap_or_else(|| "crate".to_string());
-        self.visit_item(
-            self.rustdoc_crate.root,
-            &root,
-            &crate_name,
-            None,
-            true,
-        );
+        self.visit_item(self.rustdoc_crate.root, &root, &crate_name, None, true);
         self.apply_reexports();
         Ok(())
     }
@@ -202,7 +199,11 @@ impl<'a> Lowerer<'a> {
     ) {
         if !force_include
             && !self.include_private
-            && !is_public_or_api_child(&item.visibility, item.inner.item_kind(), parent_kind.as_ref())
+            && !is_public_or_api_child(
+                &item.visibility,
+                item.inner.item_kind(),
+                parent_kind.as_ref(),
+            )
         {
             return;
         }
@@ -377,7 +378,10 @@ fn child_ids(item: &rustdoc::ItemEnum) -> Vec<rustdoc::Id> {
                 rustdoc::StructKind::Tuple(fields) => fields.iter().flatten().copied().collect(),
                 rustdoc::StructKind::Unit => Vec::new(),
             };
-            fields.into_iter().chain(item.impls.iter().copied()).collect()
+            fields
+                .into_iter()
+                .chain(item.impls.iter().copied())
+                .collect()
         }
         rustdoc::ItemEnum::Trait(item) => item.items.clone(),
         rustdoc::ItemEnum::Union(item) => item
@@ -413,27 +417,65 @@ fn child_name_for(
         return format!("{parent_name}::<impl {trait_name}>");
     }
     let parent_kind = parent_item.item_kind();
-    format!("{parent_name}::<{}-{}>", format_item_kind(parent_kind), child_id.0)
+    format!(
+        "{parent_name}::<{}-{}>",
+        format_item_kind(parent_kind),
+        child_id.0
+    )
 }
 
 fn signature_and_type(item: &rustdoc::ItemEnum) -> (Option<String>, Option<String>) {
     match item {
-        rustdoc::ItemEnum::AssocConst { type_, value, .. } => (Some(format!("const: {}", render_type(type_))), value.clone()),
-        rustdoc::ItemEnum::AssocType { type_, .. } => (Some("type".to_string()), type_.as_ref().map(render_type)),
-        rustdoc::ItemEnum::Constant { type_, const_ } => (Some(format!("const: {}", render_type(type_))), Some(const_.expr.clone())),
-        rustdoc::ItemEnum::Enum(item) => (Some(format!("enum{}", render_generics(&item.generics))), None),
+        rustdoc::ItemEnum::AssocConst { type_, value, .. } => (
+            Some(format!("const: {}", render_type(type_))),
+            value.clone(),
+        ),
+        rustdoc::ItemEnum::AssocType { type_, .. } => {
+            (Some("type".to_string()), type_.as_ref().map(render_type))
+        }
+        rustdoc::ItemEnum::Constant { type_, const_ } => (
+            Some(format!("const: {}", render_type(type_))),
+            Some(const_.expr.clone()),
+        ),
+        rustdoc::ItemEnum::Enum(item) => (
+            Some(format!("enum{}", render_generics(&item.generics))),
+            None,
+        ),
         rustdoc::ItemEnum::Function(function) => (Some(render_function(function)), None),
         rustdoc::ItemEnum::Impl(item) => (Some(render_impl(item)), None),
         rustdoc::ItemEnum::Macro(value) => (Some(value.clone()), None),
         rustdoc::ItemEnum::ProcMacro(_) => (Some("proc-macro".to_string()), None),
-        rustdoc::ItemEnum::Static(item) => (Some(format!("static: {}", render_type(&item.type_))), Some(item.expr.clone())),
-        rustdoc::ItemEnum::Struct(item) => (Some(format!("struct{}", render_generics(&item.generics))), None),
+        rustdoc::ItemEnum::Static(item) => (
+            Some(format!("static: {}", render_type(&item.type_))),
+            Some(item.expr.clone()),
+        ),
+        rustdoc::ItemEnum::Struct(item) => (
+            Some(format!("struct{}", render_generics(&item.generics))),
+            None,
+        ),
         rustdoc::ItemEnum::StructField(type_) => (None, Some(render_type(type_))),
-        rustdoc::ItemEnum::Trait(item) => (Some(format!("trait{}", render_generics(&item.generics))), None),
-        rustdoc::ItemEnum::TraitAlias(item) => (Some(format!("trait{}", render_generics(&item.generics))), None),
-        rustdoc::ItemEnum::TypeAlias(item) => (Some("type".to_string()), Some(render_type(&item.type_))),
-        rustdoc::ItemEnum::Union(item) => (Some(format!("union{}", render_generics(&item.generics))), None),
-        rustdoc::ItemEnum::Variant(variant) => (variant.discriminant.as_ref().map(|value| format!("= {}", value.expr)), None),
+        rustdoc::ItemEnum::Trait(item) => (
+            Some(format!("trait{}", render_generics(&item.generics))),
+            None,
+        ),
+        rustdoc::ItemEnum::TraitAlias(item) => (
+            Some(format!("trait{}", render_generics(&item.generics))),
+            None,
+        ),
+        rustdoc::ItemEnum::TypeAlias(item) => {
+            (Some("type".to_string()), Some(render_type(&item.type_)))
+        }
+        rustdoc::ItemEnum::Union(item) => (
+            Some(format!("union{}", render_generics(&item.generics))),
+            None,
+        ),
+        rustdoc::ItemEnum::Variant(variant) => (
+            variant
+                .discriminant
+                .as_ref()
+                .map(|value| format!("= {}", value.expr)),
+            None,
+        ),
         _ => (None, None),
     }
 }
@@ -500,11 +542,19 @@ fn render_generics(generics: &rustdoc::Generics) -> String {
                     format!("{}: {}", param.name, outlives.join(" + "))
                 }
             }
-            rustdoc::GenericParamDefKind::Type { bounds, default, .. } => {
+            rustdoc::GenericParamDefKind::Type {
+                bounds, default, ..
+            } => {
                 let mut value = param.name.clone();
                 if !bounds.is_empty() {
                     value.push_str(": ");
-                    value.push_str(&bounds.iter().map(render_bound).collect::<Vec<_>>().join(" + "));
+                    value.push_str(
+                        &bounds
+                            .iter()
+                            .map(render_bound)
+                            .collect::<Vec<_>>()
+                            .join(" + "),
+                    );
                 }
                 if let Some(default) = default {
                     value.push_str(" = ");
@@ -540,30 +590,83 @@ fn render_bound(bound: &rustdoc::GenericBound) -> String {
 fn render_type(type_: &rustdoc::Type) -> String {
     match type_ {
         rustdoc::Type::Array { type_, len } => format!("[{}; {}]", render_type(type_), len),
-        rustdoc::Type::BorrowedRef { lifetime, is_mutable, type_ } => format!("&{}{} {}", lifetime.as_deref().map(|value| format!("{value} ")).unwrap_or_default(), if *is_mutable { "mut" } else { "" }, render_type(type_)),
+        rustdoc::Type::BorrowedRef {
+            lifetime,
+            is_mutable,
+            type_,
+        } => format!(
+            "&{}{} {}",
+            lifetime
+                .as_deref()
+                .map(|value| format!("{value} "))
+                .unwrap_or_default(),
+            if *is_mutable { "mut" } else { "" },
+            render_type(type_)
+        ),
         rustdoc::Type::DynTrait(trait_) => format!(
             "dyn {}{}",
-            trait_.traits.iter().map(|bound| bound.trait_.path.as_str()).collect::<Vec<_>>().join(" + "),
-            trait_.lifetime.as_deref().map(|lifetime| format!(" + {lifetime}")).unwrap_or_default()
+            trait_
+                .traits
+                .iter()
+                .map(|bound| bound.trait_.path.as_str())
+                .collect::<Vec<_>>()
+                .join(" + "),
+            trait_
+                .lifetime
+                .as_deref()
+                .map(|lifetime| format!(" + {lifetime}"))
+                .unwrap_or_default()
         ),
         rustdoc::Type::FunctionPointer(function) => render_function_pointer(function),
         rustdoc::Type::Generic(value) | rustdoc::Type::Primitive(value) => value.clone(),
-        rustdoc::Type::ImplTrait(bounds) => format!("impl {}", bounds.iter().map(render_bound).collect::<Vec<_>>().join(" + ")),
+        rustdoc::Type::ImplTrait(bounds) => format!(
+            "impl {}",
+            bounds
+                .iter()
+                .map(render_bound)
+                .collect::<Vec<_>>()
+                .join(" + ")
+        ),
         rustdoc::Type::Infer => "_".to_string(),
         rustdoc::Type::Pat { type_, .. } => render_type(type_),
-        rustdoc::Type::QualifiedPath { name, self_type, .. } => format!("{}::{}", render_type(self_type), name),
-        rustdoc::Type::RawPointer { is_mutable, type_ } => format!("*{} {}", if *is_mutable { "mut" } else { "const" }, render_type(type_)),
+        rustdoc::Type::QualifiedPath {
+            name, self_type, ..
+        } => format!("{}::{}", render_type(self_type), name),
+        rustdoc::Type::RawPointer { is_mutable, type_ } => format!(
+            "*{} {}",
+            if *is_mutable { "mut" } else { "const" },
+            render_type(type_)
+        ),
         rustdoc::Type::ResolvedPath(path) => {
-            format!("{}{}", path.path, path.args.as_deref().map(render_args).unwrap_or_default())
+            format!(
+                "{}{}",
+                path.path,
+                path.args.as_deref().map(render_args).unwrap_or_default()
+            )
         }
         rustdoc::Type::Slice(value) => format!("[{}]", render_type(value)),
-        rustdoc::Type::Tuple(values) => format!("({})", values.iter().map(render_type).collect::<Vec<_>>().join(", ")),
+        rustdoc::Type::Tuple(values) => format!(
+            "({})",
+            values
+                .iter()
+                .map(render_type)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 
 fn render_function_pointer(function: &rustdoc::FunctionPointer) -> String {
     let mut output = String::from("fn(");
-    output.push_str(&function.sig.inputs.iter().map(|(_, type_)| render_type(type_)).collect::<Vec<_>>().join(", "));
+    output.push_str(
+        &function
+            .sig
+            .inputs
+            .iter()
+            .map(|(_, type_)| render_type(type_))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
     output.push(')');
     if let Some(output_type) = &function.sig.output {
         output.push_str(" -> ");
@@ -580,7 +683,14 @@ fn render_args(args: &rustdoc::GenericArgs) -> String {
             format!("<{}>", values.join(", "))
         }
         rustdoc::GenericArgs::Parenthesized { inputs, output } => {
-            let mut value = format!("({})", inputs.iter().map(render_type).collect::<Vec<_>>().join(", "));
+            let mut value = format!(
+                "({})",
+                inputs
+                    .iter()
+                    .map(render_type)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
             if let Some(output) = output {
                 value.push_str(" -> ");
                 value.push_str(&render_type(output));
@@ -620,15 +730,20 @@ fn is_public_or_api_child(
     matches!(
         (kind, parent_kind),
         (rustdoc::ItemKind::AssocConst, Some(DeclarationKind::Trait))
-                | (rustdoc::ItemKind::AssocType, Some(DeclarationKind::Trait))
-                | (rustdoc::ItemKind::Function, Some(DeclarationKind::Trait))
-                | (rustdoc::ItemKind::StructField, Some(DeclarationKind::Struct | DeclarationKind::Union | DeclarationKind::Variant))
-                | (rustdoc::ItemKind::Variant, Some(DeclarationKind::Enum))
+            | (rustdoc::ItemKind::AssocType, Some(DeclarationKind::Trait))
+            | (rustdoc::ItemKind::Function, Some(DeclarationKind::Trait))
+            | (
+                rustdoc::ItemKind::StructField,
+                Some(DeclarationKind::Struct | DeclarationKind::Union | DeclarationKind::Variant)
+            )
+            | (rustdoc::ItemKind::Variant, Some(DeclarationKind::Enum))
     )
 }
 
 fn parent_name(qualified_name: &str) -> Option<String> {
-    qualified_name.rsplit_once("::").map(|(parent, _)| parent.to_string())
+    qualified_name
+        .rsplit_once("::")
+        .map(|(parent, _)| parent.to_string())
 }
 
 fn attribute_key(attribute: &rustdoc::Attribute) -> String {
@@ -692,8 +807,19 @@ mod tests {
     #[test]
     fn rejects_requests_without_an_explicit_json_path() {
         let request = SourceAnalysisRequest::new("target");
-        let error = RustdocJsonAnalyzer::default().analyze(&request).unwrap_err();
+        let error = RustdocJsonAnalyzer::default()
+            .analyze(&request)
+            .unwrap_err();
         assert!(error.to_string().contains("no rustdoc JSON path supplied"));
+    }
+
+    #[test]
+    fn positions_convert_one_based_rustdoc_columns() {
+        let value = b"one\ntwo\n";
+        let position = position((2, 2), value);
+        assert_eq!(position.byte, 5);
+        assert_eq!(position.line, 2);
+        assert_eq!(position.column, 1);
     }
 
     #[test]
@@ -709,15 +835,6 @@ mod tests {
         assert!(!identity.contains("rustc-private-path"));
         assert_ne!(identity, changed_toolchain.cache_identity(&request));
         assert_ne!(identity, unspecified_toolchain.cache_identity(&request));
-    }
-
-    #[test]
-    fn positions_convert_one_based_rustdoc_columns() {
-        let value = b"one\ntwo\n";
-        let position = position((2, 2), value);
-        assert_eq!(position.byte, 5);
-        assert_eq!(position.line, 2);
-        assert_eq!(position.column, 1);
     }
 
     #[test]
@@ -749,8 +866,12 @@ mod tests {
             &analyzer,
             &provider_request,
         );
-        let first = analyzer.analyze_json_bytes(&request, &json_path, &bytes).unwrap();
-        let second = analyzer.analyze_json_bytes(&request, &json_path, &bytes).unwrap();
+        let first = analyzer
+            .analyze_json_bytes(&request, &json_path, &bytes)
+            .unwrap();
+        let second = analyzer
+            .analyze_json_bytes(&request, &json_path, &bytes)
+            .unwrap();
         assert_eq!(first.declarations, second.declarations);
         assert_eq!(first.toolchain.as_deref(), Some("fixture-toolchain"));
 
@@ -761,10 +882,12 @@ mod tests {
             .unwrap();
         assert_eq!(component.aliases, vec!["fixture::PublicComponent"]);
         assert!(!component.children.is_empty());
-        assert!(first
-            .declarations
-            .iter()
-            .any(|declaration| declaration.qualified_name == "fixture::api::Component::value"));
+        assert!(
+            first
+                .declarations
+                .iter()
+                .any(|declaration| declaration.qualified_name == "fixture::api::Component::value")
+        );
 
         let answer = first
             .declarations
@@ -773,7 +896,13 @@ mod tests {
             .unwrap();
         assert_eq!(answer.signature.as_deref(), Some("fn<T>(value: T) -> T"));
         assert_eq!(answer.documentation, "Return the answer.");
-        assert_eq!(answer.attributes.get("doc-link:Component").map(String::as_str), Some("2"));
+        assert_eq!(
+            answer
+                .attributes
+                .get("doc-link:Component")
+                .map(String::as_str),
+            Some("2")
+        );
         assert_eq!(answer.source.path, "src/api.rs");
         assert_eq!(answer.source.start.line, 9);
 
@@ -783,25 +912,31 @@ mod tests {
             .find(|declaration| declaration.qualified_name == "fixture::hidden_item")
             .unwrap();
         assert!(hidden.noindex);
-        assert!(first
-            .declarations
-            .iter()
-            .all(|declaration| declaration.qualified_name != "fixture::private_item"));
+        assert!(
+            first
+                .declarations
+                .iter()
+                .all(|declaration| declaration.qualified_name != "fixture::private_item")
+        );
 
         let mut include_private = request.clone();
         include_private.include_private = true;
         let private_snapshot = analyzer
             .analyze_json_bytes(&include_private, &json_path, &bytes)
             .unwrap();
-        assert!(private_snapshot
-            .declarations
-            .iter()
-            .any(|declaration| declaration.qualified_name == "fixture::private_item"));
-        assert!(first
-            .declarations
-            .iter()
-            .find(|declaration| declaration.qualified_name == "fixture::old_answer")
-            .is_some_and(|declaration| declaration.deprecated));
+        assert!(
+            private_snapshot
+                .declarations
+                .iter()
+                .any(|declaration| declaration.qualified_name == "fixture::private_item")
+        );
+        assert!(
+            first
+                .declarations
+                .iter()
+                .find(|declaration| declaration.qualified_name == "fixture::old_answer")
+                .is_some_and(|declaration| declaration.deprecated)
+        );
     }
 
     #[test]

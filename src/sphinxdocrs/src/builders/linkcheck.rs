@@ -569,7 +569,10 @@ mod tests {
         assert_eq!(b.format(), "");
         assert_eq!(b.out_suffix(), ".txt");
         assert_eq!(b.get_target_uri("index"), "index");
-        assert!(b.build_doc("index", "irrelevant", Path::new("/nonexistent")).is_ok());
+        assert!(
+            b.build_doc("index", "irrelevant", Path::new("/nonexistent"))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -591,10 +594,7 @@ mod tests {
     #[test]
     fn split_anchor_handles_empty_and_missing_and_decoded_fragments() {
         assert_eq!(split_anchor("https://x/y#"), ("https://x/y", String::new()));
-        assert_eq!(
-            split_anchor("https://x/y"),
-            ("https://x/y", String::new())
-        );
+        assert_eq!(split_anchor("https://x/y"), ("https://x/y", String::new()));
         assert_eq!(
             split_anchor("https://x/y#a%20b"),
             ("https://x/y", "a b".to_string())

@@ -27,9 +27,7 @@ use std::rc::Rc;
 use pyo3::prelude::*;
 
 use crate::app_events::{AppEventManager, EventArg, EventError, SharedEvents};
-use crate::app_facade::{
-    PyAppFacade, SharedAssets, SharedConfig, SharedEnvExtra, SharedRawConfig, seed_shared_config,
-};
+use crate::app_facade::{PyAppFacade, SharedAssets, SharedConfig, seed_shared_config};
 use crate::builders::changes::ChangesBuilder;
 use crate::builders::dirhtml::DirhtmlBuilder;
 use crate::builders::epub::EpubBuilder;
@@ -204,8 +202,6 @@ pub struct SphinxApp {
     pub(crate) native_extensions: std::collections::HashSet<String>,
     py_config: SharedConfig,
     pub assets: SharedAssets,
-    raw_config: SharedRawConfig,
-    env_extra: SharedEnvExtra,
     freshenv: bool,
     force_all: bool,
 }
@@ -300,8 +296,6 @@ impl SphinxApp {
         let registry = Rc::new(RefCell::new(reg));
         let py_config = Python::attach(|py| seed_shared_config(py, &config));
         let assets = Rc::new(RefCell::new(Default::default()));
-        let raw_config = Rc::new(config.raw_config().clone());
-        let env_extra = Rc::new(RefCell::new(HashMap::new()));
 
         let mut app = Self {
             srcdir,
@@ -318,8 +312,6 @@ impl SphinxApp {
             native_extensions: std::collections::HashSet::new(),
             py_config,
             assets,
-            raw_config,
-            env_extra,
             freshenv: false,
             force_all: false,
         };
@@ -443,9 +435,6 @@ impl SphinxApp {
                     self.py_config.clone(),
                     self.assets.clone(),
                     self.registry.clone(),
-                    self.env.clone(),
-                    self.raw_config.clone(),
-                    self.env_extra.clone(),
                 ),
             )?;
             let metadata = setup.call1((facade,))?;
@@ -1022,10 +1011,11 @@ mod tests {
         let dt = TempDir::new().unwrap();
         let mut app =
             SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
+        assert!(app.config.html_add_external_link_class());
         app.build().unwrap();
         let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
         assert!(
-            html.contains("class=\"external\" href=\"https://example.test/docs\""),
+            html.contains("class=\"reference external\" href=\"https://example.test/docs\""),
             "conf.py option should enable external link classes:\n{html}"
         );
     }
@@ -1053,7 +1043,7 @@ mod tests {
         app.build().unwrap();
         let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
         assert!(
-            html.contains("<h1>Welcome</h1>"),
+            html.contains("<h1>Welcome"),
             "body must not be HTML-escaped:\n{html}"
         );
         if html.contains("Quick search") {

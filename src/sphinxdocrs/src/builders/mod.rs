@@ -130,9 +130,8 @@ pub trait Builder {
 
     /// Build all documents in `srcdir` into `outdir`, guided by `env`.
     ///
-    /// Discovers configured source files under `srcdir`, calls
-    /// [`build_doc`](Builder::build_doc) for each, and returns a
-    /// [`BuildResult`].
+    /// Discovers `.rst` files under `srcdir`, calls [`build_doc`](Builder::build_doc)
+    /// for each, and returns a [`BuildResult`].
     fn build_all(
         &self,
         srcdir: &Path,

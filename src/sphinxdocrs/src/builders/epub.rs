@@ -257,9 +257,12 @@ mod tests {
         }
         let project =
             crate::environment::EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
-        let mut env = crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
+        let mut env =
+            crate::environment::BuildEnvironment::new(config, project, src.path(), out.path());
         env.all_docs.insert("index".into(), 1);
-        let result = EpubBuilder::new().build_all(src.path(), out.path(), &env).unwrap();
+        let result = EpubBuilder::new()
+            .build_all(src.path(), out.path(), &env)
+            .unwrap();
         assert_eq!(result.written, 1);
         assert!(out.path().join("book.epub").is_file());
     }

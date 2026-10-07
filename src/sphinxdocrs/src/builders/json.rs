@@ -45,7 +45,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use docutilsrs::cli::{CommonOptions, Html5Options};
-use docutilsrs::{html5, parse_rst_with_options, TitlePromotion};
+use docutilsrs::{TitlePromotion, html5, parse_rst_with_options};
 use serde::{Deserialize, Serialize};
 
 use super::{BuildError, BuildResult, Builder};
@@ -1221,9 +1221,11 @@ mod tests {
         assert!(index["prev"].is_null());
         assert_eq!(index["next"]["link"], "about/");
         assert_eq!(index["next"]["title"], "About");
-        assert!(index["sidebars"]
-            .as_array()
-            .is_some_and(|items| !items.is_empty()));
+        assert!(
+            index["sidebars"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+        );
         if let Some(version) = index.get("alabaster_version") {
             assert!(version.is_string());
             assert!(index["alabaster_version_info"].is_array());

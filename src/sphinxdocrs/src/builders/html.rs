@@ -1671,13 +1671,19 @@ mod tests {
                 GenIndexTerm {
                     name: "cherry".to_string(),
                     links: vec![],
-                    subterms: vec![("pie".to_string(), vec![("desserts".to_string(), String::new())])],
+                    subterms: vec![(
+                        "pie".to_string(),
+                        vec![("desserts".to_string(), String::new())],
+                    )],
                     see: None,
                 },
                 GenIndexTerm {
                     name: "citrus".to_string(),
                     links: vec![("fruit".to_string(), String::new())],
-                    subterms: vec![("orange".to_string(), vec![("fruit".to_string(), "orange".to_string())])],
+                    subterms: vec![(
+                        "orange".to_string(),
+                        vec![("fruit".to_string(), "orange".to_string())],
+                    )],
                     see: None,
                 },
             ],

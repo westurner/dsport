@@ -993,7 +993,8 @@ dedicated end-to-end tests.
   the executable path; unset means the test skips).
 - Add opt-in Lean language-server integration tests
   (`SPHINXDOCRS_LEAN_LSP_COMMAND` supplies a JSON argv array; unset means skip).
-- Document server installation and project-specific commands.
+- Document server installation and project-specific commands in
+  [`SOURCE_DOCS_LSP.md`](SOURCE_DOCS_LSP.md).
 - Add opt-in `ai-sandbox` boundary tests for LSP-only and whole-build scopes on
   each supported platform.
 - Evaluate `dscode-session` separately; it must not replace the sandbox provider
@@ -1005,7 +1006,7 @@ Linux no-proc mode; its explicit `/usr/bin/env` argv supplies the installed
 toolchain's `LD_LIBRARY_PATH`, without relaxing the sandbox environment filter.
 The Lean live test accepts a JSON argv array and skips when no command is
 configured. Installed-server CI, broader version/project compatibility,
-platform boundary tests, and server installation documentation remain pending.
+platform boundary tests, and Lean live-server validation remain pending.
 
 Exit criteria: live integrations are useful for development but remain unnecessary
 for normal package builds, release builds, and deterministic CI; protected mode
@@ -1082,8 +1083,9 @@ The plan is not complete until the remaining acceptance criteria below land:
   provider identity.
 - Complete shared provider contract coverage and static/hybrid parity tests for
   domains, autodoc, apidoc, environment persistence, and search.
-- Add optional rust-analyzer and Lean live tests plus diagnostics-notification,
-  pre-initialize crash, malformed-response, and cross-platform lifecycle cases.
+- Opt-in rust-analyzer and Lean live-test harnesses, diagnostics-notification,
+  pre-initialize crash, and malformed-response tests exist. Run installed-server
+  CI and add cross-platform lifecycle cases before treating coverage as complete.
 - Complete source-port mapping audits and shared contract tests for every static,
   LSP, and hybrid provider, including static/hybrid parity in domains, autodoc,
   apidoc, environment persistence, and search.

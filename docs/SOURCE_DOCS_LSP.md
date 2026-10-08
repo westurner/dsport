@@ -86,6 +86,23 @@ installed toolchain's library directory to rust-analyzer, and uses Bubblewrap
 without mounting child `/proc`. It requires the host to support the sandbox's
 namespace and mount operations; it never falls back to an unsandboxed launch.
 
+## Built LSP Report
+
+The quickstarted project at
+`src/sphinxdocrs/docs/lsp-rust-report/` demonstrates the end-to-end flow. It
+contains a small Rust crate, protected per-language settings in `conf.py`, and
+the current rust-analyzer output in `api.rst`. Regenerate the report and build
+HTML from the workspace root with:
+
+```sh
+bash src/sphinxdocrs/docs/lsp-rust-report/build-report.sh
+```
+
+The script runs `sphinx-autodoc-rs` in protected LSP mode to write `api.rst`,
+then runs `sphinx-build-rs` to render that report. The HTML build itself reads
+the generated RST and does not start another language server. The output is
+written to `src/sphinxdocrs/docs/lsp-rust-report/_build/final-html/`.
+
 ## Lean Test
 
 Lean servers and project launch requirements vary. Set

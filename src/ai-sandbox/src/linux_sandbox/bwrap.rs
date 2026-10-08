@@ -29,6 +29,8 @@ pub enum BwrapBuildError {
     ReadOnlyFilesystemRoot,
     #[error("read-only root would expose the workspace parent: {0}")]
     ReadOnlyRootContainsWorkspace(PathBuf),
+    #[error("read-only root overlaps a protected sandbox mount point: {0}")]
+    ProtectedReadOnlyRoot(PathBuf),
     #[error("filesystem policy cannot be enforced by Bubblewrap: {0}")]
     UnsupportedFilesystemPolicy(&'static str),
 }
@@ -468,6 +470,9 @@ fn add_read_only_roots(
         if root == Path::new("/") {
             return Err(BwrapBuildError::ReadOnlyFilesystemRoot);
         }
+        if is_protected_read_only_root(&root) {
+            return Err(BwrapBuildError::ProtectedReadOnlyRoot(root));
+        }
         if root == cwd || root.starts_with(cwd) || is_system_mounted(&root) {
             continue;
         }
@@ -501,6 +506,15 @@ fn add_read_only_roots(
         args = args.ro_bind(&root, &root);
     }
     Ok(args)
+}
+
+fn is_protected_read_only_root(path: &Path) -> bool {
+    ["/dev", "/proc"]
+        .iter()
+        .any(|root| path == Path::new(root) || path.starts_with(root))
+        || ["/tmp", "/home", "/root"]
+            .iter()
+            .any(|root| path == Path::new(root))
 }
 
 fn is_system_mounted(path: &Path) -> bool {
@@ -660,6 +674,53 @@ mod tests {
 
         std::fs::remove_dir_all(cwd_root).unwrap();
         std::fs::remove_dir_all(tool_root).unwrap();
+    }
+
+    #[test]
+    fn readonly_roots_cannot_replace_protected_mount_points() {
+        for path in ["/dev", "/dev/shm", "/proc", "/proc/self", "/tmp", "/home", "/root"] {
+            assert!(
+                is_protected_read_only_root(Path::new(path)),
+                "{path} should be protected"
+            );
+        }
+        for path in ["/tmp/toolchain", "/home/user/.elan", "/root/.elan"] {
+            assert!(
+                !is_protected_read_only_root(Path::new(path)),
+                "explicit child root {path} should remain configurable"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn readonly_root_symlink_cannot_alias_a_protected_mount() {
+        use std::os::unix::fs::symlink;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!("ai-sandbox-protected-root-{suffix}"));
+        std::fs::create_dir_all(&base).unwrap();
+        let root_link = base.join("toolchain");
+        symlink("/dev", &root_link).unwrap();
+
+        let result = create_readonly_bwrap_command_with_roots(
+            vec!["/usr/bin/true".into()],
+            &std::env::current_dir().unwrap(),
+            &[root_link.clone()],
+            &[],
+            crate::NetworkSandboxPolicy::NoAccess,
+        );
+
+        std::fs::remove_file(&root_link).unwrap();
+        std::fs::remove_dir(&base).unwrap();
+        assert!(matches!(
+            result,
+            Err(BwrapBuildError::ProtectedReadOnlyRoot(path)) if path == Path::new("/dev")
+        ));
     }
 
     #[test]

@@ -6,6 +6,58 @@ feature. Protected LSP additionally requires `source-sandbox` and a supported
 Linux host; macOS policy generation exists but native runtime validation is
 pending. Protected-build is not available.
 
+## Sphinx Configuration
+
+Configure argv, environment, and protected filesystem roots by language in
+`conf.py`. For example, an elan-managed Lean server can be configured as:
+
+```python
+from pathlib import Path
+
+elan_home = Path.home() / ".elan"
+
+source_backend = "hybrid"
+source_lsp_sandbox = "protected-lsp"
+source_lsp_servers = {
+  "lean": [str(elan_home / "bin" / "lake"), "serve"],
+}
+source_lsp_server_environment = {
+  "lean": {
+    "ELAN_HOME": str(elan_home),
+    "PATH": f"{elan_home / 'bin'}:/usr/bin:/bin",
+  },
+}
+source_lsp_server_read_only_roots = {
+  "lean": [str(elan_home)],
+}
+```
+
+`source_lsp_servers` is a language-to-argv mapping; arguments are passed
+literally, without a shell. `source_lsp_server_environment` is a
+language-to-environment mapping. The process starts with inherited environment
+cleared, and receives only explicit per-server values plus the existing
+locale-only internal allowlist. Protected mode also applies
+`source_lsp_sandbox_environment`; per-server values override same-named shared
+values there.
+
+The existing `source_lsp_read_only_roots` list remains available for roots shared
+by all servers. `source_lsp_server_read_only_roots` adds roots only for the
+matching language. Both are additional read-only mounts; the workspace is
+already mounted read-only. Paths must be absolute, non-root, and contain no
+`..`; protected startup fails if a configured path cannot be mounted or if the
+selected server has no effective toolchain roots. Additional roots cannot
+replace `/dev` or `/proc` (including descendants), or the base `/tmp`, `/home`,
+or `/root` mounts. Explicit nested toolchain directories such as
+`/home/user/.elan` remain configurable.
+
+For safety, environment keys that can inject code or alter dynamic loading (such
+as `LD_*`, `DYLD_*`, `PYTHONPATH`, and `NODE_OPTIONS`) are rejected. Configured
+`PATH` entries must all be non-empty absolute paths. The server executable is
+resolved using the Sphinx process's host `PATH` before the child environment is
+constructed, so prefer an absolute executable path when the toolchain is not on
+that host path. Do not put credentials in `conf.py`; configured values are
+visible to the configured server.
+
 ## Fake Server
 
 The status command is process-free unless a live mode is explicitly selected.

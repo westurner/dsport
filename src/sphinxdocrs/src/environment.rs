@@ -3111,6 +3111,7 @@ mod tests {
             request_timeout: std::time::Duration::from_secs(10),
             allow_fallback: false,
             environment: Vec::new(),
+            server_environment: Vec::new(),
             max_message_bytes: 1024 * 1024,
         };
         let request = {

@@ -953,6 +953,9 @@ request. Continue auditing every toolchain/configuration input for invalidation.
   generation but still needs native runtime boundary validation.
 - Protected Windows and BSD modes remain unavailable until verified executors
   and boundary tests exist. Resource limits are not implemented.
+- Sphinx configuration supports per-language server environment and additional
+  read-only roots. Inherited environment remains cleared; unsafe loader/runtime
+  keys, relative PATH entries, and invalid filesystem roots are rejected.
 - Implement the lifecycle worker and normalized document-symbol mapper.
 - Add fake-server tests and timeout/shutdown coverage.
 - Add explicit source-backend configuration and trusted-local CLI selection.

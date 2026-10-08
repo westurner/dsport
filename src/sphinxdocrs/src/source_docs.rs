@@ -511,10 +511,12 @@ pub mod config {
     pub struct SourceDocsSettings {
         pub backend: SourceBackendMode,
         pub lsp_servers: BTreeMap<String, Vec<String>>,
+        pub lsp_server_environment: BTreeMap<String, BTreeMap<String, String>>,
         pub lsp_timeout_ms: u64,
         pub lsp_allow_fallback: bool,
         pub lsp_workspace_root: Option<PathBuf>,
         pub lsp_read_only_roots: Vec<PathBuf>,
+        pub lsp_server_read_only_roots: BTreeMap<String, Vec<PathBuf>>,
         pub lsp_sandbox_environment: BTreeMap<String, String>,
         pub lsp_sandbox: SourceSandboxMode,
         pub build_sandbox: SourceBuildSandboxMode,
@@ -525,10 +527,12 @@ pub mod config {
             Self {
                 backend: SourceBackendMode::Static,
                 lsp_servers: BTreeMap::new(),
+                lsp_server_environment: BTreeMap::new(),
                 lsp_timeout_ms: 30_000,
                 lsp_allow_fallback: true,
                 lsp_workspace_root: None,
                 lsp_read_only_roots: Vec::new(),
+                lsp_server_read_only_roots: BTreeMap::new(),
                 lsp_sandbox_environment: BTreeMap::new(),
                 lsp_sandbox: SourceSandboxMode::Off,
                 build_sandbox: SourceBuildSandboxMode::Off,
@@ -537,6 +541,49 @@ pub mod config {
     }
 
     impl SourceDocsSettings {
+        pub fn lsp_server_environment_for(
+            &self,
+            language: &str,
+        ) -> Result<Vec<(String, String)>, String> {
+            let environment = self
+                .lsp_server_environment
+                .get(language)
+                .cloned()
+                .unwrap_or_default();
+            for (key, value) in &environment {
+                validate_lsp_environment_entry(
+                    key,
+                    value,
+                    &format!("source_lsp_server_environment[{language:?}]"),
+                )?;
+            }
+            Ok(environment.into_iter().collect())
+        }
+
+        pub fn lsp_sandbox_environment_entries(&self) -> Result<Vec<(String, String)>, String> {
+            for (key, value) in &self.lsp_sandbox_environment {
+                validate_lsp_environment_entry(key, value, "source_lsp_sandbox_environment")?;
+            }
+            Ok(self
+                .lsp_sandbox_environment
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect())
+        }
+
+        pub fn lsp_read_only_roots_for(&self, language: &str) -> Result<Vec<PathBuf>, String> {
+            let mut roots = self.lsp_read_only_roots.clone();
+            if let Some(server_roots) = self.lsp_server_read_only_roots.get(language) {
+                roots.extend(server_roots.iter().cloned());
+            }
+            for root in &roots {
+                validate_lsp_read_only_root(root, "LSP read-only roots")?;
+            }
+            roots.sort();
+            roots.dedup();
+            Ok(roots)
+        }
+
         pub fn from_sphinx_config(config: &SphinxConfig) -> Result<Self, String> {
             let mut settings = Self::default();
             if let Some(value) = config.get("source_backend") {
@@ -572,6 +619,35 @@ pub mod config {
                     settings.lsp_servers.insert(language, args);
                 }
             }
+            if let Some(value) = config.get("source_lsp_server_environment") {
+                let ConfigVal::Map(languages) = value else {
+                    return Err("source_lsp_server_environment must be a mapping".into());
+                };
+                for (language, value) in languages {
+                    let ConfigVal::Map(entries) = value else {
+                        return Err(format!(
+                            "source_lsp_server_environment[{language:?}] must be a mapping"
+                        ));
+                    };
+                    let mut environment = BTreeMap::new();
+                    for (key, value) in entries {
+                        let value = value.as_str().ok_or_else(|| {
+                            format!(
+                                "source_lsp_server_environment[{language:?}][{key:?}] must be a string"
+                            )
+                        })?;
+                        validate_lsp_environment_entry(
+                            &key,
+                            value,
+                            &format!("source_lsp_server_environment[{language:?}]"),
+                        )?;
+                        environment.insert(key, value.to_string());
+                    }
+                    settings
+                        .lsp_server_environment
+                        .insert(language, environment);
+                }
+            }
             if let Some(value) = config.get("source_lsp_timeout") {
                 let timeout = value
                     .as_int()
@@ -602,20 +678,26 @@ pub mod config {
                         "source_lsp_read_only_roots must be a list of absolute paths".into(),
                     );
                 };
-                for root in roots {
-                    let Some(root) = root.as_str() else {
-                        return Err(
-                            "source_lsp_read_only_roots entries must be path strings".into()
-                        );
+                settings.lsp_read_only_roots =
+                    parse_lsp_read_only_roots(&roots, "source_lsp_read_only_roots")?;
+            }
+            if let Some(value) = config.get("source_lsp_server_read_only_roots") {
+                let ConfigVal::Map(languages) = value else {
+                    return Err("source_lsp_server_read_only_roots must be a mapping".into());
+                };
+                for (language, value) in languages {
+                    let ConfigVal::List(roots) = value else {
+                        return Err(format!(
+                            "source_lsp_server_read_only_roots[{language:?}] must be a list"
+                        ));
                     };
-                    let root = PathBuf::from(root);
-                    if !root.is_absolute() || root == PathBuf::from("/") {
-                        return Err(
-                            "source_lsp_read_only_roots entries must be absolute non-root paths"
-                                .into(),
-                        );
-                    }
-                    settings.lsp_read_only_roots.push(root);
+                    settings.lsp_server_read_only_roots.insert(
+                        language.clone(),
+                        parse_lsp_read_only_roots(
+                            &roots,
+                            &format!("source_lsp_server_read_only_roots[{language:?}]"),
+                        )?,
+                    );
                 }
             }
             if let Some(value) = config.get("source_lsp_sandbox_environment") {
@@ -626,15 +708,7 @@ pub mod config {
                     let value = value.as_str().ok_or_else(|| {
                         format!("source_lsp_sandbox_environment[{key:?}] must be a string")
                     })?;
-                    if key.is_empty()
-                        || key.contains('=')
-                        || key.contains('\0')
-                        || value.contains('\0')
-                    {
-                        return Err(format!(
-                            "source_lsp_sandbox_environment[{key:?}] has an invalid key or NUL value"
-                        ));
-                    }
+                    validate_lsp_environment_entry(&key, value, "source_lsp_sandbox_environment")?;
                     settings
                         .lsp_sandbox_environment
                         .insert(key, value.to_string());
@@ -662,7 +736,12 @@ pub mod config {
                 if !cfg!(any(target_os = "linux", target_os = "macos")) {
                     return Err("protected-lsp is unsupported on this platform".into());
                 }
-                if settings.lsp_read_only_roots.is_empty() {
+                if settings.lsp_read_only_roots.is_empty()
+                    && settings
+                        .lsp_server_read_only_roots
+                        .values()
+                        .all(Vec::is_empty)
+                {
                     return Err(
                         "protected-lsp requires source_lsp_read_only_roots for toolchain access"
                             .into(),
@@ -701,8 +780,18 @@ pub mod config {
             for root in &self.lsp_read_only_roots {
                 value.push_str(&format!("ro-root={};", root.to_string_lossy()));
             }
+            if let Some(roots) = self.lsp_server_read_only_roots.get(language) {
+                for root in roots {
+                    value.push_str(&format!("server-ro-root={};", root.to_string_lossy()));
+                }
+            }
             for (key, environment_value) in &self.lsp_sandbox_environment {
                 value.push_str(&format!("sandbox-env={key}={environment_value};"));
+            }
+            if let Some(environment) = self.lsp_server_environment.get(language) {
+                for (key, environment_value) in environment {
+                    value.push_str(&format!("server-env={key}={environment_value};"));
+                }
             }
             if let Some(command) = self.lsp_servers.get(language) {
                 for arg in command {
@@ -724,6 +813,101 @@ pub mod config {
         pub fn backend_mode(&self) -> SourceBackendMode {
             self.backend
         }
+    }
+
+    fn parse_lsp_read_only_roots(
+        roots: &[ConfigVal],
+        setting: &str,
+    ) -> Result<Vec<PathBuf>, String> {
+        roots
+            .iter()
+            .map(|root| {
+                let Some(root) = root.as_str() else {
+                    return Err(format!("{setting} entries must be path strings"));
+                };
+                let root = PathBuf::from(root);
+                validate_lsp_read_only_root(&root, setting)?;
+                Ok(root)
+            })
+            .collect()
+    }
+
+    fn validate_lsp_read_only_root(root: &std::path::Path, setting: &str) -> Result<(), String> {
+        if !root.is_absolute()
+            || root == std::path::Path::new("/")
+            || root
+                .components()
+                .any(|component| component == std::path::Component::ParentDir)
+        {
+            return Err(format!(
+                "{setting} entries must be absolute non-root paths without '..'"
+            ));
+        }
+        if ["/dev", "/proc"]
+            .iter()
+            .any(|reserved| root == std::path::Path::new(reserved) || root.starts_with(reserved))
+            || ["/tmp", "/home", "/root"]
+                .iter()
+                .any(|reserved| root == std::path::Path::new(reserved))
+        {
+            return Err(format!(
+                "{setting} entries must not replace protected sandbox mount points"
+            ));
+        }
+        Ok(())
+    }
+
+    pub(super) fn validate_lsp_environment_entry(
+        key: &str,
+        value: &str,
+        setting: &str,
+    ) -> Result<(), String> {
+        let mut characters = key.chars();
+        let valid_first = characters
+            .next()
+            .is_some_and(|character| character == '_' || character.is_ascii_alphabetic());
+        if !valid_first
+            || !characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+            || value.contains('\0')
+        {
+            return Err(format!(
+                "{setting}[{key:?}] has an invalid key or NUL value"
+            ));
+        }
+        if key.starts_with("LD_")
+            || key.starts_with("DYLD_")
+            || matches!(
+                key,
+                "BASH_ENV"
+                    | "ENV"
+                    | "GCONV_PATH"
+                    | "LOCPATH"
+                    | "NODE_OPTIONS"
+                    | "NLSPATH"
+                    | "PERL5OPT"
+                    | "PYTHONHOME"
+                    | "PYTHONINSPECT"
+                    | "PYTHONPATH"
+                    | "RUBYOPT"
+            )
+        {
+            return Err(format!(
+                "{setting}[{key:?}] is blocked because it can inject code or alter dynamic loading"
+            ));
+        }
+        if key == "PATH" {
+            let paths = std::env::split_paths(std::ffi::OsStr::new(value)).collect::<Vec<_>>();
+            if paths.is_empty()
+                || paths
+                    .iter()
+                    .any(|path| path.as_os_str().is_empty() || !path.is_absolute())
+            {
+                return Err(format!(
+                    "{setting}[\"PATH\"] must contain only non-empty absolute paths"
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1418,6 +1602,152 @@ mod tests {
             SourceAnalysisSession::from_settings(&settings, "rust", Some(static_provider()), None);
         let request = SourceAnalysisRequest::new("src");
         assert!(session.cache_identity(&request).contains(&identity));
+    }
+
+    #[test]
+    fn per_server_lsp_environment_and_roots_are_scoped_and_hashed() {
+        let mut raw = HashMap::new();
+        raw.insert(
+            "source_lsp_servers".into(),
+            ConfigVal::Map(vec![
+                (
+                    "lean".into(),
+                    ConfigVal::List(vec![ConfigVal::Str("lake".into())]),
+                ),
+                (
+                    "rust".into(),
+                    ConfigVal::List(vec![ConfigVal::Str("rust-analyzer".into())]),
+                ),
+            ]),
+        );
+        raw.insert(
+            "source_lsp_server_environment".into(),
+            ConfigVal::Map(vec![(
+                "lean".into(),
+                ConfigVal::Map(vec![
+                    ("ELAN_HOME".into(), ConfigVal::Str("/opt/elan".into())),
+                    (
+                        "LEAN_PATH".into(),
+                        ConfigVal::Str("/workspace/.lake/build/lib".into()),
+                    ),
+                ]),
+            )]),
+        );
+        raw.insert(
+            "source_lsp_read_only_roots".into(),
+            ConfigVal::List(vec![ConfigVal::Str("/opt/shared".into())]),
+        );
+        raw.insert(
+            "source_lsp_server_read_only_roots".into(),
+            ConfigVal::Map(vec![
+                (
+                    "lean".into(),
+                    ConfigVal::List(vec![ConfigVal::Str("/opt/elan".into())]),
+                ),
+                (
+                    "rust".into(),
+                    ConfigVal::List(vec![ConfigVal::Str("/opt/rust".into())]),
+                ),
+            ]),
+        );
+        let settings = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+            raw,
+            HashMap::new(),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            settings.lsp_server_environment_for("lean").unwrap(),
+            [
+                ("ELAN_HOME".into(), "/opt/elan".into()),
+                ("LEAN_PATH".into(), "/workspace/.lake/build/lib".into()),
+            ]
+        );
+        assert_eq!(
+            settings.lsp_read_only_roots_for("lean").unwrap(),
+            [Path::new("/opt/elan"), Path::new("/opt/shared")]
+        );
+        assert_eq!(
+            settings.lsp_read_only_roots_for("rust").unwrap(),
+            [Path::new("/opt/rust"), Path::new("/opt/shared")]
+        );
+
+        let lean_identity = settings.lsp_configuration_identity("lean");
+        let rust_identity = settings.lsp_configuration_identity("rust");
+        let mut changed = settings.clone();
+        changed
+            .lsp_server_environment
+            .get_mut("lean")
+            .unwrap()
+            .insert("LEAN_PATH".into(), "/different/lib".into());
+        assert_ne!(lean_identity, changed.lsp_configuration_identity("lean"));
+        assert_eq!(rust_identity, changed.lsp_configuration_identity("rust"));
+        changed
+            .lsp_server_read_only_roots
+            .get_mut("lean")
+            .unwrap()
+            .push(Path::new("/opt/lean-extra").to_path_buf());
+        assert_ne!(lean_identity, changed.lsp_configuration_identity("lean"));
+    }
+
+    #[test]
+    fn lsp_environment_and_server_roots_reject_unsafe_values() {
+        for (key, value) in [
+            ("LD_PRELOAD", "/tmp/inject.so"),
+            ("PYTHONPATH", "/tmp/inject"),
+            ("PATH", ".:/usr/bin"),
+        ] {
+            let mut raw = HashMap::new();
+            raw.insert(
+                "source_lsp_server_environment".into(),
+                ConfigVal::Map(vec![(
+                    "lean".into(),
+                    ConfigVal::Map(vec![(key.into(), ConfigVal::Str(value.into()))]),
+                )]),
+            );
+            let error = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+                raw,
+                HashMap::new(),
+            ))
+            .unwrap_err();
+            assert!(error.contains(key), "{error}");
+        }
+
+        for path in ["/", "/dev/shm", "/proc/self", "/tmp", "/home", "/root"] {
+            let mut raw = HashMap::new();
+            raw.insert(
+                "source_lsp_server_read_only_roots".into(),
+                ConfigVal::Map(vec![(
+                    "lean".into(),
+                    ConfigVal::List(vec![ConfigVal::Str(path.into())]),
+                )]),
+            );
+            let error = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+                raw,
+                HashMap::new(),
+            ))
+            .unwrap_err();
+            assert!(
+                error.contains("absolute non-root paths")
+                    || error.contains("protected sandbox mount points"),
+                "path {path:?}: {error}"
+            );
+        }
+
+        let mut raw = HashMap::new();
+        raw.insert(
+            "source_lsp_sandbox_environment".into(),
+            ConfigVal::Map(vec![(
+                "LD_LIBRARY_PATH".into(),
+                ConfigVal::Str("/tmp/lib".into()),
+            )]),
+        );
+        let error = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+            raw,
+            HashMap::new(),
+        ))
+        .unwrap_err();
+        assert!(error.contains("LD_LIBRARY_PATH"), "{error}");
     }
 
     #[test]

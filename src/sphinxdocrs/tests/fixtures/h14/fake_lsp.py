@@ -8,11 +8,14 @@ mode = sys.argv[1] if len(sys.argv) > 1 else "symbols"
 counter = sys.argv[2] if len(sys.argv) > 2 else None
 if mode == "environment-check":
     expected_cwd = sys.argv[2] if len(sys.argv) > 2 else ""
+    expected_key = sys.argv[3] if len(sys.argv) > 3 else ""
+    expected_value = sys.argv[4] if len(sys.argv) > 4 else ""
     if (
         os.getcwd() != expected_cwd
         or "PATH" in os.environ
         or "UNTRUSTED_LSP_SECRET" in os.environ
         or os.environ.get("LANG") != "C"
+        or (expected_key and os.environ.get(expected_key) != expected_value)
     ):
         sys.exit(5)
 if counter and mode == "symbols":

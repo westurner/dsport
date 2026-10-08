@@ -4,7 +4,7 @@
 //! should use it only for trusted local language-server commands. Protected
 //! modes remain unavailable until an audited OS sandbox provider exists.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -47,6 +47,7 @@ pub struct LspServerConfig {
     pub request_timeout: Duration,
     pub allow_fallback: bool,
     pub environment: Vec<(String, String)>,
+    pub server_environment: Vec<(String, String)>,
     pub max_message_bytes: usize,
 }
 
@@ -117,7 +118,11 @@ impl AiSandboxProvider {
             program: executable.as_os_str().to_owned(),
             args: config.command.iter().skip(1).cloned().collect(),
             cwd: config.workspace_root.clone(),
-            env: environment.iter().cloned().collect(),
+            env: {
+                let mut combined = environment.iter().cloned().collect::<BTreeMap<_, _>>();
+                combined.extend(config.server_environment.iter().cloned());
+                combined.into_iter().collect()
+            },
         };
         let policy = SandboxPolicy::ReadOnly {
             file_system: FileSystemSandboxPolicy::ReadOnly,
@@ -167,6 +172,12 @@ impl LspServerConfig {
             .get(&key)
             .cloned()
             .ok_or_else(|| unavailable(&key, "no server argv configured"))?;
+        let server_environment = settings
+            .lsp_server_environment_for(&key)
+            .map_err(AnalysisError::InvalidRequest)?;
+        let read_only_roots = settings
+            .lsp_read_only_roots_for(&key)
+            .map_err(AnalysisError::InvalidRequest)?;
         let workspace_root = settings
             .lsp_workspace_root
             .clone()
@@ -186,9 +197,7 @@ impl LspServerConfig {
                 "LSP timeout must be between 1 and {MAX_REQUEST_TIMEOUT_MS} milliseconds"
             )));
         }
-        if settings.lsp_sandbox == SourceSandboxMode::ProtectedLsp
-            && settings.lsp_read_only_roots.is_empty()
-        {
+        if settings.lsp_sandbox == SourceSandboxMode::ProtectedLsp && read_only_roots.is_empty() {
             return Err(unavailable(
                 &language.to_string(),
                 "protected-lsp requires explicit read-only toolchain roots",
@@ -201,6 +210,7 @@ impl LspServerConfig {
             request_timeout: Duration::from_millis(settings.lsp_timeout_ms),
             allow_fallback: settings.lsp_allow_fallback,
             environment: Vec::new(),
+            server_environment,
             max_message_bytes: MAX_MESSAGE_BYTES,
         })
     }
@@ -333,6 +343,14 @@ impl LspProcess {
                     path: config.workspace_root.display().to_string(),
                     message: error.to_string(),
                 })?;
+        for (key, value) in &config.server_environment {
+            super::config::validate_lsp_environment_entry(
+                key,
+                value,
+                "source_lsp_server_environment",
+            )
+            .map_err(AnalysisError::InvalidRequest)?;
+        }
         let executable = config.command.first().ok_or_else(|| {
             AnalysisError::InvalidRequest("LSP command argv is empty".to_string())
         })?;
@@ -351,6 +369,9 @@ impl LspProcess {
                     if key.starts_with("LC_") || key == "LANG" {
                         command.env(key, value);
                     }
+                }
+                for (key, value) in &config.server_environment {
+                    command.env(key, value);
                 }
                 #[cfg(unix)]
                 {
@@ -1123,10 +1144,12 @@ impl LspSnapshotProvider {
         language: SourceLanguage,
         source_root: &Path,
     ) -> Result<Self, AnalysisError> {
+        let language_key = language.to_string();
+        let read_only_roots = settings
+            .lsp_read_only_roots_for(&language_key)
+            .map_err(AnalysisError::InvalidRequest)?;
         let config = LspServerConfig::from_settings(settings, language, source_root)?;
-        if settings.lsp_sandbox == SourceSandboxMode::ProtectedLsp
-            && settings.lsp_read_only_roots.is_empty()
-        {
+        if settings.lsp_sandbox == SourceSandboxMode::ProtectedLsp && read_only_roots.is_empty() {
             return Err(unavailable(
                 &language.to_string(),
                 "protected-lsp requires explicit read-only toolchain roots",
@@ -1141,12 +1164,10 @@ impl LspSnapshotProvider {
                 ))]
                 {
                     LspExecutionMode::ProtectedLsp {
-                        read_only_roots: settings.lsp_read_only_roots.clone(),
+                        read_only_roots,
                         environment: settings
-                            .lsp_sandbox_environment
-                            .iter()
-                            .map(|(key, value)| (key.clone(), value.clone()))
-                            .collect(),
+                            .lsp_sandbox_environment_entries()
+                            .map_err(AnalysisError::InvalidRequest)?,
                     }
                 }
                 #[cfg(not(all(
@@ -1957,6 +1978,7 @@ mod tests {
             request_timeout: Duration::from_secs(10),
             allow_fallback: false,
             environment: vec![("PATH".into(), std::env::var("PATH").unwrap_or_default())],
+            server_environment: Vec::new(),
             max_message_bytes: 1024 * 1024,
         };
         let provider = LspSnapshotProvider::new(config);
@@ -2034,11 +2056,15 @@ mod tests {
         config
             .command
             .push(workspace.path().to_string_lossy().into_owned());
+        config
+            .command
+            .extend(["LEAN_PATH".into(), "/fixture/lean/lib".into()]);
         config.environment = vec![
             ("PATH".into(), std::env::var("PATH").unwrap_or_default()),
             ("UNTRUSTED_LSP_SECRET".into(), "must-not-leak".into()),
             ("LANG".into(), "C".into()),
         ];
+        config.server_environment = vec![("LEAN_PATH".into(), "/fixture/lean/lib".into())];
         let provider = LspSnapshotProvider::new(config);
         let mut request = SourceAnalysisRequest::new(workspace.path());
         request.selected.push(source);
@@ -2276,6 +2302,7 @@ mod tests {
             request_timeout: Duration::from_millis(100),
             allow_fallback: false,
             environment: Vec::new(),
+            server_environment: Vec::new(),
             max_message_bytes: 1024 * 1024,
         };
         let provider = LspSnapshotProvider::new(config);
@@ -2310,6 +2337,7 @@ mod tests {
             request_timeout: Duration::from_secs(10),
             allow_fallback: false,
             environment: vec![("PATH".into(), std::env::var("PATH").unwrap_or_default())],
+            server_environment: Vec::new(),
             max_message_bytes: 1024 * 1024,
         }
     }
@@ -2558,13 +2586,17 @@ mod tests {
             request_timeout: Duration::from_secs(1),
             allow_fallback: false,
             environment: Vec::new(),
+            server_environment: vec![("LEAN_PATH".into(), "/opt/lean/lib".into())],
             max_message_bytes: 1024 * 1024,
         };
         let request = AiSandboxProvider::prepare_lsp(
             &config,
             Path::new("/usr/bin/cat"),
             &[toolchain.path().to_path_buf()],
-            &[("LANG".into(), "C".into())],
+            &[
+                ("LANG".into(), "C".into()),
+                ("LEAN_PATH".into(), "/shared/lean/lib".into()),
+            ],
         )
         .unwrap();
         let workspace = workspace
@@ -2602,6 +2634,11 @@ mod tests {
                 .any(|parts| { parts == ["--ro-bind", toolchain.as_str(), toolchain.as_str()] })
         );
         assert!(!request.command.iter().any(|argument| argument == "--bind"));
+        assert_eq!(request.env.get("LANG").map(String::as_str), Some("C"));
+        assert_eq!(
+            request.env.get("LEAN_PATH").map(String::as_str),
+            Some("/opt/lean/lib")
+        );
         assert!(
             request
                 .command
@@ -2672,7 +2709,11 @@ mod tests {
     fn protected_lsp_settings_select_explicit_root_policy_without_starting() {
         let workspace = TempDir::new().unwrap();
         let toolchain = workspace.path().join("toolchain");
+        let rust_toolchain = workspace.path().join("rust-toolchain");
+        let lean_toolchain = workspace.path().join("lean-toolchain");
         std::fs::create_dir_all(&toolchain).unwrap();
+        std::fs::create_dir_all(&rust_toolchain).unwrap();
+        std::fs::create_dir_all(&lean_toolchain).unwrap();
         let mut settings = SourceDocsSettings::default();
         settings.backend = super::super::provider::SourceBackendMode::Lsp;
         settings.lsp_sandbox = SourceSandboxMode::ProtectedLsp;
@@ -2680,6 +2721,17 @@ mod tests {
             .lsp_servers
             .insert("rust".into(), vec!["rust-analyzer".into()]);
         settings.lsp_read_only_roots.push(toolchain.clone());
+        settings
+            .lsp_server_read_only_roots
+            .insert("rust".into(), vec![rust_toolchain.clone()]);
+        settings
+            .lsp_server_read_only_roots
+            .insert("lean".into(), vec![lean_toolchain]);
+        settings
+            .lsp_server_environment
+            .entry("rust".into())
+            .or_default()
+            .insert("RUSTUP_HOME".into(), "/opt/rustup".into());
 
         let provider =
             LspSnapshotProvider::from_settings(&settings, SourceLanguage::Rust, workspace.path())
@@ -2688,14 +2740,19 @@ mod tests {
         assert_eq!(
             provider.execution,
             LspExecutionMode::ProtectedLsp {
-                read_only_roots: vec![toolchain],
+                read_only_roots: vec![rust_toolchain, toolchain],
                 environment: Vec::new(),
             }
+        );
+        assert_eq!(
+            provider.config.server_environment,
+            [("RUSTUP_HOME".into(), "/opt/rustup".into())]
         );
         assert!(provider.process.lock().unwrap().is_none());
 
         let mut missing_roots = settings;
         missing_roots.lsp_read_only_roots.clear();
+        missing_roots.lsp_server_read_only_roots.remove("rust");
         let error = match LspSnapshotProvider::from_settings(
             &missing_roots,
             SourceLanguage::Rust,
@@ -2732,6 +2789,7 @@ mod tests {
             request_timeout: Duration::from_secs(1),
             allow_fallback: false,
             environment: Vec::new(),
+            server_environment: Vec::new(),
             max_message_bytes: 1024 * 1024,
         });
         let mut request = SourceAnalysisRequest::new(outside.path());
@@ -2761,6 +2819,7 @@ mod tests {
             request_timeout: Duration::from_secs(1),
             allow_fallback: false,
             environment: Vec::new(),
+            server_environment: Vec::new(),
             max_message_bytes: 1024 * 1024,
         });
         let mut request = SourceAnalysisRequest::new(workspace.path());

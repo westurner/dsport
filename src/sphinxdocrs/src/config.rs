@@ -876,6 +876,12 @@ impl SphinxConfig {
             "Language-server argv by source language",
         );
         add(
+            "source_lsp_server_environment",
+            Map(Vec::new()),
+            Env,
+            "Explicit safe environment variables by source language",
+        );
+        add(
             "source_lsp_timeout",
             Int(30_000),
             Env,
@@ -898,6 +904,12 @@ impl SphinxConfig {
             List(Vec::new()),
             Env,
             "Additional absolute read-only roots exposed to protected language servers",
+        );
+        add(
+            "source_lsp_server_read_only_roots",
+            Map(Vec::new()),
+            Env,
+            "Additional absolute read-only roots by source language",
         );
         add(
             "source_lsp_sandbox_environment",
@@ -2291,6 +2303,8 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         assert!(names.contains(&"language".to_string()));
             assert!(names.contains(&"source_backend".to_string()));
             assert!(names.contains(&"source_lsp_servers".to_string()));
+            assert!(names.contains(&"source_lsp_server_environment".to_string()));
+            assert!(names.contains(&"source_lsp_server_read_only_roots".to_string()));
             assert!(names.contains(&"source_lsp_timeout".to_string()));
         assert!(names.contains(&"extensions".to_string()));
     }

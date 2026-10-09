@@ -56,6 +56,11 @@ impl SinglehtmlBuilder {
             known_docs: RefCell::new(HashSet::new()),
         }
     }
+
+    pub(crate) fn with_object_signature_highlighting(mut self, enabled: bool) -> Self {
+        self.inner = self.inner.with_object_signature_highlighting(enabled);
+        self
+    }
 }
 
 impl Builder for SinglehtmlBuilder {

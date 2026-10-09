@@ -1053,6 +1053,12 @@ impl SphinxConfig {
             "Add reference and external classes to content links",
         );
         add(
+            "html_highlight_object_signatures",
+            Bool(false),
+            Html,
+            "Syntax-highlight Rust API object signatures with PygmentsRS",
+        );
+        add(
             "highlight_language",
             Str("default".into()),
             Env,
@@ -1702,6 +1708,14 @@ impl SphinxConfig {
             .unwrap_or(false)
     }
 
+    /// `html_highlight_object_signatures` — opt in to native PygmentsRS
+    /// highlighting for Rust-domain object signatures.
+    pub fn html_highlight_object_signatures(&self) -> bool {
+        self.get("html_highlight_object_signatures")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+    }
+
     /// `numfig` — whether numbered figures are enabled.
     pub fn numfig(&self) -> bool {
         self.get("numfig")
@@ -2306,6 +2320,7 @@ imgmath_dvisvgm = 'dvisvgm-custom'
             assert!(names.contains(&"source_lsp_server_environment".to_string()));
             assert!(names.contains(&"source_lsp_server_read_only_roots".to_string()));
             assert!(names.contains(&"source_lsp_timeout".to_string()));
+        assert!(names.contains(&"html_highlight_object_signatures".to_string()));
         assert!(names.contains(&"extensions".to_string()));
     }
 
@@ -2496,6 +2511,7 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         );
         raw.insert("highlight_language".into(), ConfigVal::Str("rust".into()));
         raw.insert("html_add_external_link_class".into(), ConfigVal::Bool(false));
+        raw.insert("html_highlight_object_signatures".into(), ConfigVal::Bool(true));
         raw.insert("numfig".into(), ConfigVal::Bool(true));
         raw.insert("nitpicky".into(), ConfigVal::Bool(true));
         raw.insert("smartquotes".into(), ConfigVal::Bool(false));
@@ -2568,6 +2584,7 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         assert_eq!(cfg.include_patterns(), vec!["docs/**"]);
         assert_eq!(cfg.highlight_language(), "rust");
         assert!(!cfg.html_add_external_link_class());
+        assert!(cfg.html_highlight_object_signatures());
         assert!(cfg.numfig());
         assert!(cfg.nitpicky());
         assert!(!cfg.smartquotes());
@@ -2633,6 +2650,7 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         }
         for name in [
             "html_add_external_link_class",
+            "html_highlight_object_signatures",
             "numfig",
             "nitpicky",
             "smartquotes",

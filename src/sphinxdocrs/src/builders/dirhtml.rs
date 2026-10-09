@@ -34,6 +34,11 @@ impl DirhtmlBuilder {
     pub fn new() -> Self {
         Self(HtmlBuilder::new_dir_style())
     }
+
+    pub(crate) fn with_object_signature_highlighting(mut self, enabled: bool) -> Self {
+        self.0 = self.0.with_object_signature_highlighting(enabled);
+        self
+    }
 }
 
 impl Builder for DirhtmlBuilder {

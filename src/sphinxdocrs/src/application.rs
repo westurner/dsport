@@ -664,19 +664,26 @@ impl SphinxApp {
         let result = match self.buildername.as_str() {
             "html" => {
                 let builder = HtmlBuilder::new()
-                    .with_external_link_class(self.config.html_add_external_link_class());
+                    .with_external_link_class(self.config.html_add_external_link_class())
+                    .with_object_signature_highlighting(
+                        self.config.html_highlight_object_signatures(),
+                    );
                 builder
                     .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "singlehtml" => {
-                let builder = SinglehtmlBuilder::new();
+                let builder = SinglehtmlBuilder::new().with_object_signature_highlighting(
+                    self.config.html_highlight_object_signatures(),
+                );
                 builder
                     .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)
             }
             "dirhtml" => {
-                let builder = DirhtmlBuilder::new();
+                let builder = DirhtmlBuilder::new().with_object_signature_highlighting(
+                    self.config.html_highlight_object_signatures(),
+                );
                 builder
                     .build_all(&self.srcdir, &self.outdir, &self.env.borrow())
                     .map_err(AppError::from)

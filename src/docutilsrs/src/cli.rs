@@ -356,6 +356,9 @@ pub struct Html5Options {
     #[arg(skip)]
     pub add_external_link_class: bool,
 
+    #[arg(skip)]
+    pub highlight_object_signatures: bool,
+
     #[arg(long = "attribution", num_args = 0..=1)]
     pub attribution: Option<String>,
 

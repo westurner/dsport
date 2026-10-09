@@ -691,7 +691,20 @@ fn emit_enter(
             } else {
                 let _ = write!(out, "<dt id=\"{}\">", escape(ids));
             }
-            out.push_str(&escape(sig_text));
+            if options.highlight_object_signatures
+                && classes.split_whitespace().any(|class| class == "rust")
+            {
+                #[cfg(feature = "syntax-highlighting")]
+                if let Some(highlighted) = highlight_rust_signature(sig_text) {
+                    out.push_str(&highlighted);
+                } else {
+                    out.push_str(&escape(sig_text));
+                }
+                #[cfg(not(feature = "syntax-highlighting"))]
+                out.push_str(&escape(sig_text));
+            } else {
+                out.push_str(&escape(sig_text));
+            }
             if !ids.is_empty() {
                 let escaped_id = escape(ids);
                 let _ = write!(
@@ -703,6 +716,22 @@ fn emit_enter(
             schedule(node, "</dd></dl>", tasks);
         }
     }
+}
+
+#[cfg(feature = "syntax-highlighting")]
+fn highlight_rust_signature(signature: &str) -> Option<String> {
+    let tokens = pygmentsrs::lex("rust", signature)?;
+    let mut output = String::from("<span class=\"highlight highlight-rust\">");
+    for (token, text) in tokens {
+        let class = pygmentsrs::token::short_name_for_dotted(&token);
+        if class.is_empty() {
+            output.push_str(&escape(&text));
+        } else {
+            let _ = write!(output, "<span class=\"{class}\">{}</span>", escape(&text));
+        }
+    }
+    output.push_str("</span>");
+    Some(output)
 }
 
 fn escape(s: &str) -> String {
@@ -927,5 +956,31 @@ mod tests {
         assert!(rendered.contains(
             "<dl class=\"rust rust struct\"><dt id=\"rust-type-&lt;report&gt;\">rust:struct &lt;Report&gt;<a class=\"headerlink\" href=\"#rust-type-&lt;report&gt;\" title=\"Link to this definition\">¶</a></dt><dd></dd></dl>"
         ));
+    }
+
+    #[cfg(feature = "syntax-highlighting")]
+    #[test]
+    fn rust_object_signature_highlighting_is_opt_in_and_uses_pygmentsrs() {
+        let mut tree = Doctree::new_document("api.rst");
+        tree.append(
+            tree.root(),
+            NodeKind::ObjectDescription {
+                classes: "rust rust function".into(),
+                ids: "rust-function-answer".into(),
+                sig_text: "rust:function fn answer() -> i32".into(),
+            },
+        );
+        let common = crate::cli::CommonOptions::default();
+        let plain = html5(&tree, &crate::cli::Html5Options::default(), &common);
+        assert!(!plain.contains("highlight-rust"));
+
+        let options = crate::cli::Html5Options {
+            highlight_object_signatures: true,
+            ..Default::default()
+        };
+        let highlighted = html5(&tree, &options, &common);
+        assert!(highlighted.contains("class=\"highlight highlight-rust\""));
+        assert!(highlighted.contains("<span class=\"k\">fn</span>"));
+        assert!(highlighted.contains("title=\"Link to this definition\""));
     }
 }

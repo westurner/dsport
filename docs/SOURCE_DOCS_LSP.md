@@ -102,6 +102,9 @@ The script runs `sphinx-autodoc-rs` in protected LSP mode to write `api.rst`,
 then runs `sphinx-build-rs` to render that report. The HTML build itself reads
 the generated RST and does not start another language server. The output is
 written to `src/sphinxdocrs/docs/lsp-rust-report/_build/final-html/`.
+Rust object signatures are syntax-highlighted through PygmentsRS because this
+project sets `html_highlight_object_signatures = True`; the setting defaults to
+off for other projects.
 
 ## Lean Test
 

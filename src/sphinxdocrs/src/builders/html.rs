@@ -101,6 +101,11 @@ impl HtmlBuilder {
         self
     }
 
+    pub(crate) fn with_object_signature_highlighting(mut self, enabled: bool) -> Self {
+        self.html5_options.highlight_object_signatures = enabled;
+        self
+    }
+
     /// Construct configured for `sphinx.builders.dirhtml.DirectoryHTMLBuilder`-style
     /// output: `<docname>/index.html` files and a matching `get_target_uri`.
     ///

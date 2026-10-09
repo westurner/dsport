@@ -1,0 +1,49 @@
+dl.rust.rust {
+  margin: 1.25em 0;
+  overflow: hidden;
+  border: 1px solid #cfd8e3;
+  border-radius: 3px;
+  background: #fff;
+}
+
+dl.rust.rust > dt {
+  margin: 0;
+  padding: 0.55em 0.8em;
+  border-bottom: 1px solid #cfd8e3;
+  background: #edf2f7;
+  color: #263746;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.94em;
+  font-weight: 600;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+dl.rust.rust > dt > .headerlink {
+  float: right;
+  margin-left: 0.75em;
+  color: #53697c;
+  opacity: 0;
+  text-decoration: none;
+  transition: opacity 120ms ease;
+}
+
+dl.rust.rust > dt:hover > .headerlink,
+dl.rust.rust > dt > .headerlink:focus {
+  opacity: 1;
+}
+
+dl.rust.rust > dd {
+  margin: 0;
+  padding: 0.65em 0.9em;
+}
+
+dl.rust.rust > dd:empty {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dl.rust.rust > dt > .headerlink {
+    transition: none;
+  }
+}

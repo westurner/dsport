@@ -40,6 +40,7 @@ cargo run -p sphinxdocrs --features "$features" --bin sphinx-autodoc-rs -- \
   printf 'Declarations below were returned by rust-analyzer for the local fixture crate using protected LSP with a private PID namespace and no child ``/proc`` mount.\n\n'
   cat "$generated_report"
 } > "$docs_dir/api.rst"
+sed -i -e '${/^$/d;}' "$docs_dir/api.rst"
 rm -f "$generated_report"
 trap - EXIT
 

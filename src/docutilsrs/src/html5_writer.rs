@@ -692,6 +692,13 @@ fn emit_enter(
                 let _ = write!(out, "<dt id=\"{}\">", escape(ids));
             }
             out.push_str(&escape(sig_text));
+            if !ids.is_empty() {
+                let escaped_id = escape(ids);
+                let _ = write!(
+                    out,
+                    "<a class=\"headerlink\" href=\"#{escaped_id}\" title=\"Link to this definition\">¶</a>"
+                );
+            }
             out.push_str("</dt><dd>");
             schedule(node, "</dd></dl>", tasks);
         }
@@ -896,6 +903,29 @@ mod tests {
         assert!(!rendered.contains("source comment"));
         assert!(rendered.contains(
             "<section id=\"title\">\n<h1>Title<a class=\"headerlink\" href=\"#title\" title=\"Link to this heading\">¶</a></h1>\n"
+        ));
+    }
+
+    #[test]
+    fn object_description_renders_a_sphinx_permalink_to_escaped_id() {
+        let mut tree = Doctree::new_document("api.rst");
+        tree.append(
+            tree.root(),
+            NodeKind::ObjectDescription {
+                classes: "rust rust struct".into(),
+                ids: "rust-type-<report>".into(),
+                sig_text: "rust:struct <Report>".into(),
+            },
+        );
+
+        let rendered = html5(
+            &tree,
+            &crate::cli::Html5Options::default(),
+            &crate::cli::CommonOptions::default(),
+        );
+
+        assert!(rendered.contains(
+            "<dl class=\"rust rust struct\"><dt id=\"rust-type-&lt;report&gt;\">rust:struct &lt;Report&gt;<a class=\"headerlink\" href=\"#rust-type-&lt;report&gt;\" title=\"Link to this definition\">¶</a></dt><dd></dd></dl>"
         ));
     }
 }

@@ -9,9 +9,14 @@ Implementation status (2026-10-15): phases 1 through 4 have working
 implementations with remaining contract, cache, and consumer audit gaps. The
 off-by-default LSP client supports document symbols, hover enrichment, safe
 definition metadata, normalized diagnostics, bounded framing, provider-scoped
-process reuse, and fake-server coverage. Protected LSP uses the optional MXC
-SDK pinned at `6f6e43683877d68a43fdd1d6c201808c914c5685`; Linux omits the
-Bubblewrap child procfs mount while retaining private PID/network namespaces.
+process reuse, and fake-server coverage. Protected LSP selects `mxc` (the
+default) or `ai-sandbox` through `source_lsp_sandbox_engine`; both consume the
+same `source_lsp_mxc_config` policy. MXC is pinned at
+`4b147b0c9491b1d7247824d5677ee4d75c7ca8a1`, and the ai-sandbox adapter at
+`7538c3386af8cb6216caaaea457981b69704ad0c`. The adapter supports a strict
+policy-only subset of MXC JSON and rejects unrepresentable settings. Linux
+omits the Bubblewrap child procfs mount by default while retaining private
+PID/network namespaces; explicit procfs mounting remains configurable.
 Rust/Lean apidoc has a separate opt-in LSP backend; Python apidoc remains
 unchanged. The public inspection tool is `sphinx-source-status` (not
 `sphinx-source-port`):
@@ -110,35 +115,42 @@ repository's main branch documents newer examples and a `0.3` ecosystem. Before
 adding the dependency, select and verify one exact release or commit. Do not add
 an unbounded git dependency.
 
-### Use Microsoft MXC as the protected LSP process provider
+### Use MXC Policy With Selectable Protected LSP Providers
 
-generated command, but the provider still owns the exact environment allowlist
-Use [Microsoft MXC](https://github.com/microsoft/mxc), present as the `src/mxc`
-Git submodule pinned at `6f6e43683877d68a43fdd1d6c201808c914c5685`.
-`sphinxdocrs` depends on its typed SDK behind the optional `source-sandbox`
-feature. The integration is hidden behind an internal provider boundary: MXC
-owns OS containment and process creation, while the LSP client owns JSON-RPC
-framing, piped stdio, request timeouts, shutdown, and response mapping. MXC
-types do not cross the source-documentation API.
+[Microsoft MXC](https://github.com/microsoft/mxc) is the default protected
+provider, pinned as the `src/mxc` submodule at
+`4b147b0c9491b1d7247824d5677ee4d75c7ca8a1`. The optional
+`source_lsp_sandbox_engine` setting selects `mxc` or `ai-sandbox`; the latter is
+pinned as `src/ai-sandbox-review` at
+`7538c3386af8cb6216caaaea457981b69704ad0c`. Both optional dependencies are
+behind `source-sandbox` and hidden behind an internal provider boundary. The
+LSP client owns JSON-RPC framing, piped stdio, request timeouts, shutdown, and
+response mapping; sandbox implementation types do not cross the
+source-documentation API.
 
-The adapter builds a typed `ContainerRequest` from argv, the canonical
+The `mxc` provider builds a typed `ContainerRequest` from argv, the canonical
 workspace, explicit server environment, source/toolchain read-only roots, MXC
-filesystem/network policy, and a bounded timeout. It clears inherited
-environment and sets network egress, ingress, and host loopback to deny. Safe
-`conf.py` defaults use MXC's native `process` containment (Bubblewrap on Linux,
-Seatbelt on macOS), deny-by-default filesystem access, no writable roots, no
-procfs mount, and a 30-minute MXC timeout. The workspace and explicitly
-configured toolchain roots are mounted read-only.
+filesystem/network policy, and a bounded timeout. The `ai-sandbox` provider
+serializes the same typed policy to the supported policy-only MXC JSON subset;
+the workload command remains a separate argv vector. It rejects denied paths,
+mixed read-only/read-write roots, explicit network rules, and partial network
+actions rather than silently weakening them. Both providers clear inherited
+environment, apply the configured network policy, and fail closed on startup
+errors. Safe `conf.py` defaults use `process` containment, deny-by-default
+filesystem access, no writable roots, no procfs mount on Linux, and a 30-minute
+timeout. The workspace and explicitly configured toolchain roots are mounted
+read-only.
 
 MXC exposes procfs selection through the additive typed `ProcfsPolicy` execution
-API, not through `FilesystemPolicy` or the stable JSON contract. Its new API
+API, not through `FilesystemPolicy` or its stable JSON contract. Its new API
 default is `Omit`; legacy `spawn`/`run` entrypoints and existing V1 JSON requests
-retain their backend behavior during the compatibility period. The `sphinxdocrs`
-adapter calls `spawn_with_procfs_policy` and maps
-`source_lsp_mxc_config.filesystem.mount_procfs` to `Omit` or `Mount`. On Linux
-Bubblewrap, `Omit` suppresses only `--proc /proc` and retains the private PID
-namespace, allowing startup in nested containers that reject procfs mounts.
-`LegacyBackendDefault` remains available for compatibility-sensitive callers.
+retain their backend behavior during the compatibility period. The `mxc`
+provider maps `source_lsp_mxc_config.filesystem.mount_procfs` to `Omit` or
+`Mount` through `spawn_with_procfs_policy`. The `ai-sandbox` adapter applies the
+same setting to the generated Bubblewrap argv. On Linux, omission suppresses
+only `--proc /proc` and retains the private PID namespace, allowing startup in
+nested containers that reject procfs mounts. `LegacyBackendDefault` remains
+available for compatibility-sensitive MXC callers.
 
 Known boundaries are explicit: Linux Bubblewrap startup and LSP read-only/network
 denial are tested in this container; macOS Seatbelt has not had native runtime
@@ -633,13 +645,13 @@ Keep sandbox policy separate from analysis backend selection:
 | --- | --- | --- | --- |
 | `static` | normal process; no server | not started | static errors only |
 | `trusted-local` | normal process | direct child with explicit environment | trusted input only; no OS security boundary |
-| `protected-lsp` | normal process | MXC native containment: Bubblewrap on Linux, Seatbelt on macOS | fail closed if MXC or platform setup fails |
+| `protected-lsp` | normal process | selected engine (`mxc` by default or `ai-sandbox`), using Bubblewrap on Linux and Seatbelt on macOS | fail closed if the selected provider or platform setup fails |
 | `protected-build` | unavailable | no build sandbox provider is enabled | fail before starting the build |
 
 `protected-build` and `protected-lsp` are distinct: protecting the language
 server does not make Python extensions, themes, directives, or the Sphinx build
-process safe. No whole-build MXC provider is implemented, so do not imply that
-the LSP policy covers the builder.
+process safe. No whole-build sandbox provider is implemented, so do not imply
+that the LSP policy covers the builder.
 
 Protected LSP defaults are intentionally narrow:
 
@@ -652,7 +664,8 @@ Protected LSP defaults are intentionally narrow:
 - use a bounded MXC timeout (30 minutes by default);
 - omit child `/proc` on Linux while retaining Bubblewrap's private PID namespace.
 
-`source_lsp_mxc_config` is a typed `conf.py` override surface. It permits
+`source_lsp_mxc_config` is a typed `conf.py` override surface shared by both
+engines. It permits
 containment selection (`process`, `bubblewrap`, or `seatbelt`), filesystem
 read-only/read-write/denied paths and `mount_procfs`, network default actions,
 and a timeout capped at 30 minutes. Configured writable paths and network
@@ -679,9 +692,12 @@ the reproducible default and starts no process.
 ### MXC integration status
 
 MXC is the `src/mxc` Git submodule pinned at
-`6f6e43683877d68a43fdd1d6c201808c914c5685`; the optional Rust SDK is behind
-`source-sandbox`. The adapter owns policy construction and MXC spawn; the LSP
-client owns JSON-RPC stdio and session lifecycle.
+`4b147b0c9491b1d7247824d5677ee4d75c7ca8a1`; the optional Rust SDK is behind
+`source-sandbox`. The ai-sandbox adapter is pinned at
+`7538c3386af8cb6216caaaea457981b69704ad0c`. The `mxc` provider owns typed
+policy construction and MXC spawn; the ai-sandbox provider maps the shared
+policy to its supported MXC JSON subset. The LSP client owns JSON-RPC stdio and
+session lifecycle.
 
 | Area | Current implementation and remaining limit |
 | --- | --- |
@@ -689,7 +705,7 @@ client owns JSON-RPC stdio and session lifecycle.
 | macOS | MXC Seatbelt selection is wired, but native runtime filesystem/network boundary validation remains pending. |
 | Windows and BSD | Protected LSP is unsupported and fails closed. |
 | Process/resource limits | MXC timeout is configured; CPU, memory, output-size, and process-count enforcement are not implemented. Descendant lifecycle behavior requires additional adversarial testing. |
-| Supply chain | Source is pinned by submodule commit and Cargo.lock; update both deliberately and review MXC changes before moving the pin. |
+| Supply chain | Both providers are pinned by submodule commit and Cargo.lock; update deliberately and review provider changes before moving either pin. |
 
 The protected rust-analyzer 1.96.1 no-proc test and a Rust LSP apidoc plus HTML
 build pass locally. A policy-construction success alone is not a boundary test;
@@ -867,7 +883,7 @@ LSP identity includes configured command arguments, workspace, client-requested
 and negotiated capabilities, timeout, serverInfo when available, and source
 request. Continue auditing every toolchain/configuration input for invalidation.
 
-### Phase 3: optional LSP adapter — MXC protected provider integrated with gaps
+### Phase 3: optional LSP adapter — selectable protected providers integrated with gaps
 
 - Define the internal `SourceLspClient` interface and fake-server contract.
 - Use the local JSON-RPC client behind `SourceLspClient`; no dscode or
@@ -875,9 +891,10 @@ request. Continue auditing every toolchain/configuration input for invalidation.
 - The current local adapter uses `serde_json`, standard library threads/channels,
   and optional `libc`; no dscode or `lsp-types` dependency is present.
 - Add `lsp-source-analysis` as an off-by-default Cargo feature.
-- The off-by-default `source-sandbox` feature uses the MXC SDK through a typed
-  provider, pinned by the `src/mxc` submodule at
-  `6f6e43683877d68a43fdd1d6c201808c914c5685`.
+- The off-by-default `source-sandbox` feature provides an MXC SDK provider and
+  an ai-sandbox provider, selected by `source_lsp_sandbox_engine` (default
+  `mxc`). They share `source_lsp_mxc_config`; ai-sandbox accepts only the
+  documented, fail-closed MXC policy JSON subset.
 - Linux protected LSP uses MXC Bubblewrap with explicit read-only roots, cleared
   explicit environment, network denial, and piped stdio. The typed no-proc
   option omits only the child `/proc` mount and retains the private PID
@@ -897,8 +914,10 @@ request. Continue auditing every toolchain/configuration input for invalidation.
 - Add explicit source-backend configuration and trusted-local CLI selection.
 
 Status: the optional feature remains off by default; fake-server snapshots,
-hover/definition normalization, MXC protected startup, config overrides, and
-the sandbox-off switch are implemented. Source paths are canonicalized and
+hover/definition normalization, both protected provider paths, config overrides,
+and the sandbox-off switch are implemented. MXC procfs parsing and the
+ai-sandbox policy adapter have dedicated cargo-fuzz targets; bounded Linux
+campaigns completed without crashes. Source paths are canonicalized and
 constrained before launch. Linux no-proc startup, fake-LSP analysis, read-only
 write denial, and parent-loopback network denial pass in this container. The
 protected no-proc rust-analyzer 1.96.1 test passes with an explicit toolchain
@@ -997,10 +1016,10 @@ Implemented criteria:
 - Static Rust and Lean analysis remains deterministic and fully usable without LSP.
 - The current local LSP client is optional and isolated behind a feature; no
   third-party LSP client type crosses the provider boundary.
-- `protected-lsp` is opt-in through `source-sandbox`, uses the internal
-- `protected-lsp` is opt-in through `source-sandbox`, uses the pinned MXC SDK,
-  applies the documented safe defaults, and fails closed if protected startup is
-  unavailable; it never falls back to a direct child. The explicit
+- `protected-lsp` is opt-in through `source-sandbox`, selects MXC by default or
+  the explicit ai-sandbox adapter, shares the documented MXC policy defaults,
+  and fails closed if protected startup is unavailable; it never falls back to
+  a direct child. The explicit
   `SPHINXDOCRS_SANDBOXING=off` override selects trusted-local and is logged.
   `protected-build` remains unavailable and fails closed.
 - LSP lifecycle failures produce explicit errors; notification diagnostics are

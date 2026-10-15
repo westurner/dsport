@@ -6,11 +6,11 @@
 
 pub mod model {
     pub use crate::source_analysis::{
-        AnalysisDiagnostic, AnalysisError, AnalysisSnapshot, BackendPolicy, DeclarationKind,
-        DiagnosticSeverity, SOURCE_ANALYSIS_SCHEMA_VERSION, SourceAnalysisRequest,
-        SourceBackendKind, SourceDeclaration, SourceLanguage, SourcePosition, SourceProvenance,
-        SourceSpan, Visibility, normalize_name, normalize_path, normalize_text, parent_name,
-        separator_for, short_name, source_input_hash, stable_declaration_id,
+        normalize_name, normalize_path, normalize_text, parent_name, separator_for, short_name,
+        source_input_hash, stable_declaration_id, AnalysisDiagnostic, AnalysisError,
+        AnalysisSnapshot, BackendPolicy, DeclarationKind, DiagnosticSeverity,
+        SourceAnalysisRequest, SourceBackendKind, SourceDeclaration, SourceLanguage,
+        SourcePosition, SourceProvenance, SourceSpan, Visibility, SOURCE_ANALYSIS_SCHEMA_VERSION,
     };
 }
 
@@ -507,6 +507,58 @@ pub mod config {
         ProtectedBuild,
     }
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub enum SourceSandboxEngine {
+        #[default]
+        Mxc,
+        AiSandbox,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub enum MxcLspContainment {
+        #[default]
+        Process,
+        Bubblewrap,
+        Seatbelt,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub enum MxcNetworkAction {
+        #[default]
+        Deny,
+        Allow,
+    }
+
+    /// Safe MXC policy defaults with a narrow, explicit `conf.py` override surface.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct MxcLspConfig {
+        pub containment: MxcLspContainment,
+        pub mount_procfs: bool,
+        pub readonly_paths: Vec<PathBuf>,
+        pub readwrite_paths: Vec<PathBuf>,
+        pub denied_paths: Vec<PathBuf>,
+        pub egress: MxcNetworkAction,
+        pub ingress: MxcNetworkAction,
+        pub host_loopback: MxcNetworkAction,
+        pub timeout_ms: u32,
+    }
+
+    impl Default for MxcLspConfig {
+        fn default() -> Self {
+            Self {
+                containment: MxcLspContainment::Process,
+                mount_procfs: false,
+                readonly_paths: Vec::new(),
+                readwrite_paths: Vec::new(),
+                denied_paths: Vec::new(),
+                egress: MxcNetworkAction::Deny,
+                ingress: MxcNetworkAction::Deny,
+                host_loopback: MxcNetworkAction::Deny,
+                timeout_ms: 30 * 60 * 1000,
+            }
+        }
+    }
+
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct SourceDocsSettings {
         pub backend: SourceBackendMode,
@@ -518,6 +570,8 @@ pub mod config {
         pub lsp_read_only_roots: Vec<PathBuf>,
         pub lsp_server_read_only_roots: BTreeMap<String, Vec<PathBuf>>,
         pub lsp_sandbox_environment: BTreeMap<String, String>,
+        pub lsp_sandbox_engine: SourceSandboxEngine,
+        pub lsp_mxc_config: MxcLspConfig,
         pub lsp_sandbox: SourceSandboxMode,
         pub build_sandbox: SourceBuildSandboxMode,
     }
@@ -534,6 +588,8 @@ pub mod config {
                 lsp_read_only_roots: Vec::new(),
                 lsp_server_read_only_roots: BTreeMap::new(),
                 lsp_sandbox_environment: BTreeMap::new(),
+                lsp_sandbox_engine: SourceSandboxEngine::Mxc,
+                lsp_mxc_config: MxcLspConfig::default(),
                 lsp_sandbox: SourceSandboxMode::Off,
                 build_sandbox: SourceBuildSandboxMode::Off,
             }
@@ -573,6 +629,7 @@ pub mod config {
 
         pub fn lsp_read_only_roots_for(&self, language: &str) -> Result<Vec<PathBuf>, String> {
             let mut roots = self.lsp_read_only_roots.clone();
+            roots.extend(self.lsp_mxc_config.readonly_paths.iter().cloned());
             if let Some(server_roots) = self.lsp_server_read_only_roots.get(language) {
                 roots.extend(server_roots.iter().cloned());
             }
@@ -582,6 +639,21 @@ pub mod config {
             roots.sort();
             roots.dedup();
             Ok(roots)
+        }
+
+        pub fn effective_lsp_sandbox_mode(&self) -> SourceSandboxMode {
+            self.effective_lsp_sandbox_mode_with(sandboxing_disabled_by_env())
+        }
+
+        pub(super) fn effective_lsp_sandbox_mode_with(
+            &self,
+            sandboxing_disabled: bool,
+        ) -> SourceSandboxMode {
+            if sandboxing_disabled && self.lsp_sandbox == SourceSandboxMode::ProtectedLsp {
+                SourceSandboxMode::TrustedLocal
+            } else {
+                self.lsp_sandbox
+            }
         }
 
         pub fn from_sphinx_config(config: &SphinxConfig) -> Result<Self, String> {
@@ -714,6 +786,20 @@ pub mod config {
                         .insert(key, value.to_string());
                 }
             }
+            if let Some(value) = config.get("source_lsp_mxc_config") {
+                settings.lsp_mxc_config = parse_mxc_lsp_config(value)?;
+            }
+            if let Some(value) = config.get("source_lsp_sandbox_engine") {
+                settings.lsp_sandbox_engine = match value.as_str().unwrap_or("mxc") {
+                    "mxc" => SourceSandboxEngine::Mxc,
+                    "ai-sandbox" => SourceSandboxEngine::AiSandbox,
+                    other => {
+                        return Err(format!(
+                            "source_lsp_sandbox_engine must be 'mxc' or 'ai-sandbox', got {other:?}"
+                        ));
+                    }
+                };
+            }
             if let Some(value) = config.get("source_lsp_sandbox") {
                 settings.lsp_sandbox = match value.as_str().unwrap_or("off") {
                     "off" => SourceSandboxMode::Off,
@@ -729,14 +815,18 @@ pub mod config {
                     other => return Err(format!("invalid source_build_sandbox {other:?}")),
                 };
             }
-            if settings.lsp_sandbox == SourceSandboxMode::ProtectedLsp {
+            let sandboxing_disabled = sandboxing_disabled_by_env();
+            if settings.lsp_sandbox == SourceSandboxMode::ProtectedLsp && !sandboxing_disabled {
                 if !cfg!(feature = "source-sandbox") {
-                    return Err("protected-lsp requires the optional source-sandbox feature".into());
+                    return Err(
+                        "protected-lsp requires the optional source-sandbox feature (MXC)".into(),
+                    );
                 }
                 if !cfg!(any(target_os = "linux", target_os = "macos")) {
-                    return Err("protected-lsp is unsupported on this platform".into());
+                    return Err("protected-lsp with MXC is unsupported on this platform".into());
                 }
                 if settings.lsp_read_only_roots.is_empty()
+                    && settings.lsp_mxc_config.readonly_paths.is_empty()
                     && settings
                         .lsp_server_read_only_roots
                         .values()
@@ -748,9 +838,12 @@ pub mod config {
                     );
                 }
             }
-            if settings.build_sandbox == SourceBuildSandboxMode::ProtectedBuild {
+            if settings.build_sandbox == SourceBuildSandboxMode::ProtectedBuild
+                && !sandboxing_disabled
+            {
                 return Err(
-                    "protected-build is unavailable: no audited sandbox provider is enabled".into(),
+                    "protected-build is unavailable: no audited MXC build provider is enabled"
+                        .into(),
                 );
             }
             Ok(settings)
@@ -758,27 +851,48 @@ pub mod config {
 
         /// A stable cache component that does not reveal command arguments.
         pub fn lsp_configuration_identity(&self, language: &str) -> String {
-            let procfs_mode = if self.lsp_sandbox == SourceSandboxMode::ProtectedLsp
+            let procfs_mode = if self.effective_lsp_sandbox_mode()
+                == SourceSandboxMode::ProtectedLsp
                 && cfg!(target_os = "linux")
             {
-                "omitted"
+                if self.lsp_mxc_config.mount_procfs {
+                    "mounted"
+                } else {
+                    "omitted"
+                }
             } else {
                 "not-applicable"
             };
             let mut value = format!(
-                "backend={:?};timeout={};fallback={};root={};sandbox={:?};build_sandbox={:?};procfs={};",
+                "backend={:?};timeout={};fallback={};root={};sandbox={:?};sandbox_engine={:?};build_sandbox={:?};procfs={};sandbox_off={};mxc_containment={:?};mxc_timeout={};mxc_egress={:?};mxc_ingress={:?};mxc_loopback={:?};",
                 self.backend,
                 self.lsp_timeout_ms,
                 self.lsp_allow_fallback,
                 self.lsp_workspace_root
                     .as_ref()
                     .map_or_else(String::new, |path| path.to_string_lossy().into_owned()),
-                self.lsp_sandbox,
+                self.effective_lsp_sandbox_mode(),
+                self.lsp_sandbox_engine,
                 self.build_sandbox,
                 procfs_mode,
+                sandboxing_disabled_by_env(),
+                self.lsp_mxc_config.containment,
+                self.lsp_mxc_config.timeout_ms,
+                self.lsp_mxc_config.egress,
+                self.lsp_mxc_config.ingress,
+                self.lsp_mxc_config.host_loopback,
             );
             for root in &self.lsp_read_only_roots {
                 value.push_str(&format!("ro-root={};", root.to_string_lossy()));
+            }
+            for root in &self.lsp_mxc_config.readonly_paths {
+                value.push_str(&format!("mxc-ro-root={};", root.to_string_lossy()));
+            }
+            for root in &self.lsp_mxc_config.readwrite_paths {
+                value.push_str(&format!("mxc-rw-root={};", root.to_string_lossy()));
+            }
+            for root in &self.lsp_mxc_config.denied_paths {
+                value.push_str(&format!("mxc-denied-root={};", root.to_string_lossy()));
             }
             if let Some(roots) = self.lsp_server_read_only_roots.get(language) {
                 for root in roots {
@@ -830,6 +944,226 @@ pub mod config {
                 Ok(root)
             })
             .collect()
+    }
+
+    pub fn sandboxing_disabled_by_env() -> bool {
+        sandboxing_disabled_from_value(std::env::var("SPHINXDOCRS_SANDBOXING").ok().as_deref())
+    }
+
+    pub(super) fn sandboxing_disabled_from_value(value: Option<&str>) -> bool {
+        value.is_some_and(|value| value.trim().eq_ignore_ascii_case("off"))
+    }
+
+    pub fn sandboxing_config_summary(config: &SphinxConfig) -> String {
+        sandboxing_config_summary_for(config, sandboxing_disabled_by_env())
+    }
+
+    pub fn sandboxing_requested(config: &SphinxConfig) -> bool {
+        sandboxing_disabled_by_env()
+            || config
+                .get("source_lsp_sandbox")
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .is_some_and(|mode| mode != "off")
+            || config
+                .get("source_build_sandbox")
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .is_some_and(|mode| mode != "off")
+    }
+
+    fn configured_path_count(value: Option<ConfigVal>) -> usize {
+        match value {
+            Some(ConfigVal::List(paths)) => paths.len(),
+            Some(ConfigVal::Map(languages)) => languages
+                .iter()
+                .map(|(_, roots)| match roots {
+                    ConfigVal::List(paths) => paths.len(),
+                    _ => 0,
+                })
+                .sum(),
+            _ => 0,
+        }
+    }
+
+    pub(super) fn sandboxing_config_summary_for(
+        config: &SphinxConfig,
+        sandboxing_disabled: bool,
+    ) -> String {
+        let lsp_mode = config
+            .get("source_lsp_sandbox")
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_else(|| "off".to_owned());
+        let sandbox_engine = config
+            .get("source_lsp_sandbox_engine")
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_else(|| "mxc".to_owned());
+        let build_mode = config
+            .get("source_build_sandbox")
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_else(|| "off".to_owned());
+        if sandboxing_disabled {
+            return format!(
+                "sphinxdocrs: sandboxing=disabled override=SPHINXDOCRS_SANDBOXING=off configured_lsp={lsp_mode} configured_engine={sandbox_engine} configured_build={build_mode}"
+            );
+        }
+        let mxc_config = config
+            .get("source_lsp_mxc_config")
+            .map(parse_mxc_lsp_config)
+            .unwrap_or_else(|| Ok(MxcLspConfig::default()));
+        let shared_read_only_roots =
+            configured_path_count(config.get("source_lsp_read_only_roots"));
+        let server_read_only_roots =
+            configured_path_count(config.get("source_lsp_server_read_only_roots"));
+        match (lsp_mode.as_str(), mxc_config) {
+            ("protected-lsp", Ok(mxc)) => format!(
+                "sphinxdocrs: sandboxing=protected-lsp engine={sandbox_engine} containment={:?} procfs={} filesystem=deny-by-default read-only-roots={} read-write-roots={} network=egress:{:?},ingress:{:?},host-loopback:{:?} build={build_mode}",
+                mxc.containment,
+                if mxc.mount_procfs {
+                    "mounted"
+                } else {
+                    "omitted"
+                },
+                mxc.readonly_paths.len() + shared_read_only_roots + server_read_only_roots,
+                mxc.readwrite_paths.len(),
+                mxc.egress,
+                mxc.ingress,
+                mxc.host_loopback,
+            ),
+            ("protected-lsp", Err(error)) => {
+                format!(
+                    "sphinxdocrs: sandboxing=protected-lsp engine={sandbox_engine} config=invalid ({error})"
+                )
+            }
+            ("trusted-local", _) => format!(
+                "sphinxdocrs: sandboxing=trusted-local (LSP has no OS boundary) build={build_mode}"
+            ),
+            ("off", _) => format!(
+                "sphinxdocrs: sandboxing=off (no protected LSP configured) build={build_mode}"
+            ),
+            (other, _) => format!("sphinxdocrs: sandboxing=invalid source_lsp_sandbox={other:?}"),
+        }
+    }
+
+    fn parse_mxc_lsp_config(value: ConfigVal) -> Result<MxcLspConfig, String> {
+        let ConfigVal::Map(entries) = value else {
+            return Err("source_lsp_mxc_config must be a mapping".into());
+        };
+        let mut settings = MxcLspConfig::default();
+        for (key, value) in entries {
+            match key.as_str() {
+                "containment" => {
+                    settings.containment = match value.as_str().unwrap_or_default() {
+                        "process" => MxcLspContainment::Process,
+                        "bubblewrap" => MxcLspContainment::Bubblewrap,
+                        "seatbelt" => MxcLspContainment::Seatbelt,
+                        other => {
+                            return Err(format!(
+                                "source_lsp_mxc_config.containment must be process, bubblewrap, or seatbelt; got {other:?}"
+                            ));
+                        }
+                    };
+                }
+                "filesystem" => {
+                    let ConfigVal::Map(filesystem) = value else {
+                        return Err("source_lsp_mxc_config.filesystem must be a mapping".into());
+                    };
+                    for (field, value) in filesystem {
+                        if field == "mount_procfs" {
+                            settings.mount_procfs = value.as_bool().ok_or_else(|| {
+                                "source_lsp_mxc_config.filesystem.mount_procfs must be boolean"
+                                    .to_string()
+                            })?;
+                            continue;
+                        }
+                        let paths = parse_mxc_paths(
+                            value,
+                            &format!("source_lsp_mxc_config.filesystem.{field}"),
+                        )?;
+                        match field.as_str() {
+                            "readonly_paths" => settings.readonly_paths = paths,
+                            "readwrite_paths" => settings.readwrite_paths = paths,
+                            "denied_paths" => settings.denied_paths = paths,
+                            _ => {
+                                return Err(format!(
+                                    "unsupported source_lsp_mxc_config.filesystem field {field:?}"
+                                ));
+                            }
+                        }
+                    }
+                }
+                "network" => {
+                    let ConfigVal::Map(network) = value else {
+                        return Err("source_lsp_mxc_config.network must be a mapping".into());
+                    };
+                    for (direction, value) in network {
+                        let ConfigVal::Map(policy) = value else {
+                            return Err(format!(
+                                "source_lsp_mxc_config.network.{direction} must be a mapping"
+                            ));
+                        };
+                        for (field, action) in policy {
+                            let action = parse_mxc_network_action(
+                                &action,
+                                &format!("source_lsp_mxc_config.network.{direction}.{field}"),
+                            )?;
+                            match (direction.as_str(), field.as_str()) {
+                                ("egress", "default") => settings.egress = action,
+                                ("ingress", "default") => settings.ingress = action,
+                                ("ingress", "host_loopback") => settings.host_loopback = action,
+                                _ => {
+                                    return Err(format!(
+                                        "unsupported source_lsp_mxc_config.network field {direction}.{field}"
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                "timeout_ms" => {
+                    settings.timeout_ms = value
+                        .as_int()
+                        .and_then(|value| u32::try_from(value).ok())
+                        .filter(|value| *value > 0 && *value <= 30 * 60 * 1000)
+                        .ok_or_else(|| {
+                            "source_lsp_mxc_config.timeout_ms must be between 1 and 1800000"
+                                .to_string()
+                        })?;
+                }
+                _ => {
+                    return Err(format!("unsupported source_lsp_mxc_config field {key:?}"));
+                }
+            }
+        }
+        Ok(settings)
+    }
+
+    fn parse_mxc_paths(value: ConfigVal, setting: &str) -> Result<Vec<PathBuf>, String> {
+        let ConfigVal::List(paths) = value else {
+            return Err(format!("{setting} must be a list of absolute paths"));
+        };
+        paths
+            .iter()
+            .map(|path| {
+                let Some(path) = path.as_str() else {
+                    return Err(format!("{setting} entries must be path strings"));
+                };
+                let path = PathBuf::from(path);
+                validate_lsp_read_only_root(&path, setting)?;
+                Ok(path)
+            })
+            .collect()
+    }
+
+    fn parse_mxc_network_action(
+        value: &ConfigVal,
+        setting: &str,
+    ) -> Result<MxcNetworkAction, String> {
+        match value.as_str().unwrap_or_default() {
+            "deny" => Ok(MxcNetworkAction::Deny),
+            "allow" => Ok(MxcNetworkAction::Allow),
+            other => Err(format!(
+                "{setting} must be 'deny' or 'allow', got {other:?}"
+            )),
+        }
     }
 
     fn validate_lsp_read_only_root(root: &std::path::Path, setting: &str) -> Result<(), String> {
@@ -957,11 +1291,11 @@ pub mod apidoc {
 
 pub use config::{SourceBuildSandboxMode, SourceDocsSettings, SourceSandboxMode};
 pub use model::{
-    AnalysisDiagnostic, AnalysisError, AnalysisSnapshot, BackendPolicy, DeclarationKind,
-    DiagnosticSeverity, SOURCE_ANALYSIS_SCHEMA_VERSION, SourceAnalysisRequest, SourceBackendKind,
-    SourceDeclaration, SourceLanguage, SourcePosition, SourceProvenance, SourceSpan, Visibility,
     normalize_name, normalize_path, normalize_text, parent_name, separator_for, short_name,
-    source_input_hash, stable_declaration_id,
+    source_input_hash, stable_declaration_id, AnalysisDiagnostic, AnalysisError, AnalysisSnapshot,
+    BackendPolicy, DeclarationKind, DiagnosticSeverity, SourceAnalysisRequest, SourceBackendKind,
+    SourceDeclaration, SourceLanguage, SourcePosition, SourceProvenance, SourceSpan, Visibility,
+    SOURCE_ANALYSIS_SCHEMA_VERSION,
 };
 pub use provider::{
     SourceAnalysisSession, SourceAnalyzer, SourceBackendMode, SourceSnapshotProvider,
@@ -973,7 +1307,7 @@ mod tests {
     use std::path::Path;
 
     use crate::autodoc::{
-        RustSourceRenderer, SourceAutodocRequest, document_source, render_source_rst,
+        document_source, render_source_rst, RustSourceRenderer, SourceAutodocRequest,
     };
     use crate::config::{ConfigVal, SphinxConfig};
     use crate::domains::{Domain, RustDomain};
@@ -1230,12 +1564,10 @@ mod tests {
             assert_eq!(declaration.source.path, "src/lib.rs");
             assert!(declaration.source.start.line > 0);
             assert!(declaration.aliases.windows(2).all(|pair| pair[0] < pair[1]));
-            assert!(
-                declaration
-                    .children
-                    .windows(2)
-                    .all(|pair| pair[0] < pair[1])
-            );
+            assert!(declaration
+                .children
+                .windows(2)
+                .all(|pair| pair[0] < pair[1]));
         }
         let widget = snapshot
             .declarations
@@ -1267,18 +1599,14 @@ mod tests {
                 .then(left.message.cmp(&right.message))
         });
         assert_eq!(snapshot.diagnostics, sorted_diagnostics);
-        assert!(
-            snapshot
-                .diagnostics
-                .iter()
-                .any(|diagnostic| { diagnostic.message == "alpha contract diagnostic" })
-        );
-        assert!(
-            snapshot
-                .diagnostics
-                .iter()
-                .any(|diagnostic| { diagnostic.message == "zeta contract diagnostic" })
-        );
+        assert!(snapshot
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.message == "alpha contract diagnostic" }));
+        assert!(snapshot
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.message == "zeta contract diagnostic" }));
 
         let encoded = serde_json::to_vec(&snapshot).unwrap();
         let decoded: AnalysisSnapshot = serde_json::from_slice(&encoded).unwrap();
@@ -1374,11 +1702,9 @@ mod tests {
                 .map(String::as_str),
             Some("src/implementation.rs")
         );
-        assert!(
-            !hybrid_widget
-                .attributes
-                .contains_key("lsp:lsp:definition_path")
-        );
+        assert!(!hybrid_widget
+            .attributes
+            .contains_key("lsp:lsp:definition_path"));
 
         let mut static_domain = RustDomain::new();
         static_domain.note_snapshot("api", &static_snapshot.declarations);
@@ -1480,14 +1806,12 @@ mod tests {
         let snapshot = session.analyze(&SourceAnalysisRequest::new("src")).unwrap();
         assert_eq!(snapshot.backend_kind, SourceBackendKind::Hybrid);
         assert_eq!(snapshot.declarations[0].documentation, "static docs");
-        assert!(
-            snapshot
-                .diagnostics
-                .iter()
-                .any(|diagnostic: &AnalysisDiagnostic| {
-                    diagnostic.message.contains("LSP enrichment unavailable")
-                })
-        );
+        assert!(snapshot
+            .diagnostics
+            .iter()
+            .any(|diagnostic: &AnalysisDiagnostic| {
+                diagnostic.message.contains("LSP enrichment unavailable")
+            }));
     }
 
     #[test]
@@ -1519,12 +1843,10 @@ mod tests {
         let snapshot = session.analyze(&SourceAnalysisRequest::new("src")).unwrap();
         assert_eq!(snapshot.backend_kind, SourceBackendKind::Hybrid);
         assert_eq!(snapshot.declarations[0].documentation, "static docs");
-        assert!(
-            snapshot
-                .provenance
-                .values()
-                .all(|value| { *value == super::model::SourceProvenance::Static })
-        );
+        assert!(snapshot
+            .provenance
+            .values()
+            .all(|value| { *value == super::model::SourceProvenance::Static }));
     }
 
     #[test]
@@ -1748,6 +2070,316 @@ mod tests {
         ))
         .unwrap_err();
         assert!(error.contains("LD_LIBRARY_PATH"), "{error}");
+    }
+
+    #[cfg(feature = "source-sandbox")]
+    #[test]
+    fn protected_lsp_parses_mxc_policy_from_conf_and_keeps_network_denied_by_default() {
+        let mut raw = HashMap::new();
+        raw.insert(
+            "source_lsp_sandbox".into(),
+            ConfigVal::Str("protected-lsp".into()),
+        );
+        raw.insert(
+            "source_lsp_servers".into(),
+            ConfigVal::Map(vec![(
+                "lean".into(),
+                ConfigVal::List(vec![
+                    ConfigVal::Str("lake".into()),
+                    ConfigVal::Str("serve".into()),
+                ]),
+            )]),
+        );
+        raw.insert(
+            "source_lsp_mxc_config".into(),
+            ConfigVal::Map(vec![
+                ("containment".into(), ConfigVal::Str("bubblewrap".into())),
+                (
+                    "filesystem".into(),
+                    ConfigVal::Map(vec![
+                        (
+                            "readonly_paths".into(),
+                            ConfigVal::List(vec![ConfigVal::Str("/opt/elan".into())]),
+                        ),
+                        (
+                            "readwrite_paths".into(),
+                            ConfigVal::List(vec![ConfigVal::Str("/workspace/.lake".into())]),
+                        ),
+                    ]),
+                ),
+                (
+                    "network".into(),
+                    ConfigVal::Map(vec![(
+                        "egress".into(),
+                        ConfigVal::Map(vec![("default".into(), ConfigVal::Str("deny".into()))]),
+                    )]),
+                ),
+                ("timeout_ms".into(), ConfigVal::Int(10_000)),
+            ]),
+        );
+
+        let settings = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+            raw,
+            HashMap::new(),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            settings.lsp_mxc_config.containment,
+            super::config::MxcLspContainment::Bubblewrap
+        );
+        assert!(!settings.lsp_mxc_config.mount_procfs);
+        assert_eq!(
+            settings.lsp_mxc_config.egress,
+            super::config::MxcNetworkAction::Deny
+        );
+        assert_eq!(
+            settings.lsp_mxc_config.ingress,
+            super::config::MxcNetworkAction::Deny
+        );
+        assert_eq!(
+            settings.lsp_mxc_config.host_loopback,
+            super::config::MxcNetworkAction::Deny
+        );
+        assert_eq!(settings.lsp_mxc_config.timeout_ms, 10_000);
+        assert_eq!(
+            settings.lsp_read_only_roots_for("lean").unwrap(),
+            [Path::new("/opt/elan")]
+        );
+        assert_eq!(
+            settings.lsp_mxc_config.readwrite_paths,
+            [Path::new("/workspace/.lake")]
+        );
+    }
+
+    #[cfg(feature = "source-sandbox")]
+    #[test]
+    fn sandbox_off_override_changes_effective_mode_and_redacts_paths() {
+        let mut raw = HashMap::new();
+        raw.insert(
+            "source_lsp_sandbox".into(),
+            ConfigVal::Str("protected-lsp".into()),
+        );
+        raw.insert(
+            "source_lsp_mxc_config".into(),
+            ConfigVal::Map(vec![(
+                "filesystem".into(),
+                ConfigVal::Map(vec![(
+                    "readonly_paths".into(),
+                    ConfigVal::List(vec![ConfigVal::Str("/private/toolchain".into())]),
+                )]),
+            )]),
+        );
+        let config = SphinxConfig::new(raw, HashMap::new());
+        let settings = super::config::SourceDocsSettings::from_sphinx_config(&config).unwrap();
+
+        assert!(super::config::sandboxing_disabled_from_value(Some("off")));
+        assert!(super::config::sandboxing_disabled_from_value(Some(" OFF ")));
+        assert!(!super::config::sandboxing_disabled_from_value(Some(
+            "false"
+        )));
+        assert!(!super::config::sandboxing_disabled_from_value(None));
+        assert_eq!(
+            settings.effective_lsp_sandbox_mode_with(false),
+            super::config::SourceSandboxMode::ProtectedLsp
+        );
+        assert_eq!(
+            settings.effective_lsp_sandbox_mode_with(true),
+            super::config::SourceSandboxMode::TrustedLocal
+        );
+        let summary = super::config::sandboxing_config_summary_for(&config, true);
+        assert!(summary.contains("SPHINXDOCRS_SANDBOXING=off"));
+        assert!(summary.contains("configured_lsp=protected-lsp"));
+        assert!(!summary.contains("/private/toolchain"));
+    }
+
+    #[test]
+    fn mxc_lsp_config_uses_safe_defaults_and_explicit_overrides() {
+        let defaults = super::config::SourceDocsSettings::default().lsp_mxc_config;
+        assert_eq!(
+            defaults.containment,
+            super::config::MxcLspContainment::Process
+        );
+        assert!(!defaults.mount_procfs);
+        assert!(defaults.readonly_paths.is_empty());
+        assert!(defaults.readwrite_paths.is_empty());
+        assert_eq!(defaults.egress, super::config::MxcNetworkAction::Deny);
+        assert_eq!(defaults.ingress, super::config::MxcNetworkAction::Deny);
+        assert_eq!(
+            defaults.host_loopback,
+            super::config::MxcNetworkAction::Deny
+        );
+
+        let mut raw = HashMap::new();
+        raw.insert(
+            "source_lsp_mxc_config".into(),
+            ConfigVal::Map(vec![
+                ("containment".into(), ConfigVal::Str("bubblewrap".into())),
+                (
+                    "filesystem".into(),
+                    ConfigVal::Map(vec![
+                        ("mount_procfs".into(), ConfigVal::Bool(true)),
+                        (
+                            "readonly_paths".into(),
+                            ConfigVal::List(vec![ConfigVal::Str("/opt/lean".into())]),
+                        ),
+                        (
+                            "readwrite_paths".into(),
+                            ConfigVal::List(vec![ConfigVal::Str("/workspace/cache".into())]),
+                        ),
+                        (
+                            "denied_paths".into(),
+                            ConfigVal::List(vec![ConfigVal::Str("/workspace/secrets".into())]),
+                        ),
+                    ]),
+                ),
+                (
+                    "network".into(),
+                    ConfigVal::Map(vec![
+                        (
+                            "egress".into(),
+                            ConfigVal::Map(vec![(
+                                "default".into(),
+                                ConfigVal::Str("allow".into()),
+                            )]),
+                        ),
+                        (
+                            "ingress".into(),
+                            ConfigVal::Map(vec![
+                                ("default".into(), ConfigVal::Str("deny".into())),
+                                ("host_loopback".into(), ConfigVal::Str("allow".into())),
+                            ]),
+                        ),
+                    ]),
+                ),
+                ("timeout_ms".into(), ConfigVal::Int(20_000)),
+            ]),
+        );
+        let settings = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+            raw,
+            HashMap::new(),
+        ))
+        .unwrap();
+        let mxc = &settings.lsp_mxc_config;
+        assert_eq!(
+            mxc.containment,
+            super::config::MxcLspContainment::Bubblewrap
+        );
+        assert!(mxc.mount_procfs);
+        assert_eq!(mxc.readonly_paths, [Path::new("/opt/lean")]);
+        assert_eq!(mxc.readwrite_paths, [Path::new("/workspace/cache")]);
+        assert_eq!(mxc.denied_paths, [Path::new("/workspace/secrets")]);
+        assert_eq!(mxc.egress, super::config::MxcNetworkAction::Allow);
+        assert_eq!(mxc.host_loopback, super::config::MxcNetworkAction::Allow);
+        assert_eq!(mxc.timeout_ms, 20_000);
+        let mut changed = settings.clone();
+        changed.lsp_mxc_config.readwrite_paths.clear();
+        assert_ne!(
+            settings.lsp_configuration_identity("rust"),
+            changed.lsp_configuration_identity("rust")
+        );
+    }
+
+    #[test]
+    fn sandbox_engine_defaults_parses_and_invalidates_cache_identity() {
+        let defaults = super::config::SourceDocsSettings::default();
+        assert_eq!(
+            defaults.lsp_sandbox_engine,
+            super::config::SourceSandboxEngine::Mxc
+        );
+
+        let parse_engine = |engine: &str| {
+            let mut raw = HashMap::new();
+            raw.insert(
+                "source_lsp_sandbox_engine".into(),
+                ConfigVal::Str(engine.into()),
+            );
+            super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+                raw,
+                HashMap::new(),
+            ))
+        };
+
+        let mxc = parse_engine("mxc").unwrap();
+        let ai_sandbox = parse_engine("ai-sandbox").unwrap();
+        assert_eq!(
+            mxc.lsp_sandbox_engine,
+            super::config::SourceSandboxEngine::Mxc
+        );
+        assert_eq!(
+            ai_sandbox.lsp_sandbox_engine,
+            super::config::SourceSandboxEngine::AiSandbox
+        );
+        assert_ne!(
+            mxc.lsp_configuration_identity("rust"),
+            ai_sandbox.lsp_configuration_identity("rust")
+        );
+        let mut protected_raw = HashMap::new();
+        protected_raw.insert(
+            "source_lsp_sandbox".into(),
+            ConfigVal::Str("protected-lsp".into()),
+        );
+        protected_raw.insert(
+            "source_lsp_sandbox_engine".into(),
+            ConfigVal::Str("ai-sandbox".into()),
+        );
+        let protected_config = SphinxConfig::new(protected_raw, HashMap::new());
+        assert!(
+            super::config::sandboxing_config_summary_for(&protected_config, false)
+                .contains("sandboxing=protected-lsp engine=ai-sandbox")
+        );
+        assert!(
+            super::config::sandboxing_config_summary_for(&protected_config, true)
+                .contains("configured_engine=ai-sandbox")
+        );
+        assert!(parse_engine("unknown").unwrap_err().contains("mxc"));
+    }
+
+    #[cfg(feature = "source-sandbox")]
+    #[test]
+    fn sandbox_off_override_is_explicit_and_logged_without_paths() {
+        assert!(super::config::sandboxing_disabled_from_value(Some("off")));
+        assert!(super::config::sandboxing_disabled_from_value(Some(" OFF ")));
+        assert!(!super::config::sandboxing_disabled_from_value(Some(
+            "false"
+        )));
+        assert!(!super::config::sandboxing_disabled_from_value(None));
+
+        let mut raw = HashMap::new();
+        raw.insert(
+            "source_lsp_sandbox".into(),
+            ConfigVal::Str("protected-lsp".into()),
+        );
+        raw.insert(
+            "source_lsp_read_only_roots".into(),
+            ConfigVal::List(vec![ConfigVal::Str("/opt/secret-toolchain".into())]),
+        );
+        raw.insert(
+            "source_lsp_mxc_config".into(),
+            ConfigVal::Map(vec![(
+                "filesystem".into(),
+                ConfigVal::Map(vec![(
+                    "readonly_paths".into(),
+                    ConfigVal::List(vec![ConfigVal::Str("/opt/secret-cache".into())]),
+                )]),
+            )]),
+        );
+        let config = SphinxConfig::new(raw, HashMap::new());
+        let settings = super::config::SourceDocsSettings::from_sphinx_config(&config).unwrap();
+
+        assert_eq!(
+            settings.effective_lsp_sandbox_mode_with(false),
+            super::config::SourceSandboxMode::ProtectedLsp
+        );
+        assert_eq!(
+            settings.effective_lsp_sandbox_mode_with(true),
+            super::config::SourceSandboxMode::TrustedLocal
+        );
+        let summary = super::config::sandboxing_config_summary_for(&config, true);
+        assert!(summary.contains("SPHINXDOCRS_SANDBOXING=off"));
+        assert!(summary.contains("configured_lsp=protected-lsp"));
+        assert!(!summary.contains("secret-toolchain"));
+        assert!(!summary.contains("secret-cache"));
     }
 
     #[test]

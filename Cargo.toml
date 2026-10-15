@@ -27,6 +27,8 @@ exclude = [
     "src/MyST-Parser",
     "src/pygments",
     "src/ai-sandbox",
+    "src/ai-sandbox-review",
+    "src/mxc",
     "tests",
 ]
 

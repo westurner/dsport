@@ -918,6 +918,24 @@ impl SphinxConfig {
             "Explicit environment allowlist for protected language servers",
         );
         add(
+            "source_lsp_mxc_config",
+            Map(Vec::new()),
+            Env,
+            "MXC containment, filesystem, network, and timeout overrides for protected LSP",
+        );
+        add(
+            "source_lsp_sandbox_engine",
+            Str("mxc".into()),
+            Env,
+            "Protected LSP sandbox engine: mxc or ai-sandbox",
+        );
+        add(
+            "source_lsp_sandbox_engine",
+            Str("mxc".into()),
+            Env,
+            "Protected LSP sandbox engine: mxc or ai-sandbox",
+        );
+        add(
             "source_lsp_sandbox",
             Str("off".into()),
             Env,
@@ -2315,11 +2333,13 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         let names: Vec<_> = cfg.iter().map(|cv| cv.name.clone()).collect();
         assert!(names.contains(&"project".to_string()));
         assert!(names.contains(&"language".to_string()));
-            assert!(names.contains(&"source_backend".to_string()));
-            assert!(names.contains(&"source_lsp_servers".to_string()));
-            assert!(names.contains(&"source_lsp_server_environment".to_string()));
-            assert!(names.contains(&"source_lsp_server_read_only_roots".to_string()));
-            assert!(names.contains(&"source_lsp_timeout".to_string()));
+        assert!(names.contains(&"source_backend".to_string()));
+        assert!(names.contains(&"source_lsp_servers".to_string()));
+        assert!(names.contains(&"source_lsp_server_environment".to_string()));
+        assert!(names.contains(&"source_lsp_server_read_only_roots".to_string()));
+        assert!(names.contains(&"source_lsp_mxc_config".to_string()));
+        assert!(names.contains(&"source_lsp_sandbox_engine".to_string()));
+        assert!(names.contains(&"source_lsp_timeout".to_string()));
         assert!(names.contains(&"html_highlight_object_signatures".to_string()));
         assert!(names.contains(&"extensions".to_string()));
     }

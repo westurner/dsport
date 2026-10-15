@@ -25,3 +25,9 @@
 [submodule "src/sphinx"]
 	path = src/sphinx
 	url = https://github.com/sphinx-doc/sphinx
+[submodule "src/mxc"]
+	path = src/mxc
+	url = https://github.com/microsoft/mxc.git
+[submodule "src/ai-sandbox-review"]
+	path = src/ai-sandbox-review
+	url = https://github.com/westurner/sandbox.git

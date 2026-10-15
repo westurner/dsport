@@ -4,22 +4,25 @@
 //! should use it only for trusted local language-server commands. Protected
 //! modes remain unavailable until an audited OS sandbox provider exists.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::Mutex;
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Mutex;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
-use super::config::{SourceDocsSettings, SourceSandboxMode};
+use super::config::{
+    sandboxing_disabled_by_env, MxcLspConfig, MxcLspContainment, MxcNetworkAction,
+    SourceDocsSettings, SourceSandboxEngine, SourceSandboxMode,
+};
 use super::model::{
-    AnalysisDiagnostic, AnalysisError, AnalysisSnapshot, DeclarationKind, DiagnosticSeverity,
-    SourceAnalysisRequest, SourceBackendKind, SourceDeclaration, SourceLanguage, SourcePosition,
-    SourceSpan, Visibility, normalize_text,
+    normalize_text, AnalysisDiagnostic, AnalysisError, AnalysisSnapshot, DeclarationKind,
+    DiagnosticSeverity, SourceAnalysisRequest, SourceBackendKind, SourceDeclaration,
+    SourceLanguage, SourcePosition, SourceSpan, Visibility,
 };
 use super::provider::SourceSnapshotProvider;
 
@@ -55,8 +58,10 @@ pub struct LspServerConfig {
 enum LspExecutionMode {
     TrustedLocal,
     ProtectedLsp {
+        engine: SourceSandboxEngine,
         read_only_roots: Vec<PathBuf>,
         environment: Vec<(String, String)>,
+        mxc_config: MxcLspConfig,
     },
 }
 
@@ -71,7 +76,120 @@ trait SandboxProvider {
         executable: &Path,
         read_only_roots: &[PathBuf],
         environment: &[(String, String)],
-    ) -> Result<Child, AnalysisError>;
+        mxc_config: &MxcLspConfig,
+    ) -> Result<LspChild, AnalysisError>;
+}
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+struct MxcSandboxProvider;
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+impl SandboxProvider for MxcSandboxProvider {
+    fn spawn_lsp(
+        &self,
+        config: &LspServerConfig,
+        executable: &Path,
+        read_only_roots: &[PathBuf],
+        environment: &[(String, String)],
+        mxc_config: &MxcLspConfig,
+    ) -> Result<LspChild, AnalysisError> {
+        let request =
+            Self::prepare_lsp(config, executable, read_only_roots, environment, mxc_config)?;
+        let process = mxc_sdk::v1::spawn_with_procfs_policy(
+            request,
+            mxc_procfs_policy(mxc_config),
+            Default::default(),
+        )
+        .map_err(|error| unavailable("mxc-sandbox", &error.to_string()))?;
+        Ok(LspChild::Mxc(process))
+    }
+}
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+impl MxcSandboxProvider {
+    fn prepare_lsp(
+        config: &LspServerConfig,
+        executable: &Path,
+        read_only_roots: &[PathBuf],
+        environment: &[(String, String)],
+        mxc_config: &MxcLspConfig,
+    ) -> Result<mxc_sdk::v1::ContainerRequest, AnalysisError> {
+        use mxc_sdk::v1::policy::{
+            FilesystemPolicy, NetworkEgressPolicy, NetworkIngressPolicy, NetworkPolicy,
+        };
+        use mxc_sdk::v1::UiPolicy;
+
+        let workspace_root =
+            config
+                .workspace_root
+                .canonicalize()
+                .map_err(|error| AnalysisError::Io {
+                    path: config.workspace_root.display().to_string(),
+                    message: error.to_string(),
+                })?;
+        let mut readonly_paths = vec![workspace_root.clone()];
+        readonly_paths.extend(read_only_roots.iter().cloned());
+        readonly_paths = canonicalize_mxc_paths(&readonly_paths, "read-only")?;
+        let readwrite_paths = canonicalize_mxc_paths(&mxc_config.readwrite_paths, "read-write")?;
+        let denied_paths = canonicalize_mxc_paths(&mxc_config.denied_paths, "denied")?;
+        let mut child_environment = environment.iter().cloned().collect::<BTreeMap<_, _>>();
+        child_environment.extend(config.server_environment.iter().cloned());
+        let argv = std::iter::once(executable.to_string_lossy().into_owned())
+            .chain(config.command.iter().skip(1).cloned())
+            .collect::<Vec<_>>();
+        let containment = mxc_containment(mxc_config.containment)?;
+        let backend = mxc_backend_for_containment(mxc_config.containment)?;
+        let command = mxc_sdk::mxc_common::cmdline::cmdline_from_argv_for_context(
+            &argv,
+            mxc_sdk::mxc_common::cmdline::CommandLineContext::for_backend(&backend),
+        )
+        .map_err(|error| unavailable("mxc-command", &error.to_string()))?;
+        Ok(mxc_sdk::v1::ContainerRequest {
+            command,
+            containment,
+            filesystem: Some(FilesystemPolicy {
+                readwrite_paths: readwrite_paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect(),
+                readonly_paths: readonly_paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect(),
+                denied_paths: denied_paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect(),
+                clear_policy_on_exit: Some(true),
+            }),
+            network: Some(NetworkPolicy {
+                egress: Some(NetworkEgressPolicy {
+                    default: Some(mxc_network_action(mxc_config.egress)),
+                    ..Default::default()
+                }),
+                ingress: Some(NetworkIngressPolicy {
+                    default: Some(mxc_network_action(mxc_config.ingress)),
+                    host_loopback: Some(mxc_network_action(mxc_config.host_loopback)),
+                }),
+                runtime_config: None,
+            }),
+            ui: Some(UiPolicy::default()),
+            timeout_ms: Some(mxc_config.timeout_ms),
+            working_directory: Some(workspace_root.to_string_lossy().into_owned()),
+            environment: Some(child_environment.into_iter().collect()),
+            inherit_default_environment: Some(false),
+            ..mxc_sdk::v1::ContainerRequest::new(String::new())
+        })
+    }
 }
 
 #[cfg(all(
@@ -91,10 +209,14 @@ impl SandboxProvider for AiSandboxProvider {
         executable: &Path,
         read_only_roots: &[PathBuf],
         environment: &[(String, String)],
-    ) -> Result<Child, AnalysisError> {
-        Self::prepare_lsp(config, executable, read_only_roots, environment)?
+        mxc_config: &MxcLspConfig,
+    ) -> Result<LspChild, AnalysisError> {
+        let request =
+            Self::prepare_lsp(config, executable, read_only_roots, environment, mxc_config)?;
+        let child = request
             .spawn_with_stdio_in_process_group()
-            .map_err(|error| unavailable("sandbox", &error.to_string()))
+            .map_err(|error| unavailable("ai-sandbox", &error.to_string()))?;
+        Ok(LspChild::Direct(child))
     }
 }
 
@@ -108,42 +230,161 @@ impl AiSandboxProvider {
         executable: &Path,
         read_only_roots: &[PathBuf],
         environment: &[(String, String)],
+        mxc_config: &MxcLspConfig,
     ) -> Result<ai_sandbox::SandboxExecRequest, AnalysisError> {
-        use ai_sandbox::{
-            FileSystemSandboxPolicy, NetworkSandboxPolicy, SandboxCommand, SandboxManager,
-            SandboxPolicy,
-        };
-
-        let command = SandboxCommand {
-            program: executable.as_os_str().to_owned(),
+        let workspace_root =
+            config
+                .workspace_root
+                .canonicalize()
+                .map_err(|error| AnalysisError::Io {
+                    path: config.workspace_root.display().to_string(),
+                    message: error.to_string(),
+                })?;
+        let mut roots = vec![workspace_root.clone()];
+        roots.extend(read_only_roots.iter().cloned());
+        let roots = canonicalize_mxc_paths(&roots, "read-only")?;
+        let mut child_environment = environment.iter().cloned().collect::<BTreeMap<_, _>>();
+        child_environment.extend(config.server_environment.iter().cloned());
+        let command = ai_sandbox::SandboxCommand {
+            program: executable.as_os_str().to_os_string(),
             args: config.command.iter().skip(1).cloned().collect(),
-            cwd: config.workspace_root.clone(),
-            env: {
-                let mut combined = environment.iter().cloned().collect::<BTreeMap<_, _>>();
-                combined.extend(config.server_environment.iter().cloned());
-                combined.into_iter().collect()
-            },
+            cwd: workspace_root,
+            env: child_environment.into_iter().collect::<HashMap<_, _>>(),
         };
-        let policy = SandboxPolicy::ReadOnly {
-            file_system: FileSystemSandboxPolicy::ReadOnly,
-            network_access: NetworkSandboxPolicy::NoAccess,
-        };
-        let manager = SandboxManager::new();
-        #[cfg(target_os = "linux")]
-        let request = manager.create_exec_request_with_read_only_roots_without_proc(
-            command,
-            policy,
-            read_only_roots.to_vec(),
-        );
-        #[cfg(target_os = "macos")]
-        let request = manager.create_exec_request_with_read_only_roots(
-            command,
-            policy,
-            read_only_roots.to_vec(),
-        );
-        let request = request.map_err(|error| unavailable("sandbox", &error.to_string()))?;
-        Ok(request)
+        let policy_json = mxc_policy_json(mxc_config, &roots);
+        ai_sandbox::SandboxManager::new()
+            .create_exec_request_from_mxc_json(command, &policy_json)
+            .map_err(|error| unavailable("ai-sandbox-mxc-config", &error.to_string()))
     }
+}
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+fn mxc_policy_json(config: &MxcLspConfig, readonly_paths: &[PathBuf]) -> String {
+    let containment = match config.containment {
+        MxcLspContainment::Process => "process",
+        MxcLspContainment::Bubblewrap => "bubblewrap",
+        MxcLspContainment::Seatbelt => "seatbelt",
+    };
+    let action = |action| match action {
+        MxcNetworkAction::Deny => "deny",
+        MxcNetworkAction::Allow => "allow",
+    };
+    serde_json::json!({
+        "containment": containment,
+        "filesystem": {
+            "mount_procfs": config.mount_procfs,
+            "readonly_paths": readonly_paths
+                .iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            "readwrite_paths": config.readwrite_paths,
+            "denied_paths": config.denied_paths,
+        },
+        "network": {
+            "egress": { "default": action(config.egress) },
+            "ingress": {
+                "default": action(config.ingress),
+                "host_loopback": action(config.host_loopback),
+            },
+        },
+        "timeout_ms": config.timeout_ms,
+    })
+    .to_string()
+}
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+fn mxc_procfs_policy(mxc_config: &MxcLspConfig) -> mxc_sdk::v1::ProcfsPolicy {
+    if mxc_config.mount_procfs {
+        mxc_sdk::v1::ProcfsPolicy::Mount
+    } else {
+        mxc_sdk::v1::ProcfsPolicy::Omit
+    }
+}
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+fn mxc_network_action(action: MxcNetworkAction) -> mxc_sdk::v1::NetworkAction {
+    match action {
+        MxcNetworkAction::Deny => mxc_sdk::v1::NetworkAction::Deny,
+        MxcNetworkAction::Allow => mxc_sdk::v1::NetworkAction::Allow,
+    }
+}
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+fn mxc_containment(
+    containment: MxcLspContainment,
+) -> Result<mxc_sdk::v1::Containment, AnalysisError> {
+    match containment {
+        MxcLspContainment::Process => Ok(mxc_sdk::v1::Containment::Process),
+        MxcLspContainment::Bubblewrap if cfg!(target_os = "linux") => {
+            Ok(mxc_sdk::v1::Containment::Bubblewrap)
+        }
+        MxcLspContainment::Seatbelt if cfg!(target_os = "macos") => {
+            Ok(mxc_sdk::v1::Containment::Seatbelt(Default::default()))
+        }
+        MxcLspContainment::Bubblewrap => Err(unavailable(
+            "mxc-sandbox",
+            "MXC Bubblewrap containment is only available on Linux",
+        )),
+        MxcLspContainment::Seatbelt => Err(unavailable(
+            "mxc-sandbox",
+            "MXC Seatbelt containment is only available on macOS",
+        )),
+    }
+}
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+fn mxc_backend_for_containment(
+    containment: MxcLspContainment,
+) -> Result<mxc_sdk::mxc_common::models::ContainmentBackend, AnalysisError> {
+    use mxc_sdk::mxc_common::models::ContainmentBackend;
+
+    match containment {
+        MxcLspContainment::Process if cfg!(target_os = "linux") => {
+            Ok(ContainmentBackend::Bubblewrap)
+        }
+        MxcLspContainment::Process if cfg!(target_os = "macos") => Ok(ContainmentBackend::Seatbelt),
+        MxcLspContainment::Bubblewrap if cfg!(target_os = "linux") => {
+            Ok(ContainmentBackend::Bubblewrap)
+        }
+        MxcLspContainment::Seatbelt if cfg!(target_os = "macos") => {
+            Ok(ContainmentBackend::Seatbelt)
+        }
+        _ => Err(unavailable(
+            "mxc-sandbox",
+            "configured MXC containment does not match this platform",
+        )),
+    }
+}
+
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+fn canonicalize_mxc_paths(paths: &[PathBuf], access: &str) -> Result<Vec<PathBuf>, AnalysisError> {
+    paths
+        .iter()
+        .map(|path| {
+            path.canonicalize().map_err(|error| AnalysisError::Io {
+                path: format!("MXC {access} path {}", path.display()),
+                message: error.to_string(),
+            })
+        })
+        .collect()
 }
 
 trait SourceLspClient {
@@ -197,7 +438,9 @@ impl LspServerConfig {
                 "LSP timeout must be between 1 and {MAX_REQUEST_TIMEOUT_MS} milliseconds"
             )));
         }
-        if settings.lsp_sandbox == SourceSandboxMode::ProtectedLsp && read_only_roots.is_empty() {
+        if settings.effective_lsp_sandbox_mode() == SourceSandboxMode::ProtectedLsp
+            && read_only_roots.is_empty()
+        {
             return Err(unavailable(
                 &language.to_string(),
                 "protected-lsp requires explicit read-only toolchain roots",
@@ -252,9 +495,9 @@ impl WindowsJob {
         use std::ptr::null;
         use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
         use windows_sys::Win32::System::JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-            JobObjectExtendedLimitInformation, SetInformationJobObject,
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+            SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         };
 
         unsafe {
@@ -297,8 +540,98 @@ impl Drop for WindowsJob {
     }
 }
 
+enum LspChild {
+    Direct(Child),
+    #[cfg(all(
+        feature = "source-sandbox",
+        any(target_os = "linux", target_os = "macos")
+    ))]
+    Mxc(mxc_sdk::v1::MxcProcess),
+}
+
+impl LspChild {
+    fn take_stdin(&mut self) -> Option<Box<dyn Write + Send>> {
+        match self {
+            Self::Direct(child) => child.stdin.take().map(|stream| Box::new(stream) as _),
+            #[cfg(all(
+                feature = "source-sandbox",
+                any(target_os = "linux", target_os = "macos")
+            ))]
+            Self::Mxc(process) => process.take_stdin(),
+        }
+    }
+
+    fn take_stdout(&mut self) -> Option<Box<dyn Read + Send>> {
+        match self {
+            Self::Direct(child) => child.stdout.take().map(|stream| Box::new(stream) as _),
+            #[cfg(all(
+                feature = "source-sandbox",
+                any(target_os = "linux", target_os = "macos")
+            ))]
+            Self::Mxc(process) => process.take_stdout(),
+        }
+    }
+
+    fn take_stderr(&mut self) -> Option<Box<dyn Read + Send>> {
+        match self {
+            Self::Direct(child) => child.stderr.take().map(|stream| Box::new(stream) as _),
+            #[cfg(all(
+                feature = "source-sandbox",
+                any(target_os = "linux", target_os = "macos")
+            ))]
+            Self::Mxc(process) => process.take_stderr(),
+        }
+    }
+
+    fn try_wait(&mut self) -> std::io::Result<Option<i32>> {
+        match self {
+            Self::Direct(child) => child
+                .try_wait()
+                .map(|status| status.map(|status| status.code().unwrap_or(-1))),
+            #[cfg(all(
+                feature = "source-sandbox",
+                any(target_os = "linux", target_os = "macos")
+            ))]
+            Self::Mxc(process) => process.try_wait(),
+        }
+    }
+
+    fn kill(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Direct(child) => child.kill(),
+            #[cfg(all(
+                feature = "source-sandbox",
+                any(target_os = "linux", target_os = "macos")
+            ))]
+            Self::Mxc(process) => process.kill(),
+        }
+    }
+
+    fn wait(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Direct(child) => child.wait().map(|_| ()),
+            #[cfg(all(
+                feature = "source-sandbox",
+                any(target_os = "linux", target_os = "macos")
+            ))]
+            Self::Mxc(process) => process.wait().map(|_| ()),
+        }
+    }
+
+    fn direct_child(&self) -> Option<&Child> {
+        match self {
+            Self::Direct(child) => Some(child),
+            #[cfg(all(
+                feature = "source-sandbox",
+                any(target_os = "linux", target_os = "macos")
+            ))]
+            Self::Mxc(_) => None,
+        }
+    }
+}
+
 struct LspProcess {
-    child: Child,
+    child: LspChild,
     requests: Sender<WorkerRequest>,
     reader: Option<JoinHandle<()>>,
     writer: Option<JoinHandle<()>>,
@@ -355,6 +688,12 @@ impl LspProcess {
             AnalysisError::InvalidRequest("LSP command argv is empty".to_string())
         })?;
         let executable = resolve_executable(executable, &config.workspace_root)?;
+        let session_timeout = match &execution {
+            LspExecutionMode::TrustedLocal => MAX_SESSION_DURATION,
+            LspExecutionMode::ProtectedLsp { mxc_config, .. } => {
+                Duration::from_millis(u64::from(mxc_config.timeout_ms)).min(MAX_SESSION_DURATION)
+            }
+        };
         let mut child = match execution {
             LspExecutionMode::TrustedLocal => {
                 let mut command = Command::new(&executable);
@@ -378,27 +717,34 @@ impl LspProcess {
                     use std::os::unix::process::CommandExt;
                     command.process_group(0);
                 }
-                command
-                    .spawn()
-                    .map_err(|error| AnalysisError::BackendUnavailable {
+                LspChild::Direct(command.spawn().map_err(|error| {
+                    AnalysisError::BackendUnavailable {
                         backend: "lsp".to_string(),
                         message: format!("failed to start configured server: {error}"),
-                    })?
+                    }
+                })?)
             }
             LspExecutionMode::ProtectedLsp {
+                engine,
                 read_only_roots,
                 environment,
+                mxc_config,
             } => {
                 #[cfg(all(
                     feature = "source-sandbox",
                     any(target_os = "linux", target_os = "macos")
                 ))]
                 {
-                    AiSandboxProvider.spawn_lsp(
+                    let provider: &dyn SandboxProvider = match engine {
+                        SourceSandboxEngine::Mxc => &MxcSandboxProvider,
+                        SourceSandboxEngine::AiSandbox => &AiSandboxProvider,
+                    };
+                    provider.spawn_lsp(
                         &config,
                         &executable,
                         &read_only_roots,
                         &environment,
+                        &mxc_config,
                     )?
                 }
                 #[cfg(not(all(
@@ -406,7 +752,7 @@ impl LspProcess {
                     any(target_os = "linux", target_os = "macos")
                 )))]
                 {
-                    let _ = (read_only_roots, environment, executable);
+                    let _ = (engine, read_only_roots, environment, mxc_config, executable);
                     return Err(unavailable(
                         "sandbox",
                         "protected LSP is unsupported on this platform or feature set",
@@ -417,18 +763,21 @@ impl LspProcess {
         #[cfg(windows)]
         // Assignment is immediately after spawn; this guarantees cleanup of
         // descendants after assignment, but is not a sandbox boundary.
-        let job = match WindowsJob::assign(&child) {
-            Ok(job) => Some(job),
-            Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(AnalysisError::BackendUnavailable {
-                    backend: "lsp-windows-job".into(),
-                    message: format!("unable to establish child cleanup job: {error}"),
-                });
-            }
+        let job = match child.direct_child() {
+            Some(child) => match WindowsJob::assign(child) {
+                Ok(job) => Some(job),
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(AnalysisError::BackendUnavailable {
+                        backend: "lsp-windows-job".into(),
+                        message: format!("unable to establish child cleanup job: {error}"),
+                    });
+                }
+            },
+            None => None,
         };
-        let stderr = child.stderr.take().map(|mut stderr| {
+        let stderr = child.take_stderr().map(|mut stderr| {
             thread::spawn(move || {
                 let mut captured = Vec::with_capacity(8192);
                 let mut buffer = [0u8; 4096];
@@ -445,12 +794,10 @@ impl LspProcess {
             })
         });
         let writer = child
-            .stdin
-            .take()
+            .take_stdin()
             .ok_or_else(|| unavailable("lsp", "stdin unavailable"))?;
         let stdout = child
-            .stdout
-            .take()
+            .take_stdout()
             .ok_or_else(|| unavailable("lsp", "stdout unavailable"))?;
         let (requests, receiver) = mpsc::channel();
         let (responses, response_receiver) = mpsc::channel();
@@ -473,7 +820,7 @@ impl LspProcess {
             next_id: 1,
             config,
             terminated: false,
-            session_deadline: Instant::now() + MAX_SESSION_DURATION,
+            session_deadline: Instant::now() + session_timeout,
             server_identity: "unreported".into(),
             server_capability_identity: "unreported".into(),
             hover_supported: false,
@@ -663,30 +1010,32 @@ impl LspProcess {
         }
         self.terminated = true;
         let _ = self.requests.send(WorkerRequest::Shutdown);
-        #[cfg(unix)]
-        unsafe {
-            // Child::kill only targets the direct process. Signal the isolated
-            // process group so language-server descendants are terminated too.
-            libc::kill(-(self.child.id() as i32), libc::SIGTERM);
-        }
-        #[cfg(unix)]
-        {
-            let grace_deadline = Instant::now() + Duration::from_millis(150);
-            let mut process_group_exists = true;
-            while Instant::now() < grace_deadline {
+        if let Some(child) = self.child.direct_child() {
+            #[cfg(unix)]
+            {
+                let process_group = child.id() as i32;
                 unsafe {
-                    if libc::kill(-(self.child.id() as i32), 0) != 0
-                        && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-                    {
-                        process_group_exists = false;
-                        break;
-                    }
+                    // Child::kill only targets the direct process. Signal its
+                    // process group so trusted-local descendants are cleaned up.
+                    libc::kill(-process_group, libc::SIGTERM);
                 }
-                thread::sleep(Duration::from_millis(10));
-            }
-            if process_group_exists {
-                unsafe {
-                    libc::kill(-(self.child.id() as i32), libc::SIGKILL);
+                let grace_deadline = Instant::now() + Duration::from_millis(150);
+                let mut process_group_exists = true;
+                while Instant::now() < grace_deadline {
+                    unsafe {
+                        if libc::kill(-process_group, 0) != 0
+                            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+                        {
+                            process_group_exists = false;
+                            break;
+                        }
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                if process_group_exists {
+                    unsafe {
+                        libc::kill(-process_group, libc::SIGKILL);
+                    }
                 }
             }
         }
@@ -751,7 +1100,7 @@ impl SourceLspClient for LspProcess {
 }
 
 fn spawn_writer(
-    mut writer: ChildStdin,
+    mut writer: Box<dyn Write + Send>,
     receiver: Receiver<WorkerRequest>,
     responses: Receiver<RpcMessage>,
     max_bytes: usize,
@@ -838,7 +1187,7 @@ fn spawn_writer(
 }
 
 fn spawn_reader(
-    stdout: ChildStdout,
+    stdout: Box<dyn Read + Send>,
     responses: Sender<RpcMessage>,
     notifications: mpsc::SyncSender<RpcMessage>,
     max_bytes: usize,
@@ -1149,13 +1498,14 @@ impl LspSnapshotProvider {
             .lsp_read_only_roots_for(&language_key)
             .map_err(AnalysisError::InvalidRequest)?;
         let config = LspServerConfig::from_settings(settings, language, source_root)?;
-        if settings.lsp_sandbox == SourceSandboxMode::ProtectedLsp && read_only_roots.is_empty() {
+        let sandbox_mode = settings.effective_lsp_sandbox_mode();
+        if sandbox_mode == SourceSandboxMode::ProtectedLsp && read_only_roots.is_empty() {
             return Err(unavailable(
                 &language.to_string(),
                 "protected-lsp requires explicit read-only toolchain roots",
             ));
         }
-        let execution = match settings.lsp_sandbox {
+        let execution = match sandbox_mode {
             SourceSandboxMode::TrustedLocal => LspExecutionMode::TrustedLocal,
             SourceSandboxMode::ProtectedLsp => {
                 #[cfg(all(
@@ -1164,10 +1514,12 @@ impl LspSnapshotProvider {
                 ))]
                 {
                     LspExecutionMode::ProtectedLsp {
+                        engine: settings.lsp_sandbox_engine,
                         read_only_roots,
                         environment: settings
                             .lsp_sandbox_environment_entries()
                             .map_err(AnalysisError::InvalidRequest)?,
+                        mxc_config: settings.lsp_mxc_config.clone(),
                     }
                 }
                 #[cfg(not(all(
@@ -1224,13 +1576,34 @@ impl LspSnapshotProvider {
         match &self.execution {
             LspExecutionMode::TrustedLocal => bytes.extend_from_slice(b"trusted-local"),
             LspExecutionMode::ProtectedLsp {
+                engine,
                 read_only_roots,
                 environment,
+                mxc_config,
             } => {
-                bytes.extend_from_slice(b"protected-lsp");
-                #[cfg(target_os = "linux")]
-                bytes.extend_from_slice(b"procfs-omitted");
+                bytes.extend_from_slice(b"protected-lsp:");
+                bytes.extend_from_slice(format!("{engine:?}").as_bytes());
+                bytes.extend_from_slice(format!("{:?}", mxc_config.containment).as_bytes());
+                bytes.extend_from_slice(format!("procfs={}", mxc_config.mount_procfs).as_bytes());
+                bytes
+                    .extend_from_slice(format!("mxc-timeout={}", mxc_config.timeout_ms).as_bytes());
+                bytes.extend_from_slice(format!("egress={:?}", mxc_config.egress).as_bytes());
+                bytes.extend_from_slice(format!("ingress={:?}", mxc_config.ingress).as_bytes());
+                bytes.extend_from_slice(
+                    format!("loopback={:?}", mxc_config.host_loopback).as_bytes(),
+                );
+                bytes.extend_from_slice(
+                    format!("sandbox-off={}", sandboxing_disabled_by_env()).as_bytes(),
+                );
                 for root in read_only_roots {
+                    bytes.extend_from_slice(root.to_string_lossy().as_bytes());
+                    bytes.push(0);
+                }
+                for root in mxc_config
+                    .readwrite_paths
+                    .iter()
+                    .chain(&mxc_config.denied_paths)
+                {
                     bytes.extend_from_slice(root.to_string_lossy().as_bytes());
                     bytes.push(0);
                 }
@@ -2220,12 +2593,10 @@ mod tests {
 
         let snapshot = provider.analyze(&request).unwrap();
 
-        assert!(
-            snapshot
-                .declarations
-                .iter()
-                .any(|declaration| { declaration.qualified_name.ends_with("lsp_live_probe") })
-        );
+        assert!(snapshot
+            .declarations
+            .iter()
+            .any(|declaration| { declaration.qualified_name.ends_with("lsp_live_probe") }));
     }
 
     #[cfg(unix)]
@@ -2258,12 +2629,10 @@ mod tests {
 
         let snapshot = provider.analyze(&request).unwrap();
 
-        assert!(
-            snapshot
-                .declarations
-                .iter()
-                .any(|declaration| { declaration.qualified_name.ends_with("lspLiveProbe") })
-        );
+        assert!(snapshot
+            .declarations
+            .iter()
+            .any(|declaration| { declaration.qualified_name.ends_with("lspLiveProbe") }));
     }
 
     #[cfg(unix)]
@@ -2308,13 +2677,11 @@ mod tests {
         let provider = LspSnapshotProvider::new(config);
         let mut request = SourceAnalysisRequest::new(workspace.path());
         request.selected.push(source);
-        assert!(
-            provider
-                .analyze(&request)
-                .unwrap_err()
-                .to_string()
-                .contains("timed out")
-        );
+        assert!(provider
+            .analyze(&request)
+            .unwrap_err()
+            .to_string()
+            .contains("timed out"));
         thread::sleep(Duration::from_millis(700));
         assert!(
             !marker.exists(),
@@ -2508,13 +2875,11 @@ mod tests {
         assert_eq!(span.start.column, 4);
         assert_eq!(span.end.unwrap().column, 6);
         assert!(definition_span_from_response(&location_link, workspace.path()).is_some());
-        assert!(
-            definition_span_from_response(
-                &json!({"uri": file_uri(&external).unwrap(), "range": {}}),
-                workspace.path()
-            )
-            .is_none()
-        );
+        assert!(definition_span_from_response(
+            &json!({"uri": file_uri(&external).unwrap(), "range": {}}),
+            workspace.path()
+        )
+        .is_none());
     }
 
     #[test]
@@ -2576,7 +2941,7 @@ mod tests {
 
     #[cfg(all(feature = "source-sandbox", target_os = "linux"))]
     #[test]
-    fn sandbox_provider_prepares_read_only_networkless_lsp_command() {
+    fn mxc_provider_prepares_read_only_networkless_no_proc_lsp_request() {
         let workspace = TempDir::new().unwrap();
         let toolchain = TempDir::new().unwrap();
         let config = LspServerConfig {
@@ -2589,7 +2954,7 @@ mod tests {
             server_environment: vec![("LEAN_PATH".into(), "/opt/lean/lib".into())],
             max_message_bytes: 1024 * 1024,
         };
-        let request = AiSandboxProvider::prepare_lsp(
+        let request = MxcSandboxProvider::prepare_lsp(
             &config,
             Path::new("/usr/bin/cat"),
             &[toolchain.path().to_path_buf()],
@@ -2597,6 +2962,7 @@ mod tests {
                 ("LANG".into(), "C".into()),
                 ("LEAN_PATH".into(), "/shared/lean/lib".into()),
             ],
+            &super::super::config::MxcLspConfig::default(),
         )
         .unwrap();
         let workspace = workspace
@@ -2612,53 +2978,87 @@ mod tests {
             .to_string_lossy()
             .into_owned();
 
-        assert_eq!(request.sandbox, ai_sandbox::SandboxType::LinuxSeccomp);
+        assert_eq!(request.containment, mxc_sdk::v1::Containment::Process);
+        let filesystem = request.filesystem.as_ref().unwrap();
         assert_eq!(
-            request.procfs_mount_mode,
-            ai_sandbox::linux_sandbox::ProcfsMountMode::Omitted
+            mxc_procfs_policy(&super::super::config::MxcLspConfig::default()),
+            mxc_sdk::v1::ProcfsPolicy::Omit
         );
         assert_eq!(
-            request.network_policy,
-            ai_sandbox::NetworkSandboxPolicy::NoAccess
+            mxc_procfs_policy(&super::super::config::MxcLspConfig {
+                mount_procfs: true,
+                ..Default::default()
+            }),
+            mxc_sdk::v1::ProcfsPolicy::Mount
         );
-        assert!(
-            request
-                .command
-                .windows(3)
-                .any(|parts| { parts == ["--ro-bind", workspace.as_str(), workspace.as_str()] })
-        );
-        assert!(
-            request
-                .command
-                .windows(3)
-                .any(|parts| { parts == ["--ro-bind", toolchain.as_str(), toolchain.as_str()] })
-        );
-        assert!(!request.command.iter().any(|argument| argument == "--bind"));
-        assert_eq!(request.env.get("LANG").map(String::as_str), Some("C"));
+        assert!(filesystem.readonly_paths.contains(&workspace));
+        assert!(filesystem.readonly_paths.contains(&toolchain));
+        assert!(filesystem.readwrite_paths.is_empty());
         assert_eq!(
-            request.env.get("LEAN_PATH").map(String::as_str),
-            Some("/opt/lean/lib")
-        );
-        assert!(
             request
-                .command
-                .iter()
-                .any(|argument| argument == "--unshare-net")
+                .network
+                .as_ref()
+                .and_then(|network| network.egress.as_ref())
+                .and_then(|egress| egress.default),
+            Some(mxc_sdk::v1::NetworkAction::Deny)
         );
+        let environment = request.environment.as_ref().unwrap();
+        assert!(environment.contains(&("LANG".into(), "C".into())));
+        assert!(environment.contains(&("LEAN_PATH".into(), "/opt/lean/lib".into())));
+        assert_eq!(request.inherit_default_environment, Some(false));
+        assert!(request.command.contains("/usr/bin/cat"));
     }
 
     #[cfg(all(feature = "source-sandbox", target_os = "linux"))]
     #[test]
-    fn protected_lsp_fake_server_never_falls_back_when_sandbox_unavailable() {
+    fn ai_sandbox_provider_maps_the_same_mxc_json_policy() {
+        let workspace = TempDir::new().unwrap();
+        let toolchain = TempDir::new().unwrap();
+        let config = LspServerConfig {
+            command: vec!["/usr/bin/python3".into(), "-c".into(), "print('ok')".into()],
+            workspace_root: workspace.path().to_path_buf(),
+            language: SourceLanguage::Rust,
+            request_timeout: Duration::from_secs(1),
+            allow_fallback: false,
+            environment: Vec::new(),
+            server_environment: vec![("LANG".into(), "C".into())],
+            max_message_bytes: 1024 * 1024,
+        };
+        let settings = super::super::config::MxcLspConfig {
+            timeout_ms: 12_000,
+            ..Default::default()
+        };
+        let request = AiSandboxProvider::prepare_lsp(
+            &config,
+            Path::new("/usr/bin/python3"),
+            &[toolchain.path().to_path_buf()],
+            &[("LANG".into(), "C".into())],
+            &settings,
+        )
+        .unwrap();
+
+        assert_eq!(request.sandbox, ai_sandbox::SandboxType::LinuxSeccomp);
+        assert_eq!(request.network_policy, ai_sandbox::NetworkSandboxPolicy::NoAccess);
+        assert!(matches!(
+            request.file_system_policy,
+            ai_sandbox::FileSystemSandboxPolicy::ReadOnlyWithRoots { .. }
+        ));
+        assert!(!request
+            .command
+            .windows(2)
+            .any(|pair| pair == ["--proc", "/proc"]));
+        assert!(request.command.iter().any(|argument| argument == "print('ok')"));
+        assert!(request.command.iter().any(|argument| argument == "/usr/bin/python3"));
+    }
+
+    #[cfg(all(feature = "source-sandbox", target_os = "linux"))]
+    #[test]
+    fn protected_lsp_fake_server_runs_under_mxc_no_proc_policy() {
         let workspace = TempDir::new().unwrap();
         let source = workspace.path().join("lib.rs");
         std::fs::write(&source, "pub fn answer() {}\n").unwrap();
         let fake_server =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/fake_lsp.py");
-        let sandbox_available = ai_sandbox::linux_sandbox::ensure_bwrap_support_with_procfs(
-            ai_sandbox::linux_sandbox::ProcfsMountMode::Omitted,
-        )
-        .is_ok();
         let mut settings = SourceDocsSettings::default();
         settings.backend = super::super::provider::SourceBackendMode::Lsp;
         settings.lsp_sandbox = SourceSandboxMode::ProtectedLsp;
@@ -2680,28 +3080,61 @@ mod tests {
         settings
             .lsp_sandbox_environment
             .insert("LANG".into(), "C".into());
+        settings
+            .lsp_sandbox_environment
+            .insert("PATH".into(), "/usr/local/bin:/usr/bin:/bin".into());
         let provider =
             LspSnapshotProvider::from_settings(&settings, SourceLanguage::Rust, workspace.path())
                 .unwrap();
         let mut request = SourceAnalysisRequest::new(workspace.path());
         request.selected.push(source);
 
-        match provider.analyze(&request) {
-            Ok(snapshot) => {
-                assert!(
-                    sandbox_available,
-                    "protected LSP ran without a successful sandbox probe"
-                );
-                assert_eq!(snapshot.declarations.len(), 1);
-            }
-            Err(error) => {
-                assert!(
-                    !sandbox_available,
-                    "no-proc sandbox probe succeeded: {error}"
-                );
-                assert!(error.to_string().contains("sandbox"), "{error}");
-            }
-        }
+        let snapshot = provider.analyze(&request).unwrap();
+        assert_eq!(snapshot.declarations.len(), 1);
+    }
+
+    #[cfg(all(feature = "source-sandbox", target_os = "linux"))]
+    #[test]
+    fn protected_lsp_fake_server_runs_under_ai_sandbox_mxc_policy() {
+        let workspace = TempDir::new().unwrap();
+        let source = workspace.path().join("lib.rs");
+        std::fs::write(&source, "pub fn answer() {}\n").unwrap();
+        let fake_server =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/fake_lsp.py");
+        let mut settings = SourceDocsSettings::default();
+        settings.backend = super::super::provider::SourceBackendMode::Lsp;
+        settings.lsp_sandbox = SourceSandboxMode::ProtectedLsp;
+        settings.lsp_sandbox_engine = SourceSandboxEngine::AiSandbox;
+        settings.lsp_timeout_ms = 3_000;
+        settings.lsp_servers.insert(
+            "rust".into(),
+            vec![
+                "python3".into(),
+                fake_server.to_string_lossy().into_owned(),
+                "symbols".into(),
+            ],
+        );
+        settings
+            .lsp_read_only_roots
+            .push(PathBuf::from("/usr/local"));
+        settings
+            .lsp_read_only_roots
+            .push(fake_server.parent().unwrap().to_path_buf());
+        settings
+            .lsp_sandbox_environment
+            .insert("LANG".into(), "C".into());
+        settings.lsp_sandbox_environment.insert(
+            "PATH".into(),
+            "/usr/local/bin:/usr/bin:/bin".into(),
+        );
+        let provider =
+            LspSnapshotProvider::from_settings(&settings, SourceLanguage::Rust, workspace.path())
+                .unwrap();
+        let mut request = SourceAnalysisRequest::new(workspace.path());
+        request.selected.push(source);
+
+        let snapshot = provider.analyze(&request).unwrap();
+        assert_eq!(snapshot.declarations.len(), 1);
     }
 
     #[cfg(all(feature = "source-sandbox", target_os = "linux"))]
@@ -2740,8 +3173,10 @@ mod tests {
         assert_eq!(
             provider.execution,
             LspExecutionMode::ProtectedLsp {
+                engine: SourceSandboxEngine::Mxc,
                 read_only_roots: vec![rust_toolchain, toolchain],
                 environment: Vec::new(),
+                mxc_config: super::super::config::MxcLspConfig::default(),
             }
         );
         assert_eq!(
@@ -2761,11 +3196,9 @@ mod tests {
             Ok(_) => panic!("protected provider accepted an empty toolchain root list"),
             Err(error) => error,
         };
-        assert!(
-            error
-                .to_string()
-                .contains("explicit read-only toolchain roots")
-        );
+        assert!(error
+            .to_string()
+            .contains("explicit read-only toolchain roots"));
     }
 
     #[cfg(unix)]

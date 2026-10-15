@@ -1,30 +1,32 @@
 # Source Documentation and Optional LSP Integration Plan
 
 Status: in progress
-Last updated: 2026-10-07
+Last updated: 2026-10-15
 Scope: `sphinxdocrs` source-aware documentation for Rust and Lean, with optional
 integration through a client-side LSP adapter
 
-Implementation status (2026-10-07): phases 1 through 4 have working
+Implementation status (2026-10-15): phases 1 through 4 have working
 implementations with remaining contract, cache, and consumer audit gaps. The
 off-by-default LSP client supports document symbols, hover enrichment, safe
 definition metadata, normalized diagnostics, bounded framing, provider-scoped
-process reuse, and fake-server coverage. Protected LSP is wired through the
-vendored `ai-sandbox` provider; Linux uses an opt-in no-proc child mount to work
-inside nested containers while retaining private PID/network namespaces. The
-public inspection tool is `sphinx-source-status` (not `sphinx-source-port`):
+process reuse, and fake-server coverage. Protected LSP uses the optional MXC
+SDK pinned at `6f6e43683877d68a43fdd1d6c201808c914c5685`; Linux omits the
+Bubblewrap child procfs mount while retaining private PID/network namespaces.
+Rust/Lean apidoc has a separate opt-in LSP backend; Python apidoc remains
+unchanged. The public inspection tool is `sphinx-source-status` (not
+`sphinx-source-port`):
 `cargo run -p sphinxdocrs --bin sphinx-source-status`. Its default invocation is
 process-free. With `lsp-source-analysis`, `--live --live-fake` exercises the
 checked-in fake peer; real servers require explicit
 `--live --live-language rust|lean --live-server ... --trusted-local` arguments.
 
 Still incomplete: Sphinx-relative definition-link rendering, references and
-workspace-symbol enrichment, the full source-port mapping audit, resource limits,
-native macOS/Windows runtime validation, adversarial Linux/macOS boundary tests,
+workspace-symbol enrichment, the full source-port mapping audit, resource
+limits, native macOS runtime validation, adversarial path-replacement tests,
 and installed rust-analyzer/Lean live CI. No-proc Bubblewrap, fake-LSP startup,
-read-only write denial, and parent-loopback network denial pass in this container.
-The opt-in protected no-proc rust-analyzer 1.96.1 test passes when the explicit
-command wrapper supplies its toolchain library path. Lean and other server
+read-only write denial, and parent-loopback network denial pass in this
+container. The opt-in protected no-proc rust-analyzer 1.96.1 test and an
+end-to-end Rust LSP apidoc/HTML build pass locally. Lean and other server
 versions remain unverified. Protected-build remains unavailable and fails
 closed. Static remains the default and requires no LSP dependency or process.
 
@@ -108,104 +110,61 @@ repository's main branch documents newer examples and a `0.3` ecosystem. Before
 adding the dependency, select and verify one exact release or commit. Do not add
 an unbounded git dependency.
 
-### Use `ai-sandbox` as the sandbox provider, not the process manager
+### Use Microsoft MXC as the protected LSP process provider
 
-The [Teckwin/sandbox](https://github.com/Teckwin/sandbox) crate is named
-`ai-sandbox`. The initial review was against tag `v0.2.1` (`d9df470`); a
-follow-up review of the workspace's security-hardening commit
-`4cef879225e3bd177aa2fff1ca7d8771ae108a67` changes the executor assessment
-below. The manifest still reports version `0.2.1`, so that version number alone
-does not identify the reviewed implementation. The crate provides a
-cross-platform policy and command-transformation API:
-
-- `SandboxManager`, `SandboxPolicy`, and `SandboxCommand` describe the requested
-  filesystem and network policy.
-- `SandboxExecRequest` returns a transformed argv, working directory, and
-  environment, and now exposes `spawn()`, `run(timeout)`, and `wait()` entry
-  points for its supported executors.
-- Linux command transformation and execution use Bubblewrap with explicit
-  filesystem mounts, user/PID/IPC namespaces, session isolation, and network
-  namespace isolation for `NoAccess`. `spawn()` probes whether Bubblewrap can
-  create the required namespaces before starting the transformed command.
-- macOS command transformation invokes Seatbelt through `sandbox-exec`; Linux
-  and macOS are the only platforms currently wired into the
-  `SandboxExecRequest` execution path.
-
-The bundled `sandbox-exec` CLI now creates a request and waits for the protected
-child instead of only printing a request. The executor is still not a complete
-LSP process manager or a cross-platform security guarantee:
-
-- The bundled CLI's `workspace` mode currently passes `.` as its writable root,
-  while `SandboxPolicy::is_safe()` requires absolute roots. Canonicalize CLI
-  roots before policy validation or correct the CLI before relying on that mode.
-
-- Bubblewrap enforces Linux filesystem mounts and `NoAccess` networking; it
-  rejects unsupported `Localhost` and `Proxy` network policies. Its writable
-  roots are canonicalized and filesystem root is rejected, but mount paths are
-  still passed by name, leaving a path-replacement race between validation and
-  Bubblewrap startup. It does not provide CPU, memory, output, or process-count
-  limits, and it does not install Landlock or a seccomp policy.
-- Landlock APIs now explicitly describe capability/ruleset metadata only; they
-  do not apply Landlock syscalls and are not part of the active executor.
-- Seatbelt generates and launches a policy on macOS, rejects unsupported Proxy
-  policy, and has policy-generation tests. Runtime filesystem/network boundary
-  tests on macOS are still required before making a platform-specific isolation
-  claim.
-- Windows Restricted Token and BSD Capsicum/pledge helpers remain in the crate,
-  but those backends return unsupported from the `SandboxExecRequest`
-  transformation/execution path. They must not be advertised as available
-  protected execution through this API.
-- `SandboxExecRequest::spawn()` inherits stdin/stdout/stderr. `run(timeout)`
-  supervises and kills only the direct child on timeout; `wait()` has no
-  timeout. Neither provides piped LSP stdio, process-group/job cleanup, or
-  descendant-process limits. The LSP adapter must own that lifecycle and must
-  not use these methods as a substitute for its JSON-RPC process manager.
-- The command policy now rejects executable-prefix aliases for Allows, requires
-  exact literal argument tokens, applies component-aware cwd and path checks,
-  gives matching Deny/restriction rules precedence, and detects absolute-path
-  `chmod` SUID/SGID modes. These policy checks complement OS isolation; they do
-  not replace it.
-
-The crate's `is_safe` check is input validation, not a canonical-path, symlink,
-environment, resource, or process-tree security boundary. Bubblewrap currently
-filters selected environment keys and clears inherited environment in its
 generated command, but the provider still owns the exact environment allowlist
-and workspace-root policy.
+Use [Microsoft MXC](https://github.com/microsoft/mxc), present as the `src/mxc`
+Git submodule pinned at `6f6e43683877d68a43fdd1d6c201808c914c5685`.
+`sphinxdocrs` depends on its typed SDK behind the optional `source-sandbox`
+feature. The integration is hidden behind an internal provider boundary: MXC
+owns OS containment and process creation, while the LSP client owns JSON-RPC
+framing, piped stdio, request timeouts, shutdown, and response mapping. MXC
+types do not cross the source-documentation API.
 
-Adopt `ai-sandbox` behind an internal `SandboxProvider` rather than exposing its
-types or assuming that a transformed argv is already sandboxed:
+The adapter builds a typed `ContainerRequest` from argv, the canonical
+workspace, explicit server environment, source/toolchain read-only roots, MXC
+filesystem/network policy, and a bounded timeout. It clears inherited
+environment and sets network egress, ingress, and host loopback to deny. Safe
+`conf.py` defaults use MXC's native `process` containment (Bubblewrap on Linux,
+Seatbelt on macOS), deny-by-default filesystem access, no writable roots, no
+procfs mount, and a 30-minute MXC timeout. The workspace and explicitly
+configured toolchain roots are mounted read-only.
 
-```rust
-pub trait SandboxProvider {
-    fn prepare(
-        &self,
-        command: &SandboxCommand,
-        policy: &SandboxPolicy,
-    ) -> Result<PreparedCommand, SandboxError>;
+MXC exposes procfs selection through the additive typed `ProcfsPolicy` execution
+API, not through `FilesystemPolicy` or the stable JSON contract. Its new API
+default is `Omit`; legacy `spawn`/`run` entrypoints and existing V1 JSON requests
+retain their backend behavior during the compatibility period. The `sphinxdocrs`
+adapter calls `spawn_with_procfs_policy` and maps
+`source_lsp_mxc_config.filesystem.mount_procfs` to `Omit` or `Mount`. On Linux
+Bubblewrap, `Omit` suppresses only `--proc /proc` and retains the private PID
+namespace, allowing startup in nested containers that reject procfs mounts.
+`LegacyBackendDefault` remains available for compatibility-sensitive callers.
 
-    fn capabilities(&self) -> SandboxCapabilities;
-}
-```
+Known boundaries are explicit: Linux Bubblewrap startup and LSP read-only/network
+denial are tested in this container; macOS Seatbelt has not had native runtime
+boundary validation. Protected Windows and BSD are unsupported. MXC does not
+currently impose CPU, memory, output-size, or process-count limits, and
+path-replacement races and adversarial descendant behavior remain under audit.
+Do not infer stronger guarantees from policy construction or a successful
+capability probe alone. Protected mode fails closed; it never falls back to a
+direct child.
 
-The provider owns version pinning, capability probes, workspace-root
-canonicalization, private temporary-directory setup, environment filtering, and
-fail-closed policy selection. The LSP client still owns stdio pipes, JSON-RPC
-framing, request timeouts, process-group cleanup, and shutdown. A build runner
-may use the same provider to wrap the `sphinxdocrs` process itself. Do not nest a
-second sandbox around an LSP server unless the platform-specific interaction has
-been tested; prefer one outer build sandbox with inherited child confinement, or
-one independently wrapped LSP process when the build is trusted.
+`SPHINXDOCRS_SANDBOXING=off` is an explicit global override: a configured
+`protected-lsp` process becomes `trusted-local`, runs without an OS boundary,
+and is logged as such. This is not a silent failure fallback and does not turn
+off LSP itself. `protected-build` remains unavailable; protecting an LSP does
+not sandbox Python extensions, directives, themes, or the build process.
 
-The initial Cargo integration should be optional and pinned to the exact audited
-source. Do not assume the crates.io `=0.2.1` package contains commit
-`4cef879225e3bd177aa2fff1ca7d8771ae108a67`; either publish and audit a release
-that includes the required fixes or pin the reviewed fork/revision. The provider
-can reuse the Linux Bubblewrap and macOS Seatbelt command transformations, but
-must add capability checks, root/environment policy, LSP-specific piped stdio,
-timeouts, and descendant-process cleanup. Protected mode must return
-`SandboxUnavailable` on unsupported platforms or failed probes; it must never
-downgrade to the direct command. An explicitly named `unsafe-local` mode may
-bypass the provider for trusted development only.
+The internal MXC provider keeps the sandbox SDK behind the LSP process
+boundary. The adapter constructs a typed request and MXC owns the protected
+process launch; the LSP client retains stdio and JSON-RPC lifecycle ownership.
+
+The optional dependency is pinned through the `src/mxc` submodule. The adapter
+canonicalizes and validates workspace/toolchain roots, supplies an explicit
+environment and read-only policy, and fails closed if protected startup fails.
+The LSP client owns piped stdio, JSON-RPC framing, request timeouts, shutdown,
+and process cleanup. There is no whole-build MXC provider; do not treat LSP
+containment as protection for the Sphinx build or its Python extensions.
 
 ### Direct-client effort estimate
 
@@ -215,7 +174,7 @@ There are two materially different scopes:
 | --- | --- | --- |
 | Trusted local developer tool | stdio framing, request dispatch, initialize/initialized, the small read-only method set, per-request timeouts, crash detection, and best-effort shutdown | 3-5 engineer-days |
 | Maintained build feature | all of the above plus bounded messages, cancellation, process-group cleanup, sync/async bridge, fake-server tests, cache/session rules, diagnostics, and cross-platform failure handling | 2-4 engineer-weeks |
-| Strong isolation for untrusted workspaces | maintained build feature plus pinned `ai-sandbox` provider integration, verified executor on each supported platform, resource and descendant-process enforcement, executable policy, environment filtering, adversarial tests, and platform-specific CI | 4-8+ engineer-weeks after the executor boundary is available, depending on platform guarantees |
+| Strong isolation for untrusted workspaces | maintained build feature plus pinned MXC integration, verified executor on each supported platform, resource and descendant-process enforcement, environment policy, adversarial tests, and platform-specific CI | 4-8+ engineer-weeks after the executor boundary is available, depending on platform guarantees |
 
 The first estimate is enough to prove the provider contract, not enough to claim
 that arbitrary project-selected servers are safe. The second is the minimum
@@ -228,7 +187,7 @@ The direct client work breaks down roughly as follows:
 - lifecycle, timeouts, crash monitoring, and process-group termination: 3-6 days
 - synchronous build worker and LSP-to-snapshot mapping: 3-5 days
 - fake-server, malformed-input, timeout, crash, and cleanup tests: 3-5 days
-- `ai-sandbox` provider integration, LSP stdio/process lifecycle, executor validation, and platform-specific sandbox/resource controls: 1-4 weeks
+- MXC provider integration, LSP stdio/process lifecycle, executor validation, and platform-specific sandbox/resource controls: 1-4 weeks
 
 Using `dscode-lsp` removes much of the first three bullets, but not the security
 policy, trust model, adapter mapping, cache identity, or tests. Its current client
@@ -367,11 +326,12 @@ symbols, and closed for each selected source file; didChange/didSave are not
 implemented.
 
 Before spawning the server, the client passes the executable, arguments, working
-directory, and filtered environment through the internal `SandboxProvider` when
-the selected backend mode requires protection. `ai-sandbox` prepares the command;
-the client remains responsible for executing it with piped stdio and supervising
-the resulting process. The prepared command must retain the exact argv boundary:
-no shell, string interpolation, or shell-based wrapper is permitted.
+Before spawning a protected server, the MXC adapter builds a typed request from
+the executable argv, canonical workspace, filtered explicit environment,
+read-only roots, network policy, and timeout. It launches through MXC with
+process stdin/stdout/stderr pipes; the LSP client owns JSON-RPC framing and
+request/session lifecycle. Commands remain argv vectors and are never
+shell-interpolated.
 
 The local implementation uses a single serialized writer, a reader thread that
 dispatches responses and notifications, a pending-request map keyed by JSON-RPC
@@ -506,38 +466,54 @@ server during a normal documentation build.
 Add source-documentation settings rather than hard-coding server commands:
 
 ```python
-source_backend = "static"
+source_backend = "hybrid"
 source_lsp_servers = {
-    "rust": ["rust-analyzer", "--stdio"],
-    "lean": ["lake", "env", "lean", "--server"],
+  "rust": ["rust-analyzer", "--stdio"],
+  "lean": ["lake", "env", "lean", "--server"],
 }
-source_lsp_timeout = 30000
-source_lsp_allow_fallback = True
-source_lsp_workspace_root = None
-source_lsp_sandbox = "off"  # off, trusted-local, protected-lsp
-source_build_sandbox = "off"  # off or protected-build
+source_lsp_sandbox = "protected-lsp"
+source_lsp_sandbox_engine = "mxc"  # mxc or ai-sandbox; default mxc
+source_lsp_mxc_config = {
+  "containment": "process",
+  "filesystem": {
+    "mount_procfs": False,
+    "readonly_paths": [],
+    "readwrite_paths": [],
+    "denied_paths": [],
+  },
+  "network": {
+    "egress": {"default": "deny"},
+    "ingress": {"default": "deny", "host_loopback": "deny"},
+  },
+  "timeout_ms": 1800000,
+}
 ```
 
-The Lean command must remain configurable because Lean installations differ by
-project and package manager.
+The MXC config shown here makes the protected-mode defaults explicit. The typed
+`source_lsp_mxc_config` override accepts only containment, filesystem paths and
+`mount_procfs`, directional network actions, and a timeout up to 30 minutes.
+`source_lsp_sandbox_engine` selects the direct MXC SDK or the ai-sandbox adapter;
+both consume this same policy model. The ai-sandbox adapter serializes it to the
+supported MXC policy JSON subset and rejects filesystem/network settings it
+cannot preserve.
+Writable paths and network allowances should be added only for a documented
+server requirement. `SPHINXDOCRS_SANDBOXING=off` deliberately changes a
+configured protected LSP to trusted-local; it is logged and is not used as an
+automatic fallback. The Lean command remains configurable because installations
+differ by project and package manager.
 
-The source autodoc CLI exposes an opt-in subset. Current options are
-`--source-backend {auto,static,lsp,hybrid}`, `--source-lsp-server EXECUTABLE`,
-repeatable `--source-lsp-arg TOKEN`, `--source-lsp-timeout MILLISECONDS`,
-`--source-lsp-no-fallback`, and `--source-lsp-sandbox {off,trusted-local,protected-lsp}`.
-The command vector remains an argv list and is never shell-interpolated.
-The status tool supports `--live --live-fake` or explicit real-server options.
-The full build CLI and configuration-to-provider wiring remain future work.
-
-The planned equivalent option set is:
+`sphinx-apidoc-rs` keeps source language and analysis backend separate. Its
+`--source-mode {python,rust,lean,auto}` selects discovery rules;
+`--source-backend {static,lsp}` selects Rust/Lean analysis, defaulting to
+static; and `--conf-file PATH` supplies LSP server and MXC settings. Python
+apidoc remains on its existing path. The status tool supports
+`--live --live-fake` or explicit real-server options. Commands are argv vectors,
+not shell strings.
 
 ```text
---source-backend {auto,static,lsp,hybrid}
---source-lsp-server LANGUAGE=COMMAND [ARGS...]
---source-lsp-timeout MILLISECONDS
---source-lsp-no-fallback
---source-lsp-sandbox {off,trusted-local,protected-lsp}
---source-build-sandbox {off,protected-build}
+--source-mode {python,rust,lean,auto}
+--source-backend {static,lsp}
+--conf-file PATH
 ```
 
 Commands should report the selected backend and fallback decision in verbose mode,
@@ -651,123 +627,78 @@ credentials, network, and child processes unless an OS boundary prevents it.
 
 ### Sandbox modes and scope
 
-Keep sandbox policy separate from backend selection:
+Keep sandbox policy separate from analysis backend selection:
 
 | Mode | `sphinxdocrs` build | LSP server | Failure behavior |
 | --- | --- | --- | --- |
 | `static` | normal process; no server | not started | static errors only |
-| `trusted-local` | normal process | direct child with bounded environment and process-tree cleanup | explicitly trusted only; not a security boundary |
-| `protected-lsp` | normal process | Linux Bubblewrap or macOS Seatbelt through `SandboxProvider`, with LSP-owned piped stdio and lifecycle | fail closed if backend setup or capability probe is unavailable |
-| `protected-build` | unavailable | no build sandbox provider is enabled | fail closed before starting the build |
+| `trusted-local` | normal process | direct child with explicit environment | trusted input only; no OS security boundary |
+| `protected-lsp` | normal process | MXC native containment: Bubblewrap on Linux, Seatbelt on macOS | fail closed if MXC or platform setup fails |
+| `protected-build` | unavailable | no build sandbox provider is enabled | fail before starting the build |
 
-`protected-build` and `protected-lsp` are distinct because a sandboxed LSP does
-not make Python extensions, themes, directives, or the `sphinxdocrs` process safe.
-When the build itself is untrusted, wrap the entire build with one outer
-`ai-sandbox` policy and keep the LSP process inside that boundary. When only the
-server is untrusted, wrap the server as a child and keep the build outside. The
-provider must record which scope was established in diagnostics and cache
-metadata. A child process spawned by a correctly enforced outer OS sandbox is
-confined by inheritance, but it is still subject to the LSP client's timeout and
-process-tree cleanup rules.
+`protected-build` and `protected-lsp` are distinct: protecting the language
+server does not make Python extensions, themes, directives, or the Sphinx build
+process safe. No whole-build MXC provider is implemented, so do not imply that
+the LSP policy covers the builder.
 
-For the first protected policy, use:
+Protected LSP defaults are intentionally narrow:
 
-- read-only source and toolchain roots;
-- a dedicated writable output/cache root only where required;
-- a private temporary directory;
-- an empty or explicit allowlist home directory;
-- a filtered environment containing only declared compiler and locale settings;
-- no network access unless a future policy explicitly permits a local proxy;
-- bounded CPU, memory, output, process count, and wall-clock resources.
+- deny-by-default filesystem policy; mount the workspace and declared toolchain
+  roots read-only;
+- no writable paths by default;
+- deny network egress, ingress, and host loopback;
+- clear inherited environment and pass only explicit server settings plus the
+  locale-only internal allowlist;
+- use a bounded MXC timeout (30 minutes by default);
+- omit child `/proc` on Linux while retaining Bubblewrap's private PID namespace.
 
-Do not treat `ai-sandbox`'s `SandboxPolicy::ReadOnly` as sufficient for LSP
-protection. Linux Bubblewrap currently builds read-only system/cwd mounts,
-isolated temporary mount points, clears inherited environment, and supports
-network namespace isolation; macOS builds a Seatbelt policy. The provider must
-still prove the concrete workspace/home/temp exposure, enforce an explicit
-environment allowlist, validate symlink behavior and writable-root boundaries,
-and supervise descendants. The crate currently supplies no CPU, memory, output,
-or process-count limits, and its LSP-facing request methods do not support
-piped stdio or process-group/job cleanup.
+`source_lsp_mxc_config` is a typed `conf.py` override surface. It permits
+containment selection (`process`, `bubblewrap`, or `seatbelt`), filesystem
+read-only/read-write/denied paths and `mount_procfs`, network default actions,
+and a timeout capped at 30 minutes. Configured writable paths and network
+allowances expand server authority and should be justified by a concrete
+toolchain requirement. Configured roots are checked for absolute non-root paths
+and canonicalized before MXC launch; adversarial path replacement still needs
+testing.
 
-### `ai-sandbox` integration audit
+MXC's procfs choice is not serialized in the stable JSON request contract.
+`ProcfsPolicy::Omit` is the least-privilege selection for new typed callers;
+`Mount` explicitly requests a fresh procfs, and `LegacyBackendDefault` preserves
+the historical behavior. Existing `spawn`/`run` and V1 JSON entrypoints remain
+compatible in V1.0.x. The tentative schedule is to deprecate the unqualified
+typed entrypoints in V1.1 without changing runtime behavior, then make them use
+`Omit` in V2.0 while retaining `LegacyBackendDefault` and V1 JSON semantics. See
+the MXC [Bubblewrap procfs policy and migration notes](../src/mxc/docs/backends/bwrap/bubblewrap-backend.md#procfs-policy-and-migration).
 
-The reviewed implementation is commit
-`4cef879225e3bd177aa2fff1ca7d8771ae108a67` in the workspace, with crate version
-`0.2.1`. It is a usable Linux/macOS executor foundation, not a drop-in LSP
-process manager or a cross-platform security claim that can be copied from its
-README:
+The sandbox-off override is deliberately unsafe and explicit:
+`SPHINXDOCRS_SANDBOXING=off` changes a configured protected LSP to
+`trusted-local`, logs the override, and does not disable LSP or silently handle
+MXC failure. Protected mode otherwise fails closed. The static backend remains
+the reproducible default and starts no process.
 
-| Area | What `ai-sandbox` supplies | Required `sphinxdocrs` work or current limitation |
-| --- | --- | --- |
-| Policy model | read-only, workspace-write, network enum, path checks, command safety check, exact argument literals, executable alias protection, Deny precedence, absolute-path chmod guard | validate canonical roots and symlink policy at the provider boundary; policy matching is not OS isolation |
-| Linux | Bubblewrap executor and namespace capability probe; explicit RO/RW mounts; isolated `/tmp`, `/home`, `/root`; selected environment filtering; NoAccess network namespace; fail-closed unsupported network/filesystem policies | no Landlock syscall enforcement or seccomp filter; no resource limits; writable-root path replacement TOCTOU remains; integration must test mount exposure, filesystem boundaries, network denial, and descendant behavior |
-| macOS | Seatbelt command transformation and `sandbox-exec` launch; quoted policy paths; NoAccess/Localhost/FullAccess policy generation; Proxy rejected | add native boundary tests for filesystem/network behavior, child inheritance, path escapes, and unavailable/rejected `sandbox-exec` |
-| Windows | restricted-token, ACL, and process-launch implementation exists; tests ensure protected policies do not select unrestricted launch | `SandboxExecRequest` currently reports backend unsupported on Windows; wire it to process creation, add Job Object kill-on-close/process limits, and validate filesystem/network semantics |
-| BSD | Capsicum/pledge policy helpers and enforcement adapter functions; pledge setup is represented in child execution APIs | `SandboxExecRequest` currently reports backend unsupported on FreeBSD/OpenBSD; prove the target child enters the capability boundary and test filesystem/network behavior before enabling provider support |
-| Execution | `SandboxExecRequest::spawn()`, `run(timeout)`, and `wait()` execute the immutable prepared command; `run` terminates the direct child on timeout | stdio is inherited; `wait` is unbounded; `run` does not provide process-group/job or descendant cleanup. LSP must retain stdio framing and lifecycle ownership, likely via a provider API that prepares the sandbox command separately from spawning |
-| Fallbacks | unsupported protected execution returns an explicit error; Linux spawn runs a Bubblewrap capability probe; unavailable Linux/macOS transformations fail closed | keep provider-level capability reporting explicit; never fall through to a direct command when protected mode is selected |
-| Supply chain | crate manifest remains `0.2.1`; audited workspace commit is `4cef879225e3bd177aa2fff1ca7d8771ae108a67` | crates.io `=0.2.1` does not identify this commit; publish/verify a release or pin the reviewed fork/revision, record the source and lockfile, and run supported-platform adversarial CI |
+### MXC integration status
 
-The integration must start with the Linux Bubblewrap capability probe (and an
-equivalent native Seatbelt probe/test on macOS), then verify that a disposable
-child cannot read a sentinel outside allowed roots, write outside the output
-root, access the network under `NoAccess`, or escape by symlink. Add a test for
-replacement/racing of a configured writable path; if the API cannot eliminate
-that race, document and constrain the trust assumptions rather than claiming
-race-free root containment. Also verify process-tree timeout/cleanup separately:
-the current `run()` only kills the direct child. A policy-construction success
-or successful capability probe alone is not a passing boundary test.
+MXC is the `src/mxc` Git submodule pinned at
+`6f6e43683877d68a43fdd1d6c201808c914c5685`; the optional Rust SDK is behind
+`source-sandbox`. The adapter owns policy construction and MXC spawn; the LSP
+client owns JSON-RPC stdio and session lifecycle.
 
-### DSCode sandbox audit
+| Area | Current implementation and remaining limit |
+| --- | --- |
+| Linux | Bubblewrap protected launch, no-proc control, explicit read-only roots, cleared environment, network deny, fake-server startup, write-denial and host-loopback denial tests pass in this container. Path-replacement races and resource limits remain open. |
+| macOS | MXC Seatbelt selection is wired, but native runtime filesystem/network boundary validation remains pending. |
+| Windows and BSD | Protected LSP is unsupported and fails closed. |
+| Process/resource limits | MXC timeout is configured; CPU, memory, output-size, and process-count enforcement are not implemented. Descendant lifecycle behavior requires additional adversarial testing. |
+| Supply chain | Source is pinned by submodule commit and Cargo.lock; update both deliberately and review MXC changes before moving the pin. |
 
-DSCode provides useful reference implementations, but its sandbox should not be
-treated as a security guarantee for `sphinxdocrs` without additional work:
-
-| DSCode facility | Reusable idea | Limitation for this project |
-| --- | --- | --- |
-| `dscode-lsp` client | lifecycle shape, stdio protocol, pending responses | not a sandbox; current client has fixed policy and best-effort cleanup |
-| Linux `bwrap` path | namespaces, `--unshare-net`, `--unshare-pid`, `--die-with-parent` | only used when `bwrap` is present; fallback is memory `setrlimit` only; the implementation exposes the whole `HOME` read-only and host `/tmp` writable |
-| Linux fallback | address-space limit | no filesystem, network, child-process, or CPU isolation; `max_cpu_percent` is not enforced |
-| macOS path | address-space limit | current code does not invoke `sandbox-exec`; it sets `NODE_ENV` and a memory limit only |
-| Windows Job Object | memory/process-count limits and kill-on-close | no filesystem or network isolation; assignment/configuration failures are logged and treated as success |
-| `PathValidator` | canonicalized allowlist for DSCode-mediated file API calls | does not constrain direct filesystem access by a child language server and remains subject to TOCTOU concerns |
-| permissions/rate limiter | capability vocabulary and request throttling | only useful when every operation passes through DSCode IPC; neither controls an arbitrary LSP executable nor enforces OS permissions |
-| binary verifier | integrity check for a bundled executable | checks DSCode's Node binary, not a configured `rust-analyzer`, Lean server, or wrapper |
-
-The most important practical issue is that the Linux `bwrap` implementation binds
-the entire home directory read-only. That prevents writes but still exposes
-contents such as SSH keys, cloud credentials, package tokens, and editor state.
-It also always binds host `/tmp` read-write. If `bwrap` is unavailable or cannot
-create namespaces, the code silently falls back to resource limiting, so the
-documented network and filesystem restrictions no longer apply. The macOS README
-and security documentation describe stronger isolation than the current sandbox
-code supplies. Windows Job Objects are useful for containment and cleanup, but
-they are not a filesystem/network sandbox.
-
-For `sphinxdocrs`, reuse DSCode as a design reference rather than depending on
-`dscode-extension-host`. `ai-sandbox` now supplies active Bubblewrap execution on
-Linux and Seatbelt execution on macOS, but does not remove the need for explicit
-workspace binds, an empty or allowlisted home, a private temporary directory,
-filtered environment variables, network denial, resource limits, and fail-closed
-behavior when the requested isolation cannot be established. Its request
-executor is not wired for Windows or BSD, and its process API has no LSP stdio,
-process-group/job cleanup, or descendant/resource limits. If those guarantees
-cannot be provided on a platform, the LSP backend should be unavailable there
-rather than silently downgraded to an unsandboxed process when the caller
-selected a protected mode. An explicitly named `unsafe-local` mode could permit
-that downgrade for trusted developer use.
-
-The static backend remains the security and reproducibility default. LSP should be
-classified as trusted-local by default, with a separate protected mode only after
-platform-specific sandbox tests demonstrate the promised boundary.
+The protected rust-analyzer 1.96.1 no-proc test and a Rust LSP apidoc plus HTML
+build pass locally. A policy-construction success alone is not a boundary test;
+continue testing denied filesystem/network access, symlink/path replacement,
+descendant cleanup, and each platform before expanding security claims.
 
 ## Testing strategy
 
 ### Provider contract tests
-
-Create one shared contract suite that every static, LSP, and hybrid provider must
-pass:
 
 - deterministic declaration ordering
 - stable IDs and source spans
@@ -936,23 +867,28 @@ LSP identity includes configured command arguments, workspace, client-requested
 and negotiated capabilities, timeout, serverInfo when available, and source
 request. Continue auditing every toolchain/configuration input for invalidation.
 
-### Phase 3: optional LSP adapter — protected provider integrated with gaps
+### Phase 3: optional LSP adapter — MXC protected provider integrated with gaps
 
 - Define the internal `SourceLspClient` interface and fake-server contract.
-- Choose either a pinned `dscode-lsp` adapter or a local client based on the
-  trusted-local effort and dependency review.
+- Use the local JSON-RPC client behind `SourceLspClient`; no dscode or
+  `lsp-types` dependency crosses the provider boundary.
 - The current local adapter uses `serde_json`, standard library threads/channels,
   and optional `libc`; no dscode or `lsp-types` dependency is present.
 - Add `lsp-source-analysis` as an off-by-default Cargo feature.
-- The off-by-default `source-sandbox` feature uses the provenance-documented
-  in-tree `ai-sandbox` snapshot behind an internal `SandboxProvider`.
-- Linux protected LSP uses Bubblewrap with explicit read-only roots, cleared and
-  allowlisted environment, no network, piped stdio, and process-group cleanup.
-  It omits child procfs because the outer container may reject mounting a new
-  procfs; the private PID namespace is retained. macOS uses Seatbelt policy
-  generation but still needs native runtime boundary validation.
-- Protected Windows and BSD modes remain unavailable until verified executors
-  and boundary tests exist. Resource limits are not implemented.
+- The off-by-default `source-sandbox` feature uses the MXC SDK through a typed
+  provider, pinned by the `src/mxc` submodule at
+  `6f6e43683877d68a43fdd1d6c201808c914c5685`.
+- Linux protected LSP uses MXC Bubblewrap with explicit read-only roots, cleared
+  explicit environment, network denial, and piped stdio. The typed no-proc
+  option omits only the child `/proc` mount and retains the private PID
+  namespace. macOS uses MXC Seatbelt selection but still needs native runtime
+  boundary validation.
+- Protected Windows and BSD modes remain unavailable. CPU, memory, output, and
+  process-count limits are not implemented; descendant cleanup and path-race
+  resistance need further adversarial tests.
+- `source_lsp_mxc_config` exposes narrow `conf.py` overrides with safe defaults.
+  `SPHINXDOCRS_SANDBOXING=off` is a logged, explicit switch from protected LSP
+  to trusted-local, not a silent fallback.
 - Sphinx configuration supports per-language server environment and additional
   read-only roots. Inherited environment remains cleared; unsafe loader/runtime
   keys, relative PATH entries, and invalid filesystem roots are rejected.
@@ -961,13 +897,14 @@ request. Continue auditing every toolchain/configuration input for invalidation.
 - Add explicit source-backend configuration and trusted-local CLI selection.
 
 Status: the optional feature remains off by default; fake-server snapshots,
-hover/definition normalization, and protected provider startup are implemented.
-Source paths are canonicalized and constrained before launch. Linux no-proc
-startup, fake-LSP analysis, read-only write denial, parent-loopback network
-denial, and symlink escape denial pass in this container. Real rust-analyzer/Lean
-compatibility without `/proc`, native macOS validation, Windows Job Object runtime
-behavior, path-replacement races, and resource limits remain open. `trusted-local`
-is not a security boundary. Real server runs remain explicit opt-ins.
+hover/definition normalization, MXC protected startup, config overrides, and
+the sandbox-off switch are implemented. Source paths are canonicalized and
+constrained before launch. Linux no-proc startup, fake-LSP analysis, read-only
+write denial, and parent-loopback network denial pass in this container. The
+protected no-proc rust-analyzer 1.96.1 test passes with an explicit toolchain
+library path. Native macOS validation, Windows/BSD support, path-replacement
+races, descendant behavior, and resource limits remain open. `trusted-local` is
+not a security boundary. Real server runs remain explicit opt-ins.
 
 The provider mutex serializes access to its single child; reusing that child is
 limited to the lifetime of one `LspSnapshotProvider` instance. The current CLI
@@ -987,8 +924,12 @@ page mapping is project-specific.
 
 Status: core consumers use normalized records and hybrid mode retains static
 policy fields with conflict diagnostics and provenance. Search/xref parity when
-LSP adds no information and full apidoc/environment cache integration still need
-dedicated end-to-end tests.
+LSP adds no information and full environment-cache integration still need
+dedicated tests. Rust/Lean apidoc separates language discovery from backend
+selection; its opt-in LSP path adds an aggregate `lsp-api.rst` to the generated
+TOC, while Python apidoc remains unchanged. A real Rust LSP apidoc and native
+HTML build pass locally; an automated fake-server apidoc end-to-end test remains
+to add.
 
 ### Phase 5: optional live-server workflows — Rust validated locally; CI pending
 
@@ -998,8 +939,8 @@ dedicated end-to-end tests.
   (`SPHINXDOCRS_LEAN_LSP_COMMAND` supplies a JSON argv array; unset means skip).
 - Document server installation and project-specific commands in
   [`SOURCE_DOCS_LSP.md`](SOURCE_DOCS_LSP.md).
-- Add opt-in `ai-sandbox` boundary tests for LSP-only and whole-build scopes on
-  each supported platform.
+- Maintain MXC boundary tests for protected LSP on each supported platform;
+  whole-build sandboxing remains unavailable and is not implied by these tests.
 - Evaluate `dscode-session` separately; it must not replace the sandbox provider
   or process-policy boundary.
 
@@ -1057,9 +998,11 @@ Implemented criteria:
 - The current local LSP client is optional and isolated behind a feature; no
   third-party LSP client type crosses the provider boundary.
 - `protected-lsp` is opt-in through `source-sandbox`, uses the internal
-  `SandboxProvider`, and fails closed when the selected sandbox or capability
-  probe is unavailable; it never falls back to a direct child. `protected-build`
-  remains unavailable and fails closed.
+- `protected-lsp` is opt-in through `source-sandbox`, uses the pinned MXC SDK,
+  applies the documented safe defaults, and fails closed if protected startup is
+  unavailable; it never falls back to a direct child. The explicit
+  `SPHINXDOCRS_SANDBOXING=off` override selects trusted-local and is logged.
+  `protected-build` remains unavailable and fails closed.
 - LSP lifecycle failures produce explicit errors; notification diagnostics are
   normalized and retained only in snapshots by default.
 - Domains, autodoc, apidoc, persistence, and search consume only normalized source
@@ -1069,15 +1012,14 @@ Implemented criteria:
 
 The plan is not complete until the remaining acceptance criteria below land:
 
-- Continue auditing the optional `SandboxProvider` and its provenance-documented
-  in-tree source snapshot; never treat `ai-sandbox` command transformation alone
-  as proof of isolation.
-- Add Linux Bubblewrap and macOS Seatbelt boundary tests for read/write roots,
-  network denial, symlink/path replacement, and descendant cleanup. Add Windows
-  Job Object process-tree cleanup before advertising support there. Linux
-  no-proc startup, read-only write denial, and parent-loopback network denial are
-  tested; path-replacement/race attacks and native macOS/Windows runtime behavior
-  remain open. Do not claim broader guarantees than these tests establish.
+- Continue reviewing MXC changes against the pinned submodule commit and the
+  adapter's typed policy construction; policy construction alone is not proof of
+  isolation.
+- Linux Bubblewrap no-proc startup, read-only write denial, and parent-loopback
+  network denial are tested. Add path-replacement and descendant-lifecycle
+  tests; validate Seatbelt boundaries natively on macOS before claiming runtime
+  support there. Windows and BSD remain unsupported. Do not claim broader
+  guarantees than the tests establish.
 - References/workspace-symbol output remains optional and must not define API
   membership. Definition links remain deferred until a project source-page mapping
   policy is explicitly configured.

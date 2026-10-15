@@ -9,9 +9,9 @@ from pathlib import Path
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'SphinxDocRS LSP Report'
-copyright = '2026, SphinxDocRS'
-author = 'SphinxDocRS'
+project = 'Sphinxdocrs LSP Report'
+copyright = '2026, Sphinxdocrs'
+author = 'westurner'
 
 version = '0.1.0'
 release = '0.1.0'
@@ -26,6 +26,21 @@ extensions = []
 # that checked-in RST report.
 source_backend = 'lsp'
 source_lsp_sandbox = 'protected-lsp'
+source_lsp_sandbox_engine = 'mxc'  # or 'ai-sandbox'
+source_lsp_mxc_config = {
+	'containment': 'process',
+	'filesystem': {
+		'mount_procfs': False,
+		'readonly_paths': [],
+		'readwrite_paths': [],
+		'denied_paths': [],
+	},
+	'network': {
+		'egress': {'default': 'deny'},
+		'ingress': {'default': 'deny', 'host_loopback': 'deny'},
+	},
+	'timeout_ms': 1800000,
+}
 cargo_home = Path(os.environ.get('CARGO_HOME', str(Path.home() / '.cargo'))).resolve()
 rustup_home = Path(os.environ.get('RUSTUP_HOME', str(Path.home() / '.rustup'))).resolve()
 rust_analyzer = os.environ.get('SPHINXDOCRS_RUST_ANALYZER', 'rust-analyzer')

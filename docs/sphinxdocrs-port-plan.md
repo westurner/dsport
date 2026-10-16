@@ -2085,11 +2085,11 @@ H13.5 follow-up plan:
 
 * **Implemented slice:** Sphinx passes its source root to the MyST parser;
   include targets are canonicalized, paths outside that root are rejected,
-  and missing, unreadable, or recursive includes produce source-located
-  `SystemMessage` warnings. `tests/myst_bridge.rs` covers missing, escaping,
-  and cyclic includes, unsupported and malformed options, and literal/code
-  line selection; the `mock_include` front-matter case is also covered. The
-  mixed-source build covers a valid include.
+  and missing/recursive targets produce source-located severe messages.
+  Missing arguments produce errors; unsupported or malformed options produce
+  warnings. `tests/myst_bridge.rs` covers these cases plus literal/code line
+  selection and the `mock_include` front-matter behavior. The mixed-source
+  build covers a valid include.
 * **Implemented option subset:** `literal`, `code`, `start-line`, `end-line`,
   `start-after`, and `end-before` are parsed and lowered. Unknown or invalid
   options produce warnings. Compare all option/error details against upstream

@@ -171,6 +171,7 @@ fn parse_to_doctree_inner(
             .bytes()
             .filter(|byte| *byte == b'\n')
             .count() as u32
+            + body_line_offset
             + 1;
         match event {
             Event::Start(tag) => start_tag(&mut tree, &mut frames, &mut sections, root, tag),
@@ -915,11 +916,9 @@ fn resolve_include_path(
     } else {
         source.parent().unwrap_or(source_root).join(requested)
     };
-    let path = candidate.canonicalize().map_err(|error| {
-        format!(
-            "cannot resolve MyST include {:?}: {error}",
-            candidate.display()
-        )
+    let path = candidate.canonicalize().map_err(|_| {
+        let missing = candidate.strip_prefix(source_root).unwrap_or(&candidate);
+        format!("file not found: '{}'", missing.display())
     })?;
     if !path.starts_with(source_root) {
         return Err(format!(
@@ -1044,11 +1043,17 @@ fn handle_include(
         match directives::parse_directive_text(&include_directive_spec(), argument, &body_lines) {
             Ok(parsed) => parsed,
             Err(error) => {
-                append_include_warning(
+                let message = match error {
+                    directives::DirectiveError::Syntax(message) => message,
+                    directives::DirectiveError::Options(error) => format!("{error:?}"),
+                };
+                append_include_message(
                     tree,
                     parent,
                     line,
-                    format!("invalid MyST include directive: {error:?}"),
+                    3,
+                    "ERROR",
+                    format!("Directive 'include': {message}"),
                 );
                 return;
             }
@@ -1072,18 +1077,27 @@ fn handle_include(
     let path = match resolve_include_path(argument, tree, source_root, include_stack) {
         Ok(path) => path,
         Err(message) => {
-            append_include_warning(tree, parent, line, message);
+            append_include_message(
+                tree,
+                parent,
+                line,
+                4,
+                "SEVERE",
+                format!("Directive \"include\": {message}"),
+            );
             return;
         }
     };
     let included_source = match std::fs::read_to_string(&path) {
         Ok(source) => source,
         Err(error) => {
-            append_include_warning(
+            append_include_message(
                 tree,
                 parent,
                 line,
-                format!("cannot read MyST include {argument:?}: {error}"),
+                4,
+                "SEVERE",
+                format!("Directive \"include\": cannot read {argument:?}: {error}"),
             );
             return;
         }
@@ -1129,12 +1143,23 @@ fn handle_include(
 }
 
 fn append_include_warning(tree: &mut Doctree, parent: NodeId, line: u32, message: String) {
+    append_include_message(tree, parent, line, 2, "WARNING", message);
+}
+
+fn append_include_message(
+    tree: &mut Doctree,
+    parent: NodeId,
+    line: u32,
+    level: u32,
+    ty: &'static str,
+    message: String,
+) {
     let id = tree.append(
         parent,
         NodeKind::SystemMessage {
-            level: 2,
+            level,
             line: Some(line),
-            ty: "WARNING",
+            ty,
             ids: String::new(),
             backrefs: String::new(),
         },

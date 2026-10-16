@@ -48,6 +48,30 @@ fn system_message_text(tree: &docutilsrs::Doctree, needle: &str) -> Option<(Opti
     })
 }
 
+fn system_message_kind(
+    tree: &docutilsrs::Doctree,
+    needle: &str,
+) -> Option<(Option<u32>, u32, &'static str)> {
+    (0..tree.nodes_len()).find_map(|id| {
+        let node = tree.node(id);
+        let docutilsrs::NodeKind::SystemMessage {
+            line, level, ty, ..
+        } = &node.kind
+        else {
+            return None;
+        };
+        let message = node
+            .children
+            .iter()
+            .filter_map(|child| match &tree.node(*child).kind {
+                docutilsrs::NodeKind::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        message.contains(needle).then_some((*line, *level, *ty))
+    })
+}
+
 #[test]
 fn mixed_rst_and_myst_build_uses_persisted_doctree() {
     let project = write_mixed_project();
@@ -203,7 +227,7 @@ fn myst_substitution_diagnostic_survives_sphinx_read_path() {
 }
 
 #[test]
-fn missing_myst_include_reports_a_source_located_warning() {
+fn missing_myst_include_reports_a_source_located_error() {
     let project = write_mixed_project();
     std::fs::write(
         project.path().join("guide.md"),
@@ -225,11 +249,37 @@ fn missing_myst_include_reports_a_source_located_warning() {
 
     let env = app.env.borrow();
     let tree = env.get_doctree("guide").unwrap();
+    let (line, message) = system_message_text(&tree, "file not found").unwrap();
+    assert_eq!(line, Some(3));
+    assert!(message.contains("missing.md"));
     assert_eq!(
-        system_message_text(&tree, "cannot resolve MyST include")
-            .unwrap()
-            .0,
-        Some(3)
+        system_message_kind(&tree, "file not found"),
+        Some((Some(3), 4, "SEVERE"))
+    );
+}
+
+#[test]
+fn myst_include_missing_argument_reports_an_error() {
+    let project = write_mixed_project();
+    std::fs::write(project.path().join("guide.md"), ":::include\n:::\n").unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    assert_eq!(
+        system_message_kind(&tree, "1 argument(s) required, 0 supplied"),
+        Some((Some(1), 3, "ERROR"))
     );
 }
 

@@ -102,3 +102,51 @@ fn unknown_source_parser_fails_during_read() {
     let error = app.read().expect_err("unknown parser should be rejected");
     assert!(error.to_string().contains("unknown source parser"));
 }
+
+#[test]
+fn myst_substitution_diagnostic_survives_sphinx_read_path() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "---\ntitle: Example\n---\nUse {{ missing }} here.\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let diagnostic = (0..tree.nodes_len())
+        .find(|id| {
+            matches!(
+                tree.node(*id).kind,
+                docutilsrs::NodeKind::SystemMessage {
+                    line: Some(4),
+                    ty: "WARNING",
+                    ..
+                }
+            )
+        })
+        .expect("source-located undefined-substitution warning");
+    let message =
+        tree.node(diagnostic)
+            .children
+            .iter()
+            .find_map(|child| match &tree.node(*child).kind {
+                docutilsrs::NodeKind::Text(text) => Some(text.as_str()),
+                _ => None,
+            });
+    let message = message.expect("diagnostic message text");
+    assert!(message.starts_with("undefined substitution"));
+    assert!(message.contains("missing"));
+}

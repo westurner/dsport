@@ -2085,11 +2085,15 @@ H13.5 follow-up plan:
 
 * Implement include option/error parity with a source-root-aware parser
   context, `literal`/`code`/line-range options, recursion detection, and
-  source-located `SystemMessage` nodes.
-* Replace bounded substitution replacement with dependency-aware expansion,
-  undefined-name diagnostics, and cycle-path reporting. Gate both features
-  against the upstream `mock_include*`, `myst-config.txt`, and
-  `reporter_warnings.md` fixtures.
+  source-located `SystemMessage` nodes; compare against upstream
+  `mock_include*` fixtures.
+* **Implemented:** replace the bounded substitution loop with dependency-aware
+  expansion, source-located undefined-name warnings, and cycle-path reporting.
+  Unit tests cover chains longer than eight definitions, missing names, and
+  cycles; the Sphinx read-path test verifies the diagnostic survives doctree
+  persistence. Compare exact wording and edge cases against upstream
+  `myst-config.txt` and `reporter_warnings.md` fixtures as part of the remaining
+  parity matrix.
 
 #### H13.1 — Define the parser contract
 
@@ -2117,8 +2121,8 @@ The first bridge slice is implemented in dependency order:
 3. colon-fence directives and inline roles, including directive option
   lowering for `class`/`classes` and generic admonition titles;
 4. math and common MyST extensions;
-5. full directive registry validation, include options/errors, recursive
-  substitution diagnostics, and reporter warning nodes. Table spans are
+5. full directive registry validation, include options/errors, and reporter
+  warning-node parity beyond substitution diagnostics. Table spans are
   supplied by the opt-in pulldown-cmark extension and must remain covered
   by the native bridge/parity gate.
 
@@ -2176,9 +2180,11 @@ exists.
 With H13.4 passing, the remaining work is to port representative MyST Sphinx
 fixtures and run the existing `test_sphinx` builder matrix against the native
 path. The native bridge now lowers directive options and generic admonition
-titles/classes, and preserves malformed generic-admonition diagnostics. The
-directive aggregate runner still needs to compare the remaining fixture cases
-against `parse_directive_text` rather than marking the whole group pending.
+titles/classes, preserves malformed generic-admonition diagnostics, and emits
+source-located warnings for undefined or cyclic substitutions. The directive
+aggregate runner still needs to compare the remaining fixture cases against
+`parse_directive_text` rather than marking the whole group pending; include
+option/error parity and broader substitution/reporting parity remain open.
 Keep tests that require Python-only extensions or Python object identity on the
 Python bridge, but record every native-path deviation in `docs/compat.md`.
 
@@ -2476,7 +2482,10 @@ so parity reports cannot accidentally mix the three languages.
 #### H14h -- Rust/Lean apidoc and `sphinx-apidoc-rs`
 
 Extend `ApidocOptions` with a source mode while preserving the current
-Python-default constructor and CLI behavior. The mode must distinguish:
+Python-default constructor and CLI behavior. Keep language discovery separate
+from analysis backend selection: `source_mode` chooses the input language, while
+`source_backend` chooses `static` or opt-in `lsp` analysis for Rust/Lean. The
+mode must distinguish:
 
 - `python`: current package/module discovery and `automodule` templates;
 - `rust`: Cargo package/workspace discovery and rustdoc-backed module roots;
@@ -2504,6 +2513,14 @@ Add source-specific templates and options:
 | Rust | `rust:module` plus generated child declarations | package, target, features, cfg, `document-private-items`, member order |
 | Lean | `lean:module` / `lean:namespace` plus generated child declarations | module root, imports, private declarations, namespace grouping, member order |
 | Python | existing `automodule` output | all current `ApidocOptions`, unchanged defaults and `--full` behavior |
+
+Python apidoc remains on its current path regardless of the Rust/Lean LSP
+backend. `--source-backend lsp` is valid only for Rust or Lean and requires
+`--conf-file` or a discoverable project `conf.py` for server and MXC policy.
+It preserves static module discovery and generated module pages, then adds an
+aggregate `lsp-api.rst` page to the generated TOC. Static analysis remains the
+default. The apidoc CLI's backend selector is distinct from the broader Sphinx
+`source_backend` configuration used by source-doc consumers.
 
 Generated files must be deterministic, preserve `--force`, `--dry-run`,
 `--remove-old`, exclusion, suffix, and template-dir semantics, and never
@@ -2566,8 +2583,9 @@ Land H14 in the following reviewable increments:
    search, incremental invalidation, environment persistence, and writers.
 4. **H14g:** source-neutral autodoc library plus Rust/Lean renderers and
    focused `sphinx-autodoc-rs` CLI behavior.
-5. **H14h:** source-mode apidoc discovery, templates, `--full`, and
-   `sphinx-apidoc-rs` backward-compatibility tests.
+5. **H14h:** source-mode apidoc discovery, separate static/LSP analysis choice,
+  templates, `--full`, Python backward compatibility, and an LSP apidoc
+  generation/build test.
 6. **H14i/H14j:** parity fixtures, accepted-deviation records, documentation,
    feature-gated CI, and final full-crate verification.
 

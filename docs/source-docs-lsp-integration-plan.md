@@ -297,7 +297,7 @@ JSON and Arborium paths for ordinary builds.
 | `DocumentSymbol.detail`, `range`, `selectionRange` | Signatures, source spans, and declaration anchors | P0 | Detail/ranges are mapped; selection positions are retained as LSP attributes. Static declaration IDs and policy metadata remain authoritative in hybrid mode. |
 | `textDocument/hover` | Fill a missing description/type summary for a statically discovered declaration | P1 | Implemented: bounded plaintext/Markdown is normalized and fills only empty static documentation fields; fake-server coverage exists. Never silently replace static documentation. |
 | `textDocument/definition` | Optional “Defined in” source link or cross-file source location | P1 | In-workspace target paths/spans are normalized as safe metadata; rendering a Sphinx-relative link remains open pending a project source-page mapping policy. Never publish editor `file://` URIs directly. |
-| `textDocument/publishDiagnostics` | Separate build diagnostics page/report, optionally grouped by file/severity | P1 | Notifications are decoded into `AnalysisDiagnostic`; dedicated mapping/report tests and a Sphinx diagnostics page are not implemented. Diagnostics should not become API prose by default. |
+| `textDocument/publishDiagnostics` | Separate build diagnostics page/report, optionally grouped by file/severity | P1 | Notifications are decoded into normalized `AnalysisDiagnostic` records; a fake-server test checks severity, message, source path, and span. A generated diagnostics page/report remains unimplemented; diagnostics do not become API prose by default. |
 | `textDocument/references` | “Used by” lists or reverse-reference reports | P2 | Not implemented. Keep opt-in because results can be large, server-dependent, and expensive. Do not use them to define API membership. |
 | `workspace/symbol` | Workspace-wide API index or namespace landing pages | P2 | Not implemented. Prefer static apidoc discovery for page membership; use workspace symbols only for explicitly requested enrichment/discovery. |
 | `textDocument/completion`, `signatureHelp`, `semanticTokens` | Interactive completion/signature/token display | Not a generated-doc priority | Better suited to editor integrations. Semantic tokens may eventually help render signatures, but must not be a prerequisite for generated docs. |
@@ -752,7 +752,7 @@ currently covers:
 - diagnostics notification (notification decoding is implemented; dedicated mapping coverage remains to add)
 - delayed response and timeout
 - malformed JSON-RPC response
-- server crash during a request (pre-initialize crash coverage remains to add)
+- server crash during a request and during initialize (captured stderr, no timeout)
 - shutdown after success and failure
 
 The fake server should live in test support and never be used by production code.
@@ -777,13 +777,14 @@ excluded from normal CI. They should be enabled by an explicit feature or
 environment variable and report a skipped result when the server is unavailable.
 
 Current automated LSP tests cover fake-server initialize/document-symbol/shutdown,
-provider-scoped process reuse, timeout, crash during a request, framing limits,
+provider-scoped process reuse, initialize-time exit with stderr capture, timeout,
+crash during a request, diagnostics notification normalization, framing limits,
 malformed JSON-RPC/version, UTF-16 position conversion, symbol-kind mapping,
 missing executable resolution, workspace escape rejection before spawn, and
 configuration/cache secrecy. The status command can invoke the shared fake server
 with `--live --live-fake`; the command remains process-free without that flag.
-Gaps include diagnostics notification fixtures, pre-initialize crash, true request
-cancellation, Windows process-tree cleanup, and cross-platform lifecycle tests.
+Remaining lifecycle gaps include true request cancellation, Windows process-tree
+cleanup, and cross-platform lifecycle tests.
 The full Sphinx library suite has known environment failures in Python 3.14
 `typing` import behavior, theme/config expectations, and a symlink fixture; the
 focused source-doc and LSP suites pass.

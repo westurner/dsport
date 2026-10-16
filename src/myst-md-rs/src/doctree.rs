@@ -8,7 +8,7 @@
 use docutilsrs::doctree::NodeId;
 use docutilsrs::{Doctree, NodeKind};
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use crate::{directives, frontmatter, preprocess, role};
@@ -100,7 +100,12 @@ pub fn parse_to_doctree(
 ) -> Doctree {
     let split = frontmatter::split(source);
     let substitutions = collect_substitutions(split.front_matter.as_ref(), &options.substitutions);
-    let substituted = apply_substitutions(split.body, &substitutions);
+    let body_start = source.len() - split.body.len();
+    let body_line_offset = source[..body_start]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count() as u32;
+    let (substituted, substitution_diagnostics) = apply_substitutions(split.body, &substitutions);
     let body = preprocess::preprocess(&substituted);
     let mut parser_options = Options::empty();
     if options.enable_tables {
@@ -217,6 +222,22 @@ pub fn parse_to_doctree(
                 );
             }
         }
+    }
+
+    for (line, message) in substitution_diagnostics {
+        let source_line = line + body_line_offset;
+        let id = tree.append(
+            root,
+            NodeKind::SystemMessage {
+                level: 2,
+                line: Some(source_line),
+                ty: "WARNING",
+                ids: String::new(),
+                backrefs: String::new(),
+            },
+        );
+        tree.set_line(id, source_line);
+        tree.append(id, NodeKind::Text(message));
     }
 
     tree
@@ -883,22 +904,182 @@ fn collect_substitutions(
     substitutions
 }
 
-fn apply_substitutions(source: &str, substitutions: &BTreeMap<String, String>) -> String {
-    let mut output = source.to_string();
-    for _ in 0..8 {
-        let mut changed = false;
-        for (key, value) in substitutions {
-            let marker = format!("{{{{ {key} }}}}");
-            let compact = format!("{{{{{key}}}}}");
-            let next = output.replace(&marker, value).replace(&compact, value);
-            changed |= next != output;
-            output = next;
-        }
-        if !changed {
-            break;
+#[derive(Debug, Clone)]
+struct ResolvedSubstitution {
+    value: String,
+    issues: Vec<String>,
+}
+
+fn apply_substitutions(
+    source: &str,
+    substitutions: &BTreeMap<String, String>,
+) -> (String, Vec<(u32, String)>) {
+    let (resolved, cycles) = resolve_substitutions(substitutions);
+    let (output, issues) = expand_substitution_template(source, &resolved, &cycles);
+    let diagnostics = issues
+        .into_iter()
+        .map(|(offset, message)| {
+            let line = source[..offset]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count() as u32
+                + 1;
+            (line, message)
+        })
+        .collect();
+    (output, diagnostics)
+}
+
+fn resolve_substitutions(
+    substitutions: &BTreeMap<String, String>,
+) -> (
+    BTreeMap<String, ResolvedSubstitution>,
+    BTreeMap<String, String>,
+) {
+    let dependencies = substitutions
+        .iter()
+        .map(|(name, value)| {
+            let dependencies = substitution_markers(value)
+                .into_iter()
+                .map(|(_, _, dependency)| dependency)
+                .filter(|dependency| substitutions.contains_key(dependency))
+                .collect::<BTreeSet<_>>();
+            (name.clone(), dependencies)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut dependents = substitutions
+        .keys()
+        .map(|name| (name.clone(), BTreeSet::new()))
+        .collect::<BTreeMap<_, _>>();
+    let mut pending = BTreeMap::new();
+    for (name, names) in &dependencies {
+        pending.insert(name.clone(), names.len());
+        for dependency in names {
+            dependents
+                .get_mut(dependency)
+                .expect("dependency comes from the substitution map")
+                .insert(name.clone());
         }
     }
-    output
+
+    let mut ready = pending
+        .iter()
+        .filter(|(_, count)| **count == 0)
+        .map(|(name, _)| name.clone())
+        .collect::<VecDeque<_>>();
+    let mut resolved = BTreeMap::new();
+    let no_cycles = BTreeMap::new();
+    while let Some(name) = ready.pop_front() {
+        let (value, issues) =
+            expand_substitution_template(&substitutions[&name], &resolved, &no_cycles);
+        let issues = issues
+            .into_iter()
+            .map(|(_, issue)| issue)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        resolved.insert(name.clone(), ResolvedSubstitution { value, issues });
+
+        for dependent in &dependents[&name] {
+            let count = pending
+                .get_mut(dependent)
+                .expect("dependent comes from the substitution map");
+            *count -= 1;
+            if *count == 0 {
+                ready.push_back(dependent.clone());
+            }
+        }
+    }
+
+    let unresolved = substitutions
+        .keys()
+        .filter(|name| !resolved.contains_key(*name))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let cycles = unresolved
+        .iter()
+        .filter_map(|name| {
+            substitution_cycle_path(name, &dependencies, &unresolved)
+                .map(|path| (name.clone(), path))
+        })
+        .collect();
+    (resolved, cycles)
+}
+
+fn substitution_cycle_path(
+    start: &str,
+    dependencies: &BTreeMap<String, BTreeSet<String>>,
+    unresolved: &BTreeSet<String>,
+) -> Option<String> {
+    let mut positions = BTreeMap::new();
+    let mut path = Vec::new();
+    let mut current = start.to_string();
+    loop {
+        if let Some(position) = positions.get(&current) {
+            let mut cycle = path[*position..].to_vec();
+            cycle.push(current);
+            return Some(cycle.join(" -> "));
+        }
+        positions.insert(current.clone(), path.len());
+        path.push(current.clone());
+        current = dependencies
+            .get(&current)?
+            .iter()
+            .find(|dependency| unresolved.contains(*dependency))?
+            .clone();
+    }
+}
+
+fn expand_substitution_template(
+    template: &str,
+    resolved: &BTreeMap<String, ResolvedSubstitution>,
+    cycles: &BTreeMap<String, String>,
+) -> (String, Vec<(usize, String)>) {
+    let markers = substitution_markers(template);
+    let mut output = String::with_capacity(template.len());
+    let mut issues = Vec::new();
+    let mut cursor = 0;
+    for (start, end, name) in markers {
+        output.push_str(&template[cursor..start]);
+        if let Some(substitution) = resolved.get(&name) {
+            output.push_str(&substitution.value);
+            issues.extend(
+                substitution
+                    .issues
+                    .iter()
+                    .map(|issue| (start, issue.clone())),
+            );
+        } else if let Some(cycle) = cycles.get(&name) {
+            output.push_str(&template[start..end]);
+            issues.push((start, format!("substitution cycle: {cycle}")));
+        } else {
+            output.push_str(&template[start..end]);
+            issues.push((start, format!("undefined substitution '{name}'")));
+        }
+        cursor = end;
+    }
+    output.push_str(&template[cursor..]);
+    (output, issues)
+}
+
+fn substitution_markers(template: &str) -> Vec<(usize, usize, String)> {
+    let mut markers = Vec::new();
+    let mut cursor = 0;
+    while let Some(start_offset) = template[cursor..].find("{{") {
+        let start = cursor + start_offset;
+        let name_start = start + 2;
+        let Some(end_offset) = template[name_start..].find("}}") else {
+            break;
+        };
+        let name_end = name_start + end_offset;
+        let end = name_end + 2;
+        let name = template[name_start..name_end].trim();
+        if !name.is_empty() {
+            markers.push((start, end, name.to_string()));
+        }
+        cursor = end;
+    }
+    markers
 }
 
 fn is_admonition(name: &str) -> bool {
@@ -1100,6 +1281,70 @@ mod tests {
         let xml = docutilsrs::to_xml(&tree);
         assert!(xml.contains("names=\"Rust\""));
         assert!(xml.contains("Welcome to Rust."));
+    }
+
+    #[test]
+    fn resolves_transitive_substitutions_without_a_pass_limit() {
+        let mut options = DoctreeOptions::default();
+        for index in 0..12 {
+            let value = if index == 0 {
+                "complete".to_string()
+            } else {
+                format!("{{{{ key{:02} }}}}", index - 1)
+            };
+            options
+                .substitutions
+                .insert(format!("key{index:02}"), value);
+        }
+
+        let tree = parse_to_doctree("Use {{ key11 }}.\n", "index.md", &options);
+        let xml = docutilsrs::to_xml(&tree);
+
+        assert!(xml.contains("Use complete."));
+    }
+
+    #[test]
+    fn undefined_substitution_reports_source_line() {
+        let tree = parse_to_doctree(
+            "---\ntitle: Example\n---\nFirst paragraph.\n\nUse {{ missing }} here.\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        let diagnostics = tree
+            .node(tree.root())
+            .children
+            .iter()
+            .filter(|id| matches!(tree.node(**id).kind, NodeKind::SystemMessage { .. }))
+            .copied()
+            .collect::<Vec<_>>();
+
+        assert_eq!(diagnostics.len(), 1);
+        assert!(matches!(
+            tree.node(diagnostics[0]).kind,
+            NodeKind::SystemMessage {
+                level: 2,
+                line: Some(6),
+                ty: "WARNING",
+                ..
+            }
+        ));
+        assert!(docutilsrs::to_xml(&tree).contains("undefined substitution 'missing'"));
+    }
+
+    #[test]
+    fn cyclic_substitution_reports_dependency_path() {
+        let mut options = DoctreeOptions::default();
+        options
+            .substitutions
+            .insert("alpha".into(), "{{ beta }}".into());
+        options
+            .substitutions
+            .insert("beta".into(), "{{ alpha }}".into());
+
+        let tree = parse_to_doctree("Use {{ alpha }}.\n", "index.md", &options);
+        let xml = docutilsrs::to_xml(&tree);
+
+        assert!(xml.contains("substitution cycle: alpha -&gt; beta -&gt; alpha"));
     }
 
     #[test]

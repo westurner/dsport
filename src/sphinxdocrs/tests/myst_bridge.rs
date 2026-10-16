@@ -98,6 +98,39 @@ fn mixed_rst_and_myst_build_uses_persisted_doctree() {
 }
 
 #[test]
+fn myst_include_ignores_included_front_matter() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        ":::include included.md\n:::\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("included.md"),
+        "---\ntitle: Included metadata\n---\nIncluded body.\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let xml = docutilsrs::to_xml(&tree);
+    assert!(xml.contains("Included body."));
+    assert!(!xml.contains("Included metadata"));
+}
+
+#[test]
 fn unknown_source_parser_fails_during_read() {
     let project = write_mixed_project();
     std::fs::write(

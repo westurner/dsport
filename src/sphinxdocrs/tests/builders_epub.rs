@@ -15,6 +15,10 @@ fn build_all_writes_one_epub_archive_with_documents() {
     let mut config = SphinxConfig::new_defaults();
     config.set("epub_title", ConfigVal::Str("Guide & Reference".into()));
     config.set("epub_author", ConfigVal::Str("A <Writer>".into()));
+    config.set(
+        "epub_contributor",
+        ConfigVal::Str("Proofreader & Editor".into()),
+    );
     config.set("epub_uid", ConfigVal::Str("urn:example:guide".into()));
     config.set("epub_basename", ConfigVal::Str("guide-book".into()));
     config.set("epub_writing_mode", ConfigVal::Str("vertical".into()));
@@ -55,6 +59,7 @@ fn build_all_writes_one_epub_archive_with_documents() {
             .as_slice(),
         b"Guide &amp; Reference".as_slice(),
         b"A &lt;Writer&gt;".as_slice(),
+        b"<dc:contributor>Proofreader &amp; Editor</dc:contributor>".as_slice(),
     ] {
         assert!(
             archive.windows(marker.len()).any(|window| window == marker),

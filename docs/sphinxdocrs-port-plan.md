@@ -757,7 +757,10 @@ Ordered by dependency on `docutilsrs` writers that already exist.
 
 The EPUB builder honors `epub_writing_mode`: the horizontal default emits
 `page-progression-direction="ltr"`, while vertical mode emits
-`page-progression-direction="rtl"`. Both outputs have focused tests.
+`page-progression-direction="rtl"`. It also serializes explicit `epub_guide`
+triples and configured `epub_contributor` metadata, with XML escaping. These
+outputs have focused tests; automatic cover/TOC guide entries and packaging
+additional referenced resources remain unsupported.
 
 **H7e rationale:** these six builders fall into two groups, neither of
 which fits the "parse RST → render a format" shape every other builder

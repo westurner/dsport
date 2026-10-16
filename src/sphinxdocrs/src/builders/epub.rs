@@ -58,6 +58,7 @@ impl EpubBuilder {
         documents: &[(String, String, String)],
         title: &str,
         author: &str,
+        contributor: &str,
         language: &str,
         uid: &str,
         description: &str,
@@ -85,10 +86,11 @@ impl EpubBuilder {
             })
             .collect();
         let opf = format!(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"pub-id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"pub-id\">{}</dc:identifier><dc:title>{}</dc:title><dc:creator>{}</dc:creator><dc:language>{}</dc:language><dc:description>{}</dc:description><dc:publisher>{}</dc:publisher><dc:rights>{}</dc:rights></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>{manifest}</manifest><spine toc=\"ncx\" page-progression-direction=\"{}\">{spine}</spine><guide>{guide}</guide></package>\n",
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"pub-id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"pub-id\">{}</dc:identifier><dc:title>{}</dc:title><dc:creator>{}</dc:creator><dc:contributor>{}</dc:contributor><dc:language>{}</dc:language><dc:description>{}</dc:description><dc:publisher>{}</dc:publisher><dc:rights>{}</dc:rights></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>{manifest}</manifest><spine toc=\"ncx\" page-progression-direction=\"{}\">{spine}</spine><guide>{guide}</guide></package>\n",
             xml_escape(uid),
             xml_escape(title),
             xml_escape(author),
+            xml_escape(contributor),
             xml_escape(language),
             xml_escape(description),
             xml_escape(publisher),
@@ -153,6 +155,7 @@ impl Builder for EpubBuilder {
                 &[(docname.to_owned(), document, title)],
                 "Sphinx documentation",
                 "",
+                "unknown",
                 "en",
                 "unknown",
                 "",
@@ -200,6 +203,7 @@ impl Builder for EpubBuilder {
         std::fs::create_dir_all(outdir)?;
         let title = config_string(env, "epub_title", &env.config.project());
         let author = config_string(env, "epub_author", &env.config.author());
+        let contributor = config_string(env, "epub_contributor", "unknown");
         let language = config_string(env, "epub_language", &env.config.language());
         let uid = config_string(env, "epub_uid", "unknown");
         let description = config_string(env, "epub_description", "unknown");
@@ -230,6 +234,7 @@ impl Builder for EpubBuilder {
                 &documents,
                 &title,
                 &author,
+                &contributor,
                 &language,
                 &uid,
                 &description,

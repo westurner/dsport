@@ -20,6 +20,10 @@ fn build_all_writes_one_epub_archive_with_documents() {
         ConfigVal::Str("Proofreader & Editor".into()),
     );
     config.set("epub_uid", ConfigVal::Str("urn:example:guide".into()));
+    config.set(
+        "epub_identifier",
+        ConfigVal::Str("urn:example:publication & edition".into()),
+    );
     config.set("epub_basename", ConfigVal::Str("guide-book".into()));
     config.set("epub_writing_mode", ConfigVal::Str("vertical".into()));
     config.set(
@@ -60,6 +64,8 @@ fn build_all_writes_one_epub_archive_with_documents() {
         b"Guide &amp; Reference".as_slice(),
         b"A &lt;Writer&gt;".as_slice(),
         b"<dc:contributor>Proofreader &amp; Editor</dc:contributor>".as_slice(),
+        b"unique-identifier=\"urn:example:guide\"".as_slice(),
+        b"<dc:identifier id=\"urn:example:guide\">urn:example:publication &amp; edition</dc:identifier>".as_slice(),
     ] {
         assert!(
             archive.windows(marker.len()).any(|window| window == marker),

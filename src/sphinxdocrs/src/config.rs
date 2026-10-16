@@ -962,6 +962,12 @@ impl SphinxConfig {
         );
         add("epub_language", Str(String::new()), Env, "EPUB language");
         add(
+            "epub_identifier",
+            Str("unknown".into()),
+            Env,
+            "EPUB identifier value",
+        );
+        add(
             "epub_writing_mode",
             Str("horizontal".into()),
             Env,

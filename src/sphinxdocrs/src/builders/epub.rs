@@ -61,6 +61,7 @@ impl EpubBuilder {
         contributor: &str,
         language: &str,
         uid: &str,
+        identifier: &str,
         description: &str,
         publisher: &str,
         rights: &str,
@@ -86,8 +87,10 @@ impl EpubBuilder {
             })
             .collect();
         let opf = format!(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"pub-id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"pub-id\">{}</dc:identifier><dc:title>{}</dc:title><dc:creator>{}</dc:creator><dc:contributor>{}</dc:contributor><dc:language>{}</dc:language><dc:description>{}</dc:description><dc:publisher>{}</dc:publisher><dc:rights>{}</dc:rights></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>{manifest}</manifest><spine toc=\"ncx\" page-progression-direction=\"{}\">{spine}</spine><guide>{guide}</guide></package>\n",
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"{}\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"{}\">{}</dc:identifier><dc:title>{}</dc:title><dc:creator>{}</dc:creator><dc:contributor>{}</dc:contributor><dc:language>{}</dc:language><dc:description>{}</dc:description><dc:publisher>{}</dc:publisher><dc:rights>{}</dc:rights></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>{manifest}</manifest><spine toc=\"ncx\" page-progression-direction=\"{}\">{spine}</spine><guide>{guide}</guide></package>\n",
             xml_escape(uid),
+            xml_escape(uid),
+            xml_escape(identifier),
             xml_escape(title),
             xml_escape(author),
             xml_escape(contributor),
@@ -158,6 +161,7 @@ impl Builder for EpubBuilder {
                 "unknown",
                 "en",
                 "unknown",
+                "unknown",
                 "",
                 "",
                 "",
@@ -206,6 +210,7 @@ impl Builder for EpubBuilder {
         let contributor = config_string(env, "epub_contributor", "unknown");
         let language = config_string(env, "epub_language", &env.config.language());
         let uid = config_string(env, "epub_uid", "unknown");
+        let identifier = config_string(env, "epub_identifier", "unknown");
         let description = config_string(env, "epub_description", "unknown");
         let publisher = config_string(env, "epub_publisher", "");
         let rights = config_string(
@@ -237,6 +242,7 @@ impl Builder for EpubBuilder {
                 &contributor,
                 &language,
                 &uid,
+                &identifier,
                 &description,
                 &publisher,
                 &rights,

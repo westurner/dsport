@@ -2108,8 +2108,10 @@ H13.5 follow-up plan:
   invalid `title_to_header`/`url_schemes` values produce line-1 warnings that
   survive Sphinx doctree storage. Heading diagnostics also cover a document
   starting below H1 and non-consecutive level increases, including source lines
-  through the Sphinx read path. Remaining front-matter fields and full reporter
-  warning parity need fixture-by-fixture upstream comparison.
+  through the Sphinx read path. Duplicate reference definitions warn on the
+  second definition, while reference-like syntax in fenced code is ignored.
+  Remaining front-matter fields and full reporter warning parity need
+  fixture-by-fixture upstream comparison.
 
 #### H13.1 — Define the parser contract
 

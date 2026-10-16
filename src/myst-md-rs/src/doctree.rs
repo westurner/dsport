@@ -147,6 +147,7 @@ fn parse_to_doctree_inner(
         .filter(|byte| *byte == b'\n')
         .count() as u32;
     let (substituted, substitution_diagnostics) = apply_substitutions(split.body, &substitutions);
+    let duplicate_reference_diagnostics = duplicate_reference_definitions(split.body);
     let body = preprocess::preprocess(&substituted);
     let mut parser_options = Options::empty();
     if options.enable_tables {
@@ -395,6 +396,9 @@ fn parse_to_doctree_inner(
         );
         tree.set_line(id, source_line);
         tree.append(id, NodeKind::Text(message));
+    }
+    for (line, message) in duplicate_reference_diagnostics {
+        append_include_warning(&mut tree, root, line + body_line_offset, message);
     }
     for message in front_matter_diagnostics {
         append_include_warning(&mut tree, root, 1, message);
@@ -1481,6 +1485,77 @@ fn yaml_type_name(value: &serde_yaml::Value) -> &'static str {
     }
 }
 
+fn duplicate_reference_definitions(source: &str) -> Vec<(u32, String)> {
+    let mut seen = BTreeSet::new();
+    let mut diagnostics = Vec::new();
+    let mut fenced_code: Option<(u8, usize)> = None;
+
+    for (line_number, line) in source.lines().enumerate() {
+        if let Some((marker, minimum_length)) = fenced_code {
+            if let Some((closing_marker, length)) = code_fence(line) {
+                let suffix = line.trim_start().get(length..).unwrap_or_default();
+                if closing_marker == marker && length >= minimum_length && suffix.trim().is_empty()
+                {
+                    fenced_code = None;
+                }
+            }
+            continue;
+        }
+        if let Some(fence) = code_fence(line) {
+            fenced_code = Some(fence);
+            continue;
+        }
+
+        let indentation = line.len() - line.trim_start().len();
+        if indentation >= 4 {
+            continue;
+        }
+        let content = &line[indentation..];
+        let Some(reference) = content.strip_prefix('[') else {
+            continue;
+        };
+        if reference.starts_with('^') {
+            continue;
+        }
+        let Some(label_end) = reference.find("]:") else {
+            continue;
+        };
+        let label = reference[..label_end].trim();
+        if label.is_empty() {
+            continue;
+        }
+        let normalized = label
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
+        if !seen.insert(normalized) {
+            diagnostics.push((
+                line_number as u32 + 1,
+                format!(
+                    "Duplicate reference definition: {} [myst.duplicate_def]",
+                    label.to_uppercase()
+                ),
+            ));
+        }
+    }
+    diagnostics
+}
+
+fn code_fence(line: &str) -> Option<(u8, usize)> {
+    let indentation = line.len() - line.trim_start().len();
+    if indentation > 3 {
+        return None;
+    }
+    let content = &line[indentation..];
+    let marker = *content.as_bytes().first()?;
+    if !matches!(marker, b'`' | b'~') {
+        return None;
+    }
+    let length = content.bytes().take_while(|byte| *byte == marker).count();
+    (length >= 3).then_some((marker, length))
+}
+
 #[derive(Debug, Clone)]
 struct ResolvedSubstitution {
     value: String,
@@ -2087,6 +2162,47 @@ mod tests {
                     _ => None,
                 });
         assert!(message.unwrap().contains("H1 to H3"));
+    }
+
+    #[test]
+    fn duplicate_reference_definition_reports_the_second_line() {
+        let tree = parse_to_doctree(
+            "[a]: one\n[a]: two\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        let warning = (0..tree.nodes_len())
+            .find(|id| matches!(tree.node(*id).kind, NodeKind::SystemMessage { .. }))
+            .expect("duplicate-reference warning");
+        let message =
+            tree.node(warning)
+                .children
+                .iter()
+                .find_map(|child| match &tree.node(*child).kind {
+                    NodeKind::Text(text) => Some(text.as_str()),
+                    _ => None,
+                });
+        assert!(matches!(
+            tree.node(warning).kind,
+            NodeKind::SystemMessage { line: Some(2), .. }
+        ));
+        assert_eq!(
+            message,
+            Some("Duplicate reference definition: A [myst.duplicate_def]")
+        );
+    }
+
+    #[test]
+    fn duplicate_reference_definition_syntax_in_fenced_code_is_ignored() {
+        let tree = parse_to_doctree(
+            "```md\n[a]: one\n[a]: two\n```\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        assert!(
+            !(0..tree.nodes_len())
+                .any(|id| matches!(tree.node(id).kind, NodeKind::SystemMessage { .. }))
+        );
     }
 
     #[test]

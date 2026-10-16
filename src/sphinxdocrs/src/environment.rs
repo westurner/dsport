@@ -2156,9 +2156,9 @@ fn sphinx_myst_roles(registered_roles: &HashSet<String>) -> Vec<String> {
                 .iter()
                 .map(|name| (*name).to_owned()),
         )
-            .collect::<Vec<_>>();
-            roles.extend(registered_roles.iter().cloned());
-            roles
+        .collect::<Vec<_>>();
+    roles.extend(registered_roles.iter().cloned());
+    roles
 }
 
 fn shorten_xref_target(target: &str, domain: &str) -> String {

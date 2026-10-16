@@ -62,6 +62,7 @@ impl EpubBuilder {
         description: &str,
         publisher: &str,
         rights: &str,
+        page_progression_direction: &str,
     ) -> Vec<u8> {
         let mut zip = ZipBuilder::new();
         zip.add_file("mimetype", b"application/epub+zip");
@@ -71,14 +72,15 @@ impl EpubBuilder {
             .map(|index| format!("<itemref idref=\"doc{index}\"/>"))
             .collect();
         let opf = format!(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"pub-id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"pub-id\">{}</dc:identifier><dc:title>{}</dc:title><dc:creator>{}</dc:creator><dc:language>{}</dc:language><dc:description>{}</dc:description><dc:publisher>{}</dc:publisher><dc:rights>{}</dc:rights></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>{manifest}</manifest><spine toc=\"ncx\">{spine}</spine></package>\n",
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"pub-id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"pub-id\">{}</dc:identifier><dc:title>{}</dc:title><dc:creator>{}</dc:creator><dc:language>{}</dc:language><dc:description>{}</dc:description><dc:publisher>{}</dc:publisher><dc:rights>{}</dc:rights></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>{manifest}</manifest><spine toc=\"ncx\" page-progression-direction=\"{}\">{spine}</spine></package>\n",
             xml_escape(uid),
             xml_escape(title),
             xml_escape(author),
             xml_escape(language),
             xml_escape(description),
             xml_escape(publisher),
-            xml_escape(rights)
+            xml_escape(rights),
+            page_progression_direction
         );
         zip.add_file("OEBPS/content.opf", opf.as_bytes());
         let nav: String = documents
@@ -143,6 +145,7 @@ impl Builder for EpubBuilder {
                 "",
                 "",
                 "",
+                "ltr",
             ),
         )?;
         Ok(())
@@ -196,6 +199,16 @@ impl Builder for EpubBuilder {
                 .unwrap_or_default(),
         );
         let basename = config_string(env, "epub_basename", &env.config.project());
+        let page_progression_direction =
+            match config_string(env, "epub_writing_mode", "horizontal").as_str() {
+                "horizontal" => "ltr",
+                "vertical" => "rtl",
+                writing_mode => {
+                    return Err(BuildError::Other(format!(
+                        "epub_writing_mode must be 'horizontal' or 'vertical', got {writing_mode:?}"
+                    )));
+                }
+            };
         std::fs::write(
             outdir.join(format!("{basename}.epub")),
             Self::archive(
@@ -207,6 +220,7 @@ impl Builder for EpubBuilder {
                 &description,
                 &publisher,
                 &rights,
+                page_progression_direction,
             ),
         )?;
         Ok(BuildResult {
@@ -264,6 +278,11 @@ mod tests {
             .build_all(src.path(), out.path(), &env)
             .unwrap();
         assert_eq!(result.written, 1);
-        assert!(out.path().join("book.epub").is_file());
+        let bytes = std::fs::read(out.path().join("book.epub")).unwrap();
+        assert!(
+            bytes
+                .windows(b"page-progression-direction=\"ltr\"".len())
+                .any(|window| window == b"page-progression-direction=\"ltr\"")
+        );
     }
 }

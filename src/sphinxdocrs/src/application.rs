@@ -558,6 +558,8 @@ impl SphinxApp {
     /// stored doctrees, `check_consistency`) between the read and write
     /// phases.
     pub fn read(&mut self) -> Result<(), AppError> {
+        self.env.borrow_mut().registered_roles =
+            self.registry.borrow().roles.keys().cloned().collect();
         self.env.borrow_mut().find_files()?;
 
         let current_config_hash = self.config.stable_hash();

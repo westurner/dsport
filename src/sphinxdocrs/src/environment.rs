@@ -156,6 +156,8 @@ pub struct BuildEnvironment {
     // ── docutils settings ─────────────────────────────────────────────────────
     /// Docutils writer settings.
     pub settings: HashMap<String, String>,
+    /// Role names registered by Sphinx extensions before the read phase.
+    pub registered_roles: HashSet<String>,
 
     // ── document inventory ────────────────────────────────────────────────────
     /// docname → time of reading (integer microseconds).
@@ -305,6 +307,7 @@ impl BuildEnvironment {
             config_status_extra: String::new(),
             project,
             settings,
+            registered_roles: HashSet::new(),
             all_docs: HashMap::new(),
             dependencies: HashMap::new(),
             included: HashMap::new(),
@@ -719,6 +722,7 @@ impl BuildEnvironment {
     /// writers.
     pub fn parse_source(&self, docname: &str, source: &str) -> Result<Doctree, BuildError> {
         let path = self.doc2path(docname);
+        let registered_roles = sphinx_myst_roles(&self.registered_roles);
         if path
             .extension()
             .is_some_and(|extension| extension == "ipynb")
@@ -733,7 +737,7 @@ impl BuildEnvironment {
                 &markdown,
                 path.to_string_lossy().into_owned(),
                 &options,
-                &sphinx_myst_roles(),
+                &registered_roles,
             ));
         }
         let mut tree = match self.parser_for_path(&path).as_str() {
@@ -749,7 +753,7 @@ impl BuildEnvironment {
                     source,
                     path.to_string_lossy().into_owned(),
                     &options,
-                    &sphinx_myst_roles(),
+                    &registered_roles,
                 ))
             }
             parser => Err(BuildError::Other(format!(
@@ -2143,8 +2147,8 @@ impl BuildEnvironment {
     }
 }
 
-fn sphinx_myst_roles() -> Vec<String> {
-    crate::roles::GENERIC_DOCROLES
+fn sphinx_myst_roles(registered_roles: &HashSet<String>) -> Vec<String> {
+    let mut roles = crate::roles::GENERIC_DOCROLES
         .iter()
         .map(|(name, _)| (*name).to_owned())
         .chain(
@@ -2152,7 +2156,9 @@ fn sphinx_myst_roles() -> Vec<String> {
                 .iter()
                 .map(|name| (*name).to_owned()),
         )
-        .collect()
+            .collect::<Vec<_>>();
+            roles.extend(registered_roles.iter().cloned());
+            roles
 }
 
 fn shorten_xref_target(target: &str, domain: &str) -> String {

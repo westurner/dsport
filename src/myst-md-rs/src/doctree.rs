@@ -101,6 +101,16 @@ pub fn parse_to_doctree(
     source_path: impl Into<String>,
     options: &DoctreeOptions,
 ) -> Doctree {
+    parse_to_doctree_with_registered_roles(source, source_path, options, &[])
+}
+
+/// Parse MyST with additional roles registered by the hosting application.
+pub fn parse_to_doctree_with_registered_roles(
+    source: &str,
+    source_path: impl Into<String>,
+    options: &DoctreeOptions,
+    registered_roles: &[String],
+) -> Doctree {
     let source_path = source_path.into();
     let source_path_buf = PathBuf::from(&source_path);
     let source_root = options
@@ -116,6 +126,7 @@ pub fn parse_to_doctree(
         options,
         &source_root,
         &mut include_stack,
+        registered_roles,
     )
 }
 
@@ -125,6 +136,7 @@ fn parse_to_doctree_inner(
     options: &DoctreeOptions,
     source_root: &Path,
     include_stack: &mut Vec<PathBuf>,
+    registered_roles: &[String],
 ) -> Doctree {
     let split = frontmatter::split(source);
     let substitutions = collect_substitutions(split.front_matter.as_ref(), &options.substitutions);
@@ -165,14 +177,33 @@ fn parse_to_doctree_inner(
     let root = tree.root();
     let mut frames = Vec::new();
     let mut sections: Vec<(usize, NodeId)> = Vec::new();
+    let mut pending_role: Option<(String, u32)> = None;
     for (event, offset) in Parser::new_ext(&body, parser_options).into_offset_iter() {
-        let node_start = tree.nodes_len();
-        let line = body[..offset.start]
+        let mut line = body[..offset.start]
             .bytes()
             .filter(|byte| *byte == b'\n')
             .count() as u32
             + body_line_offset
             + 1;
+        if !matches!(&event, Event::Code(_)) {
+            if let Some((name, role_line)) = pending_role.take() {
+                let start = tree.nodes_len();
+                append_text(
+                    &mut tree,
+                    &mut frames,
+                    &sections,
+                    root,
+                    &format!("{{{name}}}"),
+                    role_line,
+                    source_path,
+                    registered_roles,
+                );
+                for id in start..tree.nodes_len() {
+                    tree.set_line(id, role_line);
+                }
+            }
+        }
+        let node_start = tree.nodes_len();
         match event {
             Event::Start(tag) => start_tag(&mut tree, &mut frames, &mut sections, root, tag),
             Event::End(end) => end_tag(
@@ -183,12 +214,52 @@ fn parse_to_doctree_inner(
                 options,
                 source_root,
                 include_stack,
+                registered_roles,
             ),
-            Event::Text(text) => append_text(&mut tree, &mut frames, &sections, root, &text),
+            Event::Text(text) => {
+                let text = text.into_string();
+                if let Some((prefix, name)) = role::role_opener_suffix(&text) {
+                    append_text(
+                        &mut tree,
+                        &mut frames,
+                        &sections,
+                        root,
+                        prefix,
+                        line,
+                        source_path,
+                        registered_roles,
+                    );
+                    pending_role = Some((name.to_owned(), line));
+                } else {
+                    append_text(
+                        &mut tree,
+                        &mut frames,
+                        &sections,
+                        root,
+                        &text,
+                        line,
+                        source_path,
+                        registered_roles,
+                    );
+                }
+            }
             Event::Code(text) => {
                 let parent = content_parent(&mut tree, &frames, &sections, root);
-                let id = tree.append(parent, NodeKind::Literal);
-                tree.append(id, NodeKind::Text(text.into_string()));
+                if let Some((name, role_line)) = pending_role.take() {
+                    line = role_line;
+                    append_role(
+                        &mut tree,
+                        parent,
+                        &name,
+                        &text,
+                        role_line,
+                        source_path,
+                        registered_roles,
+                    );
+                } else {
+                    let id = tree.append(parent, NodeKind::Literal);
+                    tree.append(id, NodeKind::Text(text.into_string()));
+                }
             }
             Event::InlineMath(math) => {
                 let parent = content_parent(&mut tree, &frames, &sections, root);
@@ -208,9 +279,16 @@ fn parse_to_doctree_inner(
                     },
                 );
             }
-            Event::SoftBreak | Event::HardBreak => {
-                append_text(&mut tree, &mut frames, &sections, root, "\n")
-            }
+            Event::SoftBreak | Event::HardBreak => append_text(
+                &mut tree,
+                &mut frames,
+                &sections,
+                root,
+                "\n",
+                line,
+                source_path,
+                registered_roles,
+            ),
             Event::Html(html) | Event::InlineHtml(html) => {
                 let parent = current_parent(&frames, &sections, root);
                 let raw = tree.append(
@@ -238,9 +316,12 @@ fn parse_to_doctree_inner(
             }
         }
         for id in node_start..tree.nodes_len() {
-            tree.set_line(id, line);
+            if tree.node(id).line.is_none() {
+                tree.set_line(id, line);
+            }
             if let NodeKind::SystemMessage {
                 level,
+                line: message_line,
                 ty,
                 ids,
                 backrefs,
@@ -251,13 +332,30 @@ fn parse_to_doctree_inner(
                     id,
                     NodeKind::SystemMessage {
                         level,
-                        line: Some(line),
+                        line: Some(message_line.unwrap_or(line)),
                         ty,
                         ids,
                         backrefs,
                     },
                 );
             }
+        }
+    }
+
+    if let Some((name, role_line)) = pending_role {
+        let start = tree.nodes_len();
+        append_text(
+            &mut tree,
+            &mut frames,
+            &sections,
+            root,
+            &format!("{{{name}}}"),
+            role_line,
+            source_path,
+            registered_roles,
+        );
+        for id in start..tree.nodes_len() {
+            tree.set_line(id, role_line);
         }
     }
 
@@ -545,6 +643,7 @@ fn end_tag(
     options: &DoctreeOptions,
     source_root: &Path,
     include_stack: &mut Vec<PathBuf>,
+    registered_roles: &[String],
 ) {
     match end {
         TagEnd::Heading(level) => {
@@ -593,6 +692,7 @@ fn end_tag(
                     options,
                     source_root,
                     include_stack,
+                    registered_roles,
                 ),
                 CodeKind::Directive { name, .. } if name == "eval-rst" => {
                     tree.detach(id);
@@ -711,6 +811,9 @@ fn append_text(
     sections: &[(usize, NodeId)],
     root: NodeId,
     text: &str,
+    line: u32,
+    source_path: &str,
+    registered_roles: &[String],
 ) {
     if let Some(Frame::Code { body, .. }) = frames.last_mut() {
         body.push_str(text);
@@ -733,13 +836,15 @@ fn append_text(
                 }
             }
             role::Piece::Role { name, content } => {
-                let id = tree.append(
+                append_role(
+                    tree,
                     parent,
-                    NodeKind::Inline {
-                        classes: format!("myst-role {name}"),
-                    },
+                    name,
+                    content,
+                    line,
+                    source_path,
+                    registered_roles,
                 );
-                tree.append(id, NodeKind::Text(content.into()));
             }
             role::Piece::InlineMath(content) => {
                 tree.append(
@@ -750,6 +855,32 @@ fn append_text(
                 );
             }
         }
+    }
+}
+
+fn append_role(
+    tree: &mut Doctree,
+    parent: NodeId,
+    name: &str,
+    content: &str,
+    line: u32,
+    source_path: &str,
+    registered_roles: &[String],
+) {
+    let id = tree.append(
+        parent,
+        NodeKind::Inline {
+            classes: format!("myst-role {name}"),
+        },
+    );
+    tree.append(id, NodeKind::Text(content.to_owned()));
+    if !role::is_known_role(name, registered_roles) {
+        append_include_warning(
+            tree,
+            parent,
+            line,
+            format!("Unknown interpreted text role {name:?} in {source_path}. [myst.role_unknown]"),
+        );
     }
 }
 
@@ -1035,6 +1166,7 @@ fn handle_include(
     options: &DoctreeOptions,
     source_root: &Path,
     include_stack: &mut Vec<PathBuf>,
+    registered_roles: &[String],
 ) {
     let line = tree.node(id).line.unwrap_or(1);
     tree.detach(id);
@@ -1137,6 +1269,7 @@ fn handle_include(
         options,
         source_root,
         include_stack,
+        registered_roles,
     );
     include_stack.pop();
     clone_children(&included, included.root(), tree, parent);
@@ -1182,6 +1315,9 @@ fn clone_children(
 fn clone_node(source: &Doctree, source_id: NodeId, destination: &mut Doctree, parent: NodeId) {
     let source_node = source.node(source_id);
     let id = destination.append(parent, source_node.kind.clone());
+    if let Some(line) = source_node.line {
+        destination.set_line(id, line);
+    }
     for child in source_node.children.clone() {
         clone_node(source, child, destination, id);
     }
@@ -1651,6 +1787,22 @@ mod tests {
         let xml = docutilsrs::to_xml(&tree);
 
         assert!(xml.contains("substitution cycle: alpha -&gt; beta -&gt; alpha"));
+    }
+
+    #[test]
+    fn unknown_role_warning_uses_the_text_event_source_line() {
+        let tree = parse_to_doctree(
+            "Before.\n\n{a}`b`\n",
+            "included.md",
+            &DoctreeOptions::default(),
+        );
+        let warning = (0..tree.nodes_len())
+            .find(|id| matches!(tree.node(*id).kind, NodeKind::SystemMessage { .. }))
+            .expect("unknown-role warning");
+        assert!(matches!(
+            tree.node(warning).kind,
+            NodeKind::SystemMessage { line: Some(3), .. }
+        ));
     }
 
     #[test]

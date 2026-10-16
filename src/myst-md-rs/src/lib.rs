@@ -111,7 +111,7 @@ pub fn render_html_with(source: &str, math_backend: MathBackend) -> String {
 /// depend on it directly to pick a math rendering backend.
 pub use mathrenderrs::MathBackend;
 
-pub use doctree::{DoctreeOptions, parse_to_doctree};
+pub use doctree::{DoctreeOptions, parse_to_doctree, parse_to_doctree_with_registered_roles};
 
 /// Extract the front matter (if any), returning it as a YAML string.
 pub fn parse_front_matter(source: &str) -> Option<String> {

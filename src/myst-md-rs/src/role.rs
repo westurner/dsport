@@ -17,6 +17,75 @@ pub enum Piece<'a> {
     InlineMath(&'a str),
 }
 
+const BUILTIN_ROLES: &[&str] = &[
+    "abbr",
+    "abbreviation",
+    "acronym",
+    "any",
+    "attr",
+    "class",
+    "cmd",
+    "code",
+    "command",
+    "const",
+    "cve",
+    "cwe",
+    "data",
+    "dfn",
+    "doc",
+    "download",
+    "emphasis",
+    "exc",
+    "file",
+    "func",
+    "guilabel",
+    "kbd",
+    "literal",
+    "mailheader",
+    "makevar",
+    "manpage",
+    "math",
+    "menuselection",
+    "meth",
+    "mimetype",
+    "mod",
+    "newsgroup",
+    "obj",
+    "pep",
+    "program",
+    "raw",
+    "ref",
+    "regexp",
+    "rfc",
+    "samp",
+    "strong",
+    "sub",
+    "subscript",
+    "sup",
+    "superscript",
+    "term",
+    "title-reference",
+    "unicode",
+];
+
+pub fn is_known_role(name: &str, registered_roles: &[String]) -> bool {
+    BUILTIN_ROLES.contains(&name) || registered_roles.iter().any(|role| role == name)
+}
+
+pub fn role_opener_suffix(text: &str) -> Option<(&str, &str)> {
+    let start = text.rfind('{')?;
+    let suffix = &text[start..];
+    let name = suffix.strip_prefix('{')?.strip_suffix('}')?;
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
+    {
+        return None;
+    }
+    Some((&text[..start], name))
+}
+
 /// Split `text` into role / math / plain pieces. Always returns at least one
 /// `Piece::Text` if `text` is non-empty and contains no MyST markers.
 pub fn split_text(text: &str) -> Vec<Piece<'_>> {
@@ -197,5 +266,12 @@ mod tests {
                 content: "a`b",
             }]
         );
+    }
+
+    #[test]
+    fn role_opener_suffix_splits_only_a_valid_terminal_name() {
+        assert_eq!(role_opener_suffix("see {a}"), Some(("see ", "a")));
+        assert_eq!(role_opener_suffix("plain text"), None);
+        assert_eq!(role_opener_suffix("{invalid name}"), None);
     }
 }

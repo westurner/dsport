@@ -729,10 +729,11 @@ impl BuildEnvironment {
             let markdown = nbconvertrs::notebook_to_markdown(&notebook);
             let mut options = myst_md_rs::DoctreeOptions::default();
             options.source_root = Some(self.srcdir.clone());
-            return Ok(myst_md_rs::parse_to_doctree(
+            return Ok(myst_md_rs::parse_to_doctree_with_registered_roles(
                 &markdown,
                 path.to_string_lossy().into_owned(),
                 &options,
+                &sphinx_myst_roles(),
             ));
         }
         let mut tree = match self.parser_for_path(&path).as_str() {
@@ -744,10 +745,11 @@ impl BuildEnvironment {
             "myst" | "markdown" => {
                 let mut options = myst_md_rs::DoctreeOptions::default();
                 options.source_root = Some(self.srcdir.clone());
-                Ok(myst_md_rs::parse_to_doctree(
+                Ok(myst_md_rs::parse_to_doctree_with_registered_roles(
                     source,
                     path.to_string_lossy().into_owned(),
                     &options,
+                    &sphinx_myst_roles(),
                 ))
             }
             parser => Err(BuildError::Other(format!(
@@ -2139,6 +2141,18 @@ impl BuildEnvironment {
         }
         Some(p)
     }
+}
+
+fn sphinx_myst_roles() -> Vec<String> {
+    crate::roles::GENERIC_DOCROLES
+        .iter()
+        .map(|(name, _)| (*name).to_owned())
+        .chain(
+            crate::roles::SPECIFIC_DOCROLES
+                .iter()
+                .map(|name| (*name).to_owned()),
+        )
+        .collect()
 }
 
 fn shorten_xref_target(target: &str, domain: &str) -> String {

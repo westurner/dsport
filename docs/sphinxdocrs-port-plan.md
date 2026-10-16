@@ -2089,7 +2089,8 @@ H13.5 follow-up plan:
   Missing arguments produce errors; unsupported or malformed options produce
   warnings. `tests/myst_bridge.rs` covers these cases plus literal/code line
   selection and the `mock_include` front-matter behavior. The mixed-source
-  build covers a valid include.
+  build covers a valid include. The `mock_include_errors` unknown-role case is
+  covered with the included file path and line preserved.
 * **Implemented option subset:** `literal`, `code`, `start-line`, `end-line`,
   `start-after`, and `end-before` are parsed and lowered. Unknown or invalid
   options produce warnings. Compare all option/error details against upstream
@@ -2130,7 +2131,8 @@ The first bridge slice is implemented in dependency order:
   lowering for `class`/`classes` and generic admonition titles;
 4. math and common MyST extensions;
 5. full directive registry validation, remaining include option parity, and
-  reporter warning-node parity beyond tested include/substitution errors.
+  reporter warning-node parity beyond tested include/substitution/unknown-role
+  errors.
   Table spans are supplied by the opt-in pulldown-cmark extension and must
   remain covered by the native bridge/parity gate.
 
@@ -2187,14 +2189,16 @@ exists.
 
 With H13.4 passing, the remaining work is to port representative MyST Sphinx
 fixtures and run the existing `test_sphinx` builder matrix against the native
+escaping, or recursive includes. Include literal/code and line-selection
+the whole group pending; complete include-option and broader upstream
 path. The native bridge now lowers directive options and generic admonition
 titles/classes, preserves malformed generic-admonition diagnostics, and emits
-source-located warnings for undefined/cyclic substitutions and missing,
-escaping, or recursive includes. Include literal/code and line-selection
-options are implemented. The directive aggregate runner still needs to compare
-the remaining fixture cases against `parse_directive_text` rather than marking
-the whole group pending; complete include-option and broader upstream
-substitution/reporting parity remain open.
+source-located warnings for undefined/cyclic substitutions, missing/escaping/
+recursive includes, and unknown roles inside included files. Include literal/code
+and line-selection options are implemented. The directive aggregate runner still
+needs to compare the remaining fixture cases against `parse_directive_text`
+rather than marking the whole group pending; complete include-option and broader
+upstream substitution/reporting parity remain open.
 Keep tests that require Python-only extensions or Python object identity on the
 Python bridge, but record every native-path deviation in `docs/compat.md`.
 

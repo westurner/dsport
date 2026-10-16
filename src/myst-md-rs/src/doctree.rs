@@ -406,6 +406,16 @@ fn parse_to_doctree_inner(
     for (line, message) in heading_warnings {
         append_include_warning(&mut tree, root, line, message);
     }
+    for (line, target) in unresolved_local_links(&tree, source_path, source_root) {
+        append_include_message(
+            &mut tree,
+            root,
+            line,
+            3,
+            "ERROR",
+            format!("Unknown target name: \"{target}\"."),
+        );
+    }
 
     tree
 }
@@ -1554,6 +1564,56 @@ fn code_fence(line: &str) -> Option<(u8, usize)> {
     }
     let length = content.bytes().take_while(|byte| *byte == marker).count();
     (length >= 3).then_some((marker, length))
+}
+
+fn unresolved_local_links(
+    tree: &Doctree,
+    source_path: &str,
+    source_root: &Path,
+) -> Vec<(u32, String)> {
+    (0..tree.nodes_len())
+        .filter_map(|id| {
+            let node = tree.node(id);
+            let NodeKind::Reference { refuri, .. } = &node.kind else {
+                return None;
+            };
+            let target_path = refuri.split(['#', '?']).next().unwrap_or_default();
+            if target_path.is_empty() || target_path.starts_with('/') || has_uri_scheme(target_path)
+            {
+                return None;
+            }
+            let parent = Path::new(source_path).parent().unwrap_or(source_root);
+            if local_target_exists(&parent.join(target_path), source_root) {
+                return None;
+            }
+            Some((node.line.unwrap_or(1), refuri.clone()))
+        })
+        .collect()
+}
+
+fn has_uri_scheme(value: &str) -> bool {
+    let Some((scheme, _)) = value.split_once(':') else {
+        return false;
+    };
+    !scheme.is_empty()
+        && scheme.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
+        })
+}
+
+fn local_target_exists(path: &Path, source_root: &Path) -> bool {
+    let mut candidates = vec![path.to_path_buf()];
+    if path.extension().is_none() {
+        for extension in ["md", "rst", "txt"] {
+            candidates.push(path.with_extension(extension));
+            candidates.push(path.join(format!("index.{extension}")));
+        }
+    }
+    candidates.into_iter().any(|candidate| {
+        candidate
+            .canonicalize()
+            .is_ok_and(|resolved| resolved.starts_with(source_root))
+    })
 }
 
 #[derive(Debug, Clone)]

@@ -2110,6 +2110,8 @@ H13.5 follow-up plan:
   starting below H1 and non-consecutive level increases, including source lines
   through the Sphinx read path. Duplicate reference definitions warn on the
   second definition, while reference-like syntax in fenced code is ignored.
+  Unresolved relative link targets produce source-located errors; existing
+  local files, fragments, and external schemes are not reported missing.
   Remaining front-matter fields and full reporter warning parity need
   fixture-by-fixture upstream comparison.
 

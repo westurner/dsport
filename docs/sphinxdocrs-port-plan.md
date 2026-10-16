@@ -2132,8 +2132,8 @@ The first bridge slice is implemented in dependency order:
   lowering for `class`/`classes` and generic admonition titles;
 4. math and common MyST extensions;
 5. full directive registry validation, remaining include option parity, and
-  reporter warning-node parity beyond tested include/substitution/unknown-role
-  errors.
+  reporter warning-node parity beyond tested include/substitution/unknown-role/
+  unknown-directive errors.
   Table spans are supplied by the opt-in pulldown-cmark extension and must
   remain covered by the native bridge/parity gate.
 
@@ -2195,12 +2195,12 @@ the whole group pending; complete include-option and broader upstream
 path. The native bridge now lowers directive options and generic admonition
 titles/classes, preserves malformed generic-admonition diagnostics, and emits
 source-located warnings for undefined/cyclic substitutions, missing/escaping/
-recursive includes, and unknown roles inside included files; role names
-registered with Sphinx are accepted. Include literal/code and line-selection
-options are implemented. The directive aggregate runner still needs to compare
-the remaining fixture cases against `parse_directive_text` rather than marking
-the whole group pending; complete include-option and broader upstream
-substitution/reporting parity remain open.
+recursive includes, unknown roles inside included files, and unknown directives;
+role names registered with Sphinx are accepted. Include literal/code and
+line-selection options are implemented. The directive aggregate runner still
+needs to compare the remaining fixture cases against `parse_directive_text`
+rather than marking the whole group pending; complete include-option and broader
+upstream substitution/reporting parity remain open.
 Keep tests that require Python-only extensions or Python object identity on the
 Python bridge, but record every native-path deviation in `docs/compat.md`.
 

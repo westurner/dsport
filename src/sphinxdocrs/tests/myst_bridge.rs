@@ -186,6 +186,32 @@ fn myst_include_reports_unknown_role_from_included_source() {
 }
 
 #[test]
+fn myst_unknown_directive_warning_survives_sphinx_read_path() {
+    let project = write_mixed_project();
+    std::fs::write(project.path().join("guide.md"), "```{unknown}\nbody\n```\n").unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let (line, message) =
+        system_message_text(&tree, "Unknown directive type").expect("unknown-directive warning");
+    assert_eq!(line, Some(1));
+    assert!(message.contains("unknown"));
+    assert!(message.contains("[myst.directive_unknown]"));
+}
+
+#[test]
 fn myst_include_accepts_a_registered_extension_role() {
     let project = write_mixed_project();
     std::fs::write(
@@ -193,7 +219,11 @@ fn myst_include_accepts_a_registered_extension_role() {
         ":::include included.md\n:::\n",
     )
     .unwrap();
-    std::fs::write(project.path().join("included.md"), "{fixture-role}`value`\n").unwrap();
+    std::fs::write(
+        project.path().join("included.md"),
+        "{fixture-role}`value`\n",
+    )
+    .unwrap();
     let output = TempDir::new().unwrap();
     let doctrees = TempDir::new().unwrap();
     let mut app = SphinxApp::new(

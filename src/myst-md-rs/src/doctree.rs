@@ -699,6 +699,20 @@ fn end_tag(
                     let included = docutilsrs::parse_rst_with_source(&body, "<eval-rst>");
                     clone_children(&included, included.root(), tree, parent);
                 }
+                CodeKind::Directive { name, .. } if !known_directive(&name) => {
+                    let line = tree.node(id).line.unwrap_or(1);
+                    tree.append(
+                        id,
+                        NodeKind::Text(format!(
+                            "Unknown directive type: '{name}' [myst.directive_unknown]"
+                        )),
+                    );
+                    if !body.is_empty() {
+                        let paragraph = tree.append(id, NodeKind::Paragraph);
+                        tree.append(paragraph, NodeKind::Text(body));
+                    }
+                    tree.set_line(id, line);
+                }
                 CodeKind::Directive { name, argument } => {
                     let body_lines = body.lines().collect::<Vec<_>>();
                     let spec = directive_spec(&name);
@@ -1835,6 +1849,19 @@ mod tests {
             tree.node(message).kind,
             NodeKind::SystemMessage { line: Some(3), .. }
         ));
+        let message_text = tree
+            .node(message)
+            .children
+            .iter()
+            .filter_map(|child| match &tree.node(*child).kind {
+                NodeKind::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(
+            message_text,
+            "Unknown directive type: 'unknown' [myst.directive_unknown]"
+        );
     }
 
     #[test]

@@ -232,7 +232,7 @@ impl Builder for EpubBuilder {
                     )));
                 }
             };
-        let guides = epub_guide_entries(env)?;
+        let guides = epub_guide_entries(env, !documents.is_empty())?;
         std::fs::write(
             outdir.join(format!("{basename}.epub")),
             Self::archive(
@@ -257,7 +257,10 @@ impl Builder for EpubBuilder {
     }
 }
 
-fn epub_guide_entries(env: &BuildEnvironment) -> Result<Vec<(String, String, String)>, BuildError> {
+fn epub_guide_entries(
+    env: &BuildEnvironment,
+    has_documents: bool,
+) -> Result<Vec<(String, String, String)>, BuildError> {
     let guides = env
         .config
         .get("epub_guide")
@@ -267,7 +270,7 @@ fn epub_guide_entries(env: &BuildEnvironment) -> Result<Vec<(String, String, Str
             "epub_guide must be a sequence of (type, uri, title) triples".into(),
         ));
     };
-    guides
+    let mut guides: Vec<(String, String, String)> = guides
         .into_iter()
         .map(|guide| {
             let ConfigVal::List(fields) = guide else {
@@ -287,7 +290,15 @@ fn epub_guide_entries(env: &BuildEnvironment) -> Result<Vec<(String, String, Str
             };
             Ok((kind.clone(), uri.clone(), title.clone()))
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+    if has_documents && !guides.iter().any(|(kind, _, _)| kind == "toc") {
+        guides.push((
+            "toc".into(),
+            format!("{}.xhtml", env.config.root_doc()),
+            "Table of Contents".into(),
+        ));
+    }
+    Ok(guides)
 }
 
 #[cfg(test)]
@@ -343,6 +354,34 @@ mod tests {
             bytes
                 .windows(b"page-progression-direction=\"ltr\"".len())
                 .any(|window| window == b"page-progression-direction=\"ltr\"")
+        );
+    }
+
+    #[test]
+    fn explicit_toc_guide_suppresses_automatic_entry() {
+        let mut config = crate::config::SphinxConfig::new_defaults();
+        config.set(
+            "epub_guide",
+            ConfigVal::List(vec![ConfigVal::List(vec![
+                ConfigVal::Str("toc".into()),
+                ConfigVal::Str("custom-toc.xhtml".into()),
+                ConfigVal::Str("My Contents".into()),
+            ])]),
+        );
+        let project = crate::environment::EnvProject::new(
+            std::path::PathBuf::from("/tmp"),
+            &[(".rst", "restructuredtext")],
+        );
+        let env = BuildEnvironment::new(config, project, "/tmp", "/tmp/doctrees");
+
+        let guides = epub_guide_entries(&env, true).unwrap();
+        assert_eq!(
+            guides,
+            vec![(
+                "toc".into(),
+                "custom-toc.xhtml".into(),
+                "My Contents".into()
+            )]
         );
     }
 }

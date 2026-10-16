@@ -66,6 +66,7 @@ fn build_all_writes_one_epub_archive_with_documents() {
         b"<dc:contributor>Proofreader &amp; Editor</dc:contributor>".as_slice(),
         b"unique-identifier=\"urn:example:guide\"".as_slice(),
         b"<dc:identifier id=\"urn:example:guide\">urn:example:publication &amp; edition</dc:identifier>".as_slice(),
+        b"<reference type=\"toc\" title=\"Table of Contents\" href=\"index.xhtml\" />".as_slice(),
     ] {
         assert!(
             archive.windows(marker.len()).any(|window| window == marker),

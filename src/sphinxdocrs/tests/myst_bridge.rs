@@ -347,6 +347,35 @@ fn myst_front_matter_warnings_survive_sphinx_read_path() {
 }
 
 #[test]
+fn myst_heading_warning_survives_sphinx_read_path() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "# First\n\n### Skipped level\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let (line, message) = system_message_text(&tree, "Non-consecutive header level increase")
+        .expect("heading level warning");
+    assert_eq!(line, Some(3));
+    assert!(message.contains("H1 to H3"));
+}
+
+#[test]
 fn missing_myst_include_reports_a_source_located_error() {
     let project = write_mixed_project();
     std::fs::write(

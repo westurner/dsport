@@ -179,6 +179,8 @@ fn parse_to_doctree_inner(
     let mut frames = Vec::new();
     let mut sections: Vec<(usize, NodeId)> = Vec::new();
     let mut pending_role: Option<(String, u32)> = None;
+    let mut previous_heading_level = None;
+    let mut heading_warnings = Vec::new();
     for (event, offset) in Parser::new_ext(&body, parser_options).into_offset_iter() {
         let mut line = body[..offset.start]
             .bytes()
@@ -186,6 +188,25 @@ fn parse_to_doctree_inner(
             .count() as u32
             + body_line_offset
             + 1;
+        if let Event::Start(Tag::Heading { level, .. }) = &event {
+            let current_level = heading_level(*level);
+            match previous_heading_level {
+                None if current_level > 1 => heading_warnings.push((
+                    line,
+                    format!(
+                        "Document headings start at H{current_level}, not H1 [myst.header]"
+                    ),
+                )),
+                Some(previous) if current_level > previous + 1 => heading_warnings.push((
+                    line,
+                    format!(
+                        "Non-consecutive header level increase; H{previous} to H{current_level} [myst.header]"
+                    ),
+                )),
+                _ => {}
+            }
+            previous_heading_level = Some(current_level);
+        }
         if !matches!(&event, Event::Code(_)) {
             if let Some((name, role_line)) = pending_role.take() {
                 let start = tree.nodes_len();
@@ -377,6 +398,9 @@ fn parse_to_doctree_inner(
     }
     for message in front_matter_diagnostics {
         append_include_warning(&mut tree, root, 1, message);
+    }
+    for (line, message) in heading_warnings {
+        append_include_warning(&mut tree, root, line, message);
     }
 
     tree
@@ -2008,6 +2032,61 @@ mod tests {
             message_text,
             "Unknown directive type: 'unknown' [myst.directive_unknown]"
         );
+    }
+
+    #[test]
+    fn heading_starting_below_h1_reports_source_warning() {
+        let tree = parse_to_doctree("## A heading\n", "index.md", &DoctreeOptions::default());
+        let warning = (0..tree.nodes_len())
+            .find(|id| matches!(tree.node(*id).kind, NodeKind::SystemMessage { .. }))
+            .expect("heading-level warning");
+        let message =
+            tree.node(warning)
+                .children
+                .iter()
+                .find_map(|child| match &tree.node(*child).kind {
+                    NodeKind::Text(text) => Some(text.as_str()),
+                    _ => None,
+                });
+        assert!(matches!(
+            tree.node(warning).kind,
+            NodeKind::SystemMessage {
+                line: Some(1),
+                ty: "WARNING",
+                ..
+            }
+        ));
+        assert!(
+            message
+                .unwrap()
+                .contains("Document headings start at H2, not H1")
+        );
+    }
+
+    #[test]
+    fn nonconsecutive_heading_reports_level_transition() {
+        let tree = parse_to_doctree(
+            "# First\n\n### Skipped level\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        let warning = (0..tree.nodes_len())
+            .find(|id| {
+                matches!(
+                    &tree.node(*id).kind,
+                    NodeKind::SystemMessage { line: Some(3), .. }
+                )
+            })
+            .expect("non-consecutive heading warning");
+        let message =
+            tree.node(warning)
+                .children
+                .iter()
+                .find_map(|child| match &tree.node(*child).kind {
+                    NodeKind::Text(text) => Some(text.as_str()),
+                    _ => None,
+                });
+        assert!(message.unwrap().contains("H1 to H3"));
     }
 
     #[test]

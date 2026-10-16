@@ -2106,8 +2106,10 @@ H13.5 follow-up plan:
   parity matrix.
 * **Implemented reporter subset:** malformed YAML, unknown `myst` fields, and
   invalid `title_to_header`/`url_schemes` values produce line-1 warnings that
-  survive Sphinx doctree storage. Remaining front-matter fields and warning
-  wording still need fixture-by-fixture upstream comparison.
+  survive Sphinx doctree storage. Heading diagnostics also cover a document
+  starting below H1 and non-consecutive level increases, including source lines
+  through the Sphinx read path. Remaining front-matter fields and full reporter
+  warning parity need fixture-by-fixture upstream comparison.
 
 #### H13.1 — Define the parser contract
 

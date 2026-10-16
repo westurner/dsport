@@ -139,6 +139,7 @@ fn parse_to_doctree_inner(
     registered_roles: &[String],
 ) -> Doctree {
     let split = frontmatter::split(source);
+    let front_matter_diagnostics = front_matter_diagnostics(&split);
     let substitutions = collect_substitutions(split.front_matter.as_ref(), &options.substitutions);
     let body_start = source.len() - split.body.len();
     let body_line_offset = source[..body_start]
@@ -373,6 +374,9 @@ fn parse_to_doctree_inner(
         );
         tree.set_line(id, source_line);
         tree.append(id, NodeKind::Text(message));
+    }
+    for message in front_matter_diagnostics {
+        append_include_warning(&mut tree, root, 1, message);
     }
 
     tree
@@ -1360,6 +1364,99 @@ fn collect_substitutions(
     substitutions
 }
 
+fn front_matter_diagnostics(split: &frontmatter::Split<'_>) -> Vec<String> {
+    const KNOWN_MYST_FIELDS: &[&str] = &[
+        "all_links_external",
+        "commonmark_only",
+        "disable_syntax",
+        "enable_extensions",
+        "fence_as_directive",
+        "footnote_sort",
+        "footnote_transition",
+        "gfm_only",
+        "heading_anchors",
+        "heading_slug_func",
+        "html_meta",
+        "links_external_new_tab",
+        "number_code_blocks",
+        "ref_domains",
+        "sub_delimiters",
+        "substitutions",
+        "title_to_header",
+        "url_schemes",
+        "words_per_minute",
+    ];
+
+    let Some(raw_front_matter) = split.raw_front_matter else {
+        return Vec::new();
+    };
+    let Some(front_matter) = split.front_matter.as_ref() else {
+        let _ = raw_front_matter;
+        return vec!["Malformed YAML [myst.topmatter]".into()];
+    };
+    let serde_yaml::Value::Mapping(top_level) = front_matter else {
+        return vec![format!(
+            "YAML front matter must be a mapping [myst.topmatter]"
+        )];
+    };
+    let myst_key = serde_yaml::Value::String("myst".into());
+    let Some(myst_config) = top_level.get(&myst_key) else {
+        return Vec::new();
+    };
+    let serde_yaml::Value::Mapping(myst_config) = myst_config else {
+        return vec![format!("'myst' key must be a mapping [myst.topmatter]")];
+    };
+
+    let mut diagnostics = Vec::new();
+    for (key, value) in myst_config {
+        let Some(key) = key.as_str() else {
+            diagnostics.push(format!("Unknown field: {key:?} [myst.topmatter]"));
+            continue;
+        };
+        if !KNOWN_MYST_FIELDS.contains(&key) {
+            diagnostics.push(format!("Unknown field: {key} [myst.topmatter]"));
+            continue;
+        }
+        if key == "title_to_header" && !matches!(value, serde_yaml::Value::Bool(_)) {
+            let actual_type = yaml_type_name(value);
+            let rendered_value = serde_yaml::to_string(value)
+                .unwrap_or_default()
+                .trim()
+                .to_owned();
+            diagnostics.push(format!(
+                "'title_to_header' must be of type <class 'bool'> (got {rendered_value} that is a <class '{actual_type}'>). [myst.topmatter]"
+            ));
+        }
+        if key == "url_schemes" {
+            let valid_list = matches!(value, serde_yaml::Value::Sequence(values) if values.iter().all(|value| matches!(value, serde_yaml::Value::String(_))));
+            let valid_mapping = matches!(value, serde_yaml::Value::Mapping(_));
+            if !valid_list && !valid_mapping {
+                let rendered_value = serde_yaml::to_string(value)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned();
+                diagnostics.push(format!(
+                    "'url_schemes' is not a list of strings: {rendered_value} [myst.topmatter]"
+                ));
+            }
+        }
+    }
+    diagnostics
+}
+
+fn yaml_type_name(value: &serde_yaml::Value) -> &'static str {
+    match value {
+        serde_yaml::Value::Null => "NoneType",
+        serde_yaml::Value::Bool(_) => "bool",
+        serde_yaml::Value::Number(number) if number.is_i64() || number.is_u64() => "int",
+        serde_yaml::Value::Number(_) => "float",
+        serde_yaml::Value::String(_) => "str",
+        serde_yaml::Value::Sequence(_) => "list",
+        serde_yaml::Value::Mapping(_) => "dict",
+        serde_yaml::Value::Tagged(_) => "tagged value",
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ResolvedSubstitution {
     value: String,
@@ -1737,6 +1834,55 @@ mod tests {
         let xml = docutilsrs::to_xml(&tree);
         assert!(xml.contains("names=\"Rust\""));
         assert!(xml.contains("Welcome to Rust."));
+    }
+
+    #[test]
+    fn malformed_front_matter_reports_a_source_warning() {
+        let tree = parse_to_doctree(
+            "---\na: {\n---\nBody.\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        let xml = docutilsrs::to_xml(&tree);
+        assert!(xml.contains("Malformed YAML [myst.topmatter]"));
+        assert!(matches!(
+            tree.node(tree.root())
+                .children
+                .iter()
+                .find_map(|id| {
+                    matches!(tree.node(*id).kind, NodeKind::SystemMessage { .. }).then_some(*id)
+                })
+                .map(|id| &tree.node(id).kind),
+            Some(NodeKind::SystemMessage {
+                line: Some(1),
+                ty: "WARNING",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn unknown_myst_front_matter_field_reports_a_warning() {
+        let tree = parse_to_doctree(
+            "---\nmyst:\n  unknown: true\n---\nBody.\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        let xml = docutilsrs::to_xml(&tree);
+        assert!(xml.contains("Unknown field: unknown [myst.topmatter]"));
+    }
+
+    #[test]
+    fn invalid_myst_front_matter_types_report_warnings() {
+        let tree = parse_to_doctree(
+            "---\nmyst:\n  title_to_header: 1\n  url_schemes: [1]\n  substitutions:\n    key: []\n---\nBody.\n",
+            "index.md",
+            &DoctreeOptions::default(),
+        );
+        let xml = docutilsrs::to_xml(&tree);
+        assert!(xml.contains("title_to_header"));
+        assert!(xml.contains("url_schemes"));
+        assert!(!xml.contains("substitutions"));
     }
 
     #[test]

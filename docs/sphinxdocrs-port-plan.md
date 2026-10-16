@@ -2104,6 +2104,10 @@ H13.5 follow-up plan:
   persistence. Compare exact wording and edge cases against upstream
   `myst-config.txt` and `reporter_warnings.md` fixtures as part of the remaining
   parity matrix.
+* **Implemented reporter subset:** malformed YAML, unknown `myst` fields, and
+  invalid `title_to_header`/`url_schemes` values produce line-1 warnings that
+  survive Sphinx doctree storage. Remaining front-matter fields and warning
+  wording still need fixture-by-fixture upstream comparison.
 
 #### H13.1 — Define the parser contract
 

@@ -2087,7 +2087,8 @@ H13.5 follow-up plan:
   include targets are canonicalized, paths outside that root are rejected,
   and missing, unreadable, or recursive includes produce source-located
   `SystemMessage` warnings. `tests/myst_bridge.rs` covers missing, escaping,
-  and cyclic includes while the mixed-source build covers a valid include.
+  and cyclic includes, unsupported and malformed options, and literal/code
+  line selection while the mixed-source build covers a valid include.
 * **Implemented option subset:** `literal`, `code`, `start-line`, `end-line`,
   `start-after`, and `end-before` are parsed and lowered. Unknown or invalid
   options produce warnings. Compare all option/error details against upstream

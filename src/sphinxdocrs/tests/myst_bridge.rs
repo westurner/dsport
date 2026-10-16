@@ -417,3 +417,31 @@ fn myst_include_code_selects_between_markers() {
         });
     assert_eq!(text, Some("keep this line"));
 }
+
+#[test]
+fn myst_include_reports_unsupported_and_invalid_options() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "```{include} included.md\n:number-lines: 1\n:start-line: invalid\n```\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    assert!(system_message_text(&tree, "Unknown option key: number-lines").is_some());
+    let (_, invalid) = system_message_text(&tree, "Invalid option value for").unwrap();
+    assert!(invalid.contains("start-line"));
+}

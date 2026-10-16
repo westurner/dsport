@@ -382,7 +382,7 @@ pub fn remove_old_files(
     Ok(())
 }
 
-fn effective_source_mode(root_path: &Path, opts: &ApidocOptions) -> Result<SourceMode, ApidocError> {
+pub fn effective_source_mode(root_path: &Path, opts: &ApidocOptions) -> Result<SourceMode, ApidocError> {
     match opts.source_mode {
         SourceMode::Auto => {
             let has_rust = opts.cargo_manifest.is_some()

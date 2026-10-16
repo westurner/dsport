@@ -139,6 +139,59 @@ fn apidoc_covers_dry_run_full_and_output_errors() {
     assert!(String::from_utf8_lossy(&error.stderr).contains("cannot create"));
 }
 
+#[cfg(all(feature = "lsp-source-analysis", feature = "rust-source-analysis"))]
+#[test]
+fn apidoc_lsp_generates_aggregate_api_page_and_toc_entry() {
+    let python = Command::new("python3").arg("--version").output();
+    if !python.is_ok_and(|output| output.status.success()) {
+        eprintln!("skipping LSP apidoc integration: python3 is unavailable");
+        return;
+    }
+
+    let tmp = TempDir::new().unwrap();
+    let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/rust");
+    let fake_server = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/fake_lsp.py");
+    let conf_file = tmp.path().join("conf.py");
+    let fake_server_literal = serde_json::to_string(&fake_server.to_string_lossy()).unwrap();
+    std::fs::write(
+        &conf_file,
+        format!(
+            "source_backend = 'lsp'\nsource_lsp_sandbox = 'trusted-local'\nsource_lsp_servers = {{'rust': ['python3', {fake_server_literal}, 'symbols']}}\nsource_lsp_server_environment = {{'rust': {{'LANG': 'C'}}}}\n"
+        ),
+    )
+    .unwrap();
+    let output_dir = tmp.path().join("apidoc");
+    let source_root = source_root.to_string_lossy().into_owned();
+    let conf_file = conf_file.to_string_lossy().into_owned();
+    let output_dir_arg = output_dir.to_string_lossy().into_owned();
+
+    let generated = run(
+        APIDOC_RS,
+        &[
+            "-o",
+            &output_dir_arg,
+            "--force",
+            "--source-mode",
+            "rust",
+            "--source-backend",
+            "lsp",
+            "--conf-file",
+            &conf_file,
+            &source_root,
+        ],
+        tmp.path(),
+    );
+    assert_exit(&generated, 0);
+
+    let api_page = std::fs::read_to_string(output_dir.join("lsp-api.rst")).unwrap();
+    assert!(
+        api_page.contains("answer"),
+        "generated API page:\n{api_page}"
+    );
+    let toc = std::fs::read_to_string(output_dir.join("modules.rst")).unwrap();
+    assert!(toc.contains("lsp-api"), "generated toctree:\n{toc}");
+}
+
 #[test]
 fn apidoc_parse_error_is_reported() {
     let tmp = TempDir::new().unwrap();
@@ -429,8 +482,10 @@ fn errors_covers_default_disabled_import_and_sqlite_paths() {
 
     let missing_source = run(ERRORS_RS, &[], tmp.path());
     assert_exit(&missing_source, 1);
-    assert!(String::from_utf8_lossy(&missing_source.stderr)
-        .contains("SQLite error logging is disabled"));
+    assert!(
+        String::from_utf8_lossy(&missing_source.stderr)
+            .contains("SQLite error logging is disabled")
+    );
 
     let missing_db = run(
         ERRORS_RS,
@@ -458,8 +513,10 @@ fn errors_covers_default_disabled_import_and_sqlite_paths() {
 
     let sqlite_without_source = run(ERRORS_RS, &["--format", "sqlite"], tmp.path());
     assert_exit(&sqlite_without_source, 1);
-    assert!(String::from_utf8_lossy(&sqlite_without_source.stderr)
-        .contains("SQLite error logging is disabled"));
+    assert!(
+        String::from_utf8_lossy(&sqlite_without_source.stderr)
+            .contains("SQLite error logging is disabled")
+    );
 
     let sqlite_path = tmp.path().join("existing.sqlite3");
     let sqlite = run(ERRORS_RS, &[sqlite_path.to_str().unwrap()], tmp.path());

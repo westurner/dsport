@@ -2481,6 +2481,15 @@ so parity reports cannot accidentally mix the three languages.
 
 #### H14h -- Rust/Lean apidoc and `sphinx-apidoc-rs`
 
+**Implementation status (2026-10-16):** The native CLI exposes `--source-mode`
+(`python`, `rust`, `lean`, `auto`), separate `--source-backend` selection, and
+`--conf-file`; Python remains the default path. Static Rust/Lean discovery emits
+native module directives, while the opt-in LSP backend writes `lsp-api.rst` and
+adds it to the generated TOC using the shared source-doc configuration. A fake
+Rust LSP CLI integration test verifies the aggregate page and TOC entry. Broader
+Cargo workspace/target parity, Lean project discovery parity, and the full
+generated-project option matrix remain part of H14i/H14j.
+
 Extend `ApidocOptions` with a source mode while preserving the current
 Python-default constructor and CLI behavior. Keep language discovery separate
 from analysis backend selection: `source_mode` chooses the input language, while

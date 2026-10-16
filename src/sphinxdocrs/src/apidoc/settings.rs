@@ -15,6 +15,14 @@ pub enum SourceMode {
     Rust,
 }
 
+/// Analyzer backend used by extended Rust/Lean apidoc generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SourceBackend {
+    #[default]
+    Static,
+    Lsp,
+}
+
 /// Default automodule options (mirrors `_generate.OPTIONS` default).
 pub const DEFAULT_AUTOMODULE_OPTIONS: &[&str] = &["members", "undoc-members", "show-inheritance"];
 
@@ -31,6 +39,11 @@ pub struct ApidocOptions {
     /// Source language to document. `Auto` detects the input tree;
     /// defaults to Python for backward compatibility.
     pub source_mode: SourceMode,
+    /// Analyzer used for extended Rust/Lean API pages; Python stays on its
+    /// existing apidoc path.
+    pub source_backend: SourceBackend,
+    /// Optional project conf.py supplying LSP argv and MXC policy.
+    pub conf_file: Option<PathBuf>,
     /// Optional Cargo manifest path used by Rust discovery.
     pub cargo_manifest: Option<PathBuf>,
     /// Optional Cargo package name to document.
@@ -100,6 +113,8 @@ impl ApidocOptions {
             module_path,
             dest_dir,
             source_mode: SourceMode::Python,
+            source_backend: SourceBackend::Static,
+            conf_file: None,
             cargo_manifest: None,
             cargo_package: None,
             cargo_features: Vec::new(),

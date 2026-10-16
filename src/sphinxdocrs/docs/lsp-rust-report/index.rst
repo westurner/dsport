@@ -1,8 +1,8 @@
-SphinxDocRS LSP Report
+Sphinxdocrs LSP Report
 ======================
 
 This page is built from Rust declarations requested from rust-analyzer over
-LSP, then rendered by the native SphinxDocRS HTML builder. The source project is
+LSP, then rendered by the native Sphinxdocrs HTML builder. The source project is
 in ``rust-project/`` and the generated parser-native report is in ``api.rst``.
 
 .. toctree::

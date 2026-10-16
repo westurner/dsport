@@ -41,6 +41,8 @@ Options:
   -t, --templatedir <TEMPLATEDIR>     template directory for template files
       --use-python-impl               delegate to the upstream Python sphinx-apidoc
       --source-mode <MODE>            source language to document; auto detects the input tree [default: python] [possible values: lean, python, rust, auto]
+      --source-backend <BACKEND>      analyzer used for extended Rust/Lean source apidoc [default: static] [possible values: static, lsp]
+      --conf-file <PATH>              project conf.py supplying LSP and MXC settings
       --manifest-path <PATH>          path to the Cargo manifest for Rust discovery
       --package <PACKAGE>             Cargo package name to document
       --features <FEATURES>           comma-separated Cargo features for Rust discovery

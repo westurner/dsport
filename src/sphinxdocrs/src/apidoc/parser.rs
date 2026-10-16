@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, Command};
 
-use crate::apidoc::settings::{ApidocOptions, SourceMode};
+use crate::apidoc::settings::{ApidocOptions, SourceBackend, SourceMode};
 use crate::quickstart::settings::EXTENSIONS as QS_EXTENSIONS;
 
 /// Build the clap [`Command`] mirroring upstream `get_parser()`.
@@ -221,6 +221,20 @@ pub fn build_parser() -> Command {
                 .help("source language to document; auto detects the input tree"),
         )
         .arg(
+            Arg::new("source_backend")
+                .long("source-backend")
+                .value_name("BACKEND")
+                .value_parser(["static", "lsp"])
+                .default_value("static")
+                .help("analyzer used for extended Rust/Lean source apidoc"),
+        )
+        .arg(
+            Arg::new("conf_file")
+                .long("conf-file")
+                .value_name("PATH")
+                .help("project conf.py supplying LSP and MXC settings"),
+        )
+        .arg(
             Arg::new("manifest_path")
                 .long("manifest-path")
                 .value_name("PATH")
@@ -288,6 +302,10 @@ pub fn parse_args(argv: &[String]) -> Result<ApidocOptions, clap::Error> {
         Some("rust") => SourceMode::Rust,
         _ => SourceMode::Python,
     };
+    let source_backend = match m.get_one::<String>("source_backend").map(String::as_str) {
+        Some("lsp") => SourceBackend::Lsp,
+        _ => SourceBackend::Static,
+    };
 
     let toc_file = if m.get_flag("no_toc") {
         String::new()
@@ -323,6 +341,8 @@ pub fn parse_args(argv: &[String]) -> Result<ApidocOptions, clap::Error> {
         module_path,
         dest_dir,
         source_mode,
+        source_backend,
+        conf_file: m.get_one::<String>("conf_file").map(PathBuf::from),
         cargo_manifest: m.get_one::<String>("manifest_path").map(PathBuf::from),
         cargo_package: m.get_one::<String>("package").cloned(),
         cargo_features: m
@@ -414,9 +434,36 @@ mod tests {
         ]))
         .unwrap();
         assert_eq!(opts.source_mode, SourceMode::Rust);
-        assert_eq!(opts.cargo_manifest, Some(PathBuf::from("/workspace/Cargo.toml")));
+        assert_eq!(
+            opts.cargo_manifest,
+            Some(PathBuf::from("/workspace/Cargo.toml"))
+        );
         assert_eq!(opts.cargo_package.as_deref(), Some("demo"));
         assert_eq!(opts.cargo_features, vec!["docs", "nightly"]);
+        assert_eq!(opts.source_backend, SourceBackend::Static);
+        assert_eq!(opts.conf_file, None);
+    }
+
+    #[test]
+    fn lsp_source_backend_requires_an_explicit_mode_and_accepts_conf_path() {
+        let opts = parse_args(&argv(&[
+            "-o",
+            "/out",
+            "/workspace",
+            "--source-mode",
+            "rust",
+            "--source-backend",
+            "lsp",
+            "--conf-file",
+            "/workspace/docs/conf.py",
+        ]))
+        .unwrap();
+        assert_eq!(opts.source_mode, SourceMode::Rust);
+        assert_eq!(opts.source_backend, SourceBackend::Lsp);
+        assert_eq!(
+            opts.conf_file,
+            Some(PathBuf::from("/workspace/docs/conf.py"))
+        );
     }
 
     #[test]

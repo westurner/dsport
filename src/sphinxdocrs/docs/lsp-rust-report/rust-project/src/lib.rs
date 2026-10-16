@@ -1,4 +1,4 @@
-//! Small public API used to exercise the SphinxDocRS LSP report pipeline.
+//! Small public API used to exercise the sphinxdocrs LSP report pipeline.
 
 /// Summary counts returned by a source analysis run.
 #[derive(Debug, Clone, PartialEq, Eq)]

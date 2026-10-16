@@ -108,6 +108,12 @@ fn main() {
                 std::process::exit(1);
             }
             Ok(mut app) => {
+                if sphinxdocrs::source_docs::config::sandboxing_requested(&app.config) {
+                    eprintln!(
+                        "{}",
+                        sphinxdocrs::source_docs::config::sandboxing_config_summary(&app.config)
+                    );
+                }
                 // H8a: -E/--fresh-env and -a/--write-all.
                 app.set_incremental_options(parsed.freshenv, parsed.force_all);
                 match app.build() {

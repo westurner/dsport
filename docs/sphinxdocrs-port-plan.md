@@ -2083,10 +2083,13 @@ doctree.
 
 H13.5 follow-up plan:
 
-* Implement include option/error parity with a source-root-aware parser
-  context, `literal`/`code`/line-range options, recursion detection, and
-  source-located `SystemMessage` nodes; compare against upstream
-  `mock_include*` fixtures.
+* **Implemented slice:** Sphinx passes its source root to the MyST parser;
+  include targets are canonicalized, paths outside that root are rejected,
+  and missing, unreadable, or recursive includes produce source-located
+  `SystemMessage` warnings. `tests/myst_bridge.rs` covers missing, escaping,
+  and cyclic includes while the mixed-source build covers a valid include.
+* Add `literal`/`code`/line-range include options and compare remaining
+  include behavior against upstream `mock_include*` fixtures.
 * **Implemented:** replace the bounded substitution loop with dependency-aware
   expansion, source-located undefined-name warnings, and cycle-path reporting.
   Unit tests cover chains longer than eight definitions, missing names, and
@@ -2121,8 +2124,8 @@ The first bridge slice is implemented in dependency order:
 3. colon-fence directives and inline roles, including directive option
   lowering for `class`/`classes` and generic admonition titles;
 4. math and common MyST extensions;
-5. full directive registry validation, include options/errors, and reporter
-  warning-node parity beyond substitution diagnostics. Table spans are
+5. full directive registry validation, include content/line-range options, and
+  reporter warning-node parity beyond tested include/substitution errors. Table spans are
   supplied by the opt-in pulldown-cmark extension and must remain covered
   by the native bridge/parity gate.
 
@@ -2181,10 +2184,11 @@ With H13.4 passing, the remaining work is to port representative MyST Sphinx
 fixtures and run the existing `test_sphinx` builder matrix against the native
 path. The native bridge now lowers directive options and generic admonition
 titles/classes, preserves malformed generic-admonition diagnostics, and emits
-source-located warnings for undefined or cyclic substitutions. The directive
-aggregate runner still needs to compare the remaining fixture cases against
-`parse_directive_text` rather than marking the whole group pending; include
-option/error parity and broader substitution/reporting parity remain open.
+source-located warnings for undefined/cyclic substitutions and missing,
+escaping, or recursive includes. The directive aggregate runner still needs to
+compare the remaining fixture cases against `parse_directive_text` rather than
+marking the whole group pending; include content/line-range options and broader
+upstream substitution/reporting parity remain open.
 Keep tests that require Python-only extensions or Python object identity on the
 Python bridge, but record every native-path deviation in `docs/compat.md`.
 

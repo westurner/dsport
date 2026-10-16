@@ -30,6 +30,24 @@ fn write_mixed_project() -> TempDir {
     project
 }
 
+fn system_message_text(tree: &docutilsrs::Doctree, needle: &str) -> Option<(Option<u32>, String)> {
+    (0..tree.nodes_len()).find_map(|id| {
+        let node = tree.node(id);
+        let docutilsrs::NodeKind::SystemMessage { line, .. } = node.kind else {
+            return None;
+        };
+        let message = node
+            .children
+            .iter()
+            .filter_map(|child| match &tree.node(*child).kind {
+                docutilsrs::NodeKind::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        message.contains(needle).then_some((line, message))
+    })
+}
+
 #[test]
 fn mixed_rst_and_myst_build_uses_persisted_doctree() {
     let project = write_mixed_project();
@@ -149,4 +167,109 @@ fn myst_substitution_diagnostic_survives_sphinx_read_path() {
     let message = message.expect("diagnostic message text");
     assert!(message.starts_with("undefined substitution"));
     assert!(message.contains("missing"));
+}
+
+#[test]
+fn missing_myst_include_reports_a_source_located_warning() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "Before.\n\n:::include missing.md\n:::\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    assert_eq!(
+        system_message_text(&tree, "cannot resolve MyST include")
+            .unwrap()
+            .0,
+        Some(3)
+    );
+}
+
+#[test]
+fn myst_include_cannot_read_outside_the_source_root() {
+    let project = write_mixed_project();
+    let outside = TempDir::new().unwrap();
+    std::fs::write(
+        outside.path().join("outside.md"),
+        "secret outside source root\n",
+    )
+    .unwrap();
+    let outside_dir = outside.path().file_name().unwrap().to_string_lossy();
+    std::fs::write(
+        project.path().join("guide.md"),
+        format!(":::include ../{outside_dir}/outside.md\n:::\n"),
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    assert!(!(0..tree.nodes_len()).any(|id| matches!(
+        &tree.node(id).kind,
+        docutilsrs::NodeKind::Text(text) if text.contains("secret outside source root")
+    )));
+    assert_eq!(
+        system_message_text(&tree, "escapes source root").unwrap().0,
+        Some(1)
+    );
+}
+
+#[test]
+fn recursive_myst_include_reports_the_include_chain() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        ":::include included.md\n:::\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("included.md"),
+        ":::include guide.md\n:::\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let (line, message) =
+        system_message_text(&tree, "recursive MyST include").expect("recursive include warning");
+    assert_eq!(line, Some(1));
+    assert!(message.contains("guide.md") && message.contains("included.md"));
 }

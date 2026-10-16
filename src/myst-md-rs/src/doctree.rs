@@ -25,6 +25,8 @@ pub struct DoctreeOptions {
     pub enable_definition_lists: bool,
     pub enable_table_spans: bool,
     pub substitutions: BTreeMap<String, String>,
+    /// Root directory that MyST include directives may read from.
+    pub source_root: Option<PathBuf>,
 }
 
 impl Default for DoctreeOptions {
@@ -39,6 +41,7 @@ impl Default for DoctreeOptions {
             enable_definition_lists: true,
             enable_table_spans: true,
             substitutions: BTreeMap::new(),
+            source_root: None,
         }
     }
 }
@@ -98,6 +101,31 @@ pub fn parse_to_doctree(
     source_path: impl Into<String>,
     options: &DoctreeOptions,
 ) -> Doctree {
+    let source_path = source_path.into();
+    let source_path_buf = PathBuf::from(&source_path);
+    let source_root = options
+        .source_root
+        .as_deref()
+        .or_else(|| source_path_buf.parent())
+        .unwrap_or_else(|| Path::new("."));
+    let source_root = canonical_or_absolute(source_root);
+    let mut include_stack = vec![canonical_or_absolute(&source_path_buf)];
+    parse_to_doctree_inner(
+        source,
+        &source_path,
+        options,
+        &source_root,
+        &mut include_stack,
+    )
+}
+
+fn parse_to_doctree_inner(
+    source: &str,
+    source_path: &str,
+    options: &DoctreeOptions,
+    source_root: &Path,
+    include_stack: &mut Vec<PathBuf>,
+) -> Doctree {
     let split = frontmatter::split(source);
     let substitutions = collect_substitutions(split.front_matter.as_ref(), &options.substitutions);
     let body_start = source.len() - split.body.len();
@@ -133,7 +161,7 @@ pub fn parse_to_doctree(
         parser_options.insert(Options::ENABLE_TABLE_SPANS);
     }
 
-    let mut tree = Doctree::new_document(source_path);
+    let mut tree = Doctree::new_document(source_path.to_owned());
     let root = tree.root();
     let mut frames = Vec::new();
     let mut sections: Vec<(usize, NodeId)> = Vec::new();
@@ -146,7 +174,15 @@ pub fn parse_to_doctree(
             + 1;
         match event {
             Event::Start(tag) => start_tag(&mut tree, &mut frames, &mut sections, root, tag),
-            Event::End(end) => end_tag(&mut tree, &mut frames, &mut sections, end),
+            Event::End(end) => end_tag(
+                &mut tree,
+                &mut frames,
+                &mut sections,
+                end,
+                options,
+                source_root,
+                include_stack,
+            ),
             Event::Text(text) => append_text(&mut tree, &mut frames, &sections, root, &text),
             Event::Code(text) => {
                 let parent = content_parent(&mut tree, &frames, &sections, root);
@@ -505,6 +541,9 @@ fn end_tag(
     frames: &mut Vec<Frame>,
     sections: &mut Vec<(usize, NodeId)>,
     end: TagEnd,
+    options: &DoctreeOptions,
+    source_root: &Path,
+    include_stack: &mut Vec<PathBuf>,
 ) {
     match end {
         TagEnd::Heading(level) => {
@@ -545,15 +584,31 @@ fn end_tag(
             match kind {
                 CodeKind::Math => tree.set_kind(id, NodeKind::MathBlock { latex: body }),
                 CodeKind::Directive { name, argument } if name == "include" => {
+                    let line = tree.node(id).line.unwrap_or(1);
                     tree.detach(id);
-                    let path = include_path(&argument, tree, id);
-                    if let Ok(included) = std::fs::read_to_string(&path) {
-                        let included = parse_to_doctree(
-                            &included,
-                            path.to_string_lossy().into_owned(),
-                            &DoctreeOptions::default(),
-                        );
-                        clone_children(&included, included.root(), tree, parent);
+                    match resolve_include_path(&argument, tree, source_root, include_stack) {
+                        Ok(path) => match std::fs::read_to_string(&path) {
+                            Ok(included_source) => {
+                                let included_path = path.to_string_lossy().into_owned();
+                                include_stack.push(path);
+                                let included = parse_to_doctree_inner(
+                                    &included_source,
+                                    &included_path,
+                                    options,
+                                    source_root,
+                                    include_stack,
+                                );
+                                include_stack.pop();
+                                clone_children(&included, included.root(), tree, parent);
+                            }
+                            Err(error) => append_include_warning(
+                                tree,
+                                parent,
+                                line,
+                                format!("cannot read MyST include {argument:?}: {error}"),
+                            ),
+                        },
+                        Err(message) => append_include_warning(tree, parent, line, message),
                     }
                 }
                 CodeKind::Directive { name, .. } if name == "eval-rst" => {
@@ -850,16 +905,71 @@ fn directive_info(info: &str) -> Option<(String, String)> {
     Some((name, argument))
 }
 
-fn include_path(argument: &str, tree: &Doctree, id: NodeId) -> PathBuf {
+fn canonical_or_absolute(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(path)
+        }
+    })
+}
+
+fn resolve_include_path(
+    argument: &str,
+    tree: &Doctree,
+    source_root: &Path,
+    include_stack: &[PathBuf],
+) -> Result<PathBuf, String> {
     let source = match &tree.node(tree.root()).kind {
         NodeKind::Document { source, .. } => PathBuf::from(source),
         _ => PathBuf::new(),
     };
-    let _ = id;
-    source
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join(argument)
+    let requested = PathBuf::from(argument);
+    let candidate = if requested.is_absolute() {
+        requested
+    } else {
+        source.parent().unwrap_or(source_root).join(requested)
+    };
+    let path = candidate.canonicalize().map_err(|error| {
+        format!(
+            "cannot resolve MyST include {:?}: {error}",
+            candidate.display()
+        )
+    })?;
+    if !path.starts_with(source_root) {
+        return Err(format!(
+            "MyST include {:?} escapes source root {}",
+            argument,
+            source_root.display()
+        ));
+    }
+    if let Some(position) = include_stack.iter().position(|included| included == &path) {
+        let mut cycle = include_stack[position..]
+            .iter()
+            .map(|included| included.display().to_string())
+            .collect::<Vec<_>>();
+        cycle.push(path.display().to_string());
+        return Err(format!("recursive MyST include: {}", cycle.join(" -> ")));
+    }
+    Ok(path)
+}
+
+fn append_include_warning(tree: &mut Doctree, parent: NodeId, line: u32, message: String) {
+    let id = tree.append(
+        parent,
+        NodeKind::SystemMessage {
+            level: 2,
+            line: Some(line),
+            ty: "WARNING",
+            ids: String::new(),
+            backrefs: String::new(),
+        },
+    );
+    tree.set_line(id, line);
+    tree.append(id, NodeKind::Text(message));
 }
 
 fn clone_children(

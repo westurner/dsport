@@ -727,10 +727,12 @@ impl BuildEnvironment {
                 BuildError::Other(format!("invalid notebook {}: {e}", path.display()))
             })?;
             let markdown = nbconvertrs::notebook_to_markdown(&notebook);
+            let mut options = myst_md_rs::DoctreeOptions::default();
+            options.source_root = Some(self.srcdir.clone());
             return Ok(myst_md_rs::parse_to_doctree(
                 &markdown,
                 path.to_string_lossy().into_owned(),
-                &myst_md_rs::DoctreeOptions::default(),
+                &options,
             ));
         }
         let mut tree = match self.parser_for_path(&path).as_str() {
@@ -739,11 +741,15 @@ impl BuildEnvironment {
                 docname,
                 docutilsrs::TitlePromotion::Preserve,
             )),
-            "myst" | "markdown" => Ok(myst_md_rs::parse_to_doctree(
-                source,
-                path.to_string_lossy().into_owned(),
-                &myst_md_rs::DoctreeOptions::default(),
-            )),
+            "myst" | "markdown" => {
+                let mut options = myst_md_rs::DoctreeOptions::default();
+                options.source_root = Some(self.srcdir.clone());
+                Ok(myst_md_rs::parse_to_doctree(
+                    source,
+                    path.to_string_lossy().into_owned(),
+                    &options,
+                ))
+            }
             parser => Err(BuildError::Other(format!(
                 "unknown source parser {parser:?} configured for {docname:?}"
             ))),

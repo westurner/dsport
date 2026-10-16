@@ -85,10 +85,10 @@ pub const CORE_EVENTS: &[&str] = &[
 /// A positional argument passed to an event listener.
 ///
 /// Mirrors the small subset of argument shapes the native pipeline needs
-/// to pass (docnames, docname lists, and — since **2026-07-30**, a real
-/// parsed [`Doctree`] for `doctree-read`). Richer payloads (config/env
-/// objects) are out of scope until the events fire alongside real
-/// `Domain`/`Config` Python objects (H3/H5/H6). **No `PartialEq`/`Eq`
+/// to pass (docnames, docname lists, the shared config facade for
+/// `config-inited`, and a parsed [`Doctree`] for `doctree-read`). Richer
+/// payloads (environment/domain objects) remain out of scope until those
+/// objects exist at their pipeline phases. **No `PartialEq`/`Eq`
 /// derive** (unlike before the `Doctree` variant was added): `Doctree`
 /// doesn't implement either, and no call site actually compares `EventArg`
 /// values (tests only pattern-match with `if let`).
@@ -97,6 +97,8 @@ pub enum EventArg {
     None,
     Str(String),
     StrList(Vec<String>),
+    /// Shared Python-facing Sphinx config passed as `config-inited`'s second argument.
+    Config(crate::app_facade::SharedConfig),
     /// A parsed doctree, passed as `doctree-read`'s second argument.
     /// **Accepted deviation:** this is an owned snapshot, not a live
     /// shared reference — a listener's in-place mutation (e.g. appending

@@ -24,13 +24,15 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 use std::rc::Rc;
 
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyTuple};
+use pyo3::types::{PyDict, PyList, PySet, PyTuple};
 
 use crate::app_events::{EventArg, EventError, SharedEvents};
 use crate::config::ConfigVal;
+use crate::environment::SharedEnv;
 use crate::registry::{CssFile, JsFile, SharedRegistry};
 
 fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
@@ -74,6 +76,9 @@ fn event_arg_to_py(py: Python<'_>, arg: &EventArg) -> PyResult<Vec<Py<PyAny>>> {
         EventArg::None => vec![py.None()],
         EventArg::Str(value) => vec![value.into_pyobject(py)?.into_any().unbind()],
         EventArg::StrList(values) => vec![PyList::new(py, values)?.into_any().unbind()],
+        EventArg::Config(config) => {
+            vec![Py::new(py, PyConfigFacade::new(config.clone()))?.into_any()]
+        }
         EventArg::Doctree(tree) => {
             vec![Py::new(py, docutilsrs::python::PyDoctree::new(tree.clone()))?.into_any()]
         }
@@ -229,6 +234,83 @@ impl PyConfigFacade {
     }
 }
 
+pub type SharedEnvAttributes = Rc<RefCell<HashMap<String, Py<PyAny>>>>;
+
+fn path_to_py(py: Python<'_>, path: &Path) -> PyResult<Py<PyAny>> {
+    let path = path.to_string_lossy();
+    Ok(py
+        .import("pathlib")?
+        .getattr("Path")?
+        .call1((path.as_ref(),))?
+        .unbind())
+}
+
+#[pyclass(
+    unsendable,
+    skip_from_py_object,
+    name = "_EnvironmentFacade",
+    module = "sphinxdocrs"
+)]
+#[derive(Clone)]
+pub struct PyEnvironmentFacade {
+    env: SharedEnv,
+    config: SharedConfig,
+    attributes: SharedEnvAttributes,
+}
+
+impl PyEnvironmentFacade {
+    pub fn new(env: SharedEnv, config: SharedConfig, attributes: SharedEnvAttributes) -> Self {
+        Self {
+            env,
+            config,
+            attributes,
+        }
+    }
+}
+
+#[pymethods]
+impl PyEnvironmentFacade {
+    fn __getattr__(&self, py: Python<'_>, name: &str) -> PyResult<Py<PyAny>> {
+        match name {
+            "srcdir" => path_to_py(py, &self.env.borrow().srcdir),
+            "doctreedir" => path_to_py(py, &self.env.borrow().doctreedir),
+            "config" => Ok(Py::new(py, PyConfigFacade::new(self.config.clone()))?.into_any()),
+            _ => self
+                .attributes
+                .borrow()
+                .get(name)
+                .map(|value| value.clone_ref(py))
+                .ok_or_else(|| pyo3::exceptions::PyAttributeError::new_err(name.to_string())),
+        }
+    }
+
+    #[getter]
+    fn found_docs(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let docs: Vec<String> = self.env.borrow().found_docs().iter().cloned().collect();
+        Ok(PySet::new(py, docs)?.into_any().unbind())
+    }
+
+    #[pyo3(signature = (docname, base=true))]
+    fn doc2path(&self, py: Python<'_>, docname: &str, base: bool) -> PyResult<Py<PyAny>> {
+        let path = {
+            let env = self.env.borrow();
+            let path = env.doc2path(docname);
+            if base {
+                path
+            } else {
+                path.strip_prefix(&env.srcdir)
+                    .map(Path::to_path_buf)
+                    .unwrap_or(path)
+            }
+        };
+        path_to_py(py, &path)
+    }
+
+    fn __setattr__(&self, name: String, value: Py<PyAny>) {
+        self.attributes.borrow_mut().insert(name, value);
+    }
+}
+
 // ── page-asset registration (`add_css_file` / `add_js_file`) ─────────────────
 
 /// Accumulates `app.add_css_file`/`app.add_js_file` registrations made by
@@ -293,6 +375,8 @@ fn kwargs_to_attrs(kwargs: Option<&Bound<'_, PyDict>>) -> HashMap<String, String
 pub struct PyAppFacade {
     events: SharedEvents,
     config: SharedConfig,
+    env: SharedEnv,
+    env_attributes: SharedEnvAttributes,
     assets: SharedAssets,
     registry: SharedRegistry,
 }
@@ -301,12 +385,16 @@ impl PyAppFacade {
     pub fn new(
         events: SharedEvents,
         config: SharedConfig,
+        env: SharedEnv,
+        env_attributes: SharedEnvAttributes,
         assets: SharedAssets,
         registry: SharedRegistry,
     ) -> Self {
         Self {
             events,
             config,
+            env,
+            env_attributes,
             assets,
             registry,
         }
@@ -323,12 +411,16 @@ impl PyAppFacade {
     fn connect(&self, event: &str, callback: Py<PyAny>, priority: i64) -> PyResult<usize> {
         let events_for_call = self.events.clone();
         let config_for_call = self.config.clone();
+        let env_for_call = self.env.clone();
+        let env_attributes_for_call = self.env_attributes.clone();
         let assets_for_call = self.assets.clone();
         let registry_for_call = self.registry.clone();
         let mut mgr = self.events.borrow_mut();
         let id = mgr.connect(event.to_string(), priority, move |args: &[EventArg]| {
             let events_for_call = events_for_call.clone();
             let config_for_call = config_for_call.clone();
+            let env_for_call = env_for_call.clone();
+            let env_attributes_for_call = env_attributes_for_call.clone();
             let assets_for_call = assets_for_call.clone();
             let registry_for_call = registry_for_call.clone();
             Python::attach(|py| -> PyResult<()> {
@@ -337,6 +429,8 @@ impl PyAppFacade {
                     PyAppFacade::new(
                         events_for_call,
                         config_for_call,
+                        env_for_call,
+                        env_attributes_for_call,
                         assets_for_call,
                         registry_for_call,
                     ),
@@ -363,6 +457,26 @@ impl PyAppFacade {
         Ok(id)
     }
 
+    /// Exposes the event API through `app.events` for extension code.
+    #[getter]
+    fn events(&self, py: Python<'_>) -> PyResult<Py<PyAppFacade>> {
+        Py::new(py, self.clone())
+    }
+
+    /// Accepted deviation: the native event bridge does not capture listener
+    /// return values yet, so first-result events currently return `None`.
+    #[pyo3(signature = (name, *args, allowed_exceptions=None))]
+    fn emit_firstresult<'py>(
+        &self,
+        _py: Python<'py>,
+        name: &str,
+        args: &Bound<'py, PyTuple>,
+        allowed_exceptions: Option<Bound<'py, PyTuple>>,
+    ) -> Option<Py<PyAny>> {
+        let _ = (name, args, allowed_exceptions);
+        None
+    }
+
     /// Mirrors `Sphinx.disconnect(listener_id)`.
     fn disconnect(&self, listener_id: usize) -> PyResult<()> {
         self.events.borrow_mut().disconnect(listener_id);
@@ -384,6 +498,29 @@ impl PyAppFacade {
     #[getter]
     fn config(&self, py: Python<'_>) -> PyResult<Py<PyConfigFacade>> {
         Py::new(py, PyConfigFacade::new(self.config.clone()))
+    }
+
+    /// Mirrors `Sphinx.env` with a shared view over the native build environment.
+    #[getter]
+    fn env(&self, py: Python<'_>) -> PyResult<Py<PyEnvironmentFacade>> {
+        Py::new(
+            py,
+            PyEnvironmentFacade::new(
+                self.env.clone(),
+                self.config.clone(),
+                self.env_attributes.clone(),
+            ),
+        )
+    }
+
+    #[getter]
+    fn srcdir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        path_to_py(py, &self.env.borrow().srcdir)
+    }
+
+    #[getter]
+    fn doctreedir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        path_to_py(py, &self.env.borrow().doctreedir)
     }
 
     /// Mirrors `Sphinx.add_config_value(name, default, rebuild, types=())`:
@@ -559,6 +696,16 @@ mod tests {
     use std::collections::BTreeMap;
     use std::rc::Rc;
 
+    fn test_environment() -> crate::environment::SharedEnv {
+        let srcdir = std::path::PathBuf::from("/tmp");
+        let doctreedir = std::path::PathBuf::from("/tmp/doctrees");
+        let config = crate::config::SphinxConfig::new_defaults();
+        let project = crate::environment::EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
+        Rc::new(RefCell::new(crate::environment::BuildEnvironment::new(
+            config, project, srcdir, doctreedir,
+        )))
+    }
+
     #[test]
     fn event_payloads_convert_to_python_arguments() {
         Python::attach(|py| {
@@ -639,9 +786,12 @@ mod tests {
     #[test]
     fn python_listener_errors_propagate_to_native_event_emitter() {
         let events = crate::app_events::AppEventManager::shared();
+        let config = Rc::new(RefCell::new(HashMap::<String, Py<PyAny>>::new()));
         Python::attach(|py| {
             let facade = PyAppFacade::new(
                 events.clone(),
+                config.clone(),
+                test_environment(),
                 Rc::new(RefCell::new(HashMap::new())),
                 Rc::new(RefCell::new(AssetAccumulator::default())),
                 Rc::new(RefCell::new(crate::registry::SphinxComponentRegistry::new())),
@@ -649,7 +799,7 @@ mod tests {
             let facade = Py::new(py, facade).unwrap();
             let globals = PyDict::new(py);
             py.run(
-                c"def callback(app):\n    raise RuntimeError('callback failed')",
+                c"def callback(app, config):\n    raise RuntimeError('callback failed')",
                 None,
                 Some(&globals),
             )
@@ -661,7 +811,10 @@ mod tests {
                 .unwrap();
         });
 
-        let error = events.borrow_mut().emit("config-inited", &[]).unwrap_err();
+        let error = events
+            .borrow_mut()
+            .emit("config-inited", &[EventArg::Config(config)])
+            .unwrap_err();
         assert!(error.to_string().contains("callback failed"));
     }
 }

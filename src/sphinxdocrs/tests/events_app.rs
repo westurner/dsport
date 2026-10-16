@@ -117,10 +117,14 @@ fn load_extension_config_inited_round_trip() {
 called = []
 
 def setup(app):
-    def on_config_inited(app):
-        called.append(True)
+    def on_config_inited(app, config):
+        called.append(config is not None and config.project == 'Event config')
+
+    def on_builder_inited(app):
+        called.append(app.env.srcdir.is_absolute())
 
     app.connect("config-inited", on_config_inited)
+    app.connect("builder-inited", on_builder_inited)
     return {"version": "0.1", "parallel_read_safe": True}
 "#,
     )
@@ -148,7 +152,7 @@ def setup(app):
     .unwrap();
     std::fs::write(
         src.path().join("conf.py"),
-        "extensions = ['h4b_trivial_ext']\n",
+        "extensions = ['h4b_trivial_ext']\nproject = 'Event config'\n",
     )
     .unwrap();
 
@@ -167,7 +171,11 @@ def setup(app):
     pyo3::Python::attach(|py| {
         let module = py.import("h4b_trivial_ext").unwrap();
         let called: Vec<bool> = module.getattr("called").unwrap().extract().unwrap();
-        assert_eq!(called, vec![true], "config-inited listener never fired");
+        assert_eq!(
+            called,
+            vec![true, true],
+            "application event listener did not fire"
+        );
     });
 }
 

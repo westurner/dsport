@@ -1396,11 +1396,11 @@ deviation unless a future decision explicitly requires reproducing pickle.
 ##### H11.2 HTML, dirhtml, and singlehtml
 
 Status: **partial**. The path/layout plumbing and asset-tag contracts are
-implemented, but the current real external-document suite still reports five
-residual failures across three document trees. They cluster into HTML body and
-section shape, TOC/sidebar structure, navigation attributes/links, theme
-metadata values, and generated artifact/file-tree differences. Resolve these
-with direct assertions before changing the aggregate snapshot.
+implemented, and all 15 gated external-document cases pass, including the
+real Sphinx and Jinja builds. That matrix no longer reports the five residual
+failures described in earlier progress notes. H11.2 remains open for its
+stronger completion contract below: structured inventory/search parity,
+layout/artifact assertions, and same-provenance asset verification.
 
 **H11.2a: artifact contract and metadata**
 
@@ -1617,6 +1617,12 @@ explicitly documented renderer/theme provenance deviations.
   smart-quote transformation, project copyright-year expansion, and refreshed
   DSPort/Sphinx/Jinja output-tree snapshots for copied assets and generated
   pages.
+- Fixed Python extension event initialization parity: `config-inited` now
+  receives the live config facade, and the app/environment facades expose the
+  paths, discovered documents, and no-result `emit_firstresult` surface needed
+  by the real Sphinx/Jinja builds. The 15-case external matrix and all 9
+  `events_app` integration tests pass. First-result listener return dispatch
+  remains an explicit native event-bridge deviation.
 
 ##### H11.3 Text, XML, and pseudo-XML writers
 

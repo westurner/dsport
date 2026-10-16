@@ -27,7 +27,9 @@ use std::rc::Rc;
 use pyo3::prelude::*;
 
 use crate::app_events::{AppEventManager, EventArg, EventError, SharedEvents};
-use crate::app_facade::{PyAppFacade, SharedAssets, SharedConfig, seed_shared_config};
+use crate::app_facade::{
+    PyAppFacade, SharedAssets, SharedConfig, SharedEnvAttributes, seed_shared_config,
+};
 use crate::builders::changes::ChangesBuilder;
 use crate::builders::dirhtml::DirhtmlBuilder;
 use crate::builders::epub::EpubBuilder;
@@ -201,6 +203,7 @@ pub struct SphinxApp {
     /// Names of built-in Rust extensions loaded for this application.
     pub(crate) native_extensions: std::collections::HashSet<String>,
     py_config: SharedConfig,
+    py_env_attributes: SharedEnvAttributes,
     pub assets: SharedAssets,
     freshenv: bool,
     force_all: bool,
@@ -295,6 +298,7 @@ impl SphinxApp {
         )));
         let registry = Rc::new(RefCell::new(reg));
         let py_config = Python::attach(|py| seed_shared_config(py, &config));
+        let py_env_attributes = Rc::new(RefCell::new(HashMap::new()));
         let assets = Rc::new(RefCell::new(Default::default()));
 
         let mut app = Self {
@@ -311,6 +315,7 @@ impl SphinxApp {
             extension_sources: HashMap::new(),
             native_extensions: std::collections::HashSet::new(),
             py_config,
+            py_env_attributes,
             assets,
             freshenv: false,
             force_all: false,
@@ -332,7 +337,10 @@ impl SphinxApp {
         }
         app.verify_needs_extensions()?;
 
-        app.events.borrow_mut().emit("config-inited", &[])?;
+        let config_arg = EventArg::Config(app.py_config.clone());
+        app.events
+            .borrow_mut()
+            .emit("config-inited", &[config_arg])?;
         app.sync_registered_themes();
         app.events.borrow_mut().emit("builder-inited", &[])?;
         app.sync_registered_themes();
@@ -433,6 +441,8 @@ impl SphinxApp {
                 PyAppFacade::new(
                     self.events.clone(),
                     self.py_config.clone(),
+                    self.env.clone(),
+                    self.py_env_attributes.clone(),
                     self.assets.clone(),
                     self.registry.clone(),
                 ),

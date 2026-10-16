@@ -235,6 +235,7 @@ impl PyConfigFacade {
 }
 
 pub type SharedEnvAttributes = Rc<RefCell<HashMap<String, Py<PyAny>>>>;
+pub type SharedPythonEventListeners = Rc<RefCell<HashMap<String, Vec<(usize, i64, Py<PyAny>)>>>>;
 
 fn path_to_py(py: Python<'_>, path: &Path) -> PyResult<Py<PyAny>> {
     let path = path.to_string_lossy();
@@ -377,6 +378,7 @@ pub struct PyAppFacade {
     config: SharedConfig,
     env: SharedEnv,
     env_attributes: SharedEnvAttributes,
+    python_listeners: SharedPythonEventListeners,
     assets: SharedAssets,
     registry: SharedRegistry,
 }
@@ -387,6 +389,7 @@ impl PyAppFacade {
         config: SharedConfig,
         env: SharedEnv,
         env_attributes: SharedEnvAttributes,
+        python_listeners: SharedPythonEventListeners,
         assets: SharedAssets,
         registry: SharedRegistry,
     ) -> Self {
@@ -395,6 +398,7 @@ impl PyAppFacade {
             config,
             env,
             env_attributes,
+            python_listeners,
             assets,
             registry,
         }
@@ -408,11 +412,20 @@ impl PyAppFacade {
     /// emits `event`, re-enters Python and calls
     /// `callback(app_facade, *event_args)`.
     #[pyo3(signature = (event, callback, priority=500))]
-    fn connect(&self, event: &str, callback: Py<PyAny>, priority: i64) -> PyResult<usize> {
+    fn connect(
+        &self,
+        py: Python<'_>,
+        event: &str,
+        callback: Py<PyAny>,
+        priority: i64,
+    ) -> PyResult<usize> {
+        let callback_for_event = callback.clone_ref(py);
+        let callback_for_firstresult = callback.clone_ref(py);
         let events_for_call = self.events.clone();
         let config_for_call = self.config.clone();
         let env_for_call = self.env.clone();
         let env_attributes_for_call = self.env_attributes.clone();
+        let python_listeners_for_call = self.python_listeners.clone();
         let assets_for_call = self.assets.clone();
         let registry_for_call = self.registry.clone();
         let mut mgr = self.events.borrow_mut();
@@ -421,6 +434,7 @@ impl PyAppFacade {
             let config_for_call = config_for_call.clone();
             let env_for_call = env_for_call.clone();
             let env_attributes_for_call = env_attributes_for_call.clone();
+            let python_listeners_for_call = python_listeners_for_call.clone();
             let assets_for_call = assets_for_call.clone();
             let registry_for_call = registry_for_call.clone();
             Python::attach(|py| -> PyResult<()> {
@@ -431,6 +445,7 @@ impl PyAppFacade {
                         config_for_call,
                         env_for_call,
                         env_attributes_for_call,
+                        python_listeners_for_call,
                         assets_for_call,
                         registry_for_call,
                     ),
@@ -446,7 +461,7 @@ impl PyAppFacade {
                     call_args.extend(converted);
                 }
                 let tuple = PyTuple::new(py, &call_args)?;
-                callback.bind(py).call1(tuple)?;
+                callback_for_event.bind(py).call1(tuple)?;
                 for (native_context, python_context) in page_contexts {
                     sync_html_context_from_py(py, &native_context, python_context.bind(py))?;
                 }
@@ -454,6 +469,11 @@ impl PyAppFacade {
             })
             .map_err(|error| EventError(error.to_string()))
         });
+        self.python_listeners
+            .borrow_mut()
+            .entry(event.to_string())
+            .or_default()
+            .push((id, priority, callback_for_firstresult));
         Ok(id)
     }
 
@@ -463,23 +483,43 @@ impl PyAppFacade {
         Py::new(py, self.clone())
     }
 
-    /// Accepted deviation: the native event bridge does not capture listener
-    /// return values yet, so first-result events currently return `None`.
     #[pyo3(signature = (name, *args, allowed_exceptions=None))]
     fn emit_firstresult<'py>(
         &self,
-        _py: Python<'py>,
+        py: Python<'py>,
         name: &str,
         args: &Bound<'py, PyTuple>,
         allowed_exceptions: Option<Bound<'py, PyTuple>>,
-    ) -> Option<Py<PyAny>> {
-        let _ = (name, args, allowed_exceptions);
-        None
+    ) -> PyResult<Option<Py<PyAny>>> {
+        let _ = allowed_exceptions;
+        let mut listeners: Vec<(i64, Py<PyAny>)> = self
+            .python_listeners
+            .borrow()
+            .get(name)
+            .into_iter()
+            .flatten()
+            .map(|(_, priority, callback)| (*priority, callback.clone_ref(py)))
+            .collect();
+        listeners.sort_by_key(|(priority, _)| *priority);
+
+        for (_, callback) in listeners {
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            call_args.push(Py::new(py, self.clone())?.into_any());
+            call_args.extend(args.iter().map(|arg| arg.unbind()));
+            let result = callback.bind(py).call1(PyTuple::new(py, &call_args)?)?;
+            if !result.is_none() {
+                return Ok(Some(result.unbind()));
+            }
+        }
+        Ok(None)
     }
 
     /// Mirrors `Sphinx.disconnect(listener_id)`.
     fn disconnect(&self, listener_id: usize) -> PyResult<()> {
         self.events.borrow_mut().disconnect(listener_id);
+        for listeners in self.python_listeners.borrow_mut().values_mut() {
+            listeners.retain(|(id, _, _)| *id != listener_id);
+        }
         Ok(())
     }
 
@@ -784,6 +824,59 @@ mod tests {
     }
 
     #[test]
+    fn emit_firstresult_returns_first_non_none_listener_value() {
+        let events = crate::app_events::AppEventManager::shared();
+        let config = Rc::new(RefCell::new(HashMap::<String, Py<PyAny>>::new()));
+        Python::attach(|py| {
+            let facade = Py::new(
+                py,
+                PyAppFacade::new(
+                    events.clone(),
+                    config.clone(),
+                    test_environment(),
+                    Rc::new(RefCell::new(HashMap::new())),
+                    Rc::new(RefCell::new(HashMap::new())),
+                    Rc::new(RefCell::new(AssetAccumulator::default())),
+                    Rc::new(RefCell::new(crate::registry::SphinxComponentRegistry::new())),
+                ),
+            )
+            .unwrap();
+            facade
+                .bind(py)
+                .call_method1("add_event", ("autodoc-skip-member",))
+                .unwrap();
+
+            let globals = PyDict::new(py);
+            py.run(
+                c"calls = []\ndef first(app, value):\n    calls.append('first')\n    return None\ndef second(app, value):\n    calls.append('second')\n    return value + ':second'\ndef third(app, value):\n    calls.append('third')\n    return value + ':third'",
+                Some(&globals),
+                Some(&globals),
+            )
+            .unwrap();
+            for (name, priority) in [("first", 100), ("second", 200), ("third", 300)] {
+                let callback = globals.get_item(name).unwrap().unwrap();
+                facade
+                    .bind(py)
+                    .call_method1("connect", ("autodoc-skip-member", callback, priority))
+                    .unwrap();
+            }
+
+            let event_manager = facade.bind(py).getattr("events").unwrap();
+            let result = event_manager
+                .call_method1("emit_firstresult", ("autodoc-skip-member", "member"))
+                .unwrap();
+            assert_eq!(result.extract::<String>().unwrap(), "member:second");
+            let calls: Vec<String> = globals
+                .get_item("calls")
+                .unwrap()
+                .unwrap()
+                .extract()
+                .unwrap();
+            assert_eq!(calls, ["first", "second"]);
+        });
+    }
+
+    #[test]
     fn python_listener_errors_propagate_to_native_event_emitter() {
         let events = crate::app_events::AppEventManager::shared();
         let config = Rc::new(RefCell::new(HashMap::<String, Py<PyAny>>::new()));
@@ -792,6 +885,7 @@ mod tests {
                 events.clone(),
                 config.clone(),
                 test_environment(),
+                Rc::new(RefCell::new(HashMap::new())),
                 Rc::new(RefCell::new(HashMap::new())),
                 Rc::new(RefCell::new(AssetAccumulator::default())),
                 Rc::new(RefCell::new(crate::registry::SphinxComponentRegistry::new())),

@@ -28,7 +28,8 @@ use pyo3::prelude::*;
 
 use crate::app_events::{AppEventManager, EventArg, EventError, SharedEvents};
 use crate::app_facade::{
-    PyAppFacade, SharedAssets, SharedConfig, SharedEnvAttributes, seed_shared_config,
+    PyAppFacade, SharedAssets, SharedConfig, SharedEnvAttributes, SharedPythonEventListeners,
+    seed_shared_config,
 };
 use crate::builders::changes::ChangesBuilder;
 use crate::builders::dirhtml::DirhtmlBuilder;
@@ -204,6 +205,7 @@ pub struct SphinxApp {
     pub(crate) native_extensions: std::collections::HashSet<String>,
     py_config: SharedConfig,
     py_env_attributes: SharedEnvAttributes,
+    py_event_listeners: SharedPythonEventListeners,
     pub assets: SharedAssets,
     freshenv: bool,
     force_all: bool,
@@ -299,6 +301,7 @@ impl SphinxApp {
         let registry = Rc::new(RefCell::new(reg));
         let py_config = Python::attach(|py| seed_shared_config(py, &config));
         let py_env_attributes = Rc::new(RefCell::new(HashMap::new()));
+        let py_event_listeners = Rc::new(RefCell::new(HashMap::new()));
         let assets = Rc::new(RefCell::new(Default::default()));
 
         let mut app = Self {
@@ -316,6 +319,7 @@ impl SphinxApp {
             native_extensions: std::collections::HashSet::new(),
             py_config,
             py_env_attributes,
+            py_event_listeners,
             assets,
             freshenv: false,
             force_all: false,
@@ -443,6 +447,7 @@ impl SphinxApp {
                     self.py_config.clone(),
                     self.env.clone(),
                     self.py_env_attributes.clone(),
+                    self.py_event_listeners.clone(),
                     self.assets.clone(),
                     self.registry.clone(),
                 ),

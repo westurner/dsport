@@ -1619,10 +1619,12 @@ explicitly documented renderer/theme provenance deviations.
   pages.
 - Fixed Python extension event initialization parity: `config-inited` now
   receives the live config facade, and the app/environment facades expose the
-  paths, discovered documents, and no-result `emit_firstresult` surface needed
-  by the real Sphinx/Jinja builds. The 15-case external matrix and all 9
-  `events_app` integration tests pass. First-result listener return dispatch
-  remains an explicit native event-bridge deviation.
+  paths, discovered documents, and `emit_firstresult` surface needed by the
+  real Sphinx/Jinja builds. First-result dispatch now returns the earliest
+  non-`None` Python listener result in priority order. The 15-case external
+  matrix, the focused first-result regression, and all 9 `events_app`
+  integration tests pass. Return-value transport from native Rust listeners
+  remains an event-bridge deviation.
 
 ##### H11.3 Text, XML, and pseudo-XML writers
 

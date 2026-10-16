@@ -961,6 +961,7 @@ impl SphinxConfig {
             Env,
             "EPUB writing mode",
         );
+        add("epub_guide", List(vec![]), Env, "EPUB guide references");
         add(
             "epub_uid",
             Str(String::new()),

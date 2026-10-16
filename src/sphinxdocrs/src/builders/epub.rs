@@ -5,6 +5,7 @@ use std::path::Path;
 use docutilsrs::{Doctree, html5, parse_rst_with_source, zip_writer::ZipBuilder};
 
 use super::{BuildError, BuildResult, Builder};
+use crate::config::ConfigVal;
 use crate::environment::BuildEnvironment;
 use crate::util_strypes::xml_escape;
 
@@ -63,6 +64,7 @@ impl EpubBuilder {
         publisher: &str,
         rights: &str,
         page_progression_direction: &str,
+        guides: &[(String, String, String)],
     ) -> Vec<u8> {
         let mut zip = ZipBuilder::new();
         zip.add_file("mimetype", b"application/epub+zip");
@@ -71,8 +73,19 @@ impl EpubBuilder {
         let spine: String = (0..documents.len())
             .map(|index| format!("<itemref idref=\"doc{index}\"/>"))
             .collect();
+        let guide: String = guides
+            .iter()
+            .map(|(kind, uri, title)| {
+                format!(
+                    "<reference type=\"{}\" title=\"{}\" href=\"{}\" />",
+                    xml_escape(kind),
+                    xml_escape(title),
+                    xml_escape(uri)
+                )
+            })
+            .collect();
         let opf = format!(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"pub-id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"pub-id\">{}</dc:identifier><dc:title>{}</dc:title><dc:creator>{}</dc:creator><dc:language>{}</dc:language><dc:description>{}</dc:description><dc:publisher>{}</dc:publisher><dc:rights>{}</dc:rights></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>{manifest}</manifest><spine toc=\"ncx\" page-progression-direction=\"{}\">{spine}</spine></package>\n",
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"pub-id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"pub-id\">{}</dc:identifier><dc:title>{}</dc:title><dc:creator>{}</dc:creator><dc:language>{}</dc:language><dc:description>{}</dc:description><dc:publisher>{}</dc:publisher><dc:rights>{}</dc:rights></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>{manifest}</manifest><spine toc=\"ncx\" page-progression-direction=\"{}\">{spine}</spine><guide>{guide}</guide></package>\n",
             xml_escape(uid),
             xml_escape(title),
             xml_escape(author),
@@ -146,6 +159,7 @@ impl Builder for EpubBuilder {
                 "",
                 "",
                 "ltr",
+                &[],
             ),
         )?;
         Ok(())
@@ -209,6 +223,7 @@ impl Builder for EpubBuilder {
                     )));
                 }
             };
+        let guides = epub_guide_entries(env)?;
         std::fs::write(
             outdir.join(format!("{basename}.epub")),
             Self::archive(
@@ -221,6 +236,7 @@ impl Builder for EpubBuilder {
                 &publisher,
                 &rights,
                 page_progression_direction,
+                &guides,
             ),
         )?;
         Ok(BuildResult {
@@ -228,6 +244,39 @@ impl Builder for EpubBuilder {
             ..BuildResult::default()
         })
     }
+}
+
+fn epub_guide_entries(env: &BuildEnvironment) -> Result<Vec<(String, String, String)>, BuildError> {
+    let guides = env
+        .config
+        .get("epub_guide")
+        .unwrap_or_else(|| ConfigVal::List(vec![]));
+    let ConfigVal::List(guides) = guides else {
+        return Err(BuildError::Other(
+            "epub_guide must be a sequence of (type, uri, title) triples".into(),
+        ));
+    };
+    guides
+        .into_iter()
+        .map(|guide| {
+            let ConfigVal::List(fields) = guide else {
+                return Err(BuildError::Other(
+                    "epub_guide must be a sequence of (type, uri, title) triples".into(),
+                ));
+            };
+            let [
+                ConfigVal::Str(kind),
+                ConfigVal::Str(uri),
+                ConfigVal::Str(title),
+            ] = fields.as_slice()
+            else {
+                return Err(BuildError::Other(
+                    "epub_guide must be a sequence of (type, uri, title) triples".into(),
+                ));
+            };
+            Ok((kind.clone(), uri.clone(), title.clone()))
+        })
+        .collect()
 }
 
 #[cfg(test)]

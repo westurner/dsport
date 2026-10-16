@@ -18,6 +18,14 @@ fn build_all_writes_one_epub_archive_with_documents() {
     config.set("epub_uid", ConfigVal::Str("urn:example:guide".into()));
     config.set("epub_basename", ConfigVal::Str("guide-book".into()));
     config.set("epub_writing_mode", ConfigVal::Str("vertical".into()));
+    config.set(
+        "epub_guide",
+        ConfigVal::List(vec![ConfigVal::List(vec![
+            ConfigVal::Str("cover".into()),
+            ConfigVal::Str("index.xhtml#cover".into()),
+            ConfigVal::Str("Cover & Page".into()),
+        ])]),
+    );
     let mut env = BuildEnvironment::new(config, project, src.path(), doctrees.path());
     env.find_files().unwrap();
     env.read_all().unwrap();
@@ -43,6 +51,8 @@ fn build_all_writes_one_epub_archive_with_documents() {
         b"toc.ncx".as_slice(),
         b"properties=\"nav\"".as_slice(),
         b"page-progression-direction=\"rtl\"".as_slice(),
+        b"reference type=\"cover\" title=\"Cover &amp; Page\" href=\"index.xhtml#cover\""
+            .as_slice(),
         b"Guide &amp; Reference".as_slice(),
         b"A &lt;Writer&gt;".as_slice(),
     ] {

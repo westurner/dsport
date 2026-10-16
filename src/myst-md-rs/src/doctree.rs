@@ -583,34 +583,16 @@ fn end_tag(
             let body = body.strip_suffix('\n').unwrap_or(&body).to_string();
             match kind {
                 CodeKind::Math => tree.set_kind(id, NodeKind::MathBlock { latex: body }),
-                CodeKind::Directive { name, argument } if name == "include" => {
-                    let line = tree.node(id).line.unwrap_or(1);
-                    tree.detach(id);
-                    match resolve_include_path(&argument, tree, source_root, include_stack) {
-                        Ok(path) => match std::fs::read_to_string(&path) {
-                            Ok(included_source) => {
-                                let included_path = path.to_string_lossy().into_owned();
-                                include_stack.push(path);
-                                let included = parse_to_doctree_inner(
-                                    &included_source,
-                                    &included_path,
-                                    options,
-                                    source_root,
-                                    include_stack,
-                                );
-                                include_stack.pop();
-                                clone_children(&included, included.root(), tree, parent);
-                            }
-                            Err(error) => append_include_warning(
-                                tree,
-                                parent,
-                                line,
-                                format!("cannot read MyST include {argument:?}: {error}"),
-                            ),
-                        },
-                        Err(message) => append_include_warning(tree, parent, line, message),
-                    }
-                }
+                CodeKind::Directive { name, argument } if name == "include" => handle_include(
+                    tree,
+                    id,
+                    parent,
+                    &argument,
+                    &body,
+                    options,
+                    source_root,
+                    include_stack,
+                ),
                 CodeKind::Directive { name, .. } if name == "eval-rst" => {
                     tree.detach(id);
                     let included = docutilsrs::parse_rst_with_source(&body, "<eval-rst>");
@@ -955,6 +937,195 @@ fn resolve_include_path(
         return Err(format!("recursive MyST include: {}", cycle.join(" -> ")));
     }
     Ok(path)
+}
+
+fn include_directive_spec() -> directives::DirectiveSpec {
+    let mut option_spec = BTreeMap::new();
+    option_spec.insert("literal".into(), directives::OptionKind::Flag);
+    option_spec.insert("code".into(), directives::OptionKind::String);
+    option_spec.insert("start-line".into(), directives::OptionKind::Integer);
+    option_spec.insert("end-line".into(), directives::OptionKind::Integer);
+    option_spec.insert("start-after".into(), directives::OptionKind::String);
+    option_spec.insert("end-before".into(), directives::OptionKind::String);
+    directives::DirectiveSpec {
+        required_arguments: 1,
+        has_content: false,
+        final_argument_whitespace: true,
+        option_spec,
+        ..directives::DirectiveSpec::default()
+    }
+}
+
+fn include_integer_option(
+    parsed: &directives::ParsedDirective,
+    name: &str,
+) -> Result<Option<usize>, String> {
+    match parsed.coerced_options.get(name) {
+        Some(directives::OptionValue::Integer(value)) if *value >= 0 => Ok(Some(*value as usize)),
+        Some(directives::OptionValue::Integer(_)) => {
+            Err(format!("MyST include option {name:?} must not be negative"))
+        }
+        Some(_) => Err(format!("MyST include option {name:?} must be an integer")),
+        None => Ok(None),
+    }
+}
+
+fn include_string_option<'a>(
+    parsed: &'a directives::ParsedDirective,
+    name: &str,
+) -> Option<&'a str> {
+    match parsed.coerced_options.get(name) {
+        Some(directives::OptionValue::String(value)) => Some(value),
+        _ => None,
+    }
+}
+
+fn select_include_lines(
+    source: &str,
+    parsed: &directives::ParsedDirective,
+) -> Result<String, String> {
+    let lines = source.lines().collect::<Vec<_>>();
+    let start_line = include_integer_option(parsed, "start-line")?;
+    let end_line = include_integer_option(parsed, "end-line")?;
+    let start_after = include_string_option(parsed, "start-after");
+    let end_before = include_string_option(parsed, "end-before");
+    if start_line.is_some() && start_after.is_some() {
+        return Err("MyST include start-line and start-after are mutually exclusive".into());
+    }
+    if end_line.is_some() && end_before.is_some() {
+        return Err("MyST include end-line and end-before are mutually exclusive".into());
+    }
+
+    let start = if let Some(marker) = start_after {
+        lines
+            .iter()
+            .position(|line| line.contains(marker))
+            .map(|index| index + 1)
+            .ok_or_else(|| format!("MyST include start-after marker {marker:?} was not found"))?
+    } else {
+        start_line.unwrap_or(0)
+    };
+    let end = if let Some(marker) = end_before {
+        lines
+            .iter()
+            .enumerate()
+            .skip(start.min(lines.len()))
+            .find(|(_, line)| line.contains(marker))
+            .map(|(index, _)| index)
+            .unwrap_or(lines.len())
+    } else {
+        end_line.unwrap_or(lines.len()).min(lines.len())
+    };
+    if start > end {
+        return Err("MyST include start position is after its end position".into());
+    }
+
+    let mut selected = lines[start.min(lines.len())..end].join("\n");
+    if !selected.is_empty() && end == lines.len() && source.ends_with('\n') {
+        selected.push('\n');
+    }
+    Ok(selected)
+}
+
+fn handle_include(
+    tree: &mut Doctree,
+    id: NodeId,
+    parent: NodeId,
+    argument: &str,
+    body: &str,
+    options: &DoctreeOptions,
+    source_root: &Path,
+    include_stack: &mut Vec<PathBuf>,
+) {
+    let line = tree.node(id).line.unwrap_or(1);
+    tree.detach(id);
+    let body_lines = body.lines().collect::<Vec<_>>();
+    let parsed =
+        match directives::parse_directive_text(&include_directive_spec(), argument, &body_lines) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                append_include_warning(
+                    tree,
+                    parent,
+                    line,
+                    format!("invalid MyST include directive: {error:?}"),
+                );
+                return;
+            }
+        };
+    for warning in &parsed.warnings {
+        append_include_warning(tree, parent, line, warning.clone());
+    }
+
+    let literal = parsed.coerced_options.contains_key("literal");
+    let code = include_string_option(&parsed, "code");
+    if literal && code.is_some() {
+        append_include_warning(
+            tree,
+            parent,
+            line,
+            "MyST include literal and code options are mutually exclusive".into(),
+        );
+        return;
+    }
+
+    let path = match resolve_include_path(argument, tree, source_root, include_stack) {
+        Ok(path) => path,
+        Err(message) => {
+            append_include_warning(tree, parent, line, message);
+            return;
+        }
+    };
+    let included_source = match std::fs::read_to_string(&path) {
+        Ok(source) => source,
+        Err(error) => {
+            append_include_warning(
+                tree,
+                parent,
+                line,
+                format!("cannot read MyST include {argument:?}: {error}"),
+            );
+            return;
+        }
+    };
+    let selected = match select_include_lines(&included_source, &parsed) {
+        Ok(selected) => selected,
+        Err(error) => {
+            append_include_warning(tree, parent, line, error);
+            return;
+        }
+    };
+    if literal || code.is_some() {
+        let classes = code.map_or_else(String::new, |language| {
+            if language.is_empty() {
+                "code".into()
+            } else {
+                format!("code {language}")
+            }
+        });
+        let block = tree.append(
+            parent,
+            NodeKind::LiteralBlock {
+                classes,
+                caption: None,
+            },
+        );
+        tree.set_line(block, line);
+        tree.append(block, NodeKind::Text(selected));
+        return;
+    }
+
+    let included_path = path.to_string_lossy().into_owned();
+    include_stack.push(path);
+    let included = parse_to_doctree_inner(
+        &selected,
+        &included_path,
+        options,
+        source_root,
+        include_stack,
+    );
+    include_stack.pop();
+    clone_children(&included, included.root(), tree, parent);
 }
 
 fn append_include_warning(tree: &mut Doctree, parent: NodeId, line: u32, message: String) {

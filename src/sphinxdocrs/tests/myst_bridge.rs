@@ -273,3 +273,147 @@ fn recursive_myst_include_reports_the_include_chain() {
     assert_eq!(line, Some(1));
     assert!(message.contains("guide.md") && message.contains("included.md"));
 }
+
+#[test]
+fn myst_include_literal_preserves_markup_as_text() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "```{include} included.md\n:literal:\n```\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("included.md"),
+        "# Included\n\n**not parsed as markup**\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let literal = (0..tree.nodes_len())
+        .find(|id| {
+            matches!(
+                tree.node(*id).kind,
+                docutilsrs::NodeKind::LiteralBlock { .. }
+            )
+        })
+        .expect("literal include block");
+    let text = tree
+        .node(literal)
+        .children
+        .iter()
+        .find_map(|child| match &tree.node(*child).kind {
+            docutilsrs::NodeKind::Text(text) => Some(text.as_str()),
+            _ => None,
+        });
+    assert!(text.unwrap().contains("**not parsed as markup**"));
+    assert!(
+        !(0..tree.nodes_len()).any(|id| matches!(tree.node(id).kind, docutilsrs::NodeKind::Strong))
+    );
+}
+
+#[test]
+fn myst_include_code_selects_requested_line_range() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "```{include} included.md\n:code: text\n:start-line: 1\n:end-line: 2\n```\n",
+    )
+    .unwrap();
+    std::fs::write(project.path().join("included.md"), "first\nsecond\nthird\n").unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let literal = (0..tree.nodes_len())
+        .find(|id| {
+            matches!(
+                tree.node(*id).kind,
+                docutilsrs::NodeKind::LiteralBlock { .. }
+            )
+        })
+        .expect("code include block");
+    assert!(matches!(
+        &tree.node(literal).kind,
+        docutilsrs::NodeKind::LiteralBlock { classes, .. } if classes == "code text"
+    ));
+    let text = tree
+        .node(literal)
+        .children
+        .iter()
+        .find_map(|child| match &tree.node(*child).kind {
+            docutilsrs::NodeKind::Text(text) => Some(text.as_str()),
+            _ => None,
+        });
+    assert_eq!(text, Some("second"));
+}
+
+#[test]
+fn myst_include_code_selects_between_markers() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "```{include} included.md\n:code: text\n:start-after: START\n:end-before: END\n```\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("included.md"),
+        "skip\nSTART\nkeep this line\nEND\nskip\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let literal = (0..tree.nodes_len())
+        .find(|id| {
+            matches!(
+                tree.node(*id).kind,
+                docutilsrs::NodeKind::LiteralBlock { .. }
+            )
+        })
+        .expect("code include block");
+    let text = tree
+        .node(literal)
+        .children
+        .iter()
+        .find_map(|child| match &tree.node(*child).kind {
+            docutilsrs::NodeKind::Text(text) => Some(text.as_str()),
+            _ => None,
+        });
+    assert_eq!(text, Some("keep this line"));
+}

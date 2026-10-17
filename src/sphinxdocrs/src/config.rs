@@ -1319,6 +1319,12 @@ impl SphinxConfig {
             "Show a \"View page source\" link",
         );
         add(
+            "html_show_docutils_links",
+            Bool(false),
+            Html,
+            "Show explicit targets in Docutils link text",
+        );
+        add(
             "html_sourcelink_suffix",
             Str(".txt".into()),
             Html,
@@ -2049,6 +2055,13 @@ impl SphinxConfig {
             .unwrap_or(true)
     }
 
+    /// `html_show_docutils_links` — show explicit targets in Docutils link text.
+    pub fn html_show_docutils_links(&self) -> bool {
+        self.get("html_show_docutils_links")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
     /// `html_sourcelink_suffix`.
     pub fn html_sourcelink_suffix(&self) -> String {
         self.get("html_sourcelink_suffix")
@@ -2591,6 +2604,7 @@ imgmath_dvisvgm = 'dvisvgm-custom'
             "html_show_search_summary",
             "html_copy_source",
             "html_show_sourcelink",
+            "html_show_docutils_links",
         ] {
             raw.insert(name.into(), ConfigVal::Bool(false));
         }
@@ -2648,6 +2662,7 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         assert!(!cfg.html_show_search_summary());
         assert!(!cfg.html_copy_source());
         assert!(!cfg.html_show_sourcelink());
+        assert!(!cfg.html_show_docutils_links());
         assert_eq!(cfg.html_sourcelink_suffix(), ".rst");
         assert_eq!(cfg.html_use_opensearch(), "https://docs.example.test");
         assert_eq!(cfg.html_baseurl(), "/docs");
@@ -2704,6 +2719,7 @@ imgmath_dvisvgm = 'dvisvgm-custom'
             "html_show_search_summary",
             "html_copy_source",
             "html_show_sourcelink",
+            "html_show_docutils_links",
             "html_domain_indices",
             "html_use_index",
         ] {
@@ -2737,6 +2753,7 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         assert!(cfg.html_show_search_summary());
         assert!(cfg.html_copy_source());
         assert!(cfg.html_show_sourcelink());
+        assert!(!cfg.html_show_docutils_links());
         assert_eq!(cfg.html_sourcelink_suffix(), ".txt");
         assert_eq!(cfg.html_use_opensearch(), "");
         assert_eq!(cfg.html_baseurl(), "");

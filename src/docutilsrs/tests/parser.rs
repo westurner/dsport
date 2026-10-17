@@ -4,7 +4,10 @@
 //! asserted from Python in `src/tests/test_parity_pseudoxml.py`, which has
 //! the upstream available.
 
-use docutilsrs::{html5, parse_rst, pseudo_xml};
+use docutilsrs::{
+    NodeKind, TitlePromotion, html5, parse_rst, parse_rst_with_options_and_docutils_links,
+    pseudo_xml,
+};
 
 #[test]
 fn empty_input_yields_only_document() {
@@ -86,6 +89,84 @@ fn bullet_continuation_line() {
 fn reference_resolves_to_target() {
     let src = "See ref_.\n\n.. _ref: http://example.com";
     insta::assert_snapshot!("reference_resolved", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn docutils_reference_roles_split_titles_and_respect_link_option() {
+    let source = ":dudir:`contents <table-of-contents>` and :duref:`ref <directives>`";
+    let linked = parse_rst_with_options_and_docutils_links(
+        source,
+        "refs",
+        TitlePromotion::Preserve,
+        true,
+    );
+    let references: Vec<_> = (0..linked.nodes_len())
+        .filter_map(|id| match &linked.node(id).kind {
+            NodeKind::Reference {
+                name,
+                refuri,
+                classes,
+                ..
+            } => Some((name.clone(), refuri.clone(), classes.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        references,
+        vec![
+            (
+                "contents <table-of-contents>".to_string(),
+                "https://docutils.sourceforge.io/docs/ref/rst/directives.html#table-of-contents"
+                    .to_string(),
+                "extlink-dudir reference external".to_string(),
+            ),
+            (
+                "ref <directives>".to_string(),
+                "https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#directives"
+                    .to_string(),
+                "extlink-duref reference external".to_string(),
+            ),
+        ]
+    );
+
+    let unlinked = parse_rst_with_options_and_docutils_links(
+        source,
+        "refs",
+        TitlePromotion::Preserve,
+        false,
+    );
+    let unlinked_labels: Vec<_> = (0..unlinked.nodes_len())
+        .filter_map(|id| match &unlinked.node(id).kind {
+            NodeKind::Reference { name, refuri, .. } => Some((name.clone(), refuri.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        unlinked_labels,
+        vec![
+            (
+                "contents".to_string(),
+                "https://docutils.sourceforge.io/docs/ref/rst/directives.html#table-of-contents"
+                    .to_string(),
+            ),
+            (
+                "ref".to_string(),
+                "https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#directives"
+                    .to_string(),
+            ),
+        ]
+    );
+
+    let same_title_and_target = parse_rst_with_options_and_docutils_links(
+        ":duref:`directives <directives>`",
+        "refs",
+        TitlePromotion::Preserve,
+        true,
+    );
+    assert!((0..same_title_and_target.nodes_len()).any(|id| matches!(
+        &same_title_and_target.node(id).kind,
+        NodeKind::Reference { name, .. } if name == "directives <directives>"
+    )));
 }
 
 #[test]

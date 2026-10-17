@@ -50,14 +50,30 @@ pub fn parse_rst_with_options(
     source_path: &str,
     title_promotion: TitlePromotion,
 ) -> Doctree {
+    parse_rst_with_options_and_docutils_links(source, source_path, title_promotion, true)
+}
+
+/// Parse rST with explicit title-promotion and Docutils-link settings.
+pub fn parse_rst_with_options_and_docutils_links(
+    source: &str,
+    source_path: &str,
+    title_promotion: TitlePromotion,
+    show_docutils_links: bool,
+) -> Doctree {
     parse_rst_impl(
         source,
         source_path,
         title_promotion == TitlePromotion::Promote,
+        show_docutils_links,
     )
 }
 
-fn parse_rst_impl(source: &str, source_path: &str, promote_title: bool) -> Doctree {
+fn parse_rst_impl(
+    source: &str,
+    source_path: &str,
+    promote_title: bool,
+    show_docutils_links: bool,
+) -> Doctree {
     let _role_lock = crate::roles::lock_global();
     let mut tree = Doctree::new_document(source_path);
     let document = tree.root();
@@ -80,6 +96,7 @@ fn parse_rst_impl(source: &str, source_path: &str, promote_title: bool) -> Doctr
         implicit_id_count: 1,
         figure_count: 0,
         current_line: 0,
+        show_docutils_links,
         inline_ref_sites: Vec::new(),
     };
     for block in blocks {
@@ -261,6 +278,7 @@ pub struct ParseCtx {
     pub(crate) citation_ref_count: u32,
     pub(crate) implicit_id_count: u32,
     pub(crate) figure_count: u32,
+    pub(crate) show_docutils_links: bool,
     /// Source line of the paragraph currently being emitted, or 0 when
     /// unknown. Used to stamp `line=` on system messages for unresolved
     /// references discovered during inline parsing.
@@ -3204,6 +3222,7 @@ mod rich_paragraph_tests {
             implicit_id_count: 0,
             figure_count: 0,
             current_line: 0,
+            show_docutils_links: true,
             inline_ref_sites: Vec::new(),
         };
         emit_block(
@@ -3248,6 +3267,7 @@ mod rich_paragraph_tests {
             implicit_id_count: 0,
             figure_count: 0,
             current_line: 0,
+            show_docutils_links: true,
             inline_ref_sites: Vec::new(),
         };
         emit_block(
@@ -4688,7 +4708,14 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
             if cursor > text_start {
                 push_text(tree, parent, &text[text_start..cursor]);
             }
-            emit_role(tree, parent, &role, &content, ctx.current_line);
+            emit_role(
+                tree,
+                parent,
+                &role,
+                &content,
+                ctx.current_line,
+                ctx.show_docutils_links,
+            );
             cursor = end;
             text_start = cursor;
             continue;
@@ -4817,7 +4844,14 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
             if cursor > text_start {
                 push_text(tree, parent, &text[text_start..cursor]);
             }
-            emit_role(tree, parent, &role, &content, ctx.current_line);
+            emit_role(
+                tree,
+                parent,
+                &role,
+                &content,
+                ctx.current_line,
+                ctx.show_docutils_links,
+            );
             cursor = end;
             text_start = cursor;
         } else {
@@ -4830,7 +4864,26 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
     }
 }
 
-fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str, source_line: u32) {
+fn split_phrase_title(content: &str) -> (Option<String>, String) {
+    if let Some(index) = content.find('<') {
+        if content.ends_with('>') {
+            return (
+                Some(content[..index].trim().to_string()),
+                content[index + 1..content.len() - 1].trim().to_string(),
+            );
+        }
+    }
+    (None, content.to_string())
+}
+
+fn emit_role(
+    tree: &mut Doctree,
+    parent: NodeId,
+    role: &str,
+    content: &str,
+    source_line: u32,
+    show_docutils_links: bool,
+) {
     if let Some(nodes) = crate::plugins::invoke_python_role(role, content) {
         for replacement in nodes.nodes {
             let node = tree.append(parent, replacement.kind);
@@ -4943,17 +4996,23 @@ fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str, sour
                 "durole" => "roles",
                 _ => "restructuredtext",
             };
-            let uri = format!("https://docutils.sourceforge.io/docs/ref/rst/{page}.html#{content}");
+            let (title, target) = split_phrase_title(content);
+            let display_text = match title {
+                Some(title) if show_docutils_links => format!("{title} <{target}>"),
+                Some(title) => title,
+                None => target.clone(),
+            };
+            let uri = format!("https://docutils.sourceforge.io/docs/ref/rst/{page}.html#{target}");
             let n = tree.append(
                 parent,
                 NodeKind::Reference {
-                    name: content.to_string(),
+                    name: display_text.clone(),
                     refuri: uri,
                     anonymous: false,
-                    classes: "reference external".to_string(),
+                    classes: format!("extlink-{canonical} reference external"),
                 },
             );
-            push_text(tree, n, content);
+            push_text(tree, n, &display_text);
         }
         "cve" => {
             let id = if content.to_ascii_uppercase().starts_with("CVE-") {

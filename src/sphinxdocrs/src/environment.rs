@@ -743,10 +743,11 @@ impl BuildEnvironment {
         let mut tree = match self.parser_for_path(&path).as_str() {
             "restructuredtext" => {
                 crate::roles::register_builtin_roles();
-                Ok(docutilsrs::parse_rst_with_options(
+                Ok(docutilsrs::parse_rst_with_options_and_docutils_links(
                     source,
                     docname,
                     docutilsrs::TitlePromotion::Preserve,
+                    self.config.html_show_docutils_links(),
                 ))
             }
             "myst" | "markdown" => {
@@ -3054,6 +3055,44 @@ mod tests {
         assert!(
             output.contains("Unknown interpreted text role") && output.contains("not-a-role"),
             "unknown role should retain its diagnostic:\n{output}"
+        );
+    }
+
+    #[test]
+    fn parse_source_docutils_links_are_opt_in() {
+        let source = ":dudir:`contents <table-of-contents>` and :duref:`ref <directives>`";
+        let default_tree = make_env().parse_source("refs", source).unwrap();
+        let default_links: Vec<_> = (0..default_tree.nodes_len())
+            .filter_map(|id| match &default_tree.node(id).kind {
+                NodeKind::Reference { name, refuri, .. } => {
+                    Some((name.clone(), refuri.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(default_links[0].0, "contents");
+        assert_eq!(default_links[1].0, "ref");
+
+        let mut raw_config = HashMap::new();
+        raw_config.insert(
+            "html_show_docutils_links".to_owned(),
+            crate::config::ConfigVal::Bool(true),
+        );
+        let config = SphinxConfig::new(raw_config, HashMap::new());
+        let project = EnvProject::new("/tmp/src", &[(".rst", "restructuredtext")]);
+        let env = BuildEnvironment::new(config, project, "/tmp/src", "/tmp/doctrees");
+        let linked_tree = env.parse_source("refs", source).unwrap();
+        let links: Vec<_> = (0..linked_tree.nodes_len())
+            .filter_map(|id| match &linked_tree.node(id).kind {
+                NodeKind::Reference { name, refuri, .. } => {
+                    Some((name.clone(), refuri.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            links.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(),
+            vec!["contents <table-of-contents>", "ref <directives>"]
         );
     }
 

@@ -198,6 +198,7 @@ pub enum NodeKind {
     LiteralBlock {
         classes: String,
         caption: Option<String>,
+        source: Option<String>,
     },
     BulletList {
         bullet: char,
@@ -699,6 +700,8 @@ enum NodeKindData {
         classes: String,
         #[serde(default)]
         caption: Option<String>,
+        #[serde(default)]
+        source: Option<String>,
     },
     BulletList {
         bullet: char,
@@ -936,9 +939,15 @@ impl From<&NodeKind> for NodeKindData {
             NodeKind::Inline { classes } => NodeKindData::Inline { classes },
             NodeKind::Math { latex } => NodeKindData::Math { latex },
             NodeKind::MathBlock { latex } => NodeKindData::MathBlock { latex },
-            NodeKind::LiteralBlock { classes, caption } => {
-                NodeKindData::LiteralBlock { classes, caption }
-            }
+            NodeKind::LiteralBlock {
+                classes,
+                caption,
+                source,
+            } => NodeKindData::LiteralBlock {
+                classes,
+                caption,
+                source,
+            },
             NodeKind::BulletList { bullet } => NodeKindData::BulletList { bullet },
             NodeKind::EnumeratedList {
                 enumtype,
@@ -1165,9 +1174,15 @@ impl From<NodeKindData> for NodeKind {
             NodeKindData::Inline { classes } => NodeKind::Inline { classes },
             NodeKindData::Math { latex } => NodeKind::Math { latex },
             NodeKindData::MathBlock { latex } => NodeKind::MathBlock { latex },
-            NodeKindData::LiteralBlock { classes, caption } => {
-                NodeKind::LiteralBlock { classes, caption }
-            }
+            NodeKindData::LiteralBlock {
+                classes,
+                caption,
+                source,
+            } => NodeKind::LiteralBlock {
+                classes,
+                caption,
+                source,
+            },
             NodeKindData::BulletList { bullet } => NodeKind::BulletList { bullet },
             NodeKindData::EnumeratedList {
                 enumtype,
@@ -1394,6 +1409,36 @@ mod doctree_serde_tests {
             other => panic!("unexpected kind: {other:?}"),
         }
         assert_eq!(restored.node(sec).children.len(), 4);
+    }
+
+    #[test]
+    fn literal_block_source_round_trips_and_defaults_for_older_data() {
+        let mut tree = Doctree::new_document("test.md");
+        let literal = tree.append(
+            tree.root(),
+            NodeKind::LiteralBlock {
+                classes: String::new(),
+                caption: None,
+                source: Some("docs/example.md".into()),
+            },
+        );
+
+        let restored = Doctree::from_bytes(&tree.to_bytes()).unwrap();
+        let NodeKind::LiteralBlock { source, .. } = &restored.node(literal).kind else {
+            panic!("expected literal block");
+        };
+        assert_eq!(source.as_deref(), Some("docs/example.md"));
+
+        let mut old_data: serde_json::Value = serde_json::from_slice(&tree.to_bytes()).unwrap();
+        old_data["nodes"][literal]["kind"]["LiteralBlock"]
+            .as_object_mut()
+            .unwrap()
+            .remove("source");
+        let restored_old = Doctree::from_bytes(&serde_json::to_vec(&old_data).unwrap()).unwrap();
+        let NodeKind::LiteralBlock { source, .. } = &restored_old.node(literal).kind else {
+            panic!("expected literal block");
+        };
+        assert_eq!(*source, None);
     }
 
     #[test]

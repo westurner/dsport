@@ -51,6 +51,14 @@ fn basic_include_fixture_matches_upstream_pseudo_xml() {
         .iter()
         .find(|case| case.title == "Include with Front Matter (should be ignored):")
         .expect("upstream front matter include fixture");
+    let literal_case = cases
+        .iter()
+        .find(|case| case.title == "Include Literal:")
+        .expect("upstream Include Literal fixture");
+    let literal_lines_case = cases
+        .iter()
+        .find(|case| case.title == "Include Literal, line range:")
+        .expect("upstream literal line range fixture");
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -72,7 +80,12 @@ fn basic_include_fixture_matches_upstream_pseudo_xml() {
 
     let mut options = myst_md_rs::DoctreeOptions::default();
     options.source_root = Some(root.clone());
-    for case in [basic_case, front_matter_case] {
+    for case in [
+        basic_case,
+        front_matter_case,
+        literal_case,
+        literal_lines_case,
+    ] {
         std::fs::write(root.join("test.md"), &case.content).unwrap();
         let source = root.join("test.md");
         let tree = myst_md_rs::parse_to_doctree(

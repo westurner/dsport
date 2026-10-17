@@ -127,13 +127,22 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
                 let _ = writeln!(out, "{inner}{line}");
             }
         }
-        NodeKind::LiteralBlock { classes, .. } => {
+        NodeKind::LiteralBlock {
+            classes, source, ..
+        } => {
+            let source = source
+                .as_deref()
+                .map(|source| format!(" source=\"{source}\""))
+                .unwrap_or_default();
             if classes.is_empty() {
-                let _ = writeln!(out, "{indent}<literal_block xml:space=\"preserve\">");
+                let _ = writeln!(
+                    out,
+                    "{indent}<literal_block{source} xml:space=\"preserve\">"
+                );
             } else {
                 let _ = writeln!(
                     out,
-                    "{indent}<literal_block classes=\"{classes}\" xml:space=\"preserve\">"
+                    "{indent}<literal_block classes=\"{classes}\"{source} xml:space=\"preserve\">"
                 );
             }
         }

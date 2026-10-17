@@ -3400,7 +3400,14 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 caption,
                 tokens,
             } => {
-                let lb = tree.append(parent, NodeKind::LiteralBlock { classes, caption });
+                let lb = tree.append(
+                    parent,
+                    NodeKind::LiteralBlock {
+                        classes,
+                        caption,
+                        source: None,
+                    },
+                );
                 match tokens {
                     Some(spans) => {
                         for (class, value) in spans {

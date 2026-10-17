@@ -189,11 +189,17 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             latex,
             out,
         ),
-        NodeKind::LiteralBlock { classes, .. } => {
-            let mut attrs = vec![("xml:space", "preserve")];
+        NodeKind::LiteralBlock {
+            classes, source, ..
+        } => {
+            let mut attrs = Vec::new();
             if !classes.is_empty() {
-                attrs.insert(0, ("classes", classes.as_str()));
+                attrs.push(("classes", classes.as_str()));
             }
+            if let Some(source) = source.as_deref() {
+                attrs.push(("source", source));
+            }
+            attrs.push(("xml:space", "preserve"));
             emit(tree, id, depth, "literal_block", &attrs, out);
         }
         NodeKind::BulletList { bullet } => {

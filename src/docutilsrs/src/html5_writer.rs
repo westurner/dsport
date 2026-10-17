@@ -168,7 +168,9 @@ fn emit_enter(
             }
             schedule(node, "</span>", tasks);
         }
-        NodeKind::LiteralBlock { classes, caption } => {
+        NodeKind::LiteralBlock {
+            classes, caption, ..
+        } => {
             let language = classes.split_whitespace().nth(1).unwrap_or("text");
             if classes.split_whitespace().next() == Some("code") {
                 if caption.is_some() {

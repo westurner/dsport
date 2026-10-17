@@ -667,6 +667,7 @@ fn start_tag(
                         format!("code {info}")
                     },
                     caption: None,
+                    source: None,
                 },
             };
             let parent = current_parent(frames, sections, root);
@@ -1515,6 +1516,7 @@ fn handle_include(
             NodeKind::LiteralBlock {
                 classes,
                 caption: None,
+                source: Some(path.to_string_lossy().into_owned()),
             },
         );
         tree.set_line(block, line);

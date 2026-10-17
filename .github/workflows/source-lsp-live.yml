@@ -1,0 +1,48 @@
+name: source-lsp-live
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 8 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  protected-rust-analyzer:
+    name: Protected rust-analyzer (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_NET_RETRY: 10
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - run: git config --global core.checkRoundtrip false
+        working-directory: .
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rust-analyzer
+      - uses: mozilla-actions/sccache-action@v0.0.10
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - name: Install Bubblewrap
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+      - name: Run protected rust-analyzer integration
+        run: |
+          SPHINXDOCRS_RUST_ANALYZER="$(rustup which --toolchain stable rust-analyzer)" \
+            cargo test -p sphinxdocrs \
+              --features source-sandbox,rust-source-analysis \
+              --lib \
+              source_docs::lsp_backend::tests::protected_rust_analyzer_live_returns_document_symbols_without_proc \
+              -- --exact --nocapture --test-threads=1

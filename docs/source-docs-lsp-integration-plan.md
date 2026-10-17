@@ -28,7 +28,7 @@ checked-in fake peer; real servers require explicit
 Still incomplete: references and workspace-symbol enrichment, the full
 source-port mapping audit, resource
 limits, native macOS runtime validation, adversarial path-replacement tests,
-and installed rust-analyzer/Lean live CI. No-proc Bubblewrap, fake-LSP startup,
+and Lean live CI. No-proc Bubblewrap, fake-LSP startup,
 read-only write denial, and parent-loopback network denial pass in this
 container. The opt-in protected no-proc rust-analyzer 1.96.1 test and an
 end-to-end Rust LSP apidoc/HTML build pass locally. Lean and other server
@@ -953,7 +953,7 @@ aggregate Rust API page and TOC, runs the native HTML builder against those
 generated sources, and asserts the LSP-derived declaration appears in the
 rendered page.
 
-### Phase 5: optional live-server workflows — Rust validated locally; CI pending
+### Phase 5: optional live-server workflows — protected Rust CI added; Lean pending
 
 - Add opt-in rust-analyzer integration tests (`SPHINXDOCRS_RUST_ANALYZER` supplies
   the executable path; unset means the test skips).
@@ -967,12 +967,14 @@ rendered page.
   or process-policy boundary.
 
 Status: status command can run the fake peer or an explicitly supplied
-trusted-local server. The opt-in rust-analyzer 1.96.1 test passes in protected
-Linux no-proc mode; its explicit `/usr/bin/env` argv supplies the installed
-toolchain's `LD_LIBRARY_PATH`, without relaxing the sandbox environment filter.
-The Lean live test accepts a JSON argv array and skips when no command is
-configured. Installed-server CI, broader version/project compatibility,
-platform boundary tests, and Lean live-server validation remain pending.
+trusted-local server. The protected rust-analyzer no-proc test passes locally
+and runs in the scheduled/manual
+`.github/workflows/source-lsp-live.yml` workflow with the stable toolchain
+component and Bubblewrap installed. Its explicit `/usr/bin/env` argv supplies
+the toolchain's `LD_LIBRARY_PATH` without relaxing the sandbox environment
+filter. The Lean live test accepts a JSON argv array and skips when no command
+is configured. Broader Rust version/project compatibility, native macOS
+boundary tests, and Lean live-server validation remain pending.
 
 Exit criteria: live integrations are useful for development but remain unnecessary
 for normal package builds, release builds, and deterministic CI; protected mode

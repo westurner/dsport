@@ -258,6 +258,7 @@ fn parse_to_doctree_inner(
                 &mut sections,
                 end,
                 options,
+                source_path,
                 source_root,
                 include_stack,
                 registered_roles,
@@ -775,6 +776,7 @@ fn end_tag(
     sections: &mut Vec<(usize, NodeId)>,
     end: TagEnd,
     options: &DoctreeOptions,
+    source_path: &str,
     source_root: &Path,
     include_stack: &mut Vec<PathBuf>,
     registered_roles: &[String],
@@ -881,7 +883,7 @@ fn end_tag(
                                     backrefs: String::new(),
                                 },
                             );
-                            (body, None, Vec::new())
+                            (body.clone(), None, Vec::new())
                         }
                     };
                     let line = tree.node(id).line.unwrap_or(1);
@@ -917,7 +919,32 @@ fn end_tag(
                     }
                     let paragraph = tree.append(id, NodeKind::Paragraph);
                     if !directive_body.is_empty() {
-                        tree.append(paragraph, NodeKind::Text(directive_body));
+                        let first_body_line = directive_body
+                            .lines()
+                            .find(|body_line| !body_line.trim().is_empty())
+                            .unwrap_or_default()
+                            .trim();
+                        let body_line_offset = body
+                            .lines()
+                            .position(|body_line| body_line.trim() == first_body_line)
+                            .unwrap_or(0) as u32;
+                        for (line_offset, body_line) in directive_body.split('\n').enumerate() {
+                            if line_offset > 0 {
+                                tree.append(paragraph, NodeKind::Text("\n".into()));
+                            }
+                            append_inline_text(
+                                tree,
+                                paragraph,
+                                body_line,
+                                line + 1 + body_line_offset + line_offset as u32,
+                                if include_stack.len() > 1 {
+                                    source_path
+                                } else {
+                                    ""
+                                },
+                                registered_roles,
+                            );
+                        }
                     }
                 }
                 CodeKind::Literal(_) => {
@@ -1005,6 +1032,17 @@ fn append_text(
         return;
     }
     let parent = content_parent(tree, frames, sections, root);
+    append_inline_text(tree, parent, text, line, source_path, registered_roles);
+}
+
+fn append_inline_text(
+    tree: &mut Doctree,
+    parent: NodeId,
+    text: &str,
+    line: u32,
+    source_path: &str,
+    registered_roles: &[String],
+) {
     for piece in role::split_text(text) {
         match piece {
             role::Piece::Text(value) => {
@@ -1052,11 +1090,16 @@ fn append_role(
     );
     tree.append(id, NodeKind::Text(content.to_owned()));
     if !role::is_known_role(name, registered_roles) {
+        let source_context = if source_path.is_empty() {
+            String::new()
+        } else {
+            format!(" in {source_path}")
+        };
         append_include_warning(
             tree,
             parent,
             line,
-            format!("Unknown interpreted text role {name:?} in {source_path}. [myst.role_unknown]"),
+            format!("Unknown interpreted text role {name:?}{source_context}. [myst.role_unknown]"),
         );
     }
 }

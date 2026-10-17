@@ -2234,7 +2234,9 @@ arguments, body text, coerced option pairs, and malformed-option errors through
 `parse_directive_text`. The `reporter_warnings.md` eval-rst case now compares
 unknown directive/role messages, `ERROR/3` severity, and source lines 10/12
 through the Sphinx read path; Docutils emits system messages for unknown RST
-directives and roles. Missing Markdown footnote targets now emit source-located
+directives and roles. The nested note-body unknown-role warning now retains its
+line-7 fixture location, while include diagnostics preserve included-file paths.
+Missing Markdown footnote targets now emit source-located
 errors for unresolved labels; duplicate and unreferenced definitions emit
 source-located warnings. Defined labels and footnote-like text inside code
 fences do not produce false diagnostics. The no-definition autonumbered-reference

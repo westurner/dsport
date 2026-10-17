@@ -646,6 +646,42 @@ fn myst_directive_option_and_missing_content_diagnostics_survive_read_path() {
 }
 
 #[test]
+fn myst_note_reports_unknown_role_in_directive_body() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "Paragraph\n\n```{note}\n:class: abc\n:name: xyz\n\n{unknown}`a`\n```\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let (line, message) = system_message_text(&tree, "Unknown interpreted text role")
+        .expect("nested note role warning");
+    assert_eq!(line, Some(7));
+    assert_eq!(
+        message
+            .replace('\u{2018}', "'")
+            .replace('\u{2019}', "'")
+            .replace('\u{201c}', "\"")
+            .replace('\u{201d}', "\""),
+        "Unknown interpreted text role \"unknown\". [myst.role_unknown]"
+    );
+}
+
+#[test]
 fn myst_heading_warning_survives_sphinx_read_path() {
     let project = write_mixed_project();
     std::fs::write(

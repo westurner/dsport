@@ -1657,11 +1657,19 @@ fn parse_substitution_head(rest: &str) -> Option<(String, &str)> {
 
 fn split_directive(s: &str) -> Option<(String, &str)> {
     let end = s.find("::")?;
+    let after_delimiter = end + 2;
+    if s[after_delimiter..]
+        .chars()
+        .next()
+        .is_some_and(|c| !c.is_whitespace())
+    {
+        return None;
+    }
     let name = s[..end].trim();
     if name.is_empty() {
         return None;
     }
-    let args = s[end + 2..].trim_start();
+    let args = s[after_delimiter..].trim_start();
     Some((name.to_string(), args))
 }
 
@@ -2229,10 +2237,11 @@ fn parse_directive(
         "py:module" | "py:function" | "py:class" | "py:method" | "py:classmethod"
         | "py:staticmethod" | "py:attribute" | "py:property" | "py:data" | "py:exception"
         | "py:decorator" | "py:decoratormethod" | "py:type" | "c:alias" | "c:function"
-        | "c:macro" | "c:namespace-pop" | "c:namespace-push" | "c:struct" | "c:type" | "c:var"
+        | "c:macro" | "c:namespace-pop" | "c:namespace-push" | "c:struct" | "c:union"
+        | "c:type" | "c:var"
         | "cpp:alias" | "cpp:class" | "cpp:concept" | "cpp:enum-class" | "cpp:enum-struct"
         | "cpp:enumerator" | "cpp:function" | "cpp:namespace-pop" | "cpp:namespace-push"
-        | "cpp:struct" | "cpp:type" | "cpp:var" | "js:class" | "js:function"
+        | "cpp:struct" | "cpp:union" | "cpp:type" | "cpp:var" | "js:class" | "js:function"
         | "rust:module" | "rust:function" | "rust:struct" | "rust:enum" | "rust:union"
         | "rust:trait" | "rust:impl" | "rust:method" | "rust:associatedtype"
         | "rust:associatedconst" | "rust:constant" | "rust:static" | "rust:type"
@@ -2589,6 +2598,34 @@ fn parse_directive(
                 }
             } else {
                 Block::Comment(format!("literalinclude: file not found: {path}"))
+            }
+        }
+        "rst:directive:option" => {
+            let (option, description) = args
+                .trim()
+                .split_once(':')
+                .map_or((args.trim(), ""), |(option, description)| {
+                    (option.trim(), description.trim())
+                });
+            let sig_text = if description.is_empty() {
+                format!(":{option}:")
+            } else {
+                format!(":{option}: {description}")
+            };
+            let ids = format!("directive-option-{}", normalize_id(option));
+            *i_ref += 1;
+            let content_indent = peek_inner_indent(lines, *i_ref, base_indent);
+            let mut children = Vec::new();
+            if let Some(ci) = content_indent {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                children = parse_blocks(&refs, ci, 0);
+            }
+            Block::ObjectDescription {
+                classes: "rst directive:option".to_string(),
+                ids,
+                sig_text,
+                children,
             }
         }
         "rst:directive" | "rst:role" => {
@@ -3634,6 +3671,22 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 sig_text,
                 children,
             } => {
+                let ids = if classes == "rst directive:option" {
+                    if let NodeKind::ObjectDescription {
+                        ids: parent_ids, ..
+                    } = &tree.node(parent).kind
+                    {
+                        let parent_name = parent_ids
+                            .strip_prefix("directive-")
+                            .unwrap_or(parent_ids);
+                        let option = ids.strip_prefix("directive-option-").unwrap_or(&ids);
+                        format!("directive-option-{parent_name}-{option}")
+                    } else {
+                        ids
+                    }
+                } else {
+                    ids
+                };
                 let d = tree.append(
                     parent,
                     NodeKind::ObjectDescription {

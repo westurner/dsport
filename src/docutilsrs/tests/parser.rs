@@ -123,6 +123,28 @@ fn implicit_section_reference_resolves_to_section_id() {
 }
 
 #[test]
+fn c_cpp_unions_and_rst_directive_options_are_known_directives() {
+    let source = ".. rst:directive:: .. py:function:: example\n\n   .. rst:directive:option:: no-index\n\n      Suppress indexing.\n\n.. c:union:: CUnion\n\n   C union.\n\n.. cpp:union:: CppUnion\n\n   C++ union.\n";
+    let output = pseudo_xml(&parse_rst(source));
+    assert!(!output.contains("Unknown directive type"), "{output}");
+    assert!(output.contains("rst directive:option"), "{output}");
+    assert!(
+        output.contains("directive-option-py-function-no-index"),
+        "{output}"
+    );
+}
+
+#[test]
+fn malformed_rst_domain_directive_spelling_is_comment_content() {
+    let source = ".. rst::directive:option:: module\n\n   :type: text\n";
+    let output = pseudo_xml(&parse_rst(source));
+    assert!(!output.contains("Unknown directive type"), "{output}");
+
+    let unknown = pseudo_xml(&parse_rst(".. not-a-real-directive:: value\n"));
+    assert!(unknown.contains("Unknown directive type"), "{unknown}");
+}
+
+#[test]
 fn docutils_reference_roles_split_titles_and_respect_link_option() {
     let source = ":dudir:`contents <table-of-contents>` and :duref:`ref <directives>`";
     let linked = parse_rst_with_options_and_docutils_links(

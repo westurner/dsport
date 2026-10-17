@@ -4350,19 +4350,32 @@ fn apply_footnote_backrefs(
 }
 
 fn collect_targets(tree: &Doctree, id: NodeId, out: &mut HashMap<String, String>) {
-    if let NodeKind::Target {
-        names,
-        refuri,
-        anonymous,
-        ..
-    } = &tree.node(id).kind
-    {
-        // Anonymous targets carry no names; they're resolved by FIFO order
-        // against anonymous references instead.
-        if !*anonymous {
-            let key = names.replace("\\ ", " ");
-            out.insert(key, refuri.clone());
+    match &tree.node(id).kind {
+        NodeKind::Target {
+            names,
+            refuri,
+            anonymous,
+            ..
+        } => {
+            // Anonymous targets carry no names; they're resolved by FIFO order
+            // against anonymous references instead.
+            if !*anonymous {
+                let key = names.replace("\\ ", " ");
+                out.insert(key, refuri.clone());
+            }
         }
+        NodeKind::Section { ids, names, .. } if !ids.is_empty() && !names.is_empty() => {
+            let key = names.replace("\\ ", " ").to_ascii_lowercase();
+            let uri = format!("#{ids}");
+            match out.get_mut(&key) {
+                Some(existing) if existing.is_empty() => *existing = uri,
+                Some(_) => {}
+                None => {
+                    out.insert(key, uri);
+                }
+            }
+        }
+        _ => {}
     }
     let children = tree.node(id).children.clone();
     for c in children {
@@ -5359,13 +5372,17 @@ fn try_match_phrase_reference(
     }
     let inner = &text[start + 1..abs_close];
     // Embedded URI: `text <uri>` where the URI must be at the end and
-    // preceded by whitespace.
-    let (name, uri) = if let Some(lt) = inner.rfind(" <")
-        && inner.ends_with('>')
-    {
-        let name = inner[..lt].trim().to_string();
-        let uri = inner[lt + 2..inner.len() - 1].trim().to_string();
-        (name, Some(uri))
+    // preceded by whitespace, including whitespace spanning source lines.
+    let (name, uri) = if inner.ends_with('>') {
+        if let Some(lt) = inner.rfind('<')
+            && inner[..lt].chars().next_back().is_some_and(char::is_whitespace)
+        {
+            let name = inner[..lt].trim().to_string();
+            let uri = inner[lt + 1..inner.len() - 1].trim().to_string();
+            (name, Some(uri))
+        } else {
+            (inner.to_string(), None)
+        }
     } else {
         (inner.to_string(), None)
     };

@@ -92,6 +92,37 @@ fn reference_resolves_to_target() {
 }
 
 #[test]
+fn multiline_embedded_uri_reference_resolves() {
+    let source = "See `reStructuredText User Documentation\n<https://docutils.sourceforge.io/rst.html>`_.";
+    let tree = parse_rst(source);
+    assert!(
+        (0..tree.nodes_len()).any(|id| matches!(
+            &tree.node(id).kind,
+            NodeKind::Reference { name, refuri, .. }
+                if name == "reStructuredText User Documentation"
+                    && refuri == "https://docutils.sourceforge.io/rst.html"
+        )),
+        "{}",
+        pseudo_xml(&tree)
+    );
+}
+
+#[test]
+fn implicit_section_reference_resolves_to_section_id() {
+    let source = "See Images_.\n\nImages\n------\n\nImage details.";
+    let tree = docutilsrs::parse_rst_with_options(
+        source,
+        "refs",
+        TitlePromotion::Preserve,
+    );
+    assert!((0..tree.nodes_len()).any(|id| matches!(
+        &tree.node(id).kind,
+        NodeKind::Reference { name, refuri, .. }
+            if name == "Images" && refuri == "#images"
+    )));
+}
+
+#[test]
 fn docutils_reference_roles_split_titles_and_respect_link_option() {
     let source = ":dudir:`contents <table-of-contents>` and :duref:`ref <directives>`";
     let linked = parse_rst_with_options_and_docutils_links(

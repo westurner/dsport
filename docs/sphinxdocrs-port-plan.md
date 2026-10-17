@@ -2112,9 +2112,13 @@ H13.5 follow-up plan:
   roles do not trigger false unknown-role warnings.
 * **Implemented option subset:** `literal`, `code`, `start-line`, `end-line`,
   `start-after`, and `end-before` are parsed and lowered. Unknown or invalid
-  options produce warnings. Compare all option/error details against upstream
-  `mock_include*` fixtures; unimplemented options remain an accepted gap until
-  that parity pass.
+  options produce warnings. The `mock_include.md` Basic Include and ignored
+  front-matter cases now byte-compare against upstream pseudo-XML. Literal
+  include content and line slicing are behavior-tested; exact literal output
+  still lacks its included-file `source` attribute because `NodeKind::LiteralBlock`
+  has no per-node source field. Compare remaining option/error details against
+  upstream `mock_include*` fixtures; unimplemented options remain an accepted
+  gap until that parity pass.
 * **Implemented:** replace the bounded substitution loop with dependency-aware
   expansion, source-located undefined-name warnings, and cycle-path reporting.
   Unit tests cover chains longer than eight definitions, missing names, and

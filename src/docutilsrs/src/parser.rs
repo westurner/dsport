@@ -1534,17 +1534,21 @@ fn parse_explicit(
         });
     }
 
-    // Directive: `name:: args`.
-    if let Some((directive, dargs)) = split_directive(rest) {
-        let source_line = (base_line != 0).then_some(base_line + i as u32);
-        return Some(parse_directive(
-            lines,
-            i_ref,
-            base_indent,
-            directive,
-            dargs,
-            source_line,
-        ));
+    // A nested explicit-markup marker is comment content, not another
+    // directive header (e.g. `.. .. admonition::` comments out a directive).
+    if !rest.starts_with(".. ") {
+        // Directive: `name:: args`.
+        if let Some((directive, dargs)) = split_directive(rest) {
+            let source_line = (base_line != 0).then_some(base_line + i as u32);
+            return Some(parse_directive(
+                lines,
+                i_ref,
+                base_indent,
+                directive,
+                dargs,
+                source_line,
+            ));
+        }
     }
 
     // Comment: anything else under `..`.

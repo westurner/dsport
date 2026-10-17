@@ -741,11 +741,14 @@ impl BuildEnvironment {
             ));
         }
         let mut tree = match self.parser_for_path(&path).as_str() {
-            "restructuredtext" => Ok(docutilsrs::parse_rst_with_options(
-                source,
-                docname,
-                docutilsrs::TitlePromotion::Preserve,
-            )),
+            "restructuredtext" => {
+                crate::roles::register_builtin_roles();
+                Ok(docutilsrs::parse_rst_with_options(
+                    source,
+                    docname,
+                    docutilsrs::TitlePromotion::Preserve,
+                ))
+            }
             "myst" | "markdown" => {
                 let mut options = myst_md_rs::DoctreeOptions::default();
                 options.source_root = Some(self.srcdir.clone());
@@ -3025,6 +3028,33 @@ mod tests {
     fn new_env_all_docs_empty() {
         let env = make_env();
         assert!(env.all_docs.is_empty());
+    }
+
+    #[test]
+    fn parse_source_accepts_builtin_sphinx_roles_but_rejects_unknown_roles() {
+        let env = make_env();
+        let roles = [
+            "class", "confval", "data", "dfn", "doc", "dudir", "dupage", "duref", "durole",
+            "file", "mod", "py:mod", "ref", "rst:dir", "term",
+        ];
+        let source = roles
+            .iter()
+            .map(|role| format!(":{role}:`target`"))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let tree = env.parse_source("roles", &source).unwrap();
+        let output = docutilsrs::pseudo_xml(&tree);
+        assert!(
+            !output.contains("Unknown interpreted text role"),
+            "built-in Sphinx roles should not produce unknown-role errors:\n{output}"
+        );
+
+        let tree = env.parse_source("unknown-role", ":not-a-role:`target`").unwrap();
+        let output = docutilsrs::pseudo_xml(&tree);
+        assert!(
+            output.contains("Unknown interpreted text role") && output.contains("not-a-role"),
+            "unknown role should retain its diagnostic:\n{output}"
+        );
     }
 
     #[test]

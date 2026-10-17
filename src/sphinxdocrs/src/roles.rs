@@ -58,6 +58,62 @@ pub const SPECIFIC_DOCROLES: &[&str] = &[
     "manpage",
 ];
 
+/// Cross-reference and built-in domain roles accepted by the native parser.
+///
+/// The parser uses these names to produce generic inline nodes or pending
+/// cross-references; Sphinx registers them with docutils before parsing.
+pub const BUILTIN_XREF_ROLES: &[&str] = &[
+    "ref",
+    "doc",
+    "download",
+    "envvar",
+    "event",
+    "option",
+    "term",
+    "confval",
+    "numref",
+    "keyword",
+    "py:attr",
+    "py:class",
+    "py:data",
+    "py:deco",
+    "py:func",
+    "py:meth",
+    "py:mod",
+    "attr",
+    "class",
+    "data",
+    "exc",
+    "func",
+    "meth",
+    "mod",
+    "c:expr",
+    "c:texpr",
+    "c:var",
+    "cpp:class",
+    "cpp:expr",
+    "cpp:func",
+    "cpp:texpr",
+    "cpp:type",
+    "cpp:var",
+    "rst:dir",
+    "rst:role",
+    "dudir",
+    "dupage",
+    "duref",
+    "durole",
+];
+
+/// Register Sphinx's built-in roles with docutilsrs before an RST parse.
+pub fn register_builtin_roles() {
+    for (name, _) in GENERIC_DOCROLES {
+        docutilsrs::roles::register_canonical_role(name);
+    }
+    for name in SPECIFIC_DOCROLES.iter().chain(BUILTIN_XREF_ROLES) {
+        docutilsrs::roles::register_canonical_role(name);
+    }
+}
+
 /// Return `true` if `name` is a built-in Sphinx role.
 ///
 /// Covers both `generic_docroles` and `specific_docroles`.

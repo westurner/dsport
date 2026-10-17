@@ -89,6 +89,17 @@ fn reference_resolves_to_target() {
 }
 
 #[test]
+fn commented_directive_is_not_dispatched() {
+    let src = ".. .. admonition:: Hidden\n\n   ..    commented content\n";
+    let output = pseudo_xml(&parse_rst(src));
+
+    assert!(
+        !output.contains("Unknown directive type"),
+        "commented-out directives must not be dispatched:\n{output}"
+    );
+}
+
+#[test]
 fn explicit_sphinx_xref_preserves_explicit_title_state() {
     let tree = parse_rst("See :ref:`A label <target>`.\n");
     let pending = (0..tree.nodes_len()).find_map(|id| match &tree.node(id).kind {

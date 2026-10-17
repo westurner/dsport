@@ -27,7 +27,7 @@ checked-in fake peer; real servers require explicit
 
 Still incomplete: references and workspace-symbol enrichment, the full
 source-port mapping audit, resource
-limits, native macOS runtime validation, adversarial path-replacement tests,
+limits, native macOS runtime validation, concurrent path-replacement races,
 and Lean live CI. No-proc Bubblewrap, fake-LSP startup,
 read-only write denial, and parent-loopback network denial pass in this
 container. The opt-in protected no-proc rust-analyzer 1.96.1 test and an
@@ -922,9 +922,12 @@ campaigns completed without crashes. Source paths are canonicalized and
 constrained before launch. Linux no-proc startup, fake-LSP analysis, read-only
 write denial, and parent-loopback network denial pass in this container. The
 protected no-proc rust-analyzer 1.96.1 test passes with an explicit toolchain
-library path. Native macOS validation, Windows/BSD support, path-replacement
-races, descendant behavior, and resource limits remain open. `trusted-local` is
-not a security boundary. Real server runs remain explicit opt-ins.
+library path. The selected-path check rejects an outside symlink replacement
+before LSP startup, and the timeout test verifies server-process descendants
+are killed.
+Concurrent path-replacement races, native macOS validation, Windows/BSD support,
+and process/resource limits remain open. `trusted-local` is not a security
+boundary. Real server runs remain explicit opt-ins.
 
 The provider mutex serializes access to its single child; reusing that child is
 limited to the lifetime of one `LspSnapshotProvider` instance. The current CLI
@@ -1039,8 +1042,9 @@ The plan is not complete until the remaining acceptance criteria below land:
 - Continue reviewing MXC changes against the pinned submodule commit and the
   adapter's typed policy construction; policy construction alone is not proof of
   isolation.
-- Linux Bubblewrap no-proc startup, read-only write denial, and parent-loopback
-  network denial are tested. Add path-replacement and descendant-lifecycle
+- Linux Bubblewrap no-proc startup, read-only write denial, parent-loopback
+  network denial, pre-validation outside-symlink replacement rejection, and
+  timeout descendant cleanup are tested. Add concurrent path-replacement race
   tests; validate Seatbelt boundaries natively on macOS before claiming runtime
   support there. Windows and BSD remain unsupported. Do not claim broader
   guarantees than the tests establish.

@@ -3234,6 +3234,45 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn replaced_selected_path_cannot_escape_workspace_before_server_start() {
+        use std::os::unix::fs::symlink;
+
+        let workspace = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let source = workspace.path().join("lib.rs");
+        let outside_source = outside.path().join("outside.rs");
+        std::fs::write(&source, "pub fn original() {}\n").unwrap();
+        std::fs::write(&outside_source, "pub fn outside() {}\n").unwrap();
+        std::fs::remove_file(&source).unwrap();
+        symlink(&outside_source, &source).unwrap();
+
+        let counter = workspace.path().join("starts");
+        let fake = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/fake_lsp.py");
+        let provider = LspSnapshotProvider::new(LspServerConfig {
+            command: vec![
+                "python3".into(),
+                fake.to_string_lossy().into_owned(),
+                "symbols".into(),
+                counter.to_string_lossy().into_owned(),
+            ],
+            workspace_root: workspace.path().to_path_buf(),
+            language: SourceLanguage::Rust,
+            request_timeout: Duration::from_secs(1),
+            allow_fallback: false,
+            environment: Vec::new(),
+            server_environment: Vec::new(),
+            max_message_bytes: 1024 * 1024,
+        });
+        let mut request = SourceAnalysisRequest::new(workspace.path());
+        request.selected.push(source);
+
+        let error = provider.analyze(&request).unwrap_err();
+        assert!(error.to_string().contains("outside workspace root"));
+        assert!(!counter.exists(), "LSP server started for replaced source path");
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn oversized_source_is_rejected_before_server_start() {
         let workspace = TempDir::new().unwrap();
         let source = workspace.path().join("large.rs");

@@ -347,6 +347,52 @@ fn myst_front_matter_warnings_survive_sphinx_read_path() {
 }
 
 #[test]
+fn myst_directive_option_and_missing_content_diagnostics_survive_read_path() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "```{note}\n:class: [1]\n```\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let normalize_smart_quotes = |message: &str| {
+        message
+            .replace('\u{2018}', "'")
+            .replace('\u{2019}', "'")
+            .replace('\u{201c}', "\"")
+            .replace('\u{201d}', "\"")
+    };
+    let (option_line, option_warning) =
+        system_message_text(&tree, "Invalid option value for").expect("invalid option warning");
+    assert_eq!(option_line, Some(1));
+    assert_eq!(
+        normalize_smart_quotes(&option_warning),
+        "'note': Invalid option value for 'class': [1]: cannot make \"[1]\" into a class name [myst.directive_option]"
+    );
+    let (line, content_error) =
+        system_message_text(&tree, "Content block expected").expect("missing-content error");
+    assert_eq!(line, Some(1));
+    assert_eq!(
+        normalize_smart_quotes(&content_error),
+        "Content block expected for the \"note\" directive; none found."
+    );
+}
+
+#[test]
 fn myst_heading_warning_survives_sphinx_read_path() {
     let project = write_mixed_project();
     std::fs::write(

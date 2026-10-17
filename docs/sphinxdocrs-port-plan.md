@@ -2222,7 +2222,9 @@ directives and generic admonition titles/classes, preserves malformed
 admonition diagnostics, and emits source-located warnings for undefined or
 cyclic substitutions, missing/escaping/recursive includes, unknown roles in
 included files, unknown directives, duplicate references, and unresolved local
-links. Include literal/code and line-selection options are implemented.
+links. Invalid directive option values and missing required admonition content
+also emit reporter nodes. Include literal/code and line-selection options are
+implemented.
 
 `tests/doctree_parity.rs` byte-compares selected cases from the upstream Sphinx
 syntax fixture, including nested bullet lists. `tests/options.rs` now consumes

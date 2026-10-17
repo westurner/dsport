@@ -759,7 +759,7 @@ fn end_tag(
                     let body_lines = body.lines().collect::<Vec<_>>();
                     let spec = directive_spec(&name);
                     let parsed = directives::parse_directive_text(&spec, &argument, &body_lines);
-                    let (directive_body, class) = match parsed {
+                    let (directive_body, class, warnings) = match parsed {
                         Ok(parsed) => (
                             parsed.body.join("\n"),
                             parsed.coerced_options.get("class").and_then(|value| {
@@ -769,6 +769,7 @@ fn end_tag(
                                     None
                                 }
                             }),
+                            parsed.warnings,
                         ),
                         Err(_) => {
                             tree.set_kind(
@@ -781,9 +782,30 @@ fn end_tag(
                                     backrefs: String::new(),
                                 },
                             );
-                            (body, None)
+                            (body, None, Vec::new())
                         }
                     };
+                    let line = tree.node(id).line.unwrap_or(1);
+                    for warning in warnings {
+                        append_include_warning(
+                            tree,
+                            parent,
+                            line,
+                            format!("'{name}': {warning} [myst.directive_option]"),
+                        );
+                    }
+                    if spec.has_content && directive_body.trim().is_empty() {
+                        append_include_message(
+                            tree,
+                            parent,
+                            line,
+                            3,
+                            "ERROR",
+                            format!(
+                                "Content block expected for the \"{name}\" directive; none found."
+                            ),
+                        );
+                    }
                     if let Some(class) = class {
                         match &mut tree.node_mut(id).kind {
                             NodeKind::Container { classes } => {

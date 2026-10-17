@@ -161,7 +161,7 @@ pub fn parse_directive_text(
                         out.coerced_options.insert(key.clone(), coerced);
                     }
                     Err(error) => out.warnings.push(format!(
-                        "Invalid option value for {key:?}: {value}: {error}"
+                        "Invalid option value for '{key}': {value}: {error}"
                     )),
                 }
             } else if !spec.option_spec.is_empty() {
@@ -217,7 +217,7 @@ fn coerce_option(kind: &OptionKind, value: &str) -> Result<OptionValue, String> 
                     value.split_whitespace().map(str::to_string).collect(),
                 ))
             } else {
-                Err("cannot make value into a class name".into())
+                Err(format!("cannot make {value:?} into a class name"))
             }
         }
         OptionKind::Classes => {
@@ -225,7 +225,7 @@ fn coerce_option(kind: &OptionKind, value: &str) -> Result<OptionValue, String> 
             if classes.iter().all(|class| valid_class_name(class)) {
                 Ok(OptionValue::Classes(classes))
             } else {
-                Err("cannot make value into a class name".into())
+                Err(format!("cannot make {value:?} into a class name"))
             }
         }
     }

@@ -45,7 +45,7 @@
 //! [`document_module_source_with_options`] directly and never call into
 //! [`document_module_auto`]/[`crate::autodoc_runtime`].
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use ruff_python_ast::{Expr, Parameters, Stmt, StmtClassDef, StmtFunctionDef};
@@ -53,7 +53,7 @@ use ruff_python_parser::parse_module;
 
 use crate::source_docs::{
     AnalysisError, DeclarationKind, SourceAnalysisRequest, SourceDeclaration, SourceLanguage,
-    SourceSnapshotProvider, SourceSpan, Visibility,
+    SourcePosition, SourceSnapshotProvider, SourceSpan, Visibility,
 };
 
 /// Error type for autodoc extraction.
@@ -986,6 +986,7 @@ pub struct StructuredDescription {
     pub signature: Option<String>,
     pub documentation: String,
     pub source: SourceSpan,
+    pub definition: Option<SourceSpan>,
     pub children: Vec<String>,
 }
 
@@ -994,6 +995,29 @@ pub trait SourceAutodocRenderer {
     fn language(&self) -> SourceLanguage;
     fn directive_for(&self, kind: &DeclarationKind) -> Option<&'static str>;
     fn signature_for(&self, declaration: &SourceDeclaration) -> Option<String>;
+}
+
+fn definition_span_from_attributes(attributes: &BTreeMap<String, String>) -> Option<SourceSpan> {
+    let path = attributes.get("lsp:definition_path")?;
+    let line = attributes
+        .get("lsp:definition_start_line")?
+        .parse::<usize>()
+        .ok()?;
+    let column = attributes
+        .get("lsp:definition_start_column")?
+        .parse::<usize>()
+        .ok()?;
+    (line > 0).then(|| {
+        SourceSpan::new(
+            path,
+            SourcePosition {
+                byte: 0,
+                line,
+                column,
+            },
+            None,
+        )
+    })
 }
 
 /// Rust renderer for the source-neutral autodoc contract.
@@ -1105,6 +1129,7 @@ pub fn document_source<A: SourceSnapshotProvider + ?Sized, R: SourceAutodocRende
         .filter_map(|declaration| {
             let directive = renderer.directive_for(&declaration.kind)?.to_string();
             let signature = renderer.signature_for(&declaration);
+            let definition = definition_span_from_attributes(&declaration.attributes);
             Some(StructuredDescription {
                 language: declaration.language,
                 directive,
@@ -1113,6 +1138,7 @@ pub fn document_source<A: SourceSnapshotProvider + ?Sized, R: SourceAutodocRende
                 signature,
                 documentation: declaration.documentation,
                 source: declaration.source,
+                definition,
                 children: declaration.children,
             })
         })
@@ -1123,8 +1149,28 @@ pub fn document_source<A: SourceSnapshotProvider + ?Sized, R: SourceAutodocRende
 /// directive path. Unsupported declarations have already been filtered by
 /// `document_source`, never silently emitted as plain paragraphs.
 pub fn render_source_rst(descriptions: &[StructuredDescription]) -> String {
+    render_source_rst_with_definition_url_template(descriptions, None)
+}
+
+/// Render optional project-mapped links for normalized definition locations.
+/// Templates support `{path}`, `{line}`, and `{column}` and are opt-in so
+/// default output never invents source links.
+pub fn render_source_rst_with_definition_url_template(
+    descriptions: &[StructuredDescription],
+    url_template: Option<&str>,
+) -> String {
     let mut output = String::new();
     for description in descriptions {
+        if let (Some(template), Some(definition)) = (url_template, &description.definition) {
+            if let Some(url) = definition_url(template, definition) {
+                output.push_str(&format!(
+                    "Source: `{}:{} <{}>`_\n\n",
+                    encode_source_path(&definition.path),
+                    definition.start.line,
+                    url
+                ));
+            }
+        }
         let signature = description
             .signature
             .as_deref()
@@ -1154,6 +1200,46 @@ pub fn render_source_rst(descriptions: &[StructuredDescription]) -> String {
         output.push('\n');
     }
     output
+}
+
+fn definition_url(template: &str, definition: &SourceSpan) -> Option<String> {
+    if !template.contains("{path}") {
+        return None;
+    }
+    let url = template
+        .replace("{path}", &encode_source_path(&definition.path))
+        .replace("{line}", &definition.start.line.to_string())
+        .replace("{column}", &definition.start.column.to_string());
+    let has_disallowed_scheme = url.split_once(':').is_some_and(|(scheme, _)| {
+        let is_scheme = scheme
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_alphabetic())
+            && scheme.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
+            });
+        is_scheme && !matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https")
+    });
+    if has_disallowed_scheme
+        || url
+            .chars()
+            .any(|character| character.is_whitespace() || matches!(character, '<' | '>' | '`'))
+    {
+        return None;
+    }
+    Some(url)
+}
+
+fn encode_source_path(path: &str) -> String {
+    let mut encoded = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
 }
 
 fn member_kind_tag(kind: crate::autodoc_runtime::MemberKind) -> MemberKindTag {
@@ -1382,6 +1468,60 @@ mod tests {
         assert!(!rst.contains("internal"));
         assert!(!rst.contains("old_answer"));
         assert!(!rst.contains("hidden"));
+    }
+
+    #[test]
+    fn definition_links_require_mapping_and_encode_source_path() {
+        let descriptions = [StructuredDescription {
+            language: SourceLanguage::Rust,
+            directive: "rust:function".into(),
+            kind: DeclarationKind::Function,
+            name: "crate::answer".into(),
+            signature: Some("fn()".into()),
+            documentation: String::new(),
+            source: SourceSpan::new(
+                "src/api.rs",
+                SourcePosition {
+                    byte: 0,
+                    line: 1,
+                    column: 0,
+                },
+                None,
+            ),
+            definition: Some(SourceSpan::new(
+                "src/api file.rs",
+                SourcePosition {
+                    byte: 0,
+                    line: 7,
+                    column: 2,
+                },
+                None,
+            )),
+            children: Vec::new(),
+        }];
+
+        assert!(!render_source_rst(&descriptions).contains("Source:"));
+        let linked = render_source_rst_with_definition_url_template(
+            &descriptions,
+            Some("https://example.test/blob/main/{path}#L{line}-C{column}"),
+        );
+        assert!(linked.contains(
+            "Source: `src/api%20file.rs:7 <https://example.test/blob/main/src/api%20file.rs#L7-C2>`_"
+        ));
+        assert!(
+            !render_source_rst_with_definition_url_template(
+                &descriptions,
+                Some("file:///workspace/{path}")
+            )
+            .contains("Source:")
+        );
+        assert!(
+            !render_source_rst_with_definition_url_template(
+                &descriptions,
+                Some("javascript:alert(1)/{path}")
+            )
+            .contains("Source:")
+        );
     }
 
     #[test]

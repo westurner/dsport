@@ -156,7 +156,7 @@ fn apidoc_lsp_generates_aggregate_api_page_and_toc_entry() {
     std::fs::write(
         &conf_file,
         format!(
-            "source_backend = 'lsp'\nsource_lsp_sandbox = 'trusted-local'\nsource_lsp_servers = {{'rust': ['python3', {fake_server_literal}, 'symbols']}}\nsource_lsp_server_environment = {{'rust': {{'LANG': 'C'}}}}\n"
+            "source_backend = 'lsp'\nsource_lsp_sandbox = 'trusted-local'\nsource_lsp_servers = {{'rust': ['python3', {fake_server_literal}, 'definition']}}\nsource_lsp_server_environment = {{'rust': {{'LANG': 'C'}}}}\nsource_lsp_definition_url_template = 'https://example.test/blob/main/{{path}}#L{{line}}-C{{column}}'\n"
         ),
     )
     .unwrap();
@@ -188,6 +188,10 @@ fn apidoc_lsp_generates_aggregate_api_page_and_toc_entry() {
         api_page.contains("answer"),
         "generated API page:\n{api_page}"
     );
+    assert!(
+        api_page.contains("https://example.test/blob/main/"),
+        "generated API page has no mapped definition link:\n{api_page}"
+    );
     let toc = std::fs::read_to_string(output_dir.join("modules.rst")).unwrap();
     assert!(toc.contains("lsp-api"), "generated toctree:\n{toc}");
 
@@ -213,6 +217,10 @@ fn apidoc_lsp_generates_aggregate_api_page_and_toc_entry() {
     assert!(
         rendered_api.contains("answer"),
         "rendered LSP API page:\n{rendered_api}"
+    );
+    assert!(
+        rendered_api.contains("href=\"https://example.test/blob/main/"),
+        "rendered LSP API page has no definition link:\n{rendered_api}"
     );
 }
 

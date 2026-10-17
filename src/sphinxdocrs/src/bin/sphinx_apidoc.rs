@@ -138,7 +138,7 @@ fn generate_lsp_source_page(
 
     use sphinxdocrs::autodoc::{
         LeanSourceRenderer, RustSourceRenderer, SourceAutodocRequest, document_source,
-        render_source_rst,
+        render_source_rst_with_definition_url_template,
     };
     use sphinxdocrs::config::{SphinxConfig, raw_config_from_conf_py};
     use sphinxdocrs::source_docs::model::SourceLanguage;
@@ -192,6 +192,10 @@ fn generate_lsp_source_page(
         )
     })?;
     let sphinx_config = SphinxConfig::new(raw_config, HashMap::new());
+    let definition_url_template = sphinx_config
+        .get("source_lsp_definition_url_template")
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .filter(|value| !value.trim().is_empty());
     let mut settings = SourceDocsSettings::from_sphinx_config(&sphinx_config).map_err(|error| {
         format!(
             "invalid LSP configuration in {}: {error}",
@@ -230,12 +234,18 @@ fn generate_lsp_source_page(
         SourceLanguage::Rust => {
             let descriptions = document_source(&request, provider.as_ref(), &RustSourceRenderer)
                 .map_err(|error| error.to_string())?;
-            render_source_rst(&descriptions)
+            render_source_rst_with_definition_url_template(
+                &descriptions,
+                definition_url_template.as_deref(),
+            )
         }
         SourceLanguage::Lean => {
             let descriptions = document_source(&request, provider.as_ref(), &LeanSourceRenderer)
                 .map_err(|error| error.to_string())?;
-            render_source_rst(&descriptions)
+            render_source_rst_with_definition_url_template(
+                &descriptions,
+                definition_url_template.as_deref(),
+            )
         }
         SourceLanguage::Python => unreachable!(),
     };

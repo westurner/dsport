@@ -25,8 +25,8 @@ process-free. With `lsp-source-analysis`, `--live --live-fake` exercises the
 checked-in fake peer; real servers require explicit
 `--live --live-language rust|lean --live-server ... --trusted-local` arguments.
 
-Still incomplete: Sphinx-relative definition-link rendering, references and
-workspace-symbol enrichment, the full source-port mapping audit, resource
+Still incomplete: references and workspace-symbol enrichment, the full
+source-port mapping audit, resource
 limits, native macOS runtime validation, adversarial path-replacement tests,
 and installed rust-analyzer/Lean live CI. No-proc Bubblewrap, fake-LSP startup,
 read-only write denial, and parent-loopback network denial pass in this
@@ -296,16 +296,16 @@ JSON and Arborium paths for ordinary builds.
 | `textDocument/documentSymbol` | Nested Rust/Lean API pages and declaration directives | P0 | Implemented behind `lsp-source-analysis`; opt-in trusted-local process; static analysis remains the default. |
 | `DocumentSymbol.detail`, `range`, `selectionRange` | Signatures, source spans, and declaration anchors | P0 | Detail/ranges are mapped; selection positions are retained as LSP attributes. Static declaration IDs and policy metadata remain authoritative in hybrid mode. |
 | `textDocument/hover` | Fill a missing description/type summary for a statically discovered declaration | P1 | Implemented: bounded plaintext/Markdown is normalized and fills only empty static documentation fields; fake-server coverage exists. Never silently replace static documentation. |
-| `textDocument/definition` | Optional “Defined in” source link or cross-file source location | P1 | In-workspace target paths/spans are normalized as safe metadata; rendering a Sphinx-relative link remains open pending a project source-page mapping policy. Never publish editor `file://` URIs directly. |
+| `textDocument/definition` | Optional “Defined in” source link or cross-file source location | P1 | In-workspace target paths/spans are normalized as safe metadata. Rust/Lean LSP apidoc renders links only when `source_lsp_definition_url_template` is explicitly configured; `{path}`, `{line}`, and `{column}` are supported. HTTP(S) and relative targets are allowed; unsafe URI schemes are suppressed. |
 | `textDocument/publishDiagnostics` | Separate build diagnostics page/report, optionally grouped by file/severity | P1 | Notifications are decoded into normalized `AnalysisDiagnostic` records; a fake-server test checks severity, message, source path, and span. A generated diagnostics page/report remains unimplemented; diagnostics do not become API prose by default. |
 | `textDocument/references` | “Used by” lists or reverse-reference reports | P2 | Not implemented. Keep opt-in because results can be large, server-dependent, and expensive. Do not use them to define API membership. |
 | `workspace/symbol` | Workspace-wide API index or namespace landing pages | P2 | Not implemented. Prefer static apidoc discovery for page membership; use workspace symbols only for explicitly requested enrichment/discovery. |
 | `textDocument/completion`, `signatureHelp`, `semanticTokens` | Interactive completion/signature/token display | Not a generated-doc priority | Better suited to editor integrations. Semantic tokens may eventually help render signatures, but must not be a prerequisite for generated docs. |
 
-Recommended first user-facing additions after document symbols are hover
-description enrichment, safe definition links, and a diagnostics report. Each must
-be independently configurable, use the normalized snapshot contract, preserve
-static provenance/policy, and remain unavailable in the default static build.
+Hover enrichment and safe definition links are implemented as opt-in additions
+after document symbols. A generated diagnostics report remains open. These
+features use normalized snapshot data and remain unavailable in the default
+static build.
 
 ## LSP adapter design
 
@@ -426,7 +426,7 @@ Convert LSP responses into the existing normalized declaration model:
 | `selection_range` | namespaced `lsp:selection_start` / `lsp:selection_end` attributes |
 | `detail` | signature/type text |
 | hover markdown/plaintext | normalized documentation for declarations lacking static documentation |
-| definition locations | safe workspace-relative path and span metadata; not rendered as a documentation link by default |
+| definition locations | safe workspace-relative path and span metadata; rendered only with an explicit project URL template |
 | diagnostics | `AnalysisDiagnostic` |
 | unsupported server metadata | `attributes`, namespaced by backend |
 
@@ -931,9 +931,9 @@ limited to the lifetime of one `LspSnapshotProvider` instance. The current CLI
 constructs a provider per invocation, so this is not a cross-build or global
 server pool. Startup/initialize uses the configured request timeout. Optional
 serverInfo and negotiated capabilities participate in provider identity. Hover
-enrichment and safe definition metadata are implemented; references are not.
-Definition metadata is not yet rendered as documentation links because source
-page mapping is project-specific.
+enrichment, safe definition metadata, and opt-in definition links are implemented;
+references are not. Project-specific source mapping is supplied through
+`source_lsp_definition_url_template`, and no source link is emitted by default.
 
 ### Phase 4: hybrid merge and source consumers — core merge implemented
 
@@ -1043,8 +1043,9 @@ The plan is not complete until the remaining acceptance criteria below land:
   support there. Windows and BSD remain unsupported. Do not claim broader
   guarantees than the tests establish.
 - References/workspace-symbol output remains optional and must not define API
-  membership. Definition links remain deferred until a project source-page mapping
-  policy is explicitly configured.
+  membership. Definition links require an explicit
+  `source_lsp_definition_url_template`; the default static and LSP output remains
+  link-free.
 - Continue auditing cache invalidation for every relevant server/toolchain input;
   optional serverInfo and negotiated capabilities already contribute to LSP
   provider identity.

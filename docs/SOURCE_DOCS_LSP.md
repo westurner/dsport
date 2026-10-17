@@ -132,6 +132,20 @@ cargo run -p sphinxdocrs \
 The Python mode does not use the source LSP backend, even if
 `--source-backend lsp` is supplied.
 
+Rust/Lean LSP apidoc can optionally render each normalized definition location
+as a source link. Set a project-specific URL template in `conf.py`:
+
+```python
+source_lsp_definition_url_template = (
+  "https://github.com/example/project/blob/main/{path}#L{line}-C{column}"
+)
+```
+
+`{path}` is workspace-relative and URL-encoded; `{line}` is one-based and
+`{column}` is zero-based. HTTP(S) and relative targets are supported. Other
+URI schemes, including `file:` and `javascript:`, are suppressed. Without this
+setting, no definition link is added.
+
 ## Fake Server
 
 The status command is process-free unless a live mode is explicitly selected.

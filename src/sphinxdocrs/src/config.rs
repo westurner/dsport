@@ -870,6 +870,12 @@ impl SphinxConfig {
             "Source documentation backend: auto, static, lsp, or hybrid",
         );
         add(
+            "source_lsp_definition_url_template",
+            Str(String::new()),
+            Env,
+            "Optional LSP definition URL template using {path}, {line}, and {column}",
+        );
+        add(
             "source_lsp_servers",
             Map(Vec::new()),
             Env,

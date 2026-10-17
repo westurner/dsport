@@ -2225,14 +2225,17 @@ included files, unknown directives, duplicate references, and unresolved local
 links. Include literal/code and line-selection options are implemented.
 
 `tests/doctree_parity.rs` byte-compares selected cases from the upstream Sphinx
-syntax fixture, including nested bullet lists. The broader `directive_options`,
-`mock_include*`, substitution, and reporter-warning fixtures still need a
-fixture-by-fixture gate against `parse_directive_text` and the Sphinx read path.
-The upstream `definition_lists.md` fixture remains a known gap: tilde-style
-definition markers are not normalized, definitions can acquire nested
-paragraphs, and the current doctree model cannot retain the fixture's list/code
-attributes. Keep Python-only extension identity cases on the Python bridge, and
-record every native-path deviation in `docs/compat.md`.
+syntax fixture, including nested bullet lists. `tests/options.rs` now consumes
+upstream `directive_options.md` and verifies
+arguments, body text, coerced option pairs, and malformed-option errors through
+`parse_directive_text`. The broader `mock_include*`, substitution, and
+reporter-warning fixtures still need a fixture-by-fixture gate against
+`parse_directive_text` and the Sphinx read path. The upstream
+`definition_lists.md` fixture remains a known gap: tilde-style definition
+markers are not normalized, definitions can acquire nested paragraphs, and the
+current doctree model cannot retain the fixture's list/code attributes. Keep
+Python-only extension identity cases on the Python bridge, and record every
+native-path deviation in `docs/compat.md`.
 
 H13 is complete when:
 

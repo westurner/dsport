@@ -134,8 +134,8 @@ pub fn parse_directive_text(
         while idx < body.len() {
             let line = body[idx];
             let trimmed = line.trim_start();
-            if trimmed.starts_with(':') && trimmed[1..].contains(':') {
-                // looks like `:key: value`
+            if trimmed.starts_with(':') {
+                // Let the option parser report malformed `:key: value` lines.
                 option_lines.push(strip_leading_colon(line));
                 idx += 1;
             } else if trimmed.is_empty() && !option_lines.is_empty() {

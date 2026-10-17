@@ -73,6 +73,27 @@ fn system_message_kind(
     })
 }
 
+fn system_message_entries(
+    tree: &docutilsrs::Doctree,
+) -> Vec<(Option<u32>, u32, &'static str, String)> {
+    (0..tree.nodes_len())
+        .filter_map(|id| {
+            let node = tree.node(id);
+            let docutilsrs::NodeKind::SystemMessage {
+                line, level, ty, ..
+            } = &node.kind
+            else {
+                return None;
+            };
+            let mut message = String::new();
+            for child in node.children.iter().copied() {
+                collect_node_text(tree, child, &mut message);
+            }
+            Some((*line, *level, *ty, message))
+        })
+        .collect()
+}
+
 #[test]
 fn mixed_rst_and_myst_build_uses_persisted_doctree() {
     let project = write_mixed_project();
@@ -120,6 +141,59 @@ fn mixed_rst_and_myst_build_uses_persisted_doctree() {
     assert!(html.contains("eval bold"));
     assert!(html.contains("<table>"));
     assert!(html.contains("Definition"));
+}
+
+#[test]
+fn myst_missing_footnote_references_report_source_errors() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "[^1]\n\n[^a]\n\n```text\n[^code]\n```\n\n[^defined]\n\n[^defined]: valid definition\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let normalize_smart_quotes = |message: &str| {
+        message
+            .replace('\u{2018}', "'")
+            .replace('\u{2019}', "'")
+            .replace('\u{201c}', "\"")
+            .replace('\u{201d}', "\"")
+    };
+    let missing_reference_errors: Vec<_> = system_message_entries(&tree)
+        .into_iter()
+        .filter(|(_, _, kind, message)| *kind == "ERROR" && message.contains("Unknown target name"))
+        .collect();
+    assert_eq!(
+        missing_reference_errors.len(),
+        2,
+        "unexpected unresolved footnote errors: {missing_reference_errors:?}"
+    );
+    for (label, line) in [("1", 1), ("a", 3)] {
+        let (actual_line, level, kind, message) = missing_reference_errors
+            .iter()
+            .find(|(actual_line, _, _, _)| *actual_line == Some(line))
+            .expect("missing-footnote reporter error");
+        assert_eq!(*actual_line, Some(line));
+        assert_eq!((*level, *kind), (3, "ERROR"));
+        assert_eq!(
+            normalize_smart_quotes(message),
+            format!("Unknown target name: \"{label}\".")
+        );
+    }
 }
 
 #[test]

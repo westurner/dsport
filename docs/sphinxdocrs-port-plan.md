@@ -2234,9 +2234,13 @@ arguments, body text, coerced option pairs, and malformed-option errors through
 `parse_directive_text`. The `reporter_warnings.md` eval-rst case now compares
 unknown directive/role messages, `ERROR/3` severity, and source lines 10/12
 through the Sphinx read path; Docutils emits system messages for unknown RST
-directives and roles. The broader `mock_include*`, substitution, and reporter
-fixtures still need a fixture-by-fixture gate against `parse_directive_text`
-and the Sphinx read path. The upstream
+directives and roles. Missing Markdown footnote targets now emit source-located
+errors for unresolved labels; defined labels and footnote-like text inside code
+fences are ignored. Autonumbered-footnote counts, definition rendering, and
+unreferenced/duplicate footnote warnings remain open. The broader
+`mock_include*`, substitution, and reporter fixtures still need a
+fixture-by-fixture gate against `parse_directive_text` and the Sphinx read path.
+The upstream
 `definition_lists.md` fixture remains a known gap: tilde-style definition
 markers are not normalized, definitions can acquire nested paragraphs, and the
 current doctree model cannot retain the fixture's list/code attributes. Keep

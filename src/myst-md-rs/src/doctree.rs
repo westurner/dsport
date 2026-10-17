@@ -8,7 +8,7 @@
 use docutilsrs::doctree::NodeId;
 use docutilsrs::{Doctree, NodeKind};
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use crate::{directives, frontmatter, preprocess, role};
@@ -174,6 +174,12 @@ fn parse_to_doctree_inner(
     if options.enable_table_spans {
         parser_options.insert(Options::ENABLE_TABLE_SPANS);
     }
+    let footnote_definitions = Parser::new_ext(&body, parser_options)
+        .filter_map(|event| match event {
+            Event::Start(Tag::FootnoteDefinition(label)) => Some(label.into_string()),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
 
     let mut tree = Doctree::new_document(source_path.to_owned());
     let root = tree.root();
@@ -182,6 +188,7 @@ fn parse_to_doctree_inner(
     let mut pending_role: Option<(String, u32)> = None;
     let mut previous_heading_level = None;
     let mut heading_warnings = Vec::new();
+    let mut missing_footnote_references = Vec::new();
     for (event, offset) in Parser::new_ext(&body, parser_options).into_offset_iter() {
         let mut line = body[..offset.start]
             .bytes()
@@ -240,6 +247,19 @@ fn parse_to_doctree_inner(
                 registered_roles,
             ),
             Event::Text(text) => {
+                if !frames
+                    .iter()
+                    .any(|frame| matches!(frame, Frame::Code { .. }))
+                {
+                    if let Some(label) = unresolved_footnote_label(
+                        &body,
+                        offset.start,
+                        offset.end,
+                        &footnote_definitions,
+                    ) {
+                        missing_footnote_references.push((line, label));
+                    }
+                }
                 let text = text.into_string();
                 if let Some((prefix, name)) = role::role_opener_suffix(&text) {
                     append_text(
@@ -335,7 +355,11 @@ fn parse_to_doctree_inner(
             }
             Event::FootnoteReference(label) => {
                 let parent = content_parent(&mut tree, &frames, &sections, root);
+                let label = label.into_string();
                 tree.append(parent, NodeKind::Text(format!("[^{label}]")));
+                if !footnote_definitions.contains(&label) {
+                    missing_footnote_references.push((line, label));
+                }
             }
         }
         for id in node_start..tree.nodes_len() {
@@ -405,6 +429,16 @@ fn parse_to_doctree_inner(
     }
     for (line, message) in heading_warnings {
         append_include_warning(&mut tree, root, line, message);
+    }
+    for (line, label) in missing_footnote_references {
+        append_include_message(
+            &mut tree,
+            root,
+            line,
+            3,
+            "ERROR",
+            format!("Unknown target name: \"{label}\"."),
+        );
     }
     for (line, target) in unresolved_local_links(&tree, source_path, source_root) {
         append_include_message(
@@ -1438,6 +1472,26 @@ fn clone_node_with_line_offset(
     for child in source_node.children.clone() {
         clone_node_with_line_offset(source, child, destination, id, line_offset);
     }
+}
+
+fn unresolved_footnote_label(
+    source: &str,
+    event_start: usize,
+    event_end: usize,
+    definitions: &HashSet<String>,
+) -> Option<String> {
+    let marker_offset = source.get(event_start..)?.find("[^")?;
+    let marker_start = event_start + marker_offset;
+    if marker_start >= event_end {
+        return None;
+    }
+    let label_start = marker_start + 2;
+    let label_end = source.get(label_start..)?.find(']')? + label_start;
+    let label = source.get(label_start..label_end)?;
+    if label.is_empty() || label.chars().any(char::is_whitespace) || definitions.contains(label) {
+        return None;
+    }
+    Some(label.to_owned())
 }
 
 fn collect_substitutions(

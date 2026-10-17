@@ -2109,7 +2109,8 @@ H13.5 follow-up plan:
   selection and the `mock_include` front-matter behavior. The mixed-source
   build covers a valid include. The `mock_include_errors` unknown-role case is
   covered with the included file path and line preserved; registered extension
-  roles do not trigger false unknown-role warnings.
+  roles do not trigger false unknown-role warnings. The missing-argument case
+  now checks the upstream error message, severity, and source line.
 * **Implemented option subset:** `literal`, `code`, `start-line`, `end-line`,
   `start-after`, and `end-before` are parsed and lowered. Unknown or invalid
   options produce warnings. The `mock_include.md` Basic Include and ignored

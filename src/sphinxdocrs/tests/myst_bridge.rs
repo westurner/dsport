@@ -928,6 +928,13 @@ fn myst_include_missing_argument_reports_an_error() {
 
     let env = app.env.borrow();
     let tree = env.get_doctree("guide").unwrap();
+    let (line, message) = system_message_text(&tree, "1 argument(s) required, 0 supplied")
+        .expect("include argument error");
+    assert_eq!(line, Some(1));
+    assert_eq!(
+        message.replace('\u{2018}', "'").replace('\u{2019}', "'"),
+        "Directive 'include': 1 argument(s) required, 0 supplied"
+    );
     assert_eq!(
         system_message_kind(&tree, "1 argument(s) required, 0 supplied"),
         Some((Some(1), 3, "ERROR"))

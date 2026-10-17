@@ -682,6 +682,40 @@ fn myst_note_reports_unknown_role_in_directive_body() {
 }
 
 #[test]
+fn myst_class_directive_missing_argument_reports_error() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "Before.\n```{class}\n```\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let (line, message) =
+        system_message_text(&tree, "argument(s) required").expect("directive argument error");
+    assert_eq!(line, Some(2));
+    assert_eq!(
+        message.replace('\u{2018}', "'").replace('\u{2019}', "'"),
+        "Directive 'class': 1 argument(s) required, 0 supplied"
+    );
+    let (_, level, kind) = system_message_kind(&tree, "argument(s) required").unwrap();
+    assert_eq!((level, kind), (3, "ERROR"));
+}
+
+#[test]
 fn myst_heading_warning_survives_sphinx_read_path() {
     let project = write_mixed_project();
     std::fs::write(

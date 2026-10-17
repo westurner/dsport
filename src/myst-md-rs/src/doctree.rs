@@ -859,7 +859,9 @@ fn end_tag(
                 CodeKind::Directive { name, argument } => {
                     let body_lines = body.lines().collect::<Vec<_>>();
                     let spec = directive_spec(&name);
+                    let line = tree.node(id).line.unwrap_or(1);
                     let parsed = directives::parse_directive_text(&spec, &argument, &body_lines);
+                    let mut parse_failed = false;
                     let (directive_body, class, warnings) = match parsed {
                         Ok(parsed) => (
                             parsed.body.join("\n"),
@@ -872,6 +874,25 @@ fn end_tag(
                             }),
                             parsed.warnings,
                         ),
+                        Err(directives::DirectiveError::Syntax(error)) => {
+                            parse_failed = true;
+                            tree.set_kind(
+                                id,
+                                NodeKind::SystemMessage {
+                                    level: 3,
+                                    line: Some(line),
+                                    ty: "ERROR",
+                                    ids: String::new(),
+                                    backrefs: String::new(),
+                                },
+                            );
+                            let paragraph = tree.append(id, NodeKind::Paragraph);
+                            tree.append(
+                                paragraph,
+                                NodeKind::Text(format!("Directive '{name}': {error}")),
+                            );
+                            (String::new(), None, Vec::new())
+                        }
                         Err(_) => {
                             tree.set_kind(
                                 id,
@@ -886,7 +907,6 @@ fn end_tag(
                             (body.clone(), None, Vec::new())
                         }
                     };
-                    let line = tree.node(id).line.unwrap_or(1);
                     for warning in warnings {
                         append_include_warning(
                             tree,
@@ -895,7 +915,7 @@ fn end_tag(
                             format!("'{name}': {warning} [myst.directive_option]"),
                         );
                     }
-                    if spec.has_content && directive_body.trim().is_empty() {
+                    if !parse_failed && spec.has_content && directive_body.trim().is_empty() {
                         append_include_message(
                             tree,
                             parent,
@@ -2097,7 +2117,14 @@ fn is_admonition(name: &str) -> bool {
 fn known_directive(name: &str) -> bool {
     matches!(
         name,
-        "admonition" | "container" | "code-block" | "raw" | "math" | "include" | "eval-rst"
+        "admonition"
+            | "class"
+            | "container"
+            | "code-block"
+            | "raw"
+            | "math"
+            | "include"
+            | "eval-rst"
     ) || is_admonition(name)
 }
 
@@ -2107,6 +2134,10 @@ fn directive_spec(name: &str) -> directives::DirectiveSpec {
         ..directives::DirectiveSpec::default()
     };
     if name == "admonition" {
+        spec.required_arguments = 1;
+        spec.optional_arguments = 0;
+        spec.final_argument_whitespace = true;
+    } else if name == "class" {
         spec.required_arguments = 1;
         spec.optional_arguments = 0;
         spec.final_argument_whitespace = true;

@@ -16,6 +16,7 @@ fn core_sphinx_doctree_fixtures_match_pseudo_xml_byte_for_byte() {
         "Heading Levels:",
         "Inline Code:",
         "Block Quote:",
+        "Nested Bullets",
     ];
 
     for case in cases

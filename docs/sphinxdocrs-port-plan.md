@@ -2216,21 +2216,23 @@ exists.
 
 #### H13.5 — Upstream parity and completion gate
 
-With H13.4 passing, the remaining work is to port representative MyST Sphinx
-fixtures and run the existing `test_sphinx` builder matrix against the native
-escaping, or recursive includes. Include literal/code and line-selection
-the whole group pending; complete include-option and broader upstream
-path. The native bridge now lowers directive options and generic admonition
-titles/classes, preserves malformed generic-admonition diagnostics, and emits
-source-located warnings for undefined/cyclic substitutions, missing/escaping/
-recursive includes, unknown roles inside included files, and unknown directives;
-role names registered with Sphinx are accepted. Include literal/code and
-line-selection options are implemented. The directive aggregate runner still
-needs to compare the remaining fixture cases against `parse_directive_text`
-rather than marking the whole group pending; complete include-option and broader
-upstream substitution/reporting parity remain open.
-Keep tests that require Python-only extensions or Python object identity on the
-Python bridge, but record every native-path deviation in `docs/compat.md`.
+With H13.4 passing, H13.5 remains open for representative upstream MyST fixtures
+and systematic warning/include-option parity. The native bridge lowers
+directives and generic admonition titles/classes, preserves malformed
+admonition diagnostics, and emits source-located warnings for undefined or
+cyclic substitutions, missing/escaping/recursive includes, unknown roles in
+included files, unknown directives, duplicate references, and unresolved local
+links. Include literal/code and line-selection options are implemented.
+
+`tests/doctree_parity.rs` byte-compares selected cases from the upstream Sphinx
+syntax fixture, including nested bullet lists. The broader `directive_options`,
+`mock_include*`, substitution, and reporter-warning fixtures still need a
+fixture-by-fixture gate against `parse_directive_text` and the Sphinx read path.
+The upstream `definition_lists.md` fixture remains a known gap: tilde-style
+definition markers are not normalized, definitions can acquire nested
+paragraphs, and the current doctree model cannot retain the fixture's list/code
+attributes. Keep Python-only extension identity cases on the Python bridge, and
+record every native-path deviation in `docs/compat.md`.
 
 H13 is complete when:
 

@@ -2113,10 +2113,10 @@ H13.5 follow-up plan:
 * **Implemented option subset:** `literal`, `code`, `start-line`, `end-line`,
   `start-after`, and `end-before` are parsed and lowered. Unknown or invalid
   options produce warnings. The `mock_include.md` Basic Include and ignored
-  front-matter, Literal, and literal line-range cases now byte-compare against
-  upstream pseudo-XML, including the included-file `source` attribute. The
-  optional per-node source field persists through doctree storage and defaults
-  safely when loading older caches. Compare remaining option/error details
+  front-matter, Literal, literal line-range, and code cases now byte-compare
+  against upstream pseudo-XML, including source attributes and code whitespace
+  spans. The optional per-node source field persists through doctree storage
+  and defaults safely when loading older caches. Compare remaining option/error details
   against upstream `mock_include*` fixtures; unimplemented options remain an
   accepted gap until that parity pass.
 * **Implemented:** replace the bounded substitution loop with dependency-aware

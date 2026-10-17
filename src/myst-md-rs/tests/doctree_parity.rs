@@ -59,6 +59,10 @@ fn basic_include_fixture_matches_upstream_pseudo_xml() {
         .iter()
         .find(|case| case.title == "Include Literal, line range:")
         .expect("upstream literal line range fixture");
+    let code_case = cases
+        .iter()
+        .find(|case| case.title == "Include code:")
+        .expect("upstream code include fixture");
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -85,6 +89,7 @@ fn basic_include_fixture_matches_upstream_pseudo_xml() {
         front_matter_case,
         literal_case,
         literal_lines_case,
+        code_case,
     ] {
         std::fs::write(root.join("test.md"), &case.content).unwrap();
         let source = root.join("test.md");

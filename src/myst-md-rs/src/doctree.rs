@@ -1520,7 +1520,26 @@ fn handle_include(
             },
         );
         tree.set_line(block, line);
-        tree.append(block, NodeKind::Text(selected));
+        if code.is_some() {
+            for segment in selected.split_inclusive('\n') {
+                if let Some(text) = segment.strip_suffix('\n') {
+                    if !text.is_empty() {
+                        tree.append(block, NodeKind::Text(text.into()));
+                    }
+                    let whitespace = tree.append(
+                        block,
+                        NodeKind::Inline {
+                            classes: "whitespace".into(),
+                        },
+                    );
+                    tree.append(whitespace, NodeKind::Text("\n".into()));
+                } else if !segment.is_empty() {
+                    tree.append(block, NodeKind::Text(segment.into()));
+                }
+            }
+        } else {
+            tree.append(block, NodeKind::Text(selected));
+        }
         return;
     }
 

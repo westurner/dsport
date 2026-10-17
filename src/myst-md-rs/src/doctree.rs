@@ -203,6 +203,7 @@ fn parse_to_doctree_inner(
     let mut previous_heading_level = None;
     let mut heading_warnings = Vec::new();
     let mut missing_footnote_references = Vec::new();
+    let mut missing_autonumbered_footnote_references = Vec::new();
     let mut footnote_references = HashSet::new();
     for (event, offset) in Parser::new_ext(&body, parser_options).into_offset_iter() {
         let mut line = body[..offset.start]
@@ -273,6 +274,9 @@ fn parse_to_doctree_inner(
                         &footnote_definitions,
                     ) {
                         footnote_references.insert(label.to_lowercase());
+                        if !label.chars().all(|character| character.is_ascii_digit()) {
+                            missing_autonumbered_footnote_references.push((line, label.clone()));
+                        }
                         missing_footnote_references.push((line, label));
                     }
                 }
@@ -375,6 +379,9 @@ fn parse_to_doctree_inner(
                 footnote_references.insert(label.to_lowercase());
                 tree.append(parent, NodeKind::Text(format!("[^{label}]")));
                 if !footnote_definitions.contains(&label.to_lowercase()) {
+                    if !label.chars().all(|character| character.is_ascii_digit()) {
+                        missing_autonumbered_footnote_references.push((line, label.clone()));
+                    }
                     missing_footnote_references.push((line, label));
                 }
             }
@@ -455,6 +462,17 @@ fn parse_to_doctree_inner(
             3,
             "ERROR",
             format!("Unknown target name: \"{label}\"."),
+        );
+    }
+    if let Some((line, _)) = missing_autonumbered_footnote_references.first() {
+        append_include_message(
+            &mut tree,
+            root,
+            *line,
+            3,
+            "ERROR",
+            "Too many autonumbered footnote references: only 0 corresponding footnotes available."
+                .into(),
         );
     }
     for (line, label) in duplicate_footnote_definitions {

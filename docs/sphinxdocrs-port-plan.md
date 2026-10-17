@@ -2237,8 +2237,9 @@ through the Sphinx read path; Docutils emits system messages for unknown RST
 directives and roles. Missing Markdown footnote targets now emit source-located
 errors for unresolved labels; duplicate and unreferenced definitions emit
 source-located warnings. Defined labels and footnote-like text inside code
-fences do not produce false diagnostics. Autonumbered-footnote counts and full
-footnote definition rendering remain open. The broader
+fences do not produce false diagnostics. The no-definition autonumbered-reference
+count error is covered; full numbering, symbol-reference, and footnote-definition
+rendering parity remain open. The broader
 `mock_include*`, substitution, and reporter fixtures still need a
 fixture-by-fixture gate against `parse_directive_text` and the Sphinx read path.
 The upstream

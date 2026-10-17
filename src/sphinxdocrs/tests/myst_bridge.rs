@@ -194,6 +194,17 @@ fn myst_missing_footnote_references_report_source_errors() {
             format!("Unknown target name: \"{label}\".")
         );
     }
+    let (line, level, kind) =
+        system_message_kind(&tree, "Too many autonumbered footnote references")
+            .expect("autonumbered footnote count error");
+    assert_eq!(line, Some(3));
+    assert_eq!((level, kind), (3, "ERROR"));
+    let (_, message) = system_message_text(&tree, "Too many autonumbered footnote references")
+        .expect("autonumbered footnote count message");
+    assert_eq!(
+        message,
+        "Too many autonumbered footnote references: only 0 corresponding footnotes available."
+    );
 }
 
 #[test]

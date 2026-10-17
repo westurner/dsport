@@ -737,9 +737,16 @@ fn end_tag(
                     registered_roles,
                 ),
                 CodeKind::Directive { name, .. } if name == "eval-rst" => {
+                    let source_line = tree.node(id).line.unwrap_or(0);
                     tree.detach(id);
                     let included = docutilsrs::parse_rst_with_source(&body, "<eval-rst>");
-                    clone_children(&included, included.root(), tree, parent);
+                    clone_children_with_line_offset(
+                        &included,
+                        included.root(),
+                        tree,
+                        parent,
+                        source_line,
+                    );
                 }
                 CodeKind::Directive { name, .. } if !known_directive(&name) => {
                     let line = tree.node(id).line.unwrap_or(1);
@@ -1385,19 +1392,51 @@ fn clone_children(
     destination: &mut Doctree,
     parent: NodeId,
 ) {
+    clone_children_with_line_offset(source, source_parent, destination, parent, 0);
+}
+
+fn clone_children_with_line_offset(
+    source: &Doctree,
+    source_parent: NodeId,
+    destination: &mut Doctree,
+    parent: NodeId,
+    line_offset: u32,
+) {
     for child in source.node(source_parent).children.clone() {
-        clone_node(source, child, destination, parent);
+        clone_node_with_line_offset(source, child, destination, parent, line_offset);
     }
 }
 
-fn clone_node(source: &Doctree, source_id: NodeId, destination: &mut Doctree, parent: NodeId) {
+fn clone_node_with_line_offset(
+    source: &Doctree,
+    source_id: NodeId,
+    destination: &mut Doctree,
+    parent: NodeId,
+    line_offset: u32,
+) {
     let source_node = source.node(source_id);
-    let id = destination.append(parent, source_node.kind.clone());
+    let kind = match &source_node.kind {
+        NodeKind::SystemMessage {
+            level,
+            line,
+            ty,
+            ids,
+            backrefs,
+        } => NodeKind::SystemMessage {
+            level: *level,
+            line: line.map(|line| line.saturating_add(line_offset)),
+            ty,
+            ids: ids.clone(),
+            backrefs: backrefs.clone(),
+        },
+        kind => kind.clone(),
+    };
+    let id = destination.append(parent, kind);
     if let Some(line) = source_node.line {
-        destination.set_line(id, line);
+        destination.set_line(id, line.saturating_add(line_offset));
     }
     for child in source_node.children.clone() {
-        clone_node(source, child, destination, id);
+        clone_node_with_line_offset(source, child, destination, id, line_offset);
     }
 }
 

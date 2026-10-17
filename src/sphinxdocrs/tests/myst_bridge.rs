@@ -30,20 +30,25 @@ fn write_mixed_project() -> TempDir {
     project
 }
 
+fn collect_node_text(tree: &docutilsrs::Doctree, node_id: usize, output: &mut String) {
+    if let docutilsrs::NodeKind::Text(text) = &tree.node(node_id).kind {
+        output.push_str(text);
+    }
+    for child in tree.node(node_id).children.iter().copied() {
+        collect_node_text(tree, child, output);
+    }
+}
+
 fn system_message_text(tree: &docutilsrs::Doctree, needle: &str) -> Option<(Option<u32>, String)> {
     (0..tree.nodes_len()).find_map(|id| {
         let node = tree.node(id);
         let docutilsrs::NodeKind::SystemMessage { line, .. } = node.kind else {
             return None;
         };
-        let message = node
-            .children
-            .iter()
-            .filter_map(|child| match &tree.node(*child).kind {
-                docutilsrs::NodeKind::Text(text) => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<String>();
+        let mut message = String::new();
+        for child in node.children.iter().copied() {
+            collect_node_text(tree, child, &mut message);
+        }
         message.contains(needle).then_some((line, message))
     })
 }
@@ -60,14 +65,10 @@ fn system_message_kind(
         else {
             return None;
         };
-        let message = node
-            .children
-            .iter()
-            .filter_map(|child| match &tree.node(*child).kind {
-                docutilsrs::NodeKind::Text(text) => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<String>();
+        let mut message = String::new();
+        for child in node.children.iter().copied() {
+            collect_node_text(tree, child, &mut message);
+        }
         message.contains(needle).then_some((*line, *level, *ty))
     })
 }
@@ -209,6 +210,65 @@ fn myst_unknown_directive_warning_survives_sphinx_read_path() {
     assert_eq!(line, Some(1));
     assert!(message.contains("unknown"));
     assert!(message.contains("[myst.directive_unknown]"));
+}
+
+#[test]
+fn myst_eval_rst_errors_survive_sphinx_read_path() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "some external\n\nlines\n\n```{eval-rst}\nsome internal\n\nlines\n\n.. unknown:: some text\n\n:unknown:`a`\n```\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let normalize_smart_quotes = |message: &str| {
+        message
+            .replace('\u{2018}', "'")
+            .replace('\u{2019}', "'")
+            .replace('\u{201c}', "\"")
+            .replace('\u{201d}', "\"")
+    };
+    let (directive_message_line, directive_message) =
+        system_message_text(&tree, "Unknown directive type").expect("eval-rst directive error");
+    assert_eq!(directive_message_line, Some(10));
+    assert_eq!(
+        normalize_smart_quotes(&directive_message),
+        "Unknown directive type \"unknown\"."
+    );
+    let (directive_line, directive_level, directive_type) =
+        system_message_kind(&tree, "Unknown directive type").unwrap_or_else(|| {
+            panic!(
+                "eval-rst directive error missing from tree:\n{}",
+                docutilsrs::pseudo_xml(&tree)
+            )
+        });
+    assert_eq!(directive_line, Some(10));
+    assert_eq!((directive_level, directive_type), (3, "ERROR"));
+    let (role_message_line, role_message) =
+        system_message_text(&tree, "Unknown interpreted text role").expect("eval-rst role error");
+    assert_eq!(role_message_line, Some(12));
+    assert_eq!(
+        normalize_smart_quotes(&role_message),
+        "Unknown interpreted text role \"unknown\"."
+    );
+    let (role_line, role_level, role_type) =
+        system_message_kind(&tree, "Unknown interpreted text role").expect("eval-rst role error");
+    assert_eq!(role_line, Some(12));
+    assert_eq!((role_level, role_type), (3, "ERROR"));
 }
 
 #[test]

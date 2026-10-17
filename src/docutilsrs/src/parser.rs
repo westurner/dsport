@@ -85,7 +85,6 @@ fn parse_rst_impl(source: &str, source_path: &str, promote_title: bool) -> Doctr
     for block in blocks {
         emit_block(&mut tree, document, &mut ctx, block);
     }
-
     normalize_target_placement(&mut tree);
     repair_duplicate_target_ids(&mut tree);
     resolve_references(&mut tree, &ctx);
@@ -344,6 +343,12 @@ pub enum Block {
         text: String,
     },
     Comment(String),
+    SystemMessage {
+        level: u32,
+        line: Option<u32>,
+        ty: &'static str,
+        message: String,
+    },
     /// `.. default-role:: [name]` — applied in document order during
     /// `emit_block`, so text before the directive keeps the previous default.
     /// `None` restores the built-in default role.
@@ -548,7 +553,7 @@ fn parse_blocks(lines: &[&str], base_indent: usize, base_line: u32) -> Vec<Block
 
         // Explicit markup block: `.. name:: ...` / `.. _target: uri` /
         // `.. |name| directive::` / `.. comment text`.
-        if let Some(b) = parse_explicit(lines, &mut i, base_indent) {
+        if let Some(b) = parse_explicit(lines, &mut i, base_indent, base_line) {
             blocks.push(b);
             continue;
         }
@@ -1425,7 +1430,12 @@ fn is_explicit_start(line: &str) -> bool {
     line.starts_with(".. ") || line == ".." || line.starts_with("__ ")
 }
 
-fn parse_explicit(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Option<Block> {
+fn parse_explicit(
+    lines: &[&str],
+    i_ref: &mut usize,
+    base_indent: usize,
+    base_line: u32,
+) -> Option<Block> {
     let i = *i_ref;
     let l = lines[i];
     if !at_indent(l, base_indent) {
@@ -1526,7 +1536,15 @@ fn parse_explicit(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Opti
 
     // Directive: `name:: args`.
     if let Some((directive, dargs)) = split_directive(rest) {
-        return Some(parse_directive(lines, i_ref, base_indent, directive, dargs));
+        let source_line = (base_line != 0).then_some(base_line + i as u32);
+        return Some(parse_directive(
+            lines,
+            i_ref,
+            base_indent,
+            directive,
+            dargs,
+            source_line,
+        ));
     }
 
     // Comment: anything else under `..`.
@@ -1663,6 +1681,7 @@ fn parse_directive(
     base_indent: usize,
     name: String,
     args: &str,
+    source_line: Option<u32>,
 ) -> Block {
     // Extension registrations are intentionally checked before the built-in
     // table so `override=True` and custom replacements can work through the
@@ -2607,7 +2626,12 @@ fn parse_directive(
                     return Block::PluginResult(blocks);
                 }
             }
-            Block::Comment(body_text)
+            Block::SystemMessage {
+                level: 3,
+                line: source_line,
+                ty: "ERROR",
+                message: format!("Unknown directive type \"{name}\"."),
+            }
         }
     }
 }
@@ -3486,6 +3510,25 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             Block::Comment(text) => {
                 let c = tree.append(parent, NodeKind::Comment);
                 tree.append(c, NodeKind::Text(text));
+            }
+            Block::SystemMessage {
+                level,
+                line,
+                ty,
+                message,
+            } => {
+                let system_message = tree.append(
+                    parent,
+                    NodeKind::SystemMessage {
+                        level,
+                        line,
+                        ty,
+                        ids: String::new(),
+                        backrefs: String::new(),
+                    },
+                );
+                let paragraph = tree.append(system_message, NodeKind::Paragraph);
+                tree.append(paragraph, NodeKind::Text(message));
             }
             Block::DefaultRole(name) => {
                 // Mirrors `docutils.parsers.rst.directives.misc.DefaultRole`: an
@@ -4634,7 +4677,7 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
             if cursor > text_start {
                 push_text(tree, parent, &text[text_start..cursor]);
             }
-            emit_role(tree, parent, &role, &content);
+            emit_role(tree, parent, &role, &content, ctx.current_line);
             cursor = end;
             text_start = cursor;
             continue;
@@ -4763,7 +4806,7 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
             if cursor > text_start {
                 push_text(tree, parent, &text[text_start..cursor]);
             }
-            emit_role(tree, parent, &role, &content);
+            emit_role(tree, parent, &role, &content, ctx.current_line);
             cursor = end;
             text_start = cursor;
         } else {
@@ -4776,7 +4819,7 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
     }
 }
 
-fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str) {
+fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str, source_line: u32) {
     if let Some(nodes) = crate::plugins::invoke_python_role(role, content) {
         for replacement in nodes.nodes {
             let node = tree.append(parent, replacement.kind);
@@ -4799,9 +4842,27 @@ fn emit_role(tree: &mut Doctree, parent: NodeId, role: &str, content: &str) {
         return;
     }
     // Resolve language-dependent aliases (`:t:` → `title-reference`) through
-    // the registry, mirroring `roles.role()`. An unregistered name is kept
-    // as-is and rendered as a generic `<inline>`, as before.
-    let canonical = crate::roles::role(role).unwrap_or_else(|| role.to_lowercase());
+    // the registry, mirroring `roles.role()`.
+    let resolved_role = crate::roles::role(role);
+    if resolved_role.is_none() {
+        let system_message = tree.append(
+            parent,
+            NodeKind::SystemMessage {
+                level: 3,
+                line: (source_line != 0).then_some(source_line),
+                ty: "ERROR",
+                ids: String::new(),
+                backrefs: String::new(),
+            },
+        );
+        let paragraph = tree.append(system_message, NodeKind::Paragraph);
+        push_text(
+            tree,
+            paragraph,
+            &format!("Unknown interpreted text role \"{role}\"."),
+        );
+    }
+    let canonical = resolved_role.unwrap_or_else(|| role.to_lowercase());
     if let Some(node_kind) = crate::plugins::invoke_native_role(&canonical, role, content) {
         tree.append(parent, node_kind);
         return;

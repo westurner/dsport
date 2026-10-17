@@ -2239,6 +2239,9 @@ line-7 fixture location, while include diagnostics preserve included-file paths.
 The `{class}` directive's missing-argument case now emits the upstream
 `ERROR/3` message at line 2; valid class-directive transformation remains
 outside this diagnostic-only slice.
+The `{date}` directive's out-of-substitution path emits the exact upstream
+invalid-context `ERROR/3`; date expansion within substitution definitions is
+not implemented.
 Missing Markdown footnote targets now emit source-located
 errors for unresolved labels; duplicate and unreferenced definitions emit
 source-located warnings. Defined labels and footnote-like text inside code

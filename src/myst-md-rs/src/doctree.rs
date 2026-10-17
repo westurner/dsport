@@ -842,6 +842,27 @@ fn end_tag(
                         source_line,
                     );
                 }
+                CodeKind::Directive { name, .. } if name == "date" => {
+                    let line = tree.node(id).line.unwrap_or(1);
+                    tree.set_kind(
+                        id,
+                        NodeKind::SystemMessage {
+                            level: 3,
+                            line: Some(line),
+                            ty: "ERROR",
+                            ids: String::new(),
+                            backrefs: String::new(),
+                        },
+                    );
+                    let paragraph = tree.append(id, NodeKind::Paragraph);
+                    tree.append(
+                        paragraph,
+                        NodeKind::Text(
+                            "Invalid context: the \"date\" directive can only be used within a substitution definition."
+                                .into(),
+                        ),
+                    );
+                }
                 CodeKind::Directive { name, .. } if !known_directive(&name) => {
                     let line = tree.node(id).line.unwrap_or(1);
                     tree.append(
@@ -2121,6 +2142,7 @@ fn known_directive(name: &str) -> bool {
             | "class"
             | "container"
             | "code-block"
+            | "date"
             | "raw"
             | "math"
             | "include"

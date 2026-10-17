@@ -779,6 +779,33 @@ fn myst_heading_warning_survives_sphinx_read_path() {
 }
 
 #[test]
+fn myst_heading_nested_in_note_does_not_report_document_heading_warning() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "```{note}\n# Header\n```\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    assert!(system_message_text(&tree, "Document headings start at").is_none());
+    assert!(system_message_text(&tree, "Non-consecutive header level increase").is_none());
+}
+
+#[test]
 fn myst_duplicate_reference_warning_survives_sphinx_read_path() {
     let project = write_mixed_project();
     std::fs::write(project.path().join("guide.md"), "[a]: first\n[a]: second\n").unwrap();

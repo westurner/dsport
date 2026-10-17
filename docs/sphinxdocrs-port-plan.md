@@ -2240,6 +2240,8 @@ unknown directive/role messages, `ERROR/3` severity, and source lines 10/12
 through the Sphinx read path; Docutils emits system messages for unknown RST
 directives and roles. The nested note-body unknown-role warning now retains its
 line-7 fixture location, while include diagnostics preserve included-file paths.
+The header-nested-in-note case verifies no document-level heading warning is
+emitted for directive content.
 The `{class}` directive's missing-argument case now emits the upstream
 `ERROR/3` message at line 2; valid class-directive transformation remains
 outside this diagnostic-only slice.

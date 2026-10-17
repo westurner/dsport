@@ -174,12 +174,26 @@ fn parse_to_doctree_inner(
     if options.enable_table_spans {
         parser_options.insert(Options::ENABLE_TABLE_SPANS);
     }
-    let footnote_definitions = Parser::new_ext(&body, parser_options)
-        .filter_map(|event| match event {
-            Event::Start(Tag::FootnoteDefinition(label)) => Some(label.into_string()),
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
+    let mut footnote_definitions = HashSet::new();
+    let mut footnote_definition_locations = Vec::new();
+    let mut duplicate_footnote_definitions = Vec::new();
+    for (event, offset) in Parser::new_ext(&body, parser_options).into_offset_iter() {
+        let Event::Start(Tag::FootnoteDefinition(label)) = event else {
+            continue;
+        };
+        let label = label.into_string();
+        let line = body[..offset.start]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count() as u32
+            + body_line_offset
+            + 1;
+        if footnote_definitions.insert(label.to_lowercase()) {
+            footnote_definition_locations.push((line, label));
+        } else {
+            duplicate_footnote_definitions.push((line, label));
+        }
+    }
 
     let mut tree = Doctree::new_document(source_path.to_owned());
     let root = tree.root();
@@ -189,6 +203,7 @@ fn parse_to_doctree_inner(
     let mut previous_heading_level = None;
     let mut heading_warnings = Vec::new();
     let mut missing_footnote_references = Vec::new();
+    let mut footnote_references = HashSet::new();
     for (event, offset) in Parser::new_ext(&body, parser_options).into_offset_iter() {
         let mut line = body[..offset.start]
             .bytes()
@@ -257,6 +272,7 @@ fn parse_to_doctree_inner(
                         offset.end,
                         &footnote_definitions,
                     ) {
+                        footnote_references.insert(label.to_lowercase());
                         missing_footnote_references.push((line, label));
                     }
                 }
@@ -356,8 +372,9 @@ fn parse_to_doctree_inner(
             Event::FootnoteReference(label) => {
                 let parent = content_parent(&mut tree, &frames, &sections, root);
                 let label = label.into_string();
+                footnote_references.insert(label.to_lowercase());
                 tree.append(parent, NodeKind::Text(format!("[^{label}]")));
-                if !footnote_definitions.contains(&label) {
+                if !footnote_definitions.contains(&label.to_lowercase()) {
                     missing_footnote_references.push((line, label));
                 }
             }
@@ -439,6 +456,29 @@ fn parse_to_doctree_inner(
             "ERROR",
             format!("Unknown target name: \"{label}\"."),
         );
+    }
+    for (line, label) in duplicate_footnote_definitions {
+        append_include_warning(
+            &mut tree,
+            root,
+            line,
+            format!("Duplicate footnote definition found for label: '{label}' [ref.footnote]"),
+        );
+    }
+    for (line, label) in footnote_definition_locations {
+        if !footnote_references.contains(&label.to_lowercase()) {
+            let display_label = if label.chars().all(|character| character.is_ascii_digit()) {
+                label
+            } else {
+                "#".into()
+            };
+            append_include_warning(
+                &mut tree,
+                root,
+                line,
+                format!("Footnote [{display_label}] is not referenced. [ref.footnote]"),
+            );
+        }
     }
     for (line, target) in unresolved_local_links(&tree, source_path, source_root) {
         append_include_message(
@@ -1488,7 +1528,10 @@ fn unresolved_footnote_label(
     let label_start = marker_start + 2;
     let label_end = source.get(label_start..)?.find(']')? + label_start;
     let label = source.get(label_start..label_end)?;
-    if label.is_empty() || label.chars().any(char::is_whitespace) || definitions.contains(label) {
+    if label.is_empty()
+        || label.chars().any(char::is_whitespace)
+        || definitions.contains(&label.to_lowercase())
+    {
         return None;
     }
     Some(label.to_owned())

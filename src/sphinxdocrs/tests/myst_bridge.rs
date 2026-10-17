@@ -197,6 +197,74 @@ fn myst_missing_footnote_references_report_source_errors() {
 }
 
 #[test]
+fn myst_duplicate_footnote_definition_reports_warning() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "[^a]\n\n[^a]: definition 1\n[^a]: definition 2\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let (line, message) = system_message_text(&tree, "Duplicate footnote definition")
+        .expect("duplicate footnote reporter warning");
+    assert_eq!(line, Some(4));
+    assert_eq!(
+        message.replace('\u{2018}', "'").replace('\u{2019}', "'"),
+        "Duplicate footnote definition found for label: 'a' [ref.footnote]"
+    );
+}
+
+#[test]
+fn myst_unreferenced_footnote_definitions_report_warnings() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "[^1]: definition\n[^a]: definition\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let warnings: Vec<_> = system_message_entries(&tree)
+        .into_iter()
+        .filter(|(_, _, kind, message)| *kind == "WARNING" && message.contains("Footnote"))
+        .collect();
+    assert_eq!(warnings.len(), 2);
+    assert!(warnings.iter().any(|(line, _, _, message)| {
+        *line == Some(1) && message == "Footnote [1] is not referenced. [ref.footnote]"
+    }));
+    assert!(warnings.iter().any(|(line, _, _, message)| {
+        *line == Some(2) && message == "Footnote [#] is not referenced. [ref.footnote]"
+    }));
+}
+
+#[test]
 fn myst_include_ignores_included_front_matter() {
     let project = write_mixed_project();
     std::fs::write(

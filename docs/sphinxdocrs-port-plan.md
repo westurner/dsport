@@ -2235,9 +2235,10 @@ arguments, body text, coerced option pairs, and malformed-option errors through
 unknown directive/role messages, `ERROR/3` severity, and source lines 10/12
 through the Sphinx read path; Docutils emits system messages for unknown RST
 directives and roles. Missing Markdown footnote targets now emit source-located
-errors for unresolved labels; defined labels and footnote-like text inside code
-fences are ignored. Autonumbered-footnote counts, definition rendering, and
-unreferenced/duplicate footnote warnings remain open. The broader
+errors for unresolved labels; duplicate and unreferenced definitions emit
+source-located warnings. Defined labels and footnote-like text inside code
+fences do not produce false diagnostics. Autonumbered-footnote counts and full
+footnote definition rendering remain open. The broader
 `mock_include*`, substitution, and reporter fixtures still need a
 fixture-by-fixture gate against `parse_directive_text` and the Sphinx read path.
 The upstream

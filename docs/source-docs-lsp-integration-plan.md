@@ -948,8 +948,10 @@ LSP adds no information and full environment-cache integration still need
 dedicated tests. Rust/Lean apidoc separates language discovery from backend
 selection; its opt-in LSP path adds an aggregate `lsp-api.rst` to the generated
 TOC, while Python apidoc remains unchanged. A real Rust LSP apidoc and native
-HTML build pass locally; an automated fake-server apidoc end-to-end test remains
-to add.
+HTML build pass locally. The automated fake-server CLI test now generates the
+aggregate Rust API page and TOC, runs the native HTML builder against those
+generated sources, and asserts the LSP-derived declaration appears in the
+rendered page.
 
 ### Phase 5: optional live-server workflows — Rust validated locally; CI pending
 

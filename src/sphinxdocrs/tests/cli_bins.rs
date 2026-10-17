@@ -190,6 +190,30 @@ fn apidoc_lsp_generates_aggregate_api_page_and_toc_entry() {
     );
     let toc = std::fs::read_to_string(output_dir.join("modules.rst")).unwrap();
     assert!(toc.contains("lsp-api"), "generated toctree:\n{toc}");
+
+    std::fs::write(
+        output_dir.join("conf.py"),
+        "project = 'LSP apidoc integration'\nmaster_doc = 'modules'\nextensions = []\n",
+    )
+    .unwrap();
+    let html_dir = tmp.path().join("html");
+    let build = run(
+        BUILD_RS,
+        &[
+            "-b",
+            "html",
+            "-E",
+            output_dir.to_str().unwrap(),
+            html_dir.to_str().unwrap(),
+        ],
+        tmp.path(),
+    );
+    assert_exit(&build, 0);
+    let rendered_api = std::fs::read_to_string(html_dir.join("lsp-api.html")).unwrap();
+    assert!(
+        rendered_api.contains("answer"),
+        "rendered LSP API page:\n{rendered_api}"
+    );
 }
 
 #[test]

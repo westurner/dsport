@@ -347,6 +347,46 @@ fn myst_front_matter_warnings_survive_sphinx_read_path() {
 }
 
 #[test]
+fn myst_html_meta_invalid_attribute_emits_error() {
+    let project = write_mixed_project();
+    std::fs::write(
+        project.path().join("guide.md"),
+        "---\nmyst:\n  html_meta:\n    name noequals: value\n---\nBody.\n",
+    )
+    .unwrap();
+    let output = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    let mut app = SphinxApp::new(
+        project.path(),
+        output.path(),
+        doctrees.path(),
+        "html",
+        HashMap::new(),
+    )
+    .unwrap();
+    app.set_incremental_options(true, true);
+    app.read().unwrap();
+
+    let env = app.env.borrow();
+    let tree = env.get_doctree("guide").unwrap();
+    let (line, level, ty) = system_message_kind(&tree, "Error parsing meta tag attribute")
+        .expect("malformed html_meta error");
+    assert_eq!(line, Some(1));
+    assert_eq!(level, 3);
+    assert_eq!(ty, "ERROR");
+    let (_, message) = system_message_text(&tree, "Error parsing meta tag attribute").unwrap();
+    let normalized = message
+        .replace('\u{2018}', "'")
+        .replace('\u{2019}', "'")
+        .replace('\u{201c}', "\"")
+        .replace('\u{201d}', "\"");
+    assert_eq!(
+        normalized,
+        "Error parsing meta tag attribute \"name noequals\": no '=' in noequals."
+    );
+}
+
+#[test]
 fn myst_directive_option_and_missing_content_diagnostics_survive_read_path() {
     let project = write_mixed_project();
     std::fs::write(

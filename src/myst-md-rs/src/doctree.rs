@@ -400,8 +400,8 @@ fn parse_to_doctree_inner(
     for (line, message) in duplicate_reference_diagnostics {
         append_include_warning(&mut tree, root, line + body_line_offset, message);
     }
-    for message in front_matter_diagnostics {
-        append_include_warning(&mut tree, root, 1, message);
+    for (level, ty, message) in front_matter_diagnostics {
+        append_include_message(&mut tree, root, 1, level, ty, message);
     }
     for (line, message) in heading_warnings {
         append_include_warning(&mut tree, root, line, message);
@@ -1424,7 +1424,7 @@ fn collect_substitutions(
     substitutions
 }
 
-fn front_matter_diagnostics(split: &frontmatter::Split<'_>) -> Vec<String> {
+fn front_matter_diagnostics(split: &frontmatter::Split<'_>) -> Vec<(u32, &'static str, String)> {
     const KNOWN_MYST_FIELDS: &[&str] = &[
         "all_links_external",
         "commonmark_only",
@@ -1452,11 +1452,13 @@ fn front_matter_diagnostics(split: &frontmatter::Split<'_>) -> Vec<String> {
     };
     let Some(front_matter) = split.front_matter.as_ref() else {
         let _ = raw_front_matter;
-        return vec!["Malformed YAML [myst.topmatter]".into()];
+        return vec![(2, "WARNING", "Malformed YAML [myst.topmatter]".into())];
     };
     let serde_yaml::Value::Mapping(top_level) = front_matter else {
-        return vec![format!(
-            "YAML front matter must be a mapping [myst.topmatter]"
+        return vec![(
+            2,
+            "WARNING",
+            "YAML front matter must be a mapping [myst.topmatter]".into(),
         )];
     };
     let myst_key = serde_yaml::Value::String("myst".into());
@@ -1464,17 +1466,29 @@ fn front_matter_diagnostics(split: &frontmatter::Split<'_>) -> Vec<String> {
         return Vec::new();
     };
     let serde_yaml::Value::Mapping(myst_config) = myst_config else {
-        return vec![format!("'myst' key must be a mapping [myst.topmatter]")];
+        return vec![(
+            2,
+            "WARNING",
+            "'myst' key must be a mapping [myst.topmatter]".into(),
+        )];
     };
 
     let mut diagnostics = Vec::new();
     for (key, value) in myst_config {
         let Some(key) = key.as_str() else {
-            diagnostics.push(format!("Unknown field: {key:?} [myst.topmatter]"));
+            diagnostics.push((
+                2,
+                "WARNING",
+                format!("Unknown field: {key:?} [myst.topmatter]"),
+            ));
             continue;
         };
         if !KNOWN_MYST_FIELDS.contains(&key) {
-            diagnostics.push(format!("Unknown field: {key} [myst.topmatter]"));
+            diagnostics.push((
+                2,
+                "WARNING",
+                format!("Unknown field: {key} [myst.topmatter]"),
+            ));
             continue;
         }
         if key == "title_to_header" && !matches!(value, serde_yaml::Value::Bool(_)) {
@@ -1483,8 +1497,12 @@ fn front_matter_diagnostics(split: &frontmatter::Split<'_>) -> Vec<String> {
                 .unwrap_or_default()
                 .trim()
                 .to_owned();
-            diagnostics.push(format!(
-                "'title_to_header' must be of type <class 'bool'> (got {rendered_value} that is a <class '{actual_type}'>). [myst.topmatter]"
+            diagnostics.push((
+                2,
+                "WARNING",
+                format!(
+                    "'title_to_header' must be of type <class 'bool'> (got {rendered_value} that is a <class '{actual_type}'>). [myst.topmatter]"
+                ),
             ));
         }
         if key == "url_schemes" {
@@ -1495,13 +1513,60 @@ fn front_matter_diagnostics(split: &frontmatter::Split<'_>) -> Vec<String> {
                     .unwrap_or_default()
                     .trim()
                     .to_owned();
-                diagnostics.push(format!(
-                    "'url_schemes' is not a list of strings: {rendered_value} [myst.topmatter]"
+                diagnostics.push((
+                    2,
+                    "WARNING",
+                    format!(
+                        "'url_schemes' is not a list of strings: {rendered_value} [myst.topmatter]"
+                    ),
                 ));
+            }
+        }
+        if key == "html_meta" {
+            if let serde_yaml::Value::Mapping(tags) = value {
+                for (attribute, content) in tags {
+                    let Some(attribute) = attribute.as_str() else {
+                        continue;
+                    };
+                    if let Some(error) = html_meta_attribute_error(attribute, content) {
+                        diagnostics.push((
+                            3,
+                            "ERROR",
+                            format!("Error parsing meta tag attribute \"{attribute}\": {error}."),
+                        ));
+                    }
+                }
             }
         }
     }
     diagnostics
+}
+
+fn html_meta_attribute_error(attribute: &str, content: &serde_yaml::Value) -> Option<String> {
+    let content = match content {
+        serde_yaml::Value::Null => String::new(),
+        serde_yaml::Value::String(value) => value.clone(),
+        value => serde_yaml::to_string(value)
+            .unwrap_or_default()
+            .trim()
+            .to_owned(),
+    };
+    if content.is_empty() {
+        return Some("No content".into());
+    }
+    for (index, part) in attribute.split_whitespace().enumerate() {
+        if !part.contains('=') && index == 0 {
+            continue;
+        }
+        if !part.contains('=') {
+            return Some(format!("no '=' in {part}"));
+        }
+        let (name, value) = part.split_once('=').unwrap_or_default();
+        if name.is_empty() || value.is_empty() {
+            return Some(format!("malformed {part}"));
+        }
+    }
+    None
 }
 
 fn yaml_type_name(value: &serde_yaml::Value) -> &'static str {

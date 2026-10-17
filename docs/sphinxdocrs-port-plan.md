@@ -2223,7 +2223,8 @@ admonition diagnostics, and emits source-located warnings for undefined or
 cyclic substitutions, missing/escaping/recursive includes, unknown roles in
 included files, unknown directives, duplicate references, and unresolved local
 links. Invalid directive option values and missing required admonition content
-also emit reporter nodes. Include literal/code and line-selection options are
+also emit reporter nodes; malformed `html_meta` attribute strings emit
+source-located errors. Include literal/code and line-selection options are
 implemented.
 
 `tests/doctree_parity.rs` byte-compares selected cases from the upstream Sphinx

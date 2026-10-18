@@ -155,6 +155,18 @@ impl PyDomain {
             self.note_object(objtype, fullname, docname, anchor, signature);
         }
         for line in source.lines() {
+            let Some(name) = line
+                .trim_start()
+                .strip_prefix(".. autoclass::")
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+            else {
+                continue;
+            };
+            let name = name.split_whitespace().next().unwrap_or(name);
+            self.note_object("class", name, docname, name, String::new());
+        }
+        for line in source.lines() {
             let name = line
                 .trim_start()
                 .strip_prefix(".. module::")
@@ -278,6 +290,25 @@ mod tests {
             .unwrap();
         assert_eq!(docname, "api");
         assert_eq!(sig, "name, loud=False");
+    }
+
+    #[test]
+    fn note_source_registers_autoclass_with_qualified_anchor() {
+        let mut domain = PyDomain::new();
+        domain.note_source(
+            "extdev/utils",
+            ".. autoclass:: sphinx.transforms.post_transforms.SphinxPostTransform\n",
+        );
+
+        let (docname, anchor, _) = domain
+            .objects
+            .get(&(
+                "class".to_string(),
+                "sphinx.transforms.post_transforms.SphinxPostTransform".to_string(),
+            ))
+            .expect("autoclass target should be registered");
+        assert_eq!(docname, "extdev/utils");
+        assert_eq!(anchor, "sphinx.transforms.post_transforms.SphinxPostTransform");
     }
 
     #[test]

@@ -39,7 +39,15 @@ pub struct TocEntry {
 /// note). A toctree that (directly or transitively) includes itself
 /// stops expanding rather than recursing forever.
 pub fn resolve(env: &BuildEnvironment, docname: &str, max_depth: usize) -> Vec<TocEntry> {
-    resolve_inner(env, docname, max_depth, &mut HashSet::new())
+    resolve_inner(env, docname, max_depth, &mut HashSet::new(), false)
+}
+
+pub fn resolve_with_hidden(
+    env: &BuildEnvironment,
+    docname: &str,
+    max_depth: usize,
+) -> Vec<TocEntry> {
+    resolve_inner(env, docname, max_depth, &mut HashSet::new(), true)
 }
 
 /// Like [`resolve`], but for a *specific* `.. toctree::` directive
@@ -53,6 +61,23 @@ pub fn resolve_from_entries(
     entries: &[String],
     max_depth: usize,
 ) -> Vec<TocEntry> {
+    resolve_from_entries_with_visibility(env, entries, max_depth, false)
+}
+
+pub fn resolve_from_entries_with_hidden(
+    env: &BuildEnvironment,
+    entries: &[String],
+    max_depth: usize,
+) -> Vec<TocEntry> {
+    resolve_from_entries_with_visibility(env, entries, max_depth, true)
+}
+
+fn resolve_from_entries_with_visibility(
+    env: &BuildEnvironment,
+    entries: &[String],
+    max_depth: usize,
+    include_hidden: bool,
+) -> Vec<TocEntry> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for entry in entries {
@@ -65,7 +90,13 @@ pub fn resolve_from_entries(
         let children = if max_depth == 1 {
             Vec::new()
         } else {
-            resolve_inner(env, entry, max_depth.saturating_sub(1), &mut seen)
+            resolve_inner(
+                env,
+                entry,
+                max_depth.saturating_sub(1),
+                &mut seen,
+                include_hidden,
+            )
         };
         out.push(TocEntry {
             docname: entry.clone(),
@@ -81,15 +112,26 @@ fn resolve_inner(
     docname: &str,
     max_depth: usize,
     seen: &mut HashSet<String>,
+    include_hidden: bool,
 ) -> Vec<TocEntry> {
-    let Some(entries) = env.toctree_includes.get(docname) else {
+    let mut entries = env
+        .toctree_includes
+        .get(docname)
+        .cloned()
+        .unwrap_or_default();
+    if include_hidden {
+        if let Some(hidden) = env.hidden_toctree_includes.get(docname) {
+            entries.extend(hidden.iter().cloned());
+        }
+    }
+    if entries.is_empty() {
         return Vec::new();
-    };
+    }
     if !seen.insert(docname.to_string()) {
         return Vec::new();
     }
     let mut out = Vec::new();
-    for entry in entries {
+    for entry in &entries {
         let title = env
             .longtitles
             .get(entry)
@@ -99,7 +141,7 @@ fn resolve_inner(
         let children = if max_depth == 1 {
             Vec::new()
         } else {
-            resolve_inner(env, entry, max_depth.saturating_sub(1), seen)
+            resolve_inner(env, entry, max_depth.saturating_sub(1), seen, include_hidden)
         };
         out.push(TocEntry {
             docname: entry.clone(),
@@ -181,6 +223,24 @@ mod tests {
         assert_eq!(toc[0].children[0].docname, "guide/intro");
         assert_eq!(toc[1].docname, "reference");
         assert!(toc[1].children.is_empty());
+    }
+
+    #[test]
+    fn hidden_toctree_entries_are_opt_in() {
+        let mut env = make_env();
+        env.note_toctree("index", vec!["visible".to_string()]);
+        env.note_hidden_toctree("index", vec!["hidden".to_string()]);
+        env.set_title("visible", "Visible");
+        env.set_title("hidden", "Hidden");
+
+        let visible = resolve_from_entries(&env, &["index".to_string()], 0);
+        let including_hidden =
+            resolve_from_entries_with_hidden(&env, &["index".to_string()], 0);
+
+        assert_eq!(visible[0].children.len(), 1);
+        assert_eq!(visible[0].children[0].docname, "visible");
+        assert_eq!(including_hidden[0].children.len(), 2);
+        assert_eq!(including_hidden[0].children[1].docname, "hidden");
     }
 
     #[test]

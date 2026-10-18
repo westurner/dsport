@@ -199,6 +199,16 @@ impl Domain for StdDomain {
                     title: target.to_string(),
                 })
             }
+            "confval" => {
+                let (docname, anchor) = self
+                    .objects
+                    .get(&("confval".to_string(), target.to_string()))?;
+                Some(XrefTarget {
+                    docname: docname.clone(),
+                    anchor: anchor.clone(),
+                    title: target.to_string(),
+                })
+            }
             "doc" => {
                 let docname = self.resolve_doc(env, fromdocname, target)?;
                 let title = env.get_title(&docname).unwrap_or(&docname).to_string();
@@ -295,6 +305,21 @@ mod tests {
             .unwrap();
         assert_eq!(target.docname, "intro");
         assert_eq!(target.title, "Introduction");
+    }
+
+    #[test]
+    fn resolves_confval_objects() {
+        let env = make_env();
+        let mut domain = StdDomain::new();
+        domain.note_object("confval", "root_doc", "usage/configuration", "confval-root_doc");
+
+        let target = domain
+            .resolve_xref(&env, "usage/theming", "confval", "root_doc")
+            .unwrap();
+
+        assert_eq!(target.docname, "usage/configuration");
+        assert_eq!(target.anchor, "confval-root_doc");
+        assert_eq!(target.title, "root_doc");
     }
 
     #[test]

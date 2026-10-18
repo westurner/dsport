@@ -191,6 +191,8 @@ pub struct BuildEnvironment {
 
     /// docname → list of toctree include files.
     pub toctree_includes: HashMap<String, Vec<String>>,
+    /// docname → entries available only through hidden toctrees.
+    pub hidden_toctree_includes: HashMap<String, Vec<String>>,
 
     /// docname → set of files-containing-its-TOC to rebuild.
     pub files_to_rebuild: HashMap<String, HashSet<String>>,
@@ -318,6 +320,7 @@ impl BuildEnvironment {
             toc_num_entries: HashMap::new(),
             toc_secnumbers: HashMap::new(),
             toctree_includes: HashMap::new(),
+            hidden_toctree_includes: HashMap::new(),
             files_to_rebuild: HashMap::new(),
             glob_toctrees: HashSet::new(),
             numbered_toctrees: HashSet::new(),
@@ -968,8 +971,24 @@ impl BuildEnvironment {
                 .to_path_buf(),
             &self.config.source_encoding(),
         );
-        let expanded_source = self.expand_autodoc(&included_source);
-        let source = expanded_source.as_deref().unwrap_or(&included_source);
+        let source_dir = self
+            .doc2path(docname)
+            .parent()
+            .unwrap_or(self.srcdir.as_path())
+            .to_path_buf();
+        let included_source = expand_rst_literalincludes(
+            &included_source,
+            &source_dir,
+            &self.config.source_encoding(),
+        );
+        let qualified_source = qualify_rst_directive_options(&included_source);
+        let source = qualified_source.as_deref().unwrap_or(&included_source);
+        let expanded_source = self.expand_autodoc(source);
+        let autodoc_source = expanded_source.as_deref().unwrap_or(source);
+        let expanded_attribute_docs = self.expand_autoattribute_docs(autodoc_source);
+        let source = expanded_attribute_docs
+            .as_deref()
+            .unwrap_or(autodoc_source);
         let highlighted_source = self.apply_highlight_language(source);
         let parse_source = highlighted_source.as_deref().unwrap_or(source);
         let tree = self.parse_source(docname, parse_source)?;
@@ -998,6 +1017,12 @@ impl BuildEnvironment {
             .into_iter()
             .map(|entry| docname_join(docname, &entry))
             .collect();
+        let hidden_entries = scan_hidden_toctree_entries_with_titles_mode(&scan_source, true);
+        for (entry, title) in &hidden_entries {
+            if let Some(title) = title {
+                self.longtitles.insert(docname_join(docname, entry), title.clone());
+            }
+        }
         for (entry, title) in scan_toctree_entries_with_titles(&scan_source) {
             if let Some(title) = title {
                 self.longtitles.insert(docname_join(docname, &entry), title);
@@ -1006,6 +1031,13 @@ impl BuildEnvironment {
         if !entries.is_empty() {
             self.note_toctree(docname.to_string(), entries);
         }
+        self.note_hidden_toctree(
+            docname.to_string(),
+            hidden_entries
+                .into_iter()
+                .map(|(entry, _)| docname_join(docname, &entry))
+                .collect(),
+        );
 
         for include in scan_include_entries(&scan_source) {
             self.note_dependency(docname.to_string(), include);
@@ -1106,6 +1138,120 @@ impl BuildEnvironment {
         changed.then(|| output.join("\n"))
     }
 
+    fn expand_autoattribute_docs(&self, source: &str) -> Option<String> {
+        let lines: Vec<&str> = source.lines().collect();
+        let mut output = Vec::with_capacity(lines.len());
+        let mut module_name = String::new();
+        let mut class_context: Option<(usize, String)> = None;
+        let mut literal_block_indent = None;
+        let mut changed = false;
+
+        for line in &lines {
+            let trimmed = line.trim_start();
+            let indent = source_indentation(line);
+            if let Some(base_indent) = literal_block_indent {
+                output.push((*line).to_string());
+                if !trimmed.is_empty() && indent <= base_indent {
+                    literal_block_indent = None;
+                }
+                continue;
+            }
+
+            if !trimmed.is_empty()
+                && class_context
+                    .as_ref()
+                    .is_some_and(|(class_indent, _)| indent <= *class_indent)
+            {
+                class_context = None;
+            }
+
+            if [".. code-block::", ".. code::", ".. sourcecode::", ".. raw::"]
+                .iter()
+                .any(|prefix| trimmed.starts_with(prefix))
+            {
+                literal_block_indent = Some(indent);
+                output.push((*line).to_string());
+                continue;
+            }
+
+            let module_directive = [".. module::", ".. currentmodule::", ".. py:module::", ".. py:currentmodule::"]
+                .iter()
+                .find_map(|prefix| trimmed.strip_prefix(prefix));
+            if let Some(name) = module_directive {
+                module_name = name.trim().to_string();
+                class_context = None;
+                output.push((*line).to_string());
+                continue;
+            }
+
+            let class_directive = [".. class::", ".. autoclass::", ".. py:class::"]
+                .iter()
+                .find_map(|prefix| trimmed.strip_prefix(prefix));
+            if let Some(name) = class_directive {
+                let class_name = name.trim().to_string();
+                class_context = Some((indent, class_name.clone()));
+                if trimmed.starts_with(".. class::") && !module_name.is_empty() {
+                    let prefix = &line[..line.len() - trimmed.len()];
+                    output.push(format!(
+                        "{prefix}.. py:class:: {module_name}.{class_name}"
+                    ));
+                    changed = true;
+                } else {
+                    output.push((*line).to_string());
+                }
+                continue;
+            }
+
+            let Some(attribute) = trimmed.strip_prefix(".. autoattribute::") else {
+                output.push((*line).to_string());
+                continue;
+            };
+            let attribute = attribute.trim();
+            let (class_name, attribute_name) = class_context
+                .as_ref()
+                .map(|(_, class_name)| (class_name.as_str(), attribute))
+                .or_else(|| attribute.rsplit_once('.'))
+                .unwrap_or(("", ""));
+            if module_name.is_empty() || class_name.is_empty() || attribute_name.is_empty() {
+                output.push((*line).to_string());
+                continue;
+            }
+            let doc = crate::autodoc_runtime::attribute_doc(
+                &module_name,
+                class_name,
+                attribute_name,
+                &[],
+            )
+            .ok()
+            .flatten();
+            let Some(doc) = doc else {
+                output.push((*line).to_string());
+                continue;
+            };
+
+            let prefix = &line[..line.len() - trimmed.len()];
+            let qualified_name = format!("{module_name}.{class_name}.{attribute_name}");
+            output.push(format!("{prefix}.. autoattribute:: {qualified_name}"));
+            let content_indent = " ".repeat(indent + 3);
+            for doc_line in doc.lines() {
+                if doc_line.is_empty() {
+                    output.push(String::new());
+                } else {
+                    output.push(format!("{content_indent}{doc_line}"));
+                }
+            }
+            changed = true;
+        }
+
+        changed.then(|| {
+            let mut expanded = output.join("\n");
+            if source.ends_with('\n') {
+                expanded.push('\n');
+            }
+            expanded
+        })
+    }
+
     fn resolve_python_module(&self, module_name: &str) -> Option<PathBuf> {
         let relative = module_name.replace('.', "/");
         let module = self.srcdir.join(format!("{relative}.py"));
@@ -1200,6 +1346,12 @@ impl BuildEnvironment {
         for term in scan::scan_glossary_terms(source) {
             let labelid = format!("term-{}", crate::domains::normalize_id(&term));
             self.std_domain.note_term(term, docname, labelid);
+        }
+
+        for confval in scan::scan_confval_names(source) {
+            let labelid = format!("confval-{}", normalize_confval_id(&confval));
+            self.std_domain
+                .note_object("confval", confval, docname, labelid);
         }
 
         for (objtype, name) in scan::scan_rst_domain_objects(source) {
@@ -1389,7 +1541,8 @@ impl BuildEnvironment {
         use crate::domains::Domain as _;
         use crate::util_osutil::relative_uri;
 
-        const KNOWN_STD_REFTYPES: &[&str] = &["ref", "doc", "term", "numref", "keyword"];
+        const KNOWN_STD_REFTYPES: &[&str] =
+            &["ref", "doc", "term", "numref", "keyword", "confval"];
         const KNOWN_RST_REFTYPES: &[&str] = &["dir", "role"];
 
         // `sphinx.ext.extlinks`' `extlinks = {name: (url_template, caption_template), ...}`
@@ -1901,6 +2054,21 @@ impl BuildEnvironment {
         self.toctree_includes.insert(docname, entries);
     }
 
+    pub fn note_hidden_toctree(&mut self, docname: impl Into<String>, entries: Vec<String>) {
+        let docname = docname.into();
+        if entries.is_empty() {
+            self.hidden_toctree_includes.remove(&docname);
+            return;
+        }
+        for entry in &entries {
+            self.files_to_rebuild
+                .entry(entry.clone())
+                .or_default()
+                .insert(docname.clone());
+        }
+        self.hidden_toctree_includes.insert(docname, entries);
+    }
+
     // ── H2f: consistency check ────────────────────────────────────────────────
 
     /// Return a warning for every found document that is not the root
@@ -1912,6 +2080,11 @@ impl BuildEnvironment {
         let root_doc = self.config.root_doc();
         let mut included: HashSet<&str> = HashSet::new();
         for entries in self.toctree_includes.values() {
+            for e in entries {
+                included.insert(e.as_str());
+            }
+        }
+        for entries in self.hidden_toctree_includes.values() {
             for e in entries {
                 included.insert(e.as_str());
             }
@@ -2025,6 +2198,7 @@ impl BuildEnvironment {
         self.toc_num_entries.remove(docname);
         self.toc_secnumbers.remove(docname);
         self.toctree_includes.remove(docname);
+        self.hidden_toctree_includes.remove(docname);
         self.files_to_rebuild.remove(docname);
         for deps in self.files_to_rebuild.values_mut() {
             deps.remove(docname);
@@ -2063,6 +2237,7 @@ impl BuildEnvironment {
             toc_num_entries: self.toc_num_entries.clone(),
             toc_secnumbers: self.toc_secnumbers.clone(),
             toctree_includes: self.toctree_includes.clone(),
+            hidden_toctree_includes: self.hidden_toctree_includes.clone(),
             files_to_rebuild: self.files_to_rebuild.clone(),
             glob_toctrees: self.glob_toctrees.clone(),
             numbered_toctrees: self.numbered_toctrees.clone(),
@@ -2097,6 +2272,7 @@ impl BuildEnvironment {
         self.toc_num_entries = p.toc_num_entries;
         self.toc_secnumbers = p.toc_secnumbers;
         self.toctree_includes = p.toctree_includes;
+        self.hidden_toctree_includes = p.hidden_toctree_includes;
         self.files_to_rebuild = p.files_to_rebuild;
         self.glob_toctrees = p.glob_toctrees;
         self.numbered_toctrees = p.numbered_toctrees;
@@ -2296,7 +2472,7 @@ fn smartquote_text(text: &str) -> String {
 /// version is detected as stale (treated as absent) rather than
 /// misinterpreted by `serde_json` (which would otherwise silently accept
 /// a structurally-compatible-but-semantically-different old file).
-pub const ENV_PERSISTED_VERSION: u32 = 3;
+pub const ENV_PERSISTED_VERSION: u32 = 4;
 
 /// On-disk snapshot of the parts of [`BuildEnvironment`] that must
 /// survive between separate `sphinx-build-rs` invocations for
@@ -2328,6 +2504,7 @@ pub struct EnvPersisted {
     pub toc_num_entries: HashMap<String, usize>,
     pub toc_secnumbers: HashMap<String, HashMap<String, Vec<u32>>>,
     pub toctree_includes: HashMap<String, Vec<String>>,
+    pub hidden_toctree_includes: HashMap<String, Vec<String>>,
     pub files_to_rebuild: HashMap<String, HashSet<String>>,
     pub glob_toctrees: HashSet<String>,
     pub numbered_toctrees: HashSet<String>,
@@ -2787,6 +2964,21 @@ fn scan_toctree_entries_with_titles_mode(
     source: &str,
     strip_source_suffixes: bool,
 ) -> Vec<(String, Option<String>)> {
+    scan_toctree_entries_with_visibility(source, strip_source_suffixes, false)
+}
+
+fn scan_hidden_toctree_entries_with_titles_mode(
+    source: &str,
+    strip_source_suffixes: bool,
+) -> Vec<(String, Option<String>)> {
+    scan_toctree_entries_with_visibility(source, strip_source_suffixes, true)
+}
+
+fn scan_toctree_entries_with_visibility(
+    source: &str,
+    strip_source_suffixes: bool,
+    hidden_only: bool,
+) -> Vec<(String, Option<String>)> {
     let mut entries = Vec::new();
     let lines: Vec<&str> = source.lines().collect();
     let mut i = 0;
@@ -2832,7 +3024,7 @@ fn scan_toctree_entries_with_titles_mode(
                     }
                     i += 1;
                 }
-                if !hidden {
+                if hidden == hidden_only {
                     entries.extend(directive_entries);
                 }
                 continue;
@@ -2903,6 +3095,224 @@ fn expand_rst_includes(source: &str, base_dir: &Path, encoding: &str) -> String 
     expand(source, base_dir, encoding, 0)
 }
 
+fn source_indentation(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+fn normalize_confval_id(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut last_dash = true;
+    for character in name.to_ascii_lowercase().chars() {
+        if character.is_ascii_alphanumeric() || character == '_' {
+            out.push(character);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    out
+}
+
+fn qualify_rst_directive_options(source: &str) -> Option<String> {
+    let scan_source = strip_opaque_literal_blocks(source);
+    let scan_lines: Vec<_> = scan_source.lines().collect();
+    let source_lines: Vec<_> = source.lines().collect();
+    let mut output = Vec::with_capacity(source_lines.len());
+    let mut owner: Option<(usize, String)> = None;
+    let mut changed = false;
+
+    for (line, scan_line) in source_lines.iter().zip(scan_lines) {
+        let trimmed = scan_line.trim_start();
+        let indent = source_indentation(scan_line);
+        if !trimmed.is_empty() && owner.as_ref().is_some_and(|(base, _)| indent <= *base) {
+            owner = None;
+        }
+
+        if let Some(signature) = trimmed.strip_prefix(".. rst:directive::") {
+            let signature = signature.trim();
+            let signature = signature.strip_prefix("..").unwrap_or(signature).trim();
+            let directive = signature
+                .split_once("::")
+                .map(|(name, _)| name.trim())
+                .unwrap_or(signature);
+            if !directive.is_empty() {
+                owner = Some((indent, directive.to_string()));
+            }
+            output.push((*line).to_string());
+            continue;
+        }
+
+        if let (Some((_, owner)), Some(option)) = (
+            owner.as_ref(),
+            trimmed.strip_prefix(".. rst:directive:option::"),
+        ) {
+            let prefix = &line[..line.len() - scan_line.trim_start().len()];
+            output.push(format!(
+                "{prefix}.. rst:directive:option:: @{}@{}",
+                owner,
+                option.trim()
+            ));
+            changed = true;
+        } else {
+            output.push((*line).to_string());
+        }
+    }
+
+    changed.then(|| {
+        let mut rewritten = output.join("\n");
+        if source.ends_with('\n') {
+            rewritten.push('\n');
+        }
+        rewritten
+    })
+}
+
+fn expand_rst_literalincludes(source: &str, base_dir: &Path, encoding: &str) -> String {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut output = Vec::new();
+    let mut index = 0;
+    let mut literal_block_indent = None;
+
+    while index < lines.len() {
+        let line = lines[index];
+        let indent = source_indentation(line);
+        if let Some(base_indent) = literal_block_indent {
+            if line.trim().is_empty() || indent > base_indent {
+                output.push(line.to_string());
+                index += 1;
+                continue;
+            }
+            literal_block_indent = None;
+        }
+
+        let trimmed = line.trim_start();
+        if [".. code-block::", ".. code::", ".. sourcecode::", ".. raw::"]
+            .iter()
+            .any(|prefix| trimmed.starts_with(prefix))
+        {
+            literal_block_indent = Some(indent);
+            output.push(line.to_string());
+            index += 1;
+            continue;
+        }
+
+        let Some(argument) = trimmed.strip_prefix(".. literalinclude::") else {
+            output.push(line.to_string());
+            index += 1;
+            continue;
+        };
+        let directive_indent = indent;
+        let mut options = HashMap::new();
+        index += 1;
+        while index < lines.len() {
+            if lines[index].trim().is_empty() {
+                index += 1;
+                continue;
+            }
+            let option_indent = source_indentation(lines[index]);
+            if option_indent <= directive_indent {
+                break;
+            }
+            let option = lines[index].trim();
+            let Some(option) = option.strip_prefix(':') else {
+                break;
+            };
+            let Some((key, value)) = option.split_once(':') else {
+                break;
+            };
+            options.insert(key.trim().to_string(), value.trim().to_string());
+            index += 1;
+        }
+
+        let path = Path::new(argument.trim());
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            base_dir.join(path)
+        };
+        let Ok(contents) = read_source_file(&path, encoding) else {
+            output.push(line.to_string());
+            continue;
+        };
+        let contents = options
+            .get("pyobject")
+            .and_then(|object| extract_python_object(&contents, object))
+            .unwrap_or(contents);
+        let contents = options
+            .get("lines")
+            .map(|ranges| select_literalinclude_lines(&contents, ranges))
+            .unwrap_or(contents);
+
+        let language = options.get("language").map(String::as_str).unwrap_or("text");
+        let prefix = " ".repeat(directive_indent);
+        output.push(format!("{prefix}.. code-block:: {language}"));
+        if let Some(caption) = options.get("caption") {
+            output.push(format!("{prefix}   :caption: {caption}"));
+        }
+        if options.contains_key("linenos") {
+            output.push(format!("{prefix}   :linenos:"));
+        }
+        output.push(String::new());
+        output.extend(contents.lines().map(|line| format!("{prefix}   {line}")));
+        output.push(String::new());
+    }
+
+    output.join("\n")
+}
+
+fn select_literalinclude_lines(source: &str, ranges: &str) -> String {
+    let lines: Vec<_> = source.lines().collect();
+    let mut selected: Vec<&str> = Vec::new();
+    for range in ranges.split(',').map(str::trim).filter(|range| !range.is_empty()) {
+        let (start, end) = if let Some((start, end)) = range.split_once('-') {
+            let start = start.trim().parse::<usize>().unwrap_or(1);
+            let end = end.trim().parse::<usize>().unwrap_or(lines.len());
+            (start, end)
+        } else if let Ok(line) = range.parse::<usize>() {
+            (line, line)
+        } else {
+            continue;
+        };
+        if start == 0 || end < start {
+            continue;
+        }
+        selected.extend(lines.iter().skip(start - 1).take(end - start + 1));
+    }
+    selected.join("\n")
+}
+
+fn extract_python_object(source: &str, object_name: &str) -> Option<String> {
+    let name = object_name.rsplit('.').next()?.trim();
+    let lines: Vec<&str> = source.lines().collect();
+    let declaration = lines.iter().position(|line| {
+        let trimmed = line.trim_start();
+        ["class ", "def ", "async def "]
+            .iter()
+            .any(|prefix| {
+                trimmed
+                    .strip_prefix(prefix)
+                    .is_some_and(|rest| rest.split(['(', ':', ' ']).next() == Some(name))
+            })
+    })?;
+    let indent = source_indentation(lines[declaration]);
+    let mut start = declaration;
+    while start > 0 && lines[start - 1].trim_start().starts_with('@') {
+        start -= 1;
+    }
+    let end = lines
+        .iter()
+        .enumerate()
+        .skip(declaration + 1)
+        .find(|(_, line)| !line.trim().is_empty() && source_indentation(line) <= indent)
+        .map(|(index, _)| index)
+        .unwrap_or(lines.len());
+    Some(lines[start..end].join("\n").trim_end().to_string())
+}
+
 fn apply_module_section_ids(tree: &mut Doctree, source: &str) {
     let noindex_modules = source
         .lines()
@@ -2928,6 +3338,7 @@ fn apply_module_section_ids(tree: &mut Doctree, source: &str) {
 
     fn module_name(tree: &Doctree, id: NodeId) -> Option<String> {
         match &tree.node(id).kind {
+            NodeKind::Target { ids, .. } => ids.strip_prefix("module-").map(str::to_string),
             NodeKind::ObjectDescription { classes, sig_text, .. }
                 if classes.split_whitespace().any(|class| class == "module") => sig_text
                     .split_once(' ')
@@ -2989,6 +3400,76 @@ mod tests {
         let config = SphinxConfig::new_defaults();
         let project = EnvProject::new("/tmp/src", &[(".rst", "restructuredtext")]);
         BuildEnvironment::new(config, project, "/tmp/src", "/tmp/doctrees")
+    }
+
+    #[test]
+    fn literalinclude_resolves_relative_paths_and_selects_python_objects() {
+        let temp = tempfile::tempdir().unwrap();
+        let doc_dir = temp.path().join("guide");
+        let examples = doc_dir.join("examples");
+        std::fs::create_dir_all(&examples).unwrap();
+        std::fs::write(
+            examples.join("sample.py"),
+            "class Wanted:\n    value = 1\n\nclass Other:\n    value = 2\n",
+        )
+        .unwrap();
+
+        let expanded = expand_rst_literalincludes(
+            ".. literalinclude:: examples/sample.py\n   :language: python\n   :pyobject: Wanted\n   :linenos:\n",
+            &doc_dir,
+            "utf-8",
+        );
+
+        assert!(expanded.contains(".. code-block:: python"));
+        assert!(expanded.contains(":linenos:"));
+        assert!(expanded.contains("class Wanted:"));
+        assert!(!expanded.contains("class Other:"));
+    }
+
+    #[test]
+    fn literalinclude_selects_inclusive_line_ranges() {
+        let source = "one\ntwo\nthree\nfour\nfive\n";
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("sample.py");
+        std::fs::write(&path, source).unwrap();
+        let expanded = expand_rst_literalincludes(
+            ".. literalinclude:: sample.py\n   :language: python\n   :lines: 2-3,5\n",
+            temp.path(),
+            "utf-8",
+        );
+
+        assert!(expanded.contains("two\n   three\n   five"), "{expanded}");
+    }
+
+    #[test]
+    fn autoattribute_expansion_includes_inherited_source_comments() {
+        let env = make_env();
+        let expanded = env
+            .expand_autoattribute_docs(
+                ".. module:: sphinx.builders.html\n\n.. class:: StandaloneHTMLBuilder\n\n   .. autoattribute:: name\n",
+            )
+            .expect("the inherited attribute comment should be expanded");
+
+        assert!(expanded.contains(
+            ".. autoattribute:: sphinx.builders.html.StandaloneHTMLBuilder.name"
+        ));
+        assert!(expanded.contains(
+            ".. py:class:: sphinx.builders.html.StandaloneHTMLBuilder"
+        ));
+        assert_eq!(expanded.matches(".. autoattribute::").count(), 1);
+        assert!(expanded.contains("The builder's name."));
+        assert!(expanded.contains("select builders on the command line."));
+    }
+
+    #[test]
+    fn rst_directive_options_are_qualified_by_their_owner() {
+        let source = ".. rst:directive:: .. py:function:: name(parameters)\n\n   .. rst:directive:option:: single-line-parameter-list\n";
+        let expanded = qualify_rst_directive_options(source)
+            .expect("nested directive options should be qualified");
+
+        assert!(expanded.contains(
+            ".. rst:directive:option:: @py:function@single-line-parameter-list"
+        ));
     }
 
     fn source_snapshot() -> AnalysisSnapshot {
@@ -3816,6 +4297,26 @@ mod tests {
     }
 
     #[test]
+    fn read_one_with_source_records_hidden_toctree_entries_separately() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.read_one_with_source(
+            "usage/restructuredtext/index",
+            "Title\n=====\n\n.. toctree::\n\n   visible\n\n.. toctree::\n   :hidden:\n\n   domains\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            env.toctree_includes.get("usage/restructuredtext/index"),
+            Some(&vec!["usage/restructuredtext/visible".to_string()])
+        );
+        assert_eq!(
+            env.hidden_toctree_includes
+                .get("usage/restructuredtext/index"),
+            Some(&vec!["usage/restructuredtext/domains".to_string()])
+        );
+    }
+
+    #[test]
     fn read_one_with_source_root_level_toctree_entries_unqualified() {
         let (_tmp, mut env) = make_env_with_tempdir();
         env.read_one_with_source(
@@ -3882,6 +4383,7 @@ mod tests {
         let (_tmp, mut env) = make_env_with_tempdir();
         env.record_doc_read("index", 42);
         env.set_title("index", "Welcome");
+        env.note_hidden_toctree("index", vec!["hidden".to_string()]);
         let persisted = env.to_persisted();
 
         let config = SphinxConfig::new_defaults();
@@ -3893,6 +4395,10 @@ mod tests {
         assert_eq!(hash, env.config.stable_hash());
         assert_eq!(fresh.all_docs.get("index"), Some(&42));
         assert_eq!(fresh.get_title("index"), Some("Welcome"));
+        assert_eq!(
+            fresh.hidden_toctree_includes.get("index"),
+            Some(&vec!["hidden".to_string()])
+        );
     }
 
     #[test]
@@ -4518,6 +5024,10 @@ options:
     fn scan_toctree_entries_omits_hidden_entries() {
         let source = ".. toctree::\n   visible\n\n.. toctree::\n   :hidden:\n\n   hidden\n";
         assert_eq!(scan_toctree_entries(source), vec!["visible"]);
+        assert_eq!(
+            scan_hidden_toctree_entries_with_titles_mode(source, true),
+            vec![("hidden".to_string(), None)]
+        );
     }
 
     #[test]

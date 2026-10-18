@@ -64,6 +64,63 @@ fn schedule(node: &Node, close: impl Into<String>, tasks: &mut Vec<Task>) {
     }
 }
 
+fn literal_block_line_count(tree: &Doctree, root: NodeId) -> usize {
+    let mut text = String::new();
+    let mut pending = tree.node(root).children.clone();
+    while let Some(id) = pending.pop() {
+        match &tree.node(id).kind {
+            NodeKind::Text(value) => text.push_str(value),
+            _ => pending.extend(tree.node(id).children.iter().rev().copied()),
+        }
+    }
+    text.split('\n').count().max(1)
+}
+
+fn glossary_term_id(tree: &Doctree, term: NodeId) -> Option<String> {
+    let mut ancestor = tree.node(term).parent;
+    let mut in_glossary = false;
+    while let Some(id) = ancestor {
+        let node = tree.node(id);
+        if matches!(&node.kind, NodeKind::Container { classes } if classes.split_whitespace().any(|class| class == "glossary")) {
+            in_glossary = true;
+            break;
+        }
+        ancestor = node.parent;
+    }
+    if !in_glossary {
+        return None;
+    }
+
+    fn collect_text(tree: &Doctree, id: NodeId, out: &mut String) {
+        match &tree.node(id).kind {
+            NodeKind::Text(text) => out.push_str(text),
+            _ => {
+                for &child in &tree.node(id).children {
+                    collect_text(tree, child, out);
+                }
+            }
+        }
+    }
+
+    let mut term_text = String::new();
+    collect_text(tree, term, &mut term_text);
+    let mut id = String::from("term-");
+    let mut last_dash = true;
+    for character in term_text.trim().to_ascii_lowercase().chars() {
+        if character.is_ascii_alphanumeric() {
+            id.push(character);
+            last_dash = false;
+        } else if !last_dash {
+            id.push('-');
+            last_dash = true;
+        }
+    }
+    while id.ends_with('-') {
+        id.pop();
+    }
+    (id.len() > "term-".len()).then_some(id)
+}
+
 fn wrap(node: &Node, tag: &str, out: &mut String, tasks: &mut Vec<Task>) {
     let _ = write!(out, "<{tag}>");
     schedule(node, format!("</{tag}>"), tasks);
@@ -172,6 +229,7 @@ fn emit_enter(
             classes, caption, ..
         } => {
             let language = classes.split_whitespace().nth(1).unwrap_or("text");
+            let line_numbers = classes.split_whitespace().any(|class| class == "linenos");
             if classes.split_whitespace().next() == Some("code") {
                 if caption.is_some() {
                     out.push_str("<div class=\"literal-block-wrapper docutils container\">");
@@ -182,19 +240,28 @@ fn emit_enter(
                         escape(caption)
                     );
                 }
+                if line_numbers {
+                    out.push_str(
+                        "<table class=\"highlighttable\"><tr><td class=\"linenos\"><div class=\"linenodiv\"><pre>",
+                    );
+                    for number in 1..=literal_block_line_count(tree, id) {
+                        let _ = write!(out, "<span class=\"normal\">{number}</span>\n");
+                    }
+                    out.push_str("</pre></div></td><td class=\"code\">");
+                }
                 let _ = write!(
                     out,
                     "<div class=\"highlight-{language} notranslate\"><div class=\"highlight\"><pre>"
                 );
-                schedule(
-                    node,
-                    if caption.is_some() {
-                        "</pre></div></div></div>"
-                    } else {
-                        "</pre></div></div>"
-                    },
-                    tasks,
-                );
+                let mut close = if line_numbers {
+                    "</pre></div></div></td></tr></table>".to_string()
+                } else {
+                    "</pre></div></div>".to_string()
+                };
+                if caption.is_some() {
+                    close.push_str("</div>");
+                }
+                schedule(node, close, tasks);
             } else if classes.is_empty() {
                 out.push_str("<pre>");
                 schedule(node, "</pre>", tasks);
@@ -240,7 +307,14 @@ fn emit_enter(
                 tasks.push(Task::Enter(c));
             }
         }
-        NodeKind::Term => wrap(node, "dt", out, tasks),
+        NodeKind::Term => {
+            if let Some(id) = glossary_term_id(tree, id) {
+                let _ = write!(out, "<dt id=\"{}\">", escape(&id));
+                schedule(node, "</dt>", tasks);
+            } else {
+                wrap(node, "dt", out, tasks);
+            }
+        }
         NodeKind::Classifier => wrap_with_class(node, "span", "classifier", out, tasks),
         NodeKind::Definition => wrap(node, "dd", out, tasks),
         NodeKind::FieldList => {
@@ -916,6 +990,41 @@ mod tests {
         assert!(rendered.contains(
             "<span class=\"sd\">&quot;&quot;&quot;Colors enumerator&quot;&quot;&quot;</span>"
         ));
+    }
+
+    #[test]
+    fn code_block_line_numbers_render_in_a_separate_column() {
+        let tree = crate::parse_rst_with_options(
+            ".. code-block:: text\n   :linenos:\n\n   first\n   second\n",
+            "example.rst",
+            crate::TitlePromotion::Preserve,
+        );
+        let rendered = html5(
+            &tree,
+            &crate::cli::Html5Options::default(),
+            &crate::cli::CommonOptions::default(),
+        );
+
+        assert!(rendered.contains("<td class=\"linenos\">"));
+        assert!(rendered.contains("<span class=\"normal\">1</span>"));
+        assert!(rendered.contains("<span class=\"normal\">2</span>"));
+        assert!(rendered.contains("<td class=\"code\">"));
+    }
+
+    #[test]
+    fn glossary_terms_receive_standard_domain_anchors() {
+        let glossary = crate::parse_rst_with_options(
+            ".. glossary::\n\n   builder\n      A class that builds output.\n",
+            "glossary",
+            crate::TitlePromotion::Preserve,
+        );
+        let rendered = html5(
+            &glossary,
+            &crate::cli::Html5Options::default(),
+            &crate::cli::CommonOptions::default(),
+        );
+
+        assert!(rendered.contains("<dt id=\"term-builder\">builder</dt>"));
     }
 
     #[test]

@@ -387,6 +387,44 @@ pub fn introspect_class(
     })
 }
 
+/// Return the source comment documentation for a class attribute, searching
+/// the class MRO the way autodoc resolves inherited attribute documentation.
+pub fn attribute_doc(
+    module_name: &str,
+    class_name: &str,
+    attribute_name: &str,
+    mock_imports: &[String],
+) -> PyResult<Option<String>> {
+    Python::attach(|py| {
+        with_python_runtime_lock(py, || {
+            install_mock_imports_unlocked(py, mock_imports)?;
+            let module = py.import(module_name)?;
+            let class = module.getattr(class_name)?;
+            let analyzer_type = py.import("sphinx.pycode")?.getattr("ModuleAnalyzer")?;
+
+            for base in class.getattr("__mro__")?.try_iter()? {
+                let base = base?;
+                let base_module: String = base.getattr("__module__")?.extract()?;
+                let base_name: String = base.getattr("__name__")?.extract()?;
+                let Ok(analyzer) = analyzer_type.call_method1("for_module", (&base_module,))
+                else {
+                    continue;
+                };
+                let docs = analyzer.call_method0("find_attr_docs")?;
+                let lines = docs.call_method1("get", ((base_name, attribute_name),))?;
+                if !lines.is_none() {
+                    let text = lines.extract::<Vec<String>>()?.join("\n");
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        return Ok(Some(text.to_string()));
+                    }
+                }
+            }
+            Ok(None)
+        })
+    })
+}
+
 fn is_property(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<bool> {
     let builtins = py.import("builtins")?;
     let property_ty = builtins.getattr("property")?;
@@ -474,6 +512,19 @@ mod tests {
             Err(e) => panic!("expected OrderedDict to introspect cleanly: {e}"),
         };
         assert!(classinfo.methods().contains(&"popitem".to_string()));
+    }
+
+    #[test]
+    fn finds_inherited_attribute_source_documentation() {
+        let result = attribute_doc(
+            "sphinx.builders.html",
+            "StandaloneHTMLBuilder",
+            "name",
+            &[],
+        )
+        .expect("attribute documentation lookup should succeed");
+
+        assert!(result.is_some_and(|text| text.contains("select builders on the command line")));
     }
 
     #[test]

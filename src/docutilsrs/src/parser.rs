@@ -12,7 +12,7 @@
     dead_code
 )]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::doctree::{Doctree, NodeId, NodeKind};
 
@@ -97,6 +97,7 @@ fn parse_rst_impl(
         figure_count: 0,
         current_line: 0,
         show_docutils_links,
+        current_program: None,
         inline_ref_sites: Vec::new(),
     };
     for block in blocks {
@@ -104,6 +105,7 @@ fn parse_rst_impl(
     }
     normalize_target_placement(&mut tree);
     repair_duplicate_target_ids(&mut tree);
+    repair_duplicate_section_ids(&mut tree);
     resolve_references(&mut tree, &ctx);
     if promote_title {
         promote_document_title(&mut tree);
@@ -264,6 +266,59 @@ fn repair_duplicate_target_ids(tree: &mut Doctree) {
     visit(tree, tree.root(), &mut used);
 }
 
+fn repair_duplicate_section_ids(tree: &mut Doctree) {
+    let mut reserved = HashSet::new();
+    for id in 0..tree.nodes_len() {
+        match &tree.node(id).kind {
+            NodeKind::Section { ids, .. }
+            | NodeKind::Target { ids, .. }
+            | NodeKind::ObjectDescription { ids, .. }
+                if !ids.is_empty() =>
+            {
+                reserved.insert(ids.clone());
+            }
+            _ => {}
+        }
+    }
+
+    fn visit(
+        tree: &mut Doctree,
+        parent: NodeId,
+        reserved: &mut HashSet<String>,
+        seen_sections: &mut HashSet<String>,
+        next_id: &mut u32,
+    ) {
+        if let NodeKind::Section { ids, .. } = &tree.node(parent).kind {
+            let current_id = ids.clone();
+            if !current_id.is_empty() && !seen_sections.insert(current_id) {
+                let replacement = loop {
+                    let candidate = format!("id{}", *next_id);
+                    *next_id += 1;
+                    if reserved.insert(candidate.clone()) {
+                        break candidate;
+                    }
+                };
+                if let NodeKind::Section { ids, .. } = &mut tree.node_mut(parent).kind {
+                    *ids = replacement;
+                }
+            }
+        }
+
+        let children = tree.node(parent).children.clone();
+        for child in children {
+            visit(tree, child, reserved, seen_sections, next_id);
+        }
+    }
+
+    visit(
+        tree,
+        tree.root(),
+        &mut reserved,
+        &mut HashSet::new(),
+        &mut 1,
+    );
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Parser context shared across emit_block calls.
 // ────────────────────────────────────────────────────────────────────────────
@@ -279,6 +334,7 @@ pub struct ParseCtx {
     pub(crate) implicit_id_count: u32,
     pub(crate) figure_count: u32,
     pub(crate) show_docutils_links: bool,
+    pub(crate) current_program: Option<String>,
     /// Source line of the paragraph currently being emitted, or 0 when
     /// unknown. Used to stamp `line=` on system messages for unresolved
     /// references discovered during inline parsing.
@@ -350,6 +406,8 @@ pub enum Block {
         classes: String,
         children: Vec<Block>,
     },
+    TargetId(String),
+    Program(Option<String>),
     Transition,
     Target {
         name: String,
@@ -484,8 +542,7 @@ pub enum InlineBlock {
 }
 
 pub struct DefItem {
-    pub term: String,
-    pub classifier: Option<String>,
+    pub terms: Vec<(String, Option<String>)>,
     pub definition: Vec<Block>,
 }
 
@@ -1332,8 +1389,8 @@ fn parse_field_list(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Op
 
 fn parse_def_list(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Option<Block> {
     let i_start = *i_ref;
-    // A definition list item is a single text line (term) at base_indent
-    // followed by an indented block (definition) on the next line.
+    // A definition list item has one or more text terms at base_indent,
+    // followed by one indented block shared by those terms.
     let term_line = lines[i_start];
     if !at_indent(term_line, base_indent) {
         return None;
@@ -1349,7 +1406,7 @@ fn parse_def_list(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Opti
     if next.trim().is_empty() {
         return None;
     }
-    if leading_spaces(next).unwrap_or(0) <= base_indent {
+    if leading_spaces(next).unwrap_or(0) < base_indent {
         return None;
     }
     // Term must not match any other construct.
@@ -1384,29 +1441,42 @@ fn parse_def_list(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Opti
         if !at_indent(l, base_indent) {
             break;
         }
-        let raw_term = l[base_indent..].to_string();
-        // Optional classifier with `term : classifier`.
-        let (term, classifier) = match raw_term.find(" : ") {
-            Some(pos) => (
-                raw_term[..pos].trim().to_string(),
-                Some(raw_term[pos + 3..].trim().to_string()),
-            ),
-            None => (raw_term.trim().to_string(), None),
-        };
-        i += 1;
-        // Definition must immediately follow.
-        if i >= lines.len() || lines[i].trim().is_empty() {
-            // Not actually a def-list item; abort.
-            *i_ref = i_start;
-            return None;
-        }
-        let def_indent = match leading_spaces(lines[i]) {
-            Some(n) if n > base_indent => n,
-            _ => {
+        let mut terms = Vec::new();
+        loop {
+            let raw_term = lines[i][base_indent..].trim().to_string();
+            let term = match raw_term.find(" : ") {
+                Some(pos) => (
+                    raw_term[..pos].trim().to_string(),
+                    Some(raw_term[pos + 3..].trim().to_string()),
+                ),
+                None => (raw_term, None),
+            };
+            if term.0.is_empty()
+                || bullet_marker(&term.0).is_some()
+                || enum_marker(&term.0).is_some()
+                || field_marker(&term.0).is_some()
+                || is_explicit_start(&term.0)
+            {
                 *i_ref = i_start;
                 return None;
             }
-        };
+            terms.push(term);
+            i += 1;
+            if i >= lines.len() || lines[i].trim().is_empty() {
+                *i_ref = i_start;
+                return None;
+            }
+            let indent = leading_spaces(lines[i]).unwrap_or(0);
+            if indent > base_indent {
+                break;
+            }
+            if indent == base_indent {
+                continue;
+            }
+            *i_ref = i_start;
+            return None;
+        }
+        let def_indent = leading_spaces(lines[i]).unwrap_or(base_indent + 1);
         let mut def_lines: Vec<String> = Vec::new();
         while i < lines.len() {
             let cl = lines[i];
@@ -1426,11 +1496,7 @@ fn parse_def_list(lines: &[&str], i_ref: &mut usize, base_indent: usize) -> Opti
         }
         let refs: Vec<&str> = def_lines.iter().map(|s| s.as_str()).collect();
         let definition = parse_blocks(&refs, def_indent, 0);
-        items.push(DefItem {
-            term,
-            classifier,
-            definition,
-        });
+        items.push(DefItem { terms, definition });
     }
     if items.is_empty() {
         *i_ref = i_start;
@@ -2056,6 +2122,7 @@ fn parse_directive(
             let lang = args.trim();
             *i_ref += 1;
             let mut caption = None;
+            let mut line_numbers = false;
             let mut j = *i_ref;
             while j < lines.len() && lines[j].trim().is_empty() {
                 j += 1;
@@ -2077,6 +2144,8 @@ fn parse_directive(
                     if let Some((key, value)) = field_marker(stripped) {
                         if key == "caption" {
                             caption = Some(value.trim().to_string());
+                        } else if key == "linenos" {
+                            line_numbers = true;
                         }
                         j += 1;
                     } else {
@@ -2086,11 +2155,14 @@ fn parse_directive(
                 *i_ref = j;
             }
             let inner = consume_indented_text(lines, i_ref, base_indent);
-            let classes = if lang.is_empty() {
+            let mut classes = if lang.is_empty() {
                 "code".to_string()
             } else {
                 format!("code {}", lang)
             };
+            if line_numbers {
+                classes.push_str(" linenos");
+            }
             let text = inner.join("\n");
             let tokens = crate::code_block::tokenize(lang, &text);
             Block::LiteralBlock {
@@ -2209,15 +2281,31 @@ fn parse_directive(
         "glossary" => {
             *i_ref += 1;
             let mut children = Vec::new();
-            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
-                let inner = consume_indented_lines(lines, i_ref, ci);
+            if peek_inner_indent(lines, *i_ref, base_indent).is_some() {
+                let inner = consume_indented_text(lines, i_ref, base_indent);
                 let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                children = parse_blocks(&refs, ci, 0);
+                children = parse_blocks(&refs, 0, 0);
             }
             Block::Container {
                 classes: "glossary".to_string(),
                 children,
             }
+        }
+        "module" => {
+            let module_name = args.trim();
+            *i_ref += 1;
+            let _options = consume_indented_text(lines, i_ref, base_indent);
+            Block::TargetId(format!("module-{module_name}"))
+        }
+        "currentmodule" => {
+            *i_ref += 1;
+            let _options = consume_indented_text(lines, i_ref, base_indent);
+            Block::Comment(String::new())
+        }
+        "program" => {
+            let name = args.trim();
+            *i_ref += 1;
+            Block::Program((name != "None").then(|| name.to_string()))
         }
         "describe" | "object" => {
             let title = args.trim().to_string();
@@ -2252,8 +2340,8 @@ fn parse_directive(
         | "lean:inductive" | "lean:structure" | "lean:class" | "lean:instance"
         | "lean:abbrev" | "lean:axiom" | "lean:opaque" | "lean:constructor"
         | "lean:field" | "lean:notation" | "confval"
-        | "data" | "envvar" | "event" | "exception" | "function" | "method" | "module"
-        | "option" | "program" | "currentmodule" | "moduleauthor" => {
+        | "data" | "envvar" | "event" | "exception" | "function" | "method"
+        | "option" | "moduleauthor" => {
             let (objtype, sig) = if let Some(stripped) = name.strip_prefix("py:") {
                 ("py", format!("py:{stripped} {}", args.trim()))
             } else if let Some(stripped) = name.strip_prefix("c:") {
@@ -2269,21 +2357,41 @@ fn parse_directive(
             } else {
                 ("std", format!("{name} {}", args.trim()))
             };
-            let sig_text = if name == "confval" {
+            let sig_text = if name == "py:class" {
+                format!("class {}", args.trim())
+            } else if name == "confval" || objtype == "std" {
                 args.trim().to_string()
             } else {
                 sig.trim().to_string()
             };
             let ids = if name == "confval" {
                 format!("confval-{}", normalize_confval_id(args.trim()))
+            } else if name == "py:class" && args.trim().contains('.') {
+                args.trim().to_string()
+            } else if name == "py:module" {
+                format!("module-{}", args.trim())
+            } else if objtype == "py" {
+                args.trim()
+                    .split(['(', '['])
+                    .next()
+                    .map(str::trim)
+                    .unwrap_or(args.trim())
+                    .to_string()
+            } else if objtype == "std" {
+                let object_name = args
+                    .trim()
+                    .split_once('(')
+                    .map(|(name, _)| name.trim())
+                    .unwrap_or(args.trim());
+                normalize_confval_id(object_name)
             } else {
                 format!("{objtype}-{}", normalize_id(args.trim()))
             };
             let classes = format!("{objtype} {}", name.replace(':', " "));
             *i_ref += 1;
             let mut aliases = Vec::new();
-            if name == "confval" {
-                let signature_indent = base_indent + ".. confval:: ".len();
+            if name == "confval" || objtype == "std" {
+                let signature_indent = base_indent + name.len() + 6;
                 let mut next = *i_ref;
                 while next < lines.len() {
                     let line = lines[next];
@@ -2321,6 +2429,8 @@ fn parse_directive(
         "autoclass" | "autofunction" | "automethod" | "autoattribute" | "autodata"
         | "autoexception" | "attribute" | "autosummary" => {
             let title = args.trim().to_string();
+            let qualified_attribute = name == "autoattribute" && title.contains('.');
+            let qualified_autoclass = name == "autoclass" && title.contains('.');
             *i_ref += 1;
             let mut children = Vec::new();
             if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
@@ -2330,8 +2440,18 @@ fn parse_directive(
             }
             Block::ObjectDescription {
                 classes: format!("autodoc {}", name),
-                ids: normalize_id(&title),
-                sig_text: format!("py:{name} {title}"),
+                ids: if qualified_attribute || qualified_autoclass {
+                    title.clone()
+                } else {
+                    normalize_id(&title)
+                },
+                sig_text: if qualified_attribute {
+                    title.rsplit('.').next().unwrap_or(&title).to_string()
+                } else if qualified_autoclass {
+                    format!("class {title}")
+                } else {
+                    format!("py:{name} {title}")
+                },
                 aliases: Vec::new(),
                 children,
             }
@@ -2651,18 +2771,35 @@ fn parse_directive(
             }
         }
         "rst:directive:option" => {
-            let (option, description) = args
-                .trim()
-                .split_once(':')
-                .map_or((args.trim(), ""), |(option, description)| {
-                    (option.trim(), description.trim())
-                });
+            let raw_option = args.trim();
+            let (option, description, owner) = if let Some(rest) = raw_option.strip_prefix('@') {
+                if let Some((owner, option)) = rest.split_once('@') {
+                    (option.trim(), "", Some(owner.trim().to_string()))
+                } else {
+                    (raw_option, "", None)
+                }
+            } else {
+                let (option, description) = raw_option
+                    .split_once(':')
+                    .map_or((raw_option, ""), |(option, description)| {
+                        (option.trim(), description.trim())
+                    });
+                (option, description, None)
+            };
             let sig_text = if description.is_empty() {
                 format!(":{option}:")
             } else {
                 format!(":{option}: {description}")
             };
-            let ids = format!("directive-option-{}", normalize_id(option));
+            let ids = if let Some(owner) = owner {
+                format!(
+                    "directive-option-{}-{}",
+                    normalize_id(&owner),
+                    normalize_id(option)
+                )
+            } else {
+                format!("directive-option-{}", normalize_id(option))
+            };
             *i_ref += 1;
             let content_indent = peek_inner_indent(lines, *i_ref, base_indent);
             let mut children = Vec::new();
@@ -2704,6 +2841,25 @@ fn parse_directive(
             let ids = format!("{objtype}-{}", normalize_id(&bare_name));
             let classes = format!("rst {objtype}");
             *i_ref += 1;
+            if objtype == "directive" {
+                let signature_indent = base_indent + ".. rst:directive:: ".len();
+                let mut next = *i_ref;
+                while next < lines.len() {
+                    if lines[next].trim().is_empty() {
+                        next += 1;
+                        continue;
+                    }
+                    let line = lines[next];
+                    let indent = leading_spaces(line).unwrap_or(0);
+                    if indent < signature_indent || !line[indent..].starts_with(".. ") {
+                        break;
+                    }
+                    next += 1;
+                }
+                if next > *i_ref {
+                    *i_ref = next;
+                }
+            }
             let content_indent = peek_inner_indent(lines, *i_ref, base_indent);
             let mut children = Vec::new();
             if let Some(ci) = content_indent {
@@ -3313,6 +3469,7 @@ mod rich_paragraph_tests {
             current_line: 0,
             show_docutils_links: true,
             inline_ref_sites: Vec::new(),
+            current_program: None,
         };
         emit_block(
             &mut tree,
@@ -3358,6 +3515,7 @@ mod rich_paragraph_tests {
             current_line: 0,
             show_docutils_links: true,
             inline_ref_sites: Vec::new(),
+            current_program: None,
         };
         emit_block(
             &mut tree,
@@ -3432,11 +3590,13 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 let dl = tree.append(parent, NodeKind::DefinitionList);
                 for it in items {
                     let dli = tree.append(dl, NodeKind::DefinitionListItem);
-                    let term = tree.append(dli, NodeKind::Term);
-                    parse_inline(tree, term, ctx, &it.term);
-                    if let Some(c) = it.classifier {
-                        let cl = tree.append(dli, NodeKind::Classifier);
-                        parse_inline(tree, cl, ctx, &c);
+                    for (term_text, classifier) in it.terms {
+                        let term = tree.append(dli, NodeKind::Term);
+                        parse_inline(tree, term, ctx, &term_text);
+                        if let Some(classifier) = classifier {
+                            let cl = tree.append(dli, NodeKind::Classifier);
+                            parse_inline(tree, cl, ctx, &classifier);
+                        }
                     }
                     let d = tree.append(dli, NodeKind::Definition);
                     for b in it.definition.into_iter().rev() {
@@ -3561,6 +3721,20 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                     tasks.push((sec, b));
                 }
             }
+            Block::Program(program) => {
+                ctx.current_program = program;
+            }
+            Block::TargetId(ids) => {
+                tree.append(
+                    parent,
+                    NodeKind::Target {
+                        ids,
+                        names: String::new(),
+                        refuri: String::new(),
+                        anonymous: false,
+                    },
+                );
+            }
             Block::Transition => {
                 tree.append(parent, NodeKind::Transition);
             }
@@ -3676,6 +3850,34 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 }
             }
             Block::Container { classes, children } => {
+                if classes
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_uppercase)
+                {
+                    let class_id = tree
+                        .node(parent)
+                        .children
+                        .last()
+                        .and_then(|&id| match &tree.node(id).kind {
+                            NodeKind::Target { ids, .. } => {
+                                ids.strip_prefix("module-")
+                                    .map(|module| format!("{module}.{classes}"))
+                            }
+                            _ => None,
+                        });
+                    if let Some(ids) = class_id {
+                        tree.append(
+                            parent,
+                            NodeKind::Target {
+                                ids,
+                                names: String::new(),
+                                refuri: String::new(),
+                                anonymous: false,
+                            },
+                        );
+                    }
+                }
                 let c = tree.append(parent, NodeKind::Container { classes });
                 for b in children.into_iter().rev() {
                     tasks.push((c, b));
@@ -3724,7 +3926,18 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 aliases,
                 children,
             } => {
-                let ids = if classes == "rst directive:option" {
+                let is_standard_option = classes == "std option";
+                let option_alias_ids = if is_standard_option {
+                    sig_text
+                        .split(',')
+                        .map(|option| command_option_id(ctx.current_program.as_deref(), option))
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
+                let ids = if is_standard_option {
+                    option_alias_ids.first().cloned().unwrap_or(ids)
+                } else if classes == "rst directive:option" {
                     if let NodeKind::ObjectDescription {
                         ids: parent_ids, ..
                     } = &tree.node(parent).kind
@@ -3733,13 +3946,19 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                             .strip_prefix("directive-")
                             .unwrap_or(parent_ids);
                         let option = ids.strip_prefix("directive-option-").unwrap_or(&ids);
-                        format!("directive-option-{parent_name}-{option}")
+                        let prefix = format!("{parent_name}-");
+                        if option.starts_with(&prefix) {
+                            ids
+                        } else {
+                            format!("directive-option-{parent_name}-{option}")
+                        }
                     } else {
                         ids
                     }
                 } else {
                     ids
                 };
+                let alias_classes = classes.clone();
                 let d = tree.append(
                     parent,
                     NodeKind::ObjectDescription {
@@ -3751,12 +3970,37 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 for b in children.into_iter().rev() {
                     tasks.push((d, b));
                 }
+                if is_standard_option {
+                    for alias_id in option_alias_ids.into_iter().skip(1) {
+                        tree.append(
+                            parent,
+                            NodeKind::Target {
+                                ids: alias_id,
+                                names: String::new(),
+                                refuri: String::new(),
+                                anonymous: false,
+                            },
+                        );
+                    }
+                }
                 for alias in aliases {
-                    let id = format!("confval-{}", normalize_confval_id(&alias));
+                    let (classes, id) = if alias_classes == "std confval" {
+                        (
+                            "std confval".to_string(),
+                            format!("confval-{}", normalize_confval_id(&alias)),
+                        )
+                    } else if alias_classes.starts_with("std ") {
+                        (alias_classes.clone(), normalize_confval_id(&alias))
+                    } else {
+                        (
+                            "std confval".to_string(),
+                            format!("confval-{}", normalize_confval_id(&alias)),
+                        )
+                    };
                     tree.append(
                         parent,
                         NodeKind::ObjectDescription {
-                            classes: "std confval".to_string(),
+                            classes,
                             ids: id,
                             sig_text: alias,
                         },
@@ -4089,6 +4333,18 @@ fn normalize_confval_id(name: &str) -> String {
         out.pop();
     }
     out
+}
+
+fn command_option_id(program: Option<&str>, option: &str) -> String {
+    let option = option.trim();
+    let option = option
+        .split(['=', ' '])
+        .next()
+        .unwrap_or(option);
+    let prefix = program
+        .map(|program| format!("cmdoption-{program}"))
+        .unwrap_or_else(|| "cmdoption".to_string());
+    format!("{prefix}-{}", normalize_confval_id(option))
 }
 
 // ────────────────────────────────────────────────────────────────────────────

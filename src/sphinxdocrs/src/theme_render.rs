@@ -44,9 +44,8 @@
 //! - `meta` (per-page docinfo) is not modeled. The default docutils viewport
 //!   metatag is supplied through `metatags`; themes that declare their own
 //!   viewport therefore receive both upstream viewport tags.
-//! - `sphinx_version` reports this crate's own version with a `-sphinxdocrs`
-//!   marker, not upstream Sphinx's, since there is no bundled Python Sphinx
-//!   version to report in a pure-Rust build.
+//! - `sphinx_version` uses the configured project `release`, since the native
+//!   builder has no separate Python Sphinx runtime version to report.
 //! - A theme building `titlesuffix`-style values via Jinja string
 //!   concatenation (`" — "|safe + docstitle|e`) needs the `+` operator to
 //!   propagate markup-safety the way Python MarkupSafe's `Markup.__add__`
@@ -100,6 +99,8 @@ struct PageState {
     /// Root-document toctree directives, preserving their captions and
     /// directive-local maxdepth values for real theme `toctree()` calls.
     toc_groups: Vec<TocGroup>,
+    /// Toctree groups including hidden directives and descendants.
+    toc_groups_with_hidden: Vec<TocGroup>,
     /// Output layout used to resolve page URIs and asset roots.
     path_style: PathStyle,
     /// Output directory used for local asset checksums.
@@ -271,18 +272,23 @@ impl Object for ToctreeGlobal {
         let collapse = kwargs
             .get::<Option<Value>>("collapse")?
             .map(|value| matches!(value.to_string().as_str(), "true" | "True" | "1"))
-            .unwrap_or(false);
+            .unwrap_or(true);
         let titles_only = kwargs
             .get::<Option<Value>>("titles_only")?
             .map(|value| matches!(value.to_string().as_str(), "true" | "True" | "1"))
             .unwrap_or(false);
-        // Hidden-node provenance is not retained by the native environment;
-        // consume the upstream keyword so real templates remain compatible.
-        let _ = kwargs.get::<Option<Value>>("includehidden")?;
+        let include_hidden = kwargs
+            .get::<Option<Value>>("includehidden")?
+            .map(|value| matches!(value.to_string().as_str(), "true" | "True" | "1"))
+            .unwrap_or(false);
         let base_uri = self.0.current_target_uri();
         let current_docname = self.0.current_docname.lock().unwrap().clone();
         let html = render_toc_groups(
-            &self.0.toc_groups,
+            if include_hidden {
+                &self.0.toc_groups_with_hidden
+            } else {
+                &self.0.toc_groups
+            },
             &self.0.toc_entries,
             &base_uri,
             self.0.path_style,
@@ -494,24 +500,36 @@ fn resource_pathto(state: &PageState, name: &str) -> String {
 /// it (mirrors upstream's `pathto()`-based link construction) — a raw
 /// `get_target_uri` result is root-relative and 404s from any page not at
 /// the project root.
-fn global_toc_groups(env: &BuildEnvironment, root_doc: &str) -> Option<Vec<TocGroup>> {
+fn global_toc_groups(
+    env: &BuildEnvironment,
+    root_doc: &str,
+    include_hidden: bool,
+) -> Option<Vec<TocGroup>> {
     let tree = env.get_doctree(root_doc).ok()?;
     let mut groups = Vec::new();
     for id in 0..tree.nodes_len() {
         let docutilsrs::doctree::NodeKind::Toctree {
             caption,
             maxdepth,
+            hidden,
             entries,
             ..
         } = &tree.node(id).kind
         else {
             continue;
         };
+        if *hidden && !include_hidden {
+            continue;
+        }
         let entries: Vec<String> = entries
             .iter()
             .map(|entry| crate::environment::docname_join(root_doc, entry))
             .collect();
-        let resolved = toctree::resolve_from_entries(env, &entries, 0);
+        let resolved = if include_hidden {
+            toctree::resolve_from_entries_with_hidden(env, &entries, 0)
+        } else {
+            toctree::resolve_from_entries(env, &entries, 0)
+        };
         if !resolved.is_empty() {
             groups.push(TocGroup {
                 caption: caption.clone(),
@@ -642,7 +660,7 @@ fn render_toc_html_at_depth(
             target_uri
                 .split_once('#')
                 .map(|(_, fragment)| format!("#{fragment}"))
-                .unwrap_or(href)
+                .unwrap_or_else(|| "#".to_string())
         } else {
             href
         };
@@ -661,9 +679,19 @@ fn render_toc_html_at_depth(
         }
         let within_depth = max_depth == 0 || depth < max_depth;
         let on_current_branch = !collapse || toc_branch_contains(entry, current_docname);
-        if !titles_only && !entry.children.is_empty() && within_depth && on_current_branch {
+        if !entry.children.is_empty() && within_depth && on_current_branch {
+            let children = if titles_only {
+                entry
+                    .children
+                    .iter()
+                    .filter(|child| !child.docname.contains('#'))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            } else {
+                entry.children.clone()
+            };
             out.push_str(&render_toc_html_at_depth(
-                &entry.children,
+                &children,
                 base_uri,
                 path_style,
                 max_depth,
@@ -717,19 +745,23 @@ fn local_toc_from_doctree(
         level: usize,
         document_title: &str,
     ) -> Vec<TocEntry> {
-        tree.node(parent)
-            .children
-            .iter()
-            .enumerate()
-            .filter_map(|(index, &id)| {
-                let node = tree.node(id);
-                match &node.kind {
+        let mut entries = Vec::new();
+        let mut current_module = None;
+        for (index, &id) in tree.node(parent).children.iter().enumerate() {
+            let node = tree.node(id);
+            if let docutilsrs::doctree::NodeKind::Target { ids, .. } = &node.kind {
+                current_module = ids.strip_prefix("module-").map(str::to_string);
+                continue;
+            }
+            let entry = match &node.kind {
                     docutilsrs::doctree::NodeKind::Section { ids, .. } => {
-                        let title = node.children.iter().find_map(|&child| {
+                        let Some(title) = node.children.iter().find_map(|&child| {
                             let title_node = tree.node(child);
                             matches!(title_node.kind, docutilsrs::doctree::NodeKind::Title)
                                 .then(|| text_content(tree, child))
-                        })?;
+                        }) else {
+                            continue;
+                        };
                         Some(TocEntry {
                             docname: if level == 0
                                 && index == 0
@@ -758,10 +790,63 @@ fn local_toc_from_doctree(
                             children: Vec::new(),
                         })
                     }
+                    docutilsrs::doctree::NodeKind::ObjectDescription {
+                        classes,
+                        ids,
+                        sig_text,
+                    } if !ids.is_empty() => {
+                        let title = if classes
+                            .split_whitespace()
+                            .any(|class| class == "autoattribute")
+                        {
+                            current_module
+                                .as_deref()
+                                .and_then(|module| ids.strip_prefix(&format!("{module}.")))
+                                .unwrap_or(ids)
+                                .to_string()
+                        } else {
+                            let is_python_class = classes
+                                .split_whitespace()
+                                .any(|class| class == "py")
+                                && sig_text.starts_with("class ");
+                            let signature = if is_python_class {
+                                sig_text.strip_prefix("class ").unwrap_or(sig_text)
+                            } else {
+                                sig_text
+                                    .split_once(' ')
+                                    .map(|(_, signature)| signature.trim())
+                                    .unwrap_or(sig_text)
+                            };
+                            if is_python_class {
+                                signature.rsplit('.').next().unwrap_or(signature).to_string()
+                            } else {
+                                signature.to_string()
+                            }
+                        };
+                        Some(TocEntry {
+                            docname: format!("{docname}#{ids}"),
+                            title,
+                            children: sections(tree, id, docname, level, document_title),
+                        })
+                    }
+                    docutilsrs::doctree::NodeKind::Container { classes }
+                        if classes.chars().next().is_some_and(char::is_uppercase)
+                            && current_module.is_some() =>
+                    {
+                        let class_name = classes.split_whitespace().next().unwrap_or(classes);
+                        Some(TocEntry {
+                            docname: format!("{docname}#{}.{class_name}", current_module.as_deref().unwrap_or_default()),
+                            title: class_name.to_string(),
+                            children: sections(tree, id, docname, level + 1, document_title),
+                        })
+                    }
                     _ => None,
-                }
-            })
-            .collect()
+                };
+            if let Some(entry) = entry {
+                entries.push(entry);
+            }
+        }
+        entries
     }
 
     doctree
@@ -826,14 +911,11 @@ fn collect_relations(entries: &[TocEntry]) -> HashMap<String, Relation> {
             None
         };
         let next = flat.get(i + 1).map(|(d, _)| d.clone());
-        relations.insert(
-            docname.clone(),
-            Relation {
+        relations.entry(docname.clone()).or_insert(Relation {
                 parent: parent.clone(),
                 prev,
                 next,
-            },
-        );
+            });
     }
     relations
 }
@@ -1019,7 +1101,14 @@ impl ThemeRenderer {
         }
         let toc_entries = toctree::global_toctree_for_doc(env, 0);
         let root_doc = env.config.root_doc();
-        let mut toc_groups = global_toc_groups(env, &root_doc).unwrap_or_else(|| {
+        let mut toc_groups = global_toc_groups(env, &root_doc, false).unwrap_or_else(|| {
+            vec![TocGroup {
+                caption: None,
+                entries: toc_entries.clone(),
+                max_depth: 0,
+            }]
+        });
+        let mut toc_groups_with_hidden = global_toc_groups(env, &root_doc, true).unwrap_or_else(|| {
             vec![TocGroup {
                 caption: None,
                 entries: toc_entries.clone(),
@@ -1027,6 +1116,9 @@ impl ThemeRenderer {
             }]
         });
         for group in &mut toc_groups {
+            enrich_toc_entries_with_sections(env, &mut group.entries);
+        }
+        for group in &mut toc_groups_with_hidden {
             enrich_toc_entries_with_sections(env, &mut group.entries);
         }
         let mut relations = collect_relations(&toc_entries);
@@ -1051,6 +1143,7 @@ impl ThemeRenderer {
             use_index: env.config.html_use_index(),
             toc_entries: toc_entries.clone(),
             toc_groups,
+            toc_groups_with_hidden,
             path_style,
             outdir: outdir.to_path_buf(),
             css_attributes: env
@@ -1487,7 +1580,7 @@ fn build_global_context(
     ctx.insert("language".into(), config.language().into());
     ctx.insert(
         "sphinx_version".into(),
-        concat!(env!("CARGO_PKG_VERSION"), "-sphinxdocrs").into(),
+        config.release().into(),
     );
     ctx.insert("builder".into(), builder.into());
     ctx.insert("html5_doctype".into(), true.into());
@@ -1764,6 +1857,23 @@ mod tests {
     }
 
     #[test]
+    fn render_toc_html_uses_fragment_link_for_current_document() {
+        let entries = vec![TocEntry {
+            docname: "usage/extensions/autodoc".into(),
+            title: "Current page".into(),
+            children: Vec::new(),
+        }];
+
+        let html = render_toc_html(
+            &entries,
+            "usage/extensions/autodoc.html",
+            PathStyle::Flat,
+        );
+
+        assert!(html.contains("href=\"#\">Current page</a>"), "got: {html}");
+    }
+
+    #[test]
     fn render_toc_html_dir_style_uses_directory_targets() {
         let entries = vec![TocEntry {
             docname: "guide/intro".into(),
@@ -1832,17 +1942,28 @@ mod tests {
     }
 
     #[test]
-    fn render_toc_groups_emits_caption_and_titles_only_tree() {
+    fn render_toc_groups_preserves_nested_document_entries() {
         let groups = vec![TocGroup {
             caption: Some("Contents".into()),
             entries: vec![TocEntry {
                 docname: "guide".into(),
                 title: "Guide".into(),
-                children: vec![TocEntry {
-                    docname: "guide/intro".into(),
-                    title: "Introduction".into(),
-                    children: vec![],
-                }],
+                children: vec![
+                    TocEntry {
+                        docname: "guide/intro".into(),
+                        title: "Introduction".into(),
+                        children: vec![TocEntry {
+                            docname: "guide/intro#details".into(),
+                            title: "Details".into(),
+                            children: vec![],
+                        }],
+                    },
+                    TocEntry {
+                        docname: "guide#overview".into(),
+                        title: "Overview".into(),
+                        children: vec![],
+                    },
+                ],
             }],
             max_depth: 0,
         }];
@@ -1858,7 +1979,10 @@ mod tests {
         );
         assert!(html.contains("caption-text\">Contents</span>"));
         assert!(html.contains("toctree-l1"));
-        assert!(!html.contains("Introduction"));
+        assert!(html.contains("toctree-l2"));
+        assert!(html.contains("guide/intro.html"));
+        assert!(!html.contains("#details"));
+        assert!(!html.contains("Overview"));
     }
 
     #[test]
@@ -1923,6 +2047,31 @@ mod tests {
     }
 
     #[test]
+    fn local_toc_includes_class_and_attribute_descriptions() {
+        let doctree = docutilsrs::parse_rst_with_options(
+            "Builders\n========\n\n.. module:: sphinx.builders\n\n.. py:class:: sphinx.builders.ExampleBuilder\n\n   .. autoattribute:: sphinx.builders.ExampleBuilder.name\n",
+            "usage/builders",
+            docutilsrs::TitlePromotion::Preserve,
+        );
+        let entries = local_toc_from_doctree(Some(&doctree), "usage/builders");
+
+        assert_eq!(entries[0].title, "Builders");
+        assert_eq!(entries[0].children[0].title, "ExampleBuilder");
+        assert_eq!(
+            entries[0].children[0].docname,
+            "usage/builders#sphinx.builders.ExampleBuilder"
+        );
+        assert_eq!(
+            entries[0].children[0].children[0].title,
+            "ExampleBuilder.name"
+        );
+        assert_eq!(
+            entries[0].children[0].children[0].docname,
+            "usage/builders#sphinx.builders.ExampleBuilder.name"
+        );
+    }
+
+    #[test]
     fn local_toc_document_title_uses_page_anchor() {
         let doctree = docutilsrs::parse_rst_with_options(
             "======\nSphinx\n======\n\nGet started\n-----------\n",
@@ -1962,6 +2111,42 @@ mod tests {
         assert_eq!(rel["a1"].next.as_deref(), Some("b"));
         assert_eq!(rel["b"].prev.as_deref(), Some("a1"));
         assert_eq!(rel["b"].next, None);
+    }
+
+    #[test]
+    fn collect_relations_keeps_first_path_for_duplicate_documents() {
+        let entries = vec![
+            TocEntry {
+                docname: "guide".into(),
+                title: "Guide".into(),
+                children: vec![TocEntry {
+                    docname: "guide/extensions".into(),
+                    title: "Extensions".into(),
+                    children: vec![TocEntry {
+                        docname: "guide/extensions/autodoc".into(),
+                        title: "Autodoc".into(),
+                        children: vec![],
+                    }],
+                }],
+            },
+            TocEntry {
+                docname: "guide/extensions".into(),
+                title: "Extensions".into(),
+                children: vec![TocEntry {
+                    docname: "guide/extensions/autodoc".into(),
+                    title: "Autodoc".into(),
+                    children: vec![],
+                }],
+            },
+        ];
+
+        let relations = collect_relations(&entries);
+
+        assert_eq!(
+            relations["guide/extensions/autodoc"].parent.as_deref(),
+            Some("guide/extensions")
+        );
+        assert_eq!(relations["guide/extensions"].parent.as_deref(), Some("guide"));
     }
 
     #[test]
@@ -2081,6 +2266,7 @@ mod tests {
             use_index: true,
             toc_entries: Vec::new(),
             toc_groups: Vec::new(),
+            toc_groups_with_hidden: Vec::new(),
             path_style: PathStyle::Flat,
             outdir: outdir.path().to_path_buf(),
             css_attributes: HashMap::new(),
@@ -2370,7 +2556,7 @@ mod tests {
     }
 
     #[test]
-    fn build_global_context_marks_sphinxdocrs_version() {
+    fn build_global_context_uses_configured_release_as_sphinx_version() {
         let env = make_test_env(
             "/tmp/theme-render-test-version-src",
             "/tmp/theme-render-test-version-doctrees",
@@ -2381,7 +2567,7 @@ mod tests {
 
         assert_eq!(
             ctx["sphinx_version"],
-            concat!(env!("CARGO_PKG_VERSION"), "-sphinxdocrs")
+            env.config.release()
         );
     }
 

@@ -127,6 +127,45 @@ fn is_section_underline(under: &str, title: &str) -> bool {
     under.chars().all(|ch| ch == c) && under.chars().count() >= title.chars().count()
 }
 
+/// Scan standard-domain configuration value signatures and their aliases.
+pub fn scan_confval_names(source: &str) -> Vec<String> {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut names = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let line = lines[index];
+        let trimmed = line.trim_start();
+        let Some(argument) = trimmed.strip_prefix(".. confval::") else {
+            index += 1;
+            continue;
+        };
+        let base_indent = line.len() - trimmed.len();
+        let signature_indent = base_indent + ".. confval:: ".len();
+        let primary = argument.trim();
+        if !primary.is_empty() {
+            names.push(primary.to_string());
+        }
+        index += 1;
+        while index < lines.len() {
+            let alias_line = lines[index];
+            if alias_line.trim().is_empty() {
+                break;
+            }
+            let indent = alias_line.len() - alias_line.trim_start().len();
+            if indent < signature_indent {
+                break;
+            }
+            let alias = alias_line.trim();
+            if alias.starts_with(':') || alias.starts_with("..") {
+                break;
+            }
+            names.push(alias.to_string());
+            index += 1;
+        }
+    }
+    names
+}
+
 /// Scan `.. glossary::` directive bodies, extracting each term line at
 /// the block's content-indentation level. Multiple consecutive term
 /// lines that share one definition (a comma-free multi-term entry) are
@@ -239,7 +278,7 @@ pub fn scan_rst_domain_objects(source: &str) -> Vec<(String, String)> {
 /// (`:option:`, custom roles, ...) are not yet collected — extend the
 /// `KNOWN_*_REFTYPES` lists here as more domains land.
 pub fn scan_xref_roles(source: &str) -> Vec<PendingXref> {
-    const KNOWN_STD_REFTYPES: &[&str] = &["ref", "doc", "term", "numref", "keyword"];
+    const KNOWN_STD_REFTYPES: &[&str] = &["ref", "doc", "term", "numref", "keyword", "confval"];
     const KNOWN_PY_REFTYPES: &[&str] = &[
         "func",
         "class",
@@ -730,6 +769,15 @@ mod tests {
     }
 
     #[test]
+    fn scan_confval_signatures_and_aliases() {
+        let src = ".. confval:: master_doc\n             root_doc\n   :type: str\n\n   Description.\n";
+        assert_eq!(
+            scan_confval_names(src),
+            vec!["master_doc".to_string(), "root_doc".to_string()]
+        );
+    }
+
+    #[test]
     fn scan_rst_domain_objects_basic() {
         let src = ".. rst:directive:: toctree\n\n   Body.\n\n.. rst:role:: ref\n\n   Body.\n";
         let objs = scan_rst_domain_objects(src);
@@ -751,6 +799,16 @@ mod tests {
         assert_eq!(xrefs[0].reftype, "ref");
         assert_eq!(xrefs[0].target, "my-label");
         assert_eq!(xrefs[0].explicit_title, None);
+    }
+
+    #[test]
+    fn scan_xref_roles_confval_target() {
+        let xrefs = scan_xref_roles("See :confval:`maximum_signature_line_length`.\n");
+
+        assert_eq!(xrefs.len(), 1);
+        assert_eq!(xrefs[0].domain, "std");
+        assert_eq!(xrefs[0].reftype, "confval");
+        assert_eq!(xrefs[0].target, "maximum_signature_line_length");
     }
 
     #[test]

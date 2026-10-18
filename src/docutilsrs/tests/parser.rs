@@ -452,10 +452,237 @@ fn rst_directive_bare_name_renders_as_object_description() {
     insta::assert_snapshot!("rst_directive_bare_name", pseudo_xml(&parse_rst(src)));
 }
 
+
 #[test]
 fn rst_directive_full_signature_renders_dotted_form() {
     let src = ".. rst:directive:: .. attention::\n\n   An attention admonition.\n";
     insta::assert_snapshot!("rst_directive_full_signature", pseudo_xml(&parse_rst(src)));
+}
+
+#[test]
+fn rst_directive_alternative_signatures_are_not_nested_directives() {
+    let tree = parse_rst(
+        ".. rst:directive:: .. py:function:: name(parameters)\n                   .. py:function:: name[type parameters](parameters)\n\n   Describes a function.\n",
+    );
+    let descriptions: Vec<_> = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, .. } => {
+                Some((classes.as_str(), ids.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(descriptions, [("rst directive", "directive-py-function")]);
+}
+
+#[test]
+fn autodoc_autoattribute_preserves_qualified_anchor() {
+    let tree = parse_rst(
+        ".. autoattribute:: sphinx.builders.html.StandaloneHTMLBuilder.name\n",
+    );
+    let object = (0..tree.nodes_len())
+        .find_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+            } if classes == "autodoc autoattribute" => {
+                Some((ids.as_str(), sig_text.as_str()))
+            }
+            _ => None,
+        })
+        .expect("autoattribute object description should be present");
+
+    assert_eq!(object.0, "sphinx.builders.html.StandaloneHTMLBuilder.name");
+    assert_eq!(object.1, "name");
+}
+
+#[test]
+fn duplicate_section_titles_get_implicit_unique_ids() {
+    let tree = docutilsrs::parse_rst_with_options(
+        "Release\n=======\n\nBugs fixed\n----------\n\nFirst.\n\nBugs fixed\n----------\n\nSecond.\n",
+        "changes",
+        TitlePromotion::Preserve,
+    );
+    let ids: Vec<_> = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::Section { ids, .. } => Some(ids.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(ids, ["release", "bugs-fixed", "id1"]);
+}
+
+#[test]
+fn sphinx_module_directive_emits_only_its_module_anchor() {
+    let tree = parse_rst(
+        ".. module:: sphinx.builders\n   :synopsis: Built-in builders\n\nBody text.\n",
+    );
+    let targets: Vec<_> = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::Target { ids, .. } => Some(ids.as_str()),
+            _ => None,
+        })
+        .collect();
+    let html = html5(&tree, &Default::default(), &Default::default());
+
+    assert!(targets.contains(&"module-sphinx.builders"));
+    assert!(html.contains("id=\"module-sphinx.builders\""));
+    assert!(!html.contains("synopsis"));
+    assert!(!html.contains(">module sphinx.builders</dt>"));
+    assert!(html.contains("Body text."));
+}
+
+#[test]
+fn standard_domain_objects_use_declared_names_for_ids_and_signatures() {
+    let tree = parse_rst(".. data:: script_files\n\n.. function:: pathto(document)\n");
+    let objects: Vec<_> = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, sig_text }
+                if classes.starts_with("std ") =>
+            {
+                Some((ids.as_str(), sig_text.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(objects, [("script_files", "script_files"), ("pathto", "pathto(document)")]);
+}
+
+#[test]
+fn standard_domain_signature_aliases_emit_peer_objects() {
+    let tree = parse_rst(
+        ".. data:: master_doc\n          root_doc\n\n   The root document.\n",
+    );
+    let objects: Vec<_> = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, sig_text }
+                if classes == "std data" =>
+            {
+                Some((ids.as_str(), sig_text.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(objects, [("master_doc", "master_doc"), ("root_doc", "root_doc")]);
+}
+
+#[test]
+fn rst_directive_option_keeps_qualified_owner_in_anchor() {
+    let tree = parse_rst(
+        ".. rst:directive:option:: @py:function@single-line-parameter-list\n",
+    );
+    let object = (0..tree.nodes_len())
+        .find_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, sig_text }
+                if classes == "rst directive:option" =>
+            {
+                Some((ids.as_str(), sig_text.as_str()))
+            }
+            _ => None,
+        })
+        .expect("directive option should be present");
+
+    assert_eq!(object.0, "directive-option-py-function-single-line-parameter-list");
+    assert_eq!(object.1, ":single-line-parameter-list:");
+}
+
+#[test]
+fn python_domain_ids_preserve_object_name_case_and_underscores() {
+    let tree = parse_rst(
+        ".. py:type:: UInt64\n\n.. py:function:: send_message(sender)\n\n.. py:function:: generic[T](value)\n",
+    );
+    let ids: Vec<_> = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, .. }
+                if classes.starts_with("py ") =>
+            {
+                Some(ids.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(ids, ["UInt64", "send_message", "generic"]);
+}
+
+#[test]
+fn glossary_directive_preserves_definition_list_structure() {
+    let tree = parse_rst(
+        ".. glossary::\n\n   builder\n      A class that builds output.\n",
+    );
+    let has_definition_list = (0..tree.nodes_len())
+        .any(|id| matches!(tree.node(id).kind, NodeKind::DefinitionList));
+    let has_term = (0..tree.nodes_len()).any(|id| matches!(tree.node(id).kind, NodeKind::Term));
+
+    assert!(has_definition_list);
+    assert!(has_term);
+}
+
+#[test]
+fn glossary_first_real_entries_parse_as_definitions() {
+    let tree = parse_rst(
+        ".. glossary::\n\n   builder\n      A class (inheriting from :class:`~sphinx.builders.Builder`) that takes\n      parsed documents and performs an action on them.\n\n      See :doc:`/usage/builders/index` for an overview.\n\n   configuration directory\n      The directory containing :file:`conf.py`.\n",
+    );
+    let terms = (0..tree.nodes_len())
+        .filter(|&id| matches!(tree.node(id).kind, NodeKind::Term))
+        .count();
+
+    assert_eq!(terms, 2);
+}
+
+#[test]
+fn autodoc_autoclass_preserves_qualified_target() {
+    let tree = parse_rst(
+        ".. autoclass:: sphinx.transforms.post_transforms.SphinxPostTransform\n",
+    );
+    let object = (0..tree.nodes_len())
+        .find_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, sig_text }
+                if classes == "autodoc autoclass" =>
+            {
+                Some((ids.as_str(), sig_text.as_str()))
+            }
+            _ => None,
+        })
+        .expect("autoclass object description should be present");
+
+    assert_eq!(
+        object,
+        (
+            "sphinx.transforms.post_transforms.SphinxPostTransform",
+            "class sphinx.transforms.post_transforms.SphinxPostTransform"
+        )
+    );
+}
+
+#[test]
+fn program_options_use_program_scoped_ids_for_each_alias() {
+    let tree = parse_rst(".. program:: sphinx-quickstart\n\n.. option:: -q, --quiet\n");
+    let option = (0..tree.nodes_len())
+        .find_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, sig_text }
+                if classes == "std option" =>
+            {
+                Some((ids.as_str(), sig_text.as_str()))
+            }
+            _ => None,
+        })
+        .expect("command option description should be present");
+    let target_ids: Vec<_> = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::Target { ids, .. } => Some(ids.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(option, ("cmdoption-sphinx-quickstart-q", "-q, --quiet"));
+    assert!(target_ids.contains(&"cmdoption-sphinx-quickstart-quiet"));
+    assert!(!pseudo_xml(&tree).contains("std program"));
 }
 
 #[test]
@@ -504,6 +731,21 @@ fn rust_and_lean_source_directives_preserve_kind_signature_and_nested_content() 
 }
 
 #[test]
+fn vendored_sphinx_glossary_keeps_term_nodes() {
+    let source = include_str!("../../sphinx/doc/glossary.rst");
+    let tree = docutilsrs::parse_rst_with_options(
+        source,
+        "glossary",
+        TitlePromotion::Preserve,
+    );
+    let terms = (0..tree.nodes_len())
+        .filter(|&id| matches!(tree.node(id).kind, NodeKind::Term))
+        .count();
+
+    assert!(terms >= 14, "expected all glossary terms, got {terms}");
+}
+
+#[test]
 fn rust_and_lean_source_directives_render_as_html_definitions() {
     let source = ".. rust:function:: crate::api::answer<T>\n\n   Returns the answer.\n\n.. lean:theorem:: Demo.answer\n\n   The theorem documentation.\n";
     let html = html5(
@@ -531,9 +773,10 @@ fn rst_directive_html5_renders_dl_dt_dd_with_anchor() {
         "got:\n{html}"
     );
     assert!(
-        html.contains(r#"<dt id="directive-toctree">.. toctree::</dt>"#),
+        html.contains(r##"<dt id="directive-toctree">.. toctree::<a class="headerlink""##),
         "got:\n{html}"
     );
+    assert!(html.contains(r##"href="#directive-toctree" title="Link to this definition">¶</a>"##));
     assert!(html.contains("<dd>"), "got:\n{html}");
     assert!(html.contains("Insert a toc tree."), "got:\n{html}");
 }

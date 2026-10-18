@@ -142,21 +142,36 @@ fn target_uri(path_style: PathStyle, docname: &str) -> String {
 }
 
 fn content_root(path_style: PathStyle, docname: &str) -> String {
-    if path_style == PathStyle::Flat {
-        return "./".to_string();
-    }
-
-    let depth = if docname == "index" {
-        0
-    } else if docname.ends_with("/index") {
-        docname.split('/').count().saturating_sub(1)
-    } else {
-        docname.split('/').count()
+    let depth = match path_style {
+        PathStyle::Flat => docname.split('/').count().saturating_sub(1),
+        PathStyle::Dir if docname == "index" => 0,
+        PathStyle::Dir if docname.ends_with("/index") => {
+            docname.split('/').count().saturating_sub(1)
+        }
+        PathStyle::Dir => docname.split('/').count(),
     };
     if depth == 0 {
         "./".to_string()
     } else {
         "../".repeat(depth)
+    }
+}
+
+fn page_relative_asset_url(path_style: PathStyle, docname: &str, path: &str) -> String {
+    let path = basename_or_url(path);
+    if path.is_empty() || path.contains("://") || path.starts_with('/') {
+        return path;
+    }
+    let asset = if path.starts_with("_static/") {
+        path
+    } else {
+        format!("_static/{path}")
+    };
+    let root = content_root(path_style, docname);
+    if root == "./" {
+        asset
+    } else {
+        format!("{root}{asset}")
     }
 }
 
@@ -708,26 +723,43 @@ fn local_toc_from_doctree(
             .enumerate()
             .filter_map(|(index, &id)| {
                 let node = tree.node(id);
-                let docutilsrs::doctree::NodeKind::Section { ids, .. } = &node.kind else {
-                    return None;
-                };
-                let title = node.children.iter().find_map(|&child| {
-                    let title_node = tree.node(child);
-                    matches!(title_node.kind, docutilsrs::doctree::NodeKind::Title)
-                        .then(|| text_content(tree, child))
-                })?;
-                Some(TocEntry {
-                    docname: if level == 0
-                        && index == 0
-                        && (document_title.is_empty() || title == document_title)
-                    {
-                        format!("{docname}#")
-                    } else {
-                        format!("{docname}#{ids}")
-                    },
-                    title,
-                    children: sections(tree, id, docname, level + 1, document_title),
-                })
+                match &node.kind {
+                    docutilsrs::doctree::NodeKind::Section { ids, .. } => {
+                        let title = node.children.iter().find_map(|&child| {
+                            let title_node = tree.node(child);
+                            matches!(title_node.kind, docutilsrs::doctree::NodeKind::Title)
+                                .then(|| text_content(tree, child))
+                        })?;
+                        Some(TocEntry {
+                            docname: if level == 0
+                                && index == 0
+                                && (document_title.is_empty() || title == document_title)
+                            {
+                                format!("{docname}#")
+                            } else {
+                                format!("{docname}#{ids}")
+                            },
+                            title,
+                            children: sections(tree, id, docname, level + 1, document_title),
+                        })
+                    }
+                    docutilsrs::doctree::NodeKind::ObjectDescription {
+                        classes,
+                        ids,
+                        sig_text,
+                    } if classes.split_whitespace().any(|class| class == "confval") => {
+                        let title = sig_text
+                            .strip_prefix("confval ")
+                            .unwrap_or(sig_text)
+                            .trim();
+                        Some(TocEntry {
+                            docname: format!("{docname}#{ids}"),
+                            title: title.to_string(),
+                            children: Vec::new(),
+                        })
+                    }
+                    _ => None,
+                }
             })
             .collect()
     }
@@ -1184,6 +1216,17 @@ impl ThemeRenderer {
             "content_root".into(),
             content_root(self.state.path_style, docname).into(),
         );
+        for (key, value) in [
+            ("logo_url", env.config.html_logo()),
+            ("favicon_url", env.config.html_favicon()),
+        ] {
+            if let Some(path) = value {
+                ctx.insert(
+                    key.into(),
+                    page_relative_asset_url(self.state.path_style, docname, &path).into(),
+                );
+            }
+        }
 
         // `html-page-context` (H4a): let any connected listener mutate the
         // page before render. Best-effort in the sense that it's a no-op if
@@ -1855,6 +1898,31 @@ mod tests {
     }
 
     #[test]
+    fn local_toc_includes_confval_object_descriptions() {
+        let doctree = docutilsrs::parse_rst_with_options(
+            "Configuration\n=============\n\nProject information\n-------------------\n\n.. confval:: project\n\n   Project name.\n\n.. confval:: copyright\n             project_copyright\n   Copyright statement.\n",
+            "usage/configuration",
+            docutilsrs::TitlePromotion::Preserve,
+        );
+        let entries = local_toc_from_doctree(Some(&doctree), "usage/configuration");
+        let confval = &entries[0].children[0].children[0];
+        assert_eq!(confval.title, "project");
+        assert_eq!(confval.docname, "usage/configuration#confval-project");
+        let aliases = &entries[0].children[0].children[1..];
+        assert_eq!(
+            aliases.iter().map(|entry| entry.title.as_str()).collect::<Vec<_>>(),
+            vec!["copyright", "project_copyright"]
+        );
+        assert_eq!(aliases[1].docname, "usage/configuration#confval-project_copyright");
+        let html = render_toc_html(&entries, "usage/configuration.html", PathStyle::Flat);
+        assert!(html.contains("href=\"#confval-project\">project</a>"), "got: {html}");
+        assert!(
+            html.contains("href=\"#confval-project_copyright\">project_copyright</a>"),
+            "got: {html}"
+        );
+    }
+
+    #[test]
     fn local_toc_document_title_uses_page_anchor() {
         let doctree = docutilsrs::parse_rst_with_options(
             "======\nSphinx\n======\n\nGet started\n-----------\n",
@@ -1983,10 +2051,24 @@ mod tests {
     fn path_and_asset_helpers_cover_flat_dir_fragments_and_checksums() {
         assert_eq!(target_uri(PathStyle::Flat, "guide/page#intro"), "guide/page.html#intro");
         assert_eq!(target_uri(PathStyle::Dir, "guide/page#intro"), "guide/page/#intro");
-        assert_eq!(content_root(PathStyle::Flat, "guide/page"), "./");
+        assert_eq!(content_root(PathStyle::Flat, "index"), "./");
+        assert_eq!(content_root(PathStyle::Flat, "guide/page"), "../");
+        assert_eq!(content_root(PathStyle::Flat, "guide/api/page"), "../../");
         assert_eq!(content_root(PathStyle::Dir, "index"), "./");
         assert_eq!(content_root(PathStyle::Dir, "guide/index"), "../");
         assert_eq!(content_root(PathStyle::Dir, "guide/page"), "../../");
+        assert_eq!(
+            page_relative_asset_url(PathStyle::Flat, "usage/configuration", "_static/favicon.svg"),
+            "../_static/favicon.svg"
+        );
+        assert_eq!(
+            page_relative_asset_url(PathStyle::Flat, "index", "favicon.svg"),
+            "_static/favicon.svg"
+        );
+        assert_eq!(
+            page_relative_asset_url(PathStyle::Flat, "usage/configuration", "https://example.test/favicon.svg"),
+            "https://example.test/favicon.svg"
+        );
         assert_eq!(append_checksum("asset.js".into(), Some("abc")), "asset.js?v=abc");
         assert_eq!(append_checksum("asset.js".into(), None), "asset.js");
 

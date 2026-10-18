@@ -661,10 +661,16 @@ SPHINXBUILDRS='cargo run --bin sphinx-build-rs --'
 
 otherdocs-sphinx: otherdocs-sphinx-py otherdocs-sphinx-rs otherdocs-sphinx-diff
 
-otherdocs-sphinx-diff:
-	diff -Naur src/sphinx/doc/_build_py/html src/sphinx/doc/_build_rs/html > otherdocs-sphinx-py-rs.diff; status=$$?; \
+otherdocs-sphinx-diff: otherdocs-sphinx-py otherdocs-sphinx-rs
+	python3 tools/sphinx_html_diff.py --python-html src/sphinx/doc/_build_py/html --rust-html src/sphinx/doc/_build_rs/html --source src/sphinx/doc > otherdocs-sphinx-py-rs.diff; status=$$?; \
 	ls -al otherdocs-sphinx-py-rs.diff; \
-	if test $$status -eq 1; then echo "Sphinx parity check failed: generated trees differ"; fi; \
+	if test $$status -ne 0; then echo "Sphinx semantic parity check failed"; fi; \
+	exit $$status
+
+otherdocs-sphinx-byte-diff: otherdocs-sphinx-py otherdocs-sphinx-rs
+	diff -Naur -x .doctrees -x .buildinfo src/sphinx/doc/_build_py/html src/sphinx/doc/_build_rs/html > otherdocs-sphinx-py-rs-byte.diff; status=$$?; \
+	ls -al otherdocs-sphinx-py-rs-byte.diff; \
+	if test $$status -eq 1; then echo "Sphinx byte-level output differs"; fi; \
 	exit $$status
 
 otherdocs-sphinx-py:
@@ -672,7 +678,7 @@ otherdocs-sphinx-py:
 	uv pip install --directory src/sphinx -e . --group docs
 	ls -al src/sphinx/doc/Makefile
 	@echo "Building HTML docs to... src/sphinx/doc/_build_py/html"
-	make -C src/sphinx/doc html SPHINXBUILD=sphinx-build BUILDDIR=_build_py
+	make -C src/sphinx/doc html SPHINXBUILD=sphinx-build BUILDDIR=_build_py SPHINXOPTS=-E
 	@echo "Built HTML docs to: src/sphinx/doc/_build_py/html"
 
 otherdocs-sphinx-rs:
@@ -680,7 +686,7 @@ otherdocs-sphinx-rs:
 	uv pip install --directory src/sphinx -e . --group docs
 	ls -al src/sphinx/doc/Makefile
 	@echo "Building HTML docs to... src/sphinx/doc/_build_rs/html"
-	make -C src/sphinx/doc html SPHINXBUILD=${SPHINXBUILDRS} BUILDDIR=_build_rs
+	make -C src/sphinx/doc html SPHINXBUILD=${SPHINXBUILDRS} BUILDDIR=_build_rs SPHINXOPTS=-E
 	@echo "Built HTML docs to: src/sphinx/doc/_build_rs/html"
 
 otherdocs-sphinx-serve:

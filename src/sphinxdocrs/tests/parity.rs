@@ -3734,6 +3734,236 @@ fn sphinx_docs_html_pages_match(sphinx_docs_build_shared: &SphinxDocsBuildShared
     );
 }
 
+fn visible_html_token_counts(html: &str) -> std::collections::BTreeMap<String, usize> {
+    static SCRIPT_STYLE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static HTML_TAG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static HTML_ENTITY: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static WORD_TOKEN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+
+    let without_code = SCRIPT_STYLE
+        .get_or_init(|| regex::Regex::new(r"(?is)<(?:script|style)\b[^>]*>.*?</(?:script|style)\s*>").unwrap())
+        .replace_all(html, " ");
+    let without_tags = HTML_TAG
+        .get_or_init(|| regex::Regex::new(r"(?s)<!--.*?-->|<[^>]*>").unwrap())
+        .replace_all(&without_code, " ");
+    let decoded = HTML_ENTITY
+        .get_or_init(|| regex::Regex::new(r"&(#x[0-9a-fA-F]+|#\d+|[A-Za-z]+);").unwrap())
+        .replace_all(&without_tags, |captures: &regex::Captures<'_>| {
+            let entity = &captures[1];
+            let character = if let Some(hex) = entity.strip_prefix("#x") {
+                u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
+            } else if let Some(decimal) = entity.strip_prefix('#') {
+                decimal.parse::<u32>().ok().and_then(char::from_u32)
+            } else {
+                match entity.to_ascii_lowercase().as_str() {
+                    "amp" => Some('&'),
+                    "lt" => Some('<'),
+                    "gt" => Some('>'),
+                    "quot" => Some('"'),
+                    "apos" => Some('\''),
+                    "nbsp" => Some(' '),
+                    "ndash" => Some('–'),
+                    "mdash" => Some('—'),
+                    "lsquo" => Some('‘'),
+                    "rsquo" => Some('’'),
+                    "ldquo" => Some('“'),
+                    "rdquo" => Some('”'),
+                    "hellip" => Some('…'),
+                    "copy" => Some('©'),
+                    "reg" => Some('®'),
+                    "trade" => Some('™'),
+                    _ => None,
+                }
+            };
+            character.map_or_else(|| captures[0].to_string(), |c| c.to_string())
+        });
+    let mut normalized = decoded.into_owned().to_lowercase();
+    for (from, to) in [("’", "'"), ("‘", "'"), ("“", "\""), ("”", "\""), ("—", "-"), ("–", "-")] {
+        normalized = normalized.replace(from, to);
+    }
+
+    let mut counts = std::collections::BTreeMap::new();
+    for token in WORD_TOKEN
+        .get_or_init(|| regex::Regex::new(r"\w+").unwrap())
+        .find_iter(&normalized)
+    {
+        *counts.entry(token.as_str().to_owned()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn html_link_counts(html: &str) -> std::collections::BTreeMap<String, usize> {
+    static LINK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static VERSION: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let mut counts = std::collections::BTreeMap::new();
+    let link = LINK.get_or_init(|| regex::Regex::new(r#"<a\b[^>]*\bhref="([^"]+)""#).unwrap());
+    let version = VERSION.get_or_init(|| regex::Regex::new(r"\?v=[0-9a-f]{6,}$").unwrap());
+    for captures in link.captures_iter(html) {
+        let href = version.replace(&captures[1], "?v=<hash>").into_owned();
+        *counts.entry(href).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn html_anchor_counts(html: &str) -> std::collections::BTreeMap<String, usize> {
+    static ANCHOR: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static CONTENT_ROOT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let mut counts = std::collections::BTreeMap::new();
+    let anchor = ANCHOR.get_or_init(|| {
+        regex::Regex::new(r#"<(section|dt|h[1-6])\b[^>]*\bid="([^"]+)""#).unwrap()
+    });
+    for captures in anchor.captures_iter(html) {
+        *counts
+            .entry(format!("{}#{}", &captures[1], &captures[2]))
+            .or_insert(0) += 1;
+    }
+    let root = CONTENT_ROOT.get_or_init(|| {
+        regex::Regex::new(r#"<html\b[^>]*\bdata-content_root="([^"]+)""#).unwrap()
+    });
+    for captures in root.captures_iter(html) {
+        *counts
+            .entry(format!("content_root:{}", &captures[1]))
+            .or_insert(0) += 1;
+    }
+    counts
+}
+
+fn visible_text_overlap(
+    python: &std::collections::BTreeMap<String, usize>,
+    rust: &std::collections::BTreeMap<String, usize>,
+) -> f64 {
+    let python_total: usize = python.values().sum();
+    let rust_total: usize = rust.values().sum();
+    let shared: usize = python
+        .iter()
+        .map(|(token, count)| count.min(rust.get(token).unwrap_or(&0)))
+        .sum();
+    let total = python_total + rust_total;
+    if total == 0 {
+        1.0
+    } else {
+        2.0 * shared as f64 / total as f64
+    }
+}
+
+/// Compare visible text on source-backed HTML pages, rather than only checking
+/// that Python and Rust emitted the same filenames. This deliberately ignores
+/// markup layout, generated scripts, and the API pages whose contents depend
+/// on unported autodoc/viewcode/websupport directives, but enforces a minimum
+/// aggregate content overlap on the remaining documentation.
+#[rstest]
+fn sphinx_docs_supported_html_content_parity(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built || !sphinx_docs_build_shared.rs_built {
+        return;
+    }
+
+    const KNOWN_CONTENT_GAPS: &[&str] = &[
+        "extdev/",
+        "usage/advanced/websupport/",
+        "usage/extensions/example_google.html",
+        "usage/extensions/example_numpy.html",
+    ];
+    let src = sphinx_doc_src();
+    let py_pages: std::collections::BTreeSet<_> = file_tree_paths(&sphinx_docs_build_shared.py_out)
+        .into_iter()
+        .filter(|path| path.ends_with(".html"))
+        .collect();
+
+    let mut python_total = 0usize;
+    let mut rust_total = 0usize;
+    let mut shared_total = 0usize;
+    let mut python_links = std::collections::BTreeMap::new();
+    let mut rust_links = std::collections::BTreeMap::new();
+    let mut python_anchors = std::collections::BTreeMap::new();
+    let mut rust_anchors = std::collections::BTreeMap::new();
+    let mut low_pages = Vec::new();
+    let mut checked_pages = 0usize;
+    let mut parser_errors = Vec::new();
+
+    for path in file_tree_paths(&sphinx_docs_build_shared.rs_out)
+        .into_iter()
+        .filter(|path| path.ends_with(".html"))
+    {
+        let html = std::fs::read_to_string(sphinx_docs_build_shared.rs_out.join(&path))
+            .unwrap_or_else(|error| panic!("read Rust HTML {path}: {error}"));
+        for message in [
+            "Unknown target name:",
+            "Unknown directive type",
+            "Unknown interpreted text role",
+        ] {
+            if html.contains(message) {
+                parser_errors.push(format!("{path}: {message}"));
+            }
+        }
+    }
+
+    for path in py_pages {
+        if KNOWN_CONTENT_GAPS.iter().any(|gap| path.starts_with(gap)) {
+            continue;
+        }
+        let docname = path.strip_suffix(".html").unwrap_or(&path);
+        if !src.join(format!("{docname}.rst")).is_file() {
+            continue;
+        }
+        let python_html = std::fs::read_to_string(sphinx_docs_build_shared.py_out.join(&path))
+            .unwrap_or_else(|error| panic!("read Python HTML {path}: {error}"));
+        let rust_path = sphinx_docs_build_shared.rs_out.join(&path);
+        if !rust_path.is_file() {
+            continue;
+        }
+        let rust_html = std::fs::read_to_string(&rust_path)
+            .unwrap_or_else(|error| panic!("read Rust HTML {path}: {error}"));
+
+        let python_tokens = visible_html_token_counts(&python_html);
+        let rust_tokens = visible_html_token_counts(&rust_html);
+        for (token, count) in html_link_counts(&python_html) {
+            *python_links.entry(token).or_insert(0) += count;
+        }
+        for (token, count) in html_link_counts(&rust_html) {
+            *rust_links.entry(token).or_insert(0) += count;
+        }
+        for (token, count) in html_anchor_counts(&python_html) {
+            *python_anchors.entry(token).or_insert(0) += count;
+        }
+        for (token, count) in html_anchor_counts(&rust_html) {
+            *rust_anchors.entry(token).or_insert(0) += count;
+        }
+        let python_count: usize = python_tokens.values().sum();
+        let rust_count: usize = rust_tokens.values().sum();
+        python_total += python_count;
+        rust_total += rust_count;
+        let overlap = visible_text_overlap(&python_tokens, &rust_tokens);
+        shared_total +=
+            (overlap * (python_count + rust_count) as f64 / 2.0).round() as usize;
+        if overlap < 1.00 {
+            low_pages.push(format!("{:.1}% {path}", overlap * 100.0));
+        }
+        checked_pages += 1;
+    }
+
+    assert!(
+        parser_errors.is_empty(),
+        "Rust HTML contains unresolved reStructuredText diagnostics:\n{}",
+        parser_errors.join("\n")
+    );
+    let overlap = 2.0 * shared_total as f64 / (python_total + rust_total) as f64;
+    let link_overlap = visible_text_overlap(&python_links, &rust_links);
+    let anchor_overlap = visible_text_overlap(&python_anchors, &rust_anchors);
+    assert!(
+        checked_pages >= 100
+            && overlap >= 1.00
+            && link_overlap >= 1.00
+            && anchor_overlap >= 1.00,
+        "HTML parity too low across {checked_pages} supported source pages: \
+         visible text {:.1}%, links {:.1}%, anchors {:.1}%; \
+         pages below 100% overlap:\n{}",
+        overlap * 100.0,
+        link_overlap * 100.0,
+        anchor_overlap * 100.0,
+        low_pages.join("\n")
+    );
+}
+
 // ── stderr / stdout assertions ────────────────────────────────────────────────
 
 /// `sphinx-build-rs` must emit "Build succeeded" to stderr for a successful

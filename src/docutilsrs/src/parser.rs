@@ -414,6 +414,7 @@ pub enum Block {
         classes: String,
         ids: String,
         sig_text: String,
+        aliases: Vec<String>,
         children: Vec<Block>,
     },
     Image {
@@ -1631,11 +1632,11 @@ fn parse_target_inline(rest: &str) -> Option<(String, String, bool)> {
     let name = if let Some(s) = name.strip_prefix('`') {
         s.strip_suffix('`')?.to_string()
     } else {
-        // Allow letters, digits, spaces, and a small set of punctuation in
-        // the name. Spaces yield phrase-reference targets.
+        // Target labels may contain punctuation commonly used in names,
+        // repository paths, quoted titles, and issue identifiers.
         if !name
             .chars()
-            .all(|c| c.is_alphanumeric() || " ._-+".contains(c))
+            .all(|c| c.is_alphanumeric() || " ._-+/'\"’‘“”#()".contains(c))
         {
             return None;
         }
@@ -2231,6 +2232,7 @@ fn parse_directive(
                 classes: name.clone(),
                 ids: normalize_id(&title),
                 sig_text: title,
+                aliases: Vec::new(),
                 children,
             }
         }
@@ -2267,10 +2269,41 @@ fn parse_directive(
             } else {
                 ("std", format!("{name} {}", args.trim()))
             };
-            let sig_text = sig.trim().to_string();
-            let ids = format!("{objtype}-{}", normalize_id(args.trim()));
+            let sig_text = if name == "confval" {
+                args.trim().to_string()
+            } else {
+                sig.trim().to_string()
+            };
+            let ids = if name == "confval" {
+                format!("confval-{}", normalize_confval_id(args.trim()))
+            } else {
+                format!("{objtype}-{}", normalize_id(args.trim()))
+            };
             let classes = format!("{objtype} {}", name.replace(':', " "));
             *i_ref += 1;
+            let mut aliases = Vec::new();
+            if name == "confval" {
+                let signature_indent = base_indent + ".. confval:: ".len();
+                let mut next = *i_ref;
+                while next < lines.len() {
+                    let line = lines[next];
+                    let Some(indent) = leading_spaces(line) else {
+                        break;
+                    };
+                    if indent < signature_indent || line.trim().is_empty() {
+                        break;
+                    }
+                    let alias = line[indent..].trim();
+                    if alias.is_empty() || field_marker(alias).is_some() {
+                        break;
+                    }
+                    aliases.push(alias.to_string());
+                    next += 1;
+                }
+                if !aliases.is_empty() {
+                    *i_ref = next;
+                }
+            }
             let mut children = Vec::new();
             if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
                 let inner = consume_indented_lines(lines, i_ref, ci);
@@ -2281,6 +2314,7 @@ fn parse_directive(
                 classes,
                 ids,
                 sig_text,
+                aliases,
                 children,
             }
         }
@@ -2298,6 +2332,7 @@ fn parse_directive(
                 classes: format!("autodoc {}", name),
                 ids: normalize_id(&title),
                 sig_text: format!("py:{name} {title}"),
+                aliases: Vec::new(),
                 children,
             }
         }
@@ -2432,8 +2467,23 @@ fn parse_directive(
                                 for cell_content in cell_items {
                                     let mut cell_lines = Vec::new();
                                     for b in cell_content {
-                                        if let Block::Paragraph { text, .. } = b {
-                                            cell_lines.push(text.clone());
+                                        match b {
+                                            Block::Paragraph { text, .. } => {
+                                                cell_lines.push(text.clone());
+                                            }
+                                            Block::Target {
+                                                name,
+                                                refuri,
+                                                anonymous,
+                                            } => {
+                                                let target = if *anonymous {
+                                                    format!(".. __: {refuri}")
+                                                } else {
+                                                    format!(".. _{name}: {refuri}")
+                                                };
+                                                cell_lines.push(target);
+                                            }
+                                            _ => {}
                                         }
                                     }
                                     row_cells.push(cell_lines);
@@ -2625,6 +2675,7 @@ fn parse_directive(
                 classes: "rst directive:option".to_string(),
                 ids,
                 sig_text,
+                aliases: Vec::new(),
                 children,
             }
         }
@@ -2664,6 +2715,7 @@ fn parse_directive(
                 classes,
                 ids,
                 sig_text,
+                aliases: Vec::new(),
                 children,
             }
         }
@@ -3669,6 +3721,7 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 classes,
                 ids,
                 sig_text,
+                aliases,
                 children,
             } => {
                 let ids = if classes == "rst directive:option" {
@@ -3697,6 +3750,17 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 );
                 for b in children.into_iter().rev() {
                     tasks.push((d, b));
+                }
+                for alias in aliases {
+                    let id = format!("confval-{}", normalize_confval_id(&alias));
+                    tree.append(
+                        parent,
+                        NodeKind::ObjectDescription {
+                            classes: "std confval".to_string(),
+                            ids: id,
+                            sig_text: alias,
+                        },
+                    );
                 }
             }
             Block::Image {
@@ -3996,6 +4060,24 @@ fn normalize_id(name: &str) -> String {
     let mut last_dash = true;
     for c in lower.chars() {
         if c.is_ascii_alphanumeric() {
+            out.push(c);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    out
+}
+
+fn normalize_confval_id(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut last_dash = true;
+    for c in name.to_ascii_lowercase().chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
             out.push(c);
             last_dash = false;
         } else if !last_dash {
@@ -4405,6 +4487,7 @@ fn apply_footnote_backrefs(
 fn collect_targets(tree: &Doctree, id: NodeId, out: &mut HashMap<String, String>) {
     match &tree.node(id).kind {
         NodeKind::Target {
+            ids,
             names,
             refuri,
             anonymous,
@@ -4414,7 +4497,12 @@ fn collect_targets(tree: &Doctree, id: NodeId, out: &mut HashMap<String, String>
             // against anonymous references instead.
             if !*anonymous {
                 let key = names.replace("\\ ", " ");
-                out.insert(key, refuri.clone());
+                let uri = if refuri.is_empty() && !ids.is_empty() {
+                    format!("#{ids}")
+                } else {
+                    refuri.clone()
+                };
+                out.insert(key, uri);
             }
         }
         NodeKind::Section { ids, names, .. } if !ids.is_empty() && !names.is_empty() => {
@@ -5426,7 +5514,10 @@ fn try_match_phrase_reference(
     let inner = &text[start + 1..abs_close];
     // Embedded URI: `text <uri>` where the URI must be at the end and
     // preceded by whitespace, including whitespace spanning source lines.
-    let (name, uri) = if inner.ends_with('>') {
+    let (name, uri) = if inner.starts_with('<') && inner.ends_with('>') {
+        let uri = inner[1..inner.len() - 1].trim().to_string();
+        (uri.clone(), Some(uri))
+    } else if inner.ends_with('>') {
         if let Some(lt) = inner.rfind('<')
             && inner[..lt].chars().next_back().is_some_and(char::is_whitespace)
         {
@@ -5439,6 +5530,7 @@ fn try_match_phrase_reference(
     } else {
         (inner.to_string(), None)
     };
+    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
     Some((name, uri, abs_under_end, anonymous))
 }
 

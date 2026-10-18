@@ -92,6 +92,75 @@ fn reference_resolves_to_target() {
 }
 
 #[test]
+fn named_internal_target_resolves_to_its_fragment() {
+    let source = "See `glob-style patterns`_.\n\n.. _glob-style patterns:\n\nThese patterns match paths.";
+    let tree = parse_rst(source);
+    assert!((0..tree.nodes_len()).any(|id| matches!(
+        &tree.node(id).kind,
+        NodeKind::Reference { name, refuri, .. }
+            if name == "glob-style patterns" && refuri == "#glob-style-patterns"
+    )));
+    assert!(!pseudo_xml(&tree).contains("Unknown target name"));
+}
+
+#[test]
+fn punctuated_phrase_targets_resolve() {
+    let source = "See `sphinxdoc/sphinx`_ and `Weblate's documentation`_.\n\n.. _sphinxdoc/sphinx: https://example.test/sphinx\n.. _Weblate's documentation: https://example.test/weblate";
+    let tree = parse_rst(source);
+    let references: Vec<_> = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::Reference { name, refuri, .. } => Some((name.clone(), refuri.clone())),
+            _ => None,
+        })
+        .collect();
+    assert!(references.contains(&(
+        "sphinxdoc/sphinx".to_string(),
+        "https://example.test/sphinx".to_string(),
+    )));
+    assert!(references.contains(&(
+        "Weblate's documentation".to_string(),
+        "https://example.test/weblate".to_string(),
+    )));
+    assert!(!pseudo_xml(&tree).contains("Unknown target name"));
+}
+
+#[test]
+fn line_wrapped_phrase_reference_matches_normalized_target_name() {
+    let source = "See `AmSMath LaTeX\n  package`_.\n\n.. _AmSMath LaTeX package: https://example.test/amsmath";
+    let tree = parse_rst(source);
+    assert!((0..tree.nodes_len()).any(|id| matches!(
+        &tree.node(id).kind,
+        NodeKind::Reference { name, refuri, .. }
+            if name == "AmSMath LaTeX package" && refuri == "https://example.test/amsmath"
+    )));
+    assert!(!pseudo_xml(&tree).contains("Unknown target name"));
+}
+
+#[test]
+fn list_table_cell_target_resolves_sibling_phrase_reference() {
+    let source = ".. list-table::\n\n   * - `sphinxcontrib-websupport`_\n       .. _sphinxcontrib-websupport: https://example.test/websupport\n";
+    let tree = parse_rst(source);
+    assert!((0..tree.nodes_len()).any(|id| matches!(
+        &tree.node(id).kind,
+        NodeKind::Reference { name, refuri, .. }
+            if name == "sphinxcontrib-websupport"
+                && refuri == "https://example.test/websupport"
+    )));
+    assert!(!pseudo_xml(&tree).contains("Unknown target name"));
+}
+
+#[test]
+fn angle_only_embedded_uri_reference_resolves() {
+    let tree = parse_rst("Read `<https://example.test/page>`_.");
+    assert!((0..tree.nodes_len()).any(|id| matches!(
+        &tree.node(id).kind,
+        NodeKind::Reference { name, refuri, .. }
+            if name == "https://example.test/page" && refuri == name
+    )));
+    assert!(!pseudo_xml(&tree).contains("Unknown target name"));
+}
+
+#[test]
 fn multiline_embedded_uri_reference_resolves() {
     let source = "See `reStructuredText User Documentation\n<https://docutils.sourceforge.io/rst.html>`_.";
     let tree = parse_rst(source);
@@ -132,6 +201,24 @@ fn c_cpp_unions_and_rst_directive_options_are_known_directives() {
         output.contains("directive-option-py-function-no-index"),
         "{output}"
     );
+}
+
+#[test]
+fn confval_object_description_uses_standard_anchor_prefix() {
+    let tree = parse_rst(
+        ".. confval:: project\n\n   Project name.\n\n.. confval:: copyright\n             project_copyright\n   Type: str\n",
+    );
+    let ids: Vec<_> = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, .. } if classes == "std confval" => {
+                Some(ids.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(ids.contains(&"confval-project"));
+    assert!(ids.contains(&"confval-copyright"));
+    assert!(ids.contains(&"confval-project_copyright"));
 }
 
 #[test]

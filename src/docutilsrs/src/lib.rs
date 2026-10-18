@@ -30,7 +30,7 @@ pub use latex_writer::{latex, latex_body};
 pub use manpage_writer::manpage;
 pub use odt_writer::odt;
 pub use parser::{
-    TitlePromotion, parse_rst, parse_rst_with_options,
+    TitlePromotion, parse_rst, parse_rst_for_sphinx, parse_rst_with_options,
     parse_rst_with_options_and_docutils_links, parse_rst_with_source,
 };
 pub use text_writer::text;

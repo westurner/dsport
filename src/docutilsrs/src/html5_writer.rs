@@ -106,7 +106,7 @@ fn glossary_term_id(tree: &Doctree, term: NodeId) -> Option<String> {
     collect_text(tree, term, &mut term_text);
     let mut id = String::from("term-");
     let mut last_dash = true;
-    for character in term_text.trim().to_ascii_lowercase().chars() {
+    for character in term_text.trim().chars() {
         if character.is_ascii_alphanumeric() {
             id.push(character);
             last_dash = false;
@@ -1025,6 +1025,27 @@ mod tests {
         );
 
         assert!(rendered.contains("<dt id=\"term-builder\">builder</dt>"));
+    }
+
+    #[test]
+    fn glossary_term_anchors_preserve_source_case() {
+        let tree = crate::parse_rst_with_options(
+            ".. glossary::\n\n   RemoveInSphinxXXXWarning\n      A warning.\n\n   reStructuredText\n      A markup language.\n",
+            "glossary",
+            crate::TitlePromotion::Preserve,
+        );
+        let rendered = html5(
+            &tree,
+            &crate::cli::Html5Options::default(),
+            &crate::cli::CommonOptions::default(),
+        );
+
+        assert!(rendered.contains(
+            "<dt id=\"term-RemoveInSphinxXXXWarning\">RemoveInSphinxXXXWarning</dt>"
+        ));
+        assert!(rendered.contains(
+            "<dt id=\"term-reStructuredText\">reStructuredText</dt>"
+        ));
     }
 
     #[test]

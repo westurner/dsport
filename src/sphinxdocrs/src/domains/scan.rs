@@ -142,9 +142,8 @@ pub fn scan_confval_names(source: &str) -> Vec<String> {
         let base_indent = line.len() - trimmed.len();
         let signature_indent = base_indent + ".. confval:: ".len();
         let primary = argument.trim();
-        if !primary.is_empty() {
-            names.push(primary.to_string());
-        }
+        let mut aliases = Vec::new();
+        let mut no_index = false;
         index += 1;
         while index < lines.len() {
             let alias_line = lines[index];
@@ -153,14 +152,35 @@ pub fn scan_confval_names(source: &str) -> Vec<String> {
             }
             let indent = alias_line.len() - alias_line.trim_start().len();
             if indent < signature_indent {
+                let option = alias_line.trim();
+                if indent > base_indent && option.starts_with(':') {
+                    if matches!(option, ":no-index:" | ":noindex:") {
+                        no_index = true;
+                    }
+                    index += 1;
+                    continue;
+                }
                 break;
             }
             let alias = alias_line.trim();
-            if alias.starts_with(':') || alias.starts_with("..") {
+            if alias.starts_with(':') {
+                if matches!(alias, ":no-index:" | ":noindex:") {
+                    no_index = true;
+                }
+                index += 1;
+                continue;
+            }
+            if alias.starts_with("..") {
                 break;
             }
-            names.push(alias.to_string());
+            aliases.push(alias.to_string());
             index += 1;
+        }
+        if !no_index {
+            if !primary.is_empty() {
+                names.push(primary.to_string());
+            }
+            names.extend(aliases);
         }
     }
     names
@@ -774,6 +794,16 @@ mod tests {
         assert_eq!(
             scan_confval_names(src),
             vec!["master_doc".to_string(), "root_doc".to_string()]
+        );
+    }
+
+    #[test]
+    fn scan_confval_skips_no_index_definitions() {
+        let src = ".. confval:: suppress_warnings\n   :no-index:\n   :type: Sequence[str]\n\n.. confval:: public_value\n              public_alias\n   :type: str\n";
+
+        assert_eq!(
+            scan_confval_names(src),
+            vec!["public_value".to_string(), "public_alias".to_string()]
         );
     }
 

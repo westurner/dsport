@@ -794,7 +794,7 @@ fn local_toc_from_doctree(
                         classes,
                         ids,
                         sig_text,
-                    } if !ids.is_empty() => {
+                    } if !ids.is_empty() && classes != "std option" => {
                         let title = if classes
                             .split_whitespace()
                             .any(|class| class == "autoattribute")
@@ -804,6 +804,27 @@ fn local_toc_from_doctree(
                                 .and_then(|module| ids.strip_prefix(&format!("{module}.")))
                                 .unwrap_or(ids)
                                 .to_string()
+                        } else if classes == "rst directive" {
+                            if ids == "directive-rst-directive" {
+                                ".. rst:directive::".to_string()
+                            } else if sig_text.starts_with(".. ") {
+                                sig_text
+                                    .split_once("::")
+                                    .map(|(signature, _)| format!("{signature}::"))
+                                    .unwrap_or_else(|| sig_text.to_string())
+                            } else {
+                                format!(".. {sig_text}::")
+                            }
+                        } else if classes == "rst directive:option" {
+                            if ids == "directive-rst-directive-option" {
+                                ".. rst:directive:option::".to_string()
+                            } else {
+                                sig_text
+                                    .split_whitespace()
+                                    .next()
+                                    .unwrap_or(sig_text)
+                                    .to_string()
+                            }
                         } else {
                             let is_python_class = classes
                                 .split_whitespace()
@@ -2049,7 +2070,7 @@ mod tests {
     #[test]
     fn local_toc_includes_class_and_attribute_descriptions() {
         let doctree = docutilsrs::parse_rst_with_options(
-            "Builders\n========\n\n.. module:: sphinx.builders\n\n.. py:class:: sphinx.builders.ExampleBuilder\n\n   .. autoattribute:: sphinx.builders.ExampleBuilder.name\n",
+            "Builders\n========\n\n.. module:: sphinx.builders\n\n.. py:class:: sphinx.builders.ExampleBuilder\n\n   .. autoattribute:: sphinx.builders.ExampleBuilder.name\n\n.. option:: --example\n\n.. rst:directive:: foo\n\n.. rst:directive:: .. rst:directive:: name\n\n.. rst:directive:: .. rst:directive:option:: name\n",
             "usage/builders",
             docutilsrs::TitlePromotion::Preserve,
         );
@@ -2069,6 +2090,18 @@ mod tests {
             entries[0].children[0].children[0].docname,
             "usage/builders#sphinx.builders.ExampleBuilder.name"
         );
+        let titles = entries[0]
+            .children
+            .iter()
+            .map(|entry| entry.title.as_str())
+            .collect::<Vec<_>>();
+        assert!(titles.contains(&".. foo::"), "got: {titles:?}");
+        assert!(titles.contains(&".. rst:directive::"), "got: {titles:?}");
+        assert!(
+            titles.contains(&".. rst:directive:option::"),
+            "got: {titles:?}"
+        );
+        assert!(!titles.contains(&"--example"), "got: {titles:?}");
     }
 
     #[test]

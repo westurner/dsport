@@ -746,7 +746,7 @@ impl BuildEnvironment {
         let mut tree = match self.parser_for_path(&path).as_str() {
             "restructuredtext" => {
                 crate::roles::register_builtin_roles();
-                Ok(docutilsrs::parse_rst_with_options_and_docutils_links(
+                Ok(docutilsrs::parse_rst_for_sphinx(
                     source,
                     docname,
                     docutilsrs::TitlePromotion::Preserve,
@@ -3737,6 +3737,7 @@ mod tests {
             tree.node(section).kind,
             NodeKind::Section { ref ids, .. } if ids == "module-jinja2.seccomp"
         ));
+
     }
 
     #[test]

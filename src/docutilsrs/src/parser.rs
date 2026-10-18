@@ -65,6 +65,24 @@ pub fn parse_rst_with_options_and_docutils_links(
         source_path,
         title_promotion == TitlePromotion::Promote,
         show_docutils_links,
+        false,
+    )
+}
+
+/// Parse rST with Sphinx's implicit IDs for anonymous targets reserved during
+/// duplicate section ID repair.
+pub fn parse_rst_for_sphinx(
+    source: &str,
+    source_path: &str,
+    title_promotion: TitlePromotion,
+    show_docutils_links: bool,
+) -> Doctree {
+    parse_rst_impl(
+        source,
+        source_path,
+        title_promotion == TitlePromotion::Promote,
+        show_docutils_links,
+        true,
     )
 }
 
@@ -73,6 +91,7 @@ fn parse_rst_impl(
     source_path: &str,
     promote_title: bool,
     show_docutils_links: bool,
+    reserve_anonymous_target_ids: bool,
 ) -> Doctree {
     let _role_lock = crate::roles::lock_global();
     let mut tree = Doctree::new_document(source_path);
@@ -105,7 +124,7 @@ fn parse_rst_impl(
     }
     normalize_target_placement(&mut tree);
     repair_duplicate_target_ids(&mut tree);
-    repair_duplicate_section_ids(&mut tree);
+    repair_duplicate_section_ids(&mut tree, reserve_anonymous_target_ids);
     resolve_references(&mut tree, &ctx);
     if promote_title {
         promote_document_title(&mut tree);
@@ -266,20 +285,51 @@ fn repair_duplicate_target_ids(tree: &mut Doctree) {
     visit(tree, tree.root(), &mut used);
 }
 
-fn repair_duplicate_section_ids(tree: &mut Doctree) {
+fn repair_duplicate_section_ids(tree: &mut Doctree, reserve_anonymous_target_ids: bool) {
     let mut reserved = HashSet::new();
-    for id in 0..tree.nodes_len() {
-        match &tree.node(id).kind {
-            NodeKind::Section { ids, .. }
-            | NodeKind::Target { ids, .. }
-            | NodeKind::ObjectDescription { ids, .. }
-                if !ids.is_empty() =>
-            {
+    fn reserve_existing_ids(
+        tree: &Doctree,
+        parent: NodeId,
+        reserved: &mut HashSet<String>,
+        seen_sections: &mut HashSet<String>,
+        reserve_anonymous_target_ids: bool,
+    ) {
+        match &tree.node(parent).kind {
+            NodeKind::Section { ids, .. } if !ids.is_empty() => {
+                if seen_sections.insert(ids.clone()) {
+                    reserved.insert(ids.clone());
+                }
+            }
+            NodeKind::Target {
+                ids,
+                anonymous: true,
+                ..
+            } if reserve_anonymous_target_ids => {
+                let _ = ids;
+            }
+            NodeKind::Target { ids, .. } | NodeKind::ObjectDescription { ids, .. }
+                if !ids.is_empty() => {
                 reserved.insert(ids.clone());
             }
             _ => {}
         }
+        for &child in &tree.node(parent).children {
+            reserve_existing_ids(
+                tree,
+                child,
+                reserved,
+                seen_sections,
+                reserve_anonymous_target_ids,
+            );
+        }
     }
+    reserve_existing_ids(
+        tree,
+        tree.root(),
+        &mut reserved,
+        &mut HashSet::new(),
+        reserve_anonymous_target_ids,
+    );
 
     fn visit(
         tree: &mut Doctree,
@@ -287,10 +337,13 @@ fn repair_duplicate_section_ids(tree: &mut Doctree) {
         reserved: &mut HashSet<String>,
         seen_sections: &mut HashSet<String>,
         next_id: &mut u32,
+        reserve_anonymous_target_ids: bool,
     ) {
-        if let NodeKind::Section { ids, .. } = &tree.node(parent).kind {
-            let current_id = ids.clone();
-            if !current_id.is_empty() && !seen_sections.insert(current_id) {
+        let node_kind = tree.node(parent).kind.clone();
+        match node_kind {
+            NodeKind::Target {
+                anonymous: true, ..
+            } if reserve_anonymous_target_ids => {
                 let replacement = loop {
                     let candidate = format!("id{}", *next_id);
                     *next_id += 1;
@@ -298,15 +351,37 @@ fn repair_duplicate_section_ids(tree: &mut Doctree) {
                         break candidate;
                     }
                 };
-                if let NodeKind::Section { ids, .. } = &mut tree.node_mut(parent).kind {
+                if let NodeKind::Target { ids, .. } = &mut tree.node_mut(parent).kind {
                     *ids = replacement;
                 }
             }
+            NodeKind::Section { ids, .. } => {
+                if !ids.is_empty() && !seen_sections.insert(ids.clone()) {
+                    let replacement = loop {
+                        let candidate = format!("id{}", *next_id);
+                        *next_id += 1;
+                        if reserved.insert(candidate.clone()) {
+                            break candidate;
+                        }
+                    };
+                    if let NodeKind::Section { ids, .. } = &mut tree.node_mut(parent).kind {
+                        *ids = replacement;
+                    }
+                }
+            }
+            _ => {}
         }
 
         let children = tree.node(parent).children.clone();
         for child in children {
-            visit(tree, child, reserved, seen_sections, next_id);
+            visit(
+                tree,
+                child,
+                reserved,
+                seen_sections,
+                next_id,
+                reserve_anonymous_target_ids,
+            );
         }
     }
 
@@ -316,6 +391,7 @@ fn repair_duplicate_section_ids(tree: &mut Doctree) {
         &mut reserved,
         &mut HashSet::new(),
         &mut 1,
+        reserve_anonymous_target_ids,
     );
 }
 
@@ -2774,7 +2850,12 @@ fn parse_directive(
             let raw_option = args.trim();
             let (option, description, owner) = if let Some(rest) = raw_option.strip_prefix('@') {
                 if let Some((owner, option)) = rest.split_once('@') {
-                    (option.trim(), "", Some(owner.trim().to_string()))
+                    let (option, description) = option
+                        .split_once(':')
+                        .map_or((option.trim(), ""), |(option, description)| {
+                            (option.trim(), description.trim())
+                        });
+                    (option, description, Some(owner.trim().to_string()))
                 } else {
                     (raw_option, "", None)
                 }

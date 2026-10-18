@@ -151,7 +151,11 @@ impl PyDomain {
             PLAIN_TYPES,
             py_signature_of,
         ) {
-            let anchor = format!("py-{objtype}-{}", normalize_id(&fullname));
+            let anchor = if objtype == "module" {
+                format!("module-{fullname}")
+            } else {
+                format!("py-{objtype}-{}", normalize_id(&fullname))
+            };
             self.note_object(objtype, fullname, docname, anchor, signature);
         }
         for line in source.lines() {
@@ -284,6 +288,11 @@ mod tests {
                 .objects
                 .contains_key(&("module".to_string(), "pkg.mod".to_string()))
         );
+        let (_, module_anchor, _) = domain
+            .objects
+            .get(&("module".to_string(), "pkg.mod".to_string()))
+            .unwrap();
+        assert_eq!(module_anchor, "module-pkg.mod");
         let (docname, _anchor, sig) = domain
             .objects
             .get(&("function".to_string(), "pkg.mod.greet".to_string()))

@@ -516,6 +516,47 @@ fn duplicate_section_titles_get_implicit_unique_ids() {
 }
 
 #[test]
+fn sphinx_duplicate_section_ids_reserve_anonymous_target_ids() {
+    let source = "Release\n=======\n\nBugs fixed\n----------\n\nFirst.\n\n`search results`__.\n\n__ https://example.com/\n\nBugs fixed\n----------\n\nSecond.\n";
+    let standalone = docutilsrs::parse_rst_with_options(
+        source,
+        "changes",
+        TitlePromotion::Preserve,
+    );
+    let sphinx = docutilsrs::parse_rst_for_sphinx(
+        source,
+        "changes",
+        TitlePromotion::Preserve,
+        true,
+    );
+    let section_ids = |tree: &docutilsrs::Doctree| {
+        (0..tree.nodes_len())
+            .filter_map(|id| match &tree.node(id).kind {
+                NodeKind::Section { ids, .. } => Some(ids.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(section_ids(&standalone), ["release", "bugs-fixed", "id1"]);
+    assert_eq!(section_ids(&sphinx), ["release", "bugs-fixed", "id2"]);
+    let anonymous_target_ids = |tree: &docutilsrs::Doctree| {
+        (0..tree.nodes_len())
+            .filter_map(|id| match &tree.node(id).kind {
+                NodeKind::Target {
+                    ids,
+                    anonymous: true,
+                    ..
+                } => Some(ids.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(anonymous_target_ids(&standalone), ["target-1"]);
+    assert_eq!(anonymous_target_ids(&sphinx), ["id1"]);
+}
+
+#[test]
 fn sphinx_module_directive_emits_only_its_module_anchor() {
     let tree = parse_rst(
         ".. module:: sphinx.builders\n   :synopsis: Built-in builders\n\nBody text.\n",
@@ -574,10 +615,10 @@ fn standard_domain_signature_aliases_emit_peer_objects() {
 #[test]
 fn rst_directive_option_keeps_qualified_owner_in_anchor() {
     let tree = parse_rst(
-        ".. rst:directive:option:: @py:function@single-line-parameter-list\n",
+        ".. rst:directive:option:: @py:function@single-line-parameter-list\n\n.. rst:directive:option:: @toctree@class: class names\n",
     );
-    let object = (0..tree.nodes_len())
-        .find_map(|id| match &tree.node(id).kind {
+    let objects: Vec<_> = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
             NodeKind::ObjectDescription { classes, ids, sig_text }
                 if classes == "rst directive:option" =>
             {
@@ -585,10 +626,18 @@ fn rst_directive_option_keeps_qualified_owner_in_anchor() {
             }
             _ => None,
         })
-        .expect("directive option should be present");
+        .collect();
 
-    assert_eq!(object.0, "directive-option-py-function-single-line-parameter-list");
-    assert_eq!(object.1, ":single-line-parameter-list:");
+    assert_eq!(
+        objects,
+        [
+            (
+                "directive-option-py-function-single-line-parameter-list",
+                ":single-line-parameter-list:"
+            ),
+            ("directive-option-toctree-class", ":class: class names")
+        ]
+    );
 }
 
 #[test]

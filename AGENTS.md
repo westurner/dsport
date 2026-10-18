@@ -52,6 +52,26 @@ Purpose: define how coding agents and contributors should navigate this reposito
   - snapshot tests for structured outputs (insta)
   - focused integration tests for Python<->Rust boundaries
 
+### Sphinx HTML parity
+
+- Run `make otherdocs-sphinx-diff` to freshly build the Python and Rust Sphinx
+  documentation and compare their semantic HTML. The target writes its report
+  to `otherdocs-sphinx-py-rs.diff` even when the parity check fails.
+- The default gate requires 100% overlap for visible text, link destinations,
+  and heading/anchor IDs, at least 100 shared source pages, no missing or extra
+  source pages, and no unresolved parser diagnostics. A nonzero exit means
+  parity is incomplete; read the report's largest text gaps, link/anchor-only
+  entries, page differences, and diagnostics to choose the next fix.
+- For a raw generated-HTML comparison, run
+  `make otherdocs-sphinx-byte-diff`. It writes
+  `otherdocs-sphinx-py-rs-byte.diff` and excludes only `.doctrees` and
+  `.buildinfo`; it is separate from the semantic parity gate.
+- To explore a mismatch without changing the strict project gate, run
+  `python3 tools/sphinx_html_diff.py --help` for the comparator options, or
+  pass lower `--min-overlap`, `--min-link-overlap`, or `--min-anchor-overlap`
+  values directly when diagnosing already-built HTML. Keep all three committed
+  thresholds at `1.00`.
+
 ### Rust test tools
 
 | Need | Tool | Notes |

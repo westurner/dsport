@@ -594,6 +594,23 @@ fn standard_domain_objects_use_declared_names_for_ids_and_signatures() {
 }
 
 #[test]
+fn environment_variable_ids_preserve_prefix_case_and_underscores() {
+    let tree = parse_rst(".. envvar:: SPHINX_APIDOC_OPTIONS\n");
+    let envvar_id = (0..tree.nodes_len())
+        .find_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, .. }
+                if classes == "std envvar" =>
+            {
+                Some(ids.as_str())
+            }
+            _ => None,
+        })
+        .expect("environment variable object description should be present");
+
+    assert_eq!(envvar_id, "envvar-SPHINX_APIDOC_OPTIONS");
+}
+
+#[test]
 fn standard_domain_signature_aliases_emit_peer_objects() {
     let tree = parse_rst(
         ".. data:: master_doc\n          root_doc\n\n   The root document.\n",
@@ -732,6 +749,32 @@ fn program_options_use_program_scoped_ids_for_each_alias() {
     assert_eq!(option, ("cmdoption-sphinx-quickstart-q", "-q, --quiet"));
     assert!(target_ids.contains(&"cmdoption-sphinx-quickstart-quiet"));
     assert!(!pseudo_xml(&tree).contains("std program"));
+}
+
+#[test]
+fn command_option_ids_preserve_short_option_case_and_aliases() {
+    let tree = parse_rst(
+        ".. program:: sphinx-apidoc\n\n.. option:: -T, --no-toc\n\n.. option:: -t, --templatedir=TEMPLATEDIR\n",
+    );
+    let option_ids = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, .. } if classes == "std option" => {
+                Some(ids.as_str())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let alias_ids = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::Target { ids, .. } => Some(ids.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(option_ids.contains(&"cmdoption-sphinx-apidoc-T"));
+    assert!(option_ids.contains(&"cmdoption-sphinx-apidoc-t"));
+    assert!(alias_ids.contains(&"cmdoption-sphinx-apidoc-no-toc"));
+    assert!(alias_ids.contains(&"cmdoption-sphinx-apidoc-templatedir"));
 }
 
 #[test]

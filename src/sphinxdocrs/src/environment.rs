@@ -206,6 +206,8 @@ pub struct BuildEnvironment {
     // ── domain data ───────────────────────────────────────────────────────────
     /// domainname → domain-specific data (free-form string map).
     pub domaindata: HashMap<String, HashMap<String, String>>,
+    /// Parsed external inventories loaded on first cross-reference lookup.
+    external_inventories: std::sync::OnceLock<Vec<crate::intersphinx::Inventory>>,
 
     // ── scratch ────────────────────────────────────────────────────────────────
     /// Per-read temporary data cleared at the start of each document read.
@@ -325,6 +327,7 @@ impl BuildEnvironment {
             glob_toctrees: HashSet::new(),
             numbered_toctrees: HashSet::new(),
             domaindata: HashMap::new(),
+            external_inventories: std::sync::OnceLock::new(),
             temp_data: HashMap::new(),
             ref_context: HashMap::new(),
             std_domain: StdDomain::new(),
@@ -1535,6 +1538,46 @@ impl BuildEnvironment {
     /// fallback) rather than silently dropping content, mirroring
     /// upstream logging a dangling-reference warning but leaving the
     /// text in place.
+    fn resolve_external_xref(
+        &self,
+        domain: &str,
+        reftype: &str,
+        target: &str,
+    ) -> Option<&crate::intersphinx::InventoryItem> {
+        let inventories = self.external_inventories.get_or_init(|| {
+            let base_urls = self
+                .config
+                .intersphinx_mapping()
+                .into_iter()
+                .map(|(name, base_url, _)| (name, base_url))
+                .collect::<HashMap<_, _>>();
+            crate::intersphinx::fetch_inventories(&self.config, &self.doctreedir)
+                .into_iter()
+                .filter_map(|cached| {
+                    let base_url = base_urls.get(&cached.name)?;
+                    match crate::intersphinx::Inventory::load_file(&cached.path, base_url) {
+                        Ok(inventory) => Some(inventory),
+                        Err(error) => {
+                            eprintln!(
+                                "Warning: intersphinx: cannot parse cached inventory {}: {error}",
+                                cached.path.display()
+                            );
+                            None
+                        }
+                    }
+                })
+                .collect()
+        });
+        let item_type = format!("{domain}:{reftype}");
+        inventories.iter().find_map(|inventory| {
+            inventory.get(&item_type, target).or_else(|| {
+                target
+                    .strip_prefix("builtins.")
+                    .and_then(|short_name| inventory.get(&item_type, short_name))
+            })
+        })
+    }
+
     pub fn resolve_xref_nodes(&self, tree: &mut Doctree, docname: &str) {
         use crate::builders::Builder as _;
         use crate::builders::html::HtmlBuilder;
@@ -1744,6 +1787,10 @@ impl BuildEnvironment {
                     .resolve_xref(self, docname, &reftype, &target),
                 _ => None,
             };
+            let external = resolved
+                .is_none()
+                .then(|| self.resolve_external_xref(&domain, &reftype, &target))
+                .flatten();
 
             let unresolved_class = match domain.as_str() {
                 "js" => format!("xref js js-{reftype}"),
@@ -1752,7 +1799,7 @@ impl BuildEnvironment {
                 "rst" => format!("xref rst rst-{reftype}"),
                 "rust" => format!("xref rust rust-{reftype}"),
                 _ if reftype == "doc" => {
-                    if resolved.is_some() {
+                    if resolved.is_some() || external.is_some() {
                         "doc".to_string()
                     } else {
                         "xref doc".to_string()
@@ -1761,7 +1808,7 @@ impl BuildEnvironment {
                 _ => format!("xref std std-{reftype}"),
             };
 
-            let Some(resolved) = resolved else {
+            if resolved.is_none() && external.is_none() {
                 if is_pending_xref {
                     let title = if let Some(t) = &explicit_title {
                         t.clone()
@@ -1783,7 +1830,7 @@ impl BuildEnvironment {
                     tree.append(id, NodeKind::Text(title));
                 }
                 continue;
-            };
+            }
 
             let resolved_class = match domain.as_str() {
                 "js" => format!("js js-{reftype}"),
@@ -1799,11 +1846,23 @@ impl BuildEnvironment {
                 t.clone()
             } else if shorten {
                 shorten_xref_target(&target, &domain)
-            } else {
+            } else if let Some(resolved) = &resolved {
                 resolved.title.clone()
+            } else if let Some(external) = external {
+                if external.display_name == "-" {
+                    target.clone()
+                } else {
+                    external.display_name.clone()
+                }
+            } else {
+                target.clone()
             };
 
-            let target_uri = builder.get_target_uri(&resolved.docname);
+            let href = if let Some(external) = external {
+                external.uri.clone()
+            } else {
+                let resolved = resolved.as_ref().expect("local xref resolution exists");
+                let target_uri = builder.get_target_uri(&resolved.docname);
             // Mirrors `sphinx.util.nodes.make_refnode`: a same-document
             // reference with a target id becomes a bare `#targetid`
             // fragment (docutils resolves `refid` this way at write
@@ -1822,14 +1881,15 @@ impl BuildEnvironment {
             // comparing paths, so embedding the anchor into `target_uri`
             // first (rather than after) would just have it silently
             // stripped back out again.
-            let href = if resolved.docname == docname && !resolved.anchor.is_empty() {
+                if resolved.docname == docname && !resolved.anchor.is_empty() {
                 format!("#{}", resolved.anchor)
-            } else {
-                let rel = relative_uri(&base_uri, &target_uri);
-                if resolved.anchor.is_empty() {
-                    rel
                 } else {
-                    format!("{rel}#{}", resolved.anchor)
+                    let rel = relative_uri(&base_uri, &target_uri);
+                    if resolved.anchor.is_empty() {
+                        rel
+                    } else {
+                        format!("{rel}#{}", resolved.anchor)
+                    }
                 }
             };
 
@@ -1843,7 +1903,11 @@ impl BuildEnvironment {
                     name: String::new(),
                     refuri: href,
                     anonymous: false,
-                    classes: "reference internal".to_string(),
+                    classes: if external.is_some() {
+                        "reference external".to_string()
+                    } else {
+                        "reference internal".to_string()
+                    },
                 },
             );
             let span = tree.append(
@@ -4667,6 +4731,92 @@ mod tests {
         assert!(matches!(tree.node(disabled).kind, NodeKind::Inline { .. }));
         assert!(matches!(&tree.node(external).kind, NodeKind::Reference { refuri, classes, .. } if refuri == "https://tracker.test/42" && classes.contains("extlink-issue")));
         assert!(matches!(tree.node(unknown).kind, NodeKind::Inline { .. }));
+    }
+
+    #[test]
+    fn resolve_xref_nodes_uses_cached_intersphinx_objects() {
+        let temp = tempfile::tempdir().unwrap();
+        let doctreedir = temp.path().join("doctrees");
+        let cache_dir = doctreedir.join("__intersphinx_cache__");
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        let mut config = SphinxConfig::new_defaults();
+        config.set(
+            "extensions",
+            ConfigVal::List(vec![ConfigVal::Str("sphinx.ext.intersphinx".into())]),
+        );
+        config.set(
+            "intersphinx_mapping",
+            ConfigVal::Map(vec![(
+                "python".into(),
+                ConfigVal::List(vec![
+                    ConfigVal::Str("https://docs.python.org/3/".into()),
+                    ConfigVal::Str("objects.inv".into()),
+                ]),
+            )]),
+        );
+        let project = EnvProject::new(temp.path(), &[(".rst", "restructuredtext")]);
+        let env = BuildEnvironment::new(config, project, temp.path(), &doctreedir);
+        let inventory = crate::intersphinx::dumps(
+            "Python",
+            "3",
+            &[
+                crate::intersphinx::InventoryEntry {
+                    name: "str".into(),
+                    item_type: "py:class".into(),
+                    priority: 1,
+                    uri: "library/stdtypes.html#str".into(),
+                    display_name: "-".into(),
+                },
+                crate::intersphinx::InventoryEntry {
+                    name: "sys.path".into(),
+                    item_type: "py:data".into(),
+                    priority: 1,
+                    uri: "library/sys.html#sys.path".into(),
+                    display_name: "-".into(),
+                },
+            ],
+        )
+        .unwrap();
+        std::fs::write(cache_dir.join("python_objects.inv"), inventory).unwrap();
+
+        let mut tree = Doctree::new_document("index");
+        let builtin = tree.append(
+            tree.root(),
+            NodeKind::Inline {
+                classes: "py:class".into(),
+            },
+        );
+        tree.append(builtin, NodeKind::Text("builtins.str".into()));
+        let path = tree.append(
+            tree.root(),
+            NodeKind::Inline {
+                classes: "py:data".into(),
+            },
+        );
+        tree.append(path, NodeKind::Text("sys.path".into()));
+
+        env.resolve_xref_nodes(&mut tree, "index");
+
+        assert!(
+            matches!(
+                &tree.node(builtin).kind,
+                NodeKind::Reference { refuri, classes, .. }
+                    if refuri == "https://docs.python.org/3/library/stdtypes.html#str"
+                        && classes == "reference external"
+            ),
+            "builtins.str resolved as {:?}",
+            tree.node(builtin).kind
+        );
+        assert!(
+            matches!(
+                &tree.node(path).kind,
+                NodeKind::Reference { refuri, classes, .. }
+                    if refuri == "https://docs.python.org/3/library/sys.html#sys.path"
+                        && classes == "reference external"
+            ),
+            "sys.path resolved as {:?}",
+            tree.node(path).kind
+        );
     }
 
     #[test]

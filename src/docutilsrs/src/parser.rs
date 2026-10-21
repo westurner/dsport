@@ -2442,6 +2442,8 @@ fn parse_directive(
             };
             let ids = if name == "confval" {
                 format!("confval-{}", normalize_confval_id(args.trim()))
+            } else if name == "envvar" {
+                format!("envvar-{}", args.trim())
             } else if name == "py:class" && args.trim().contains('.') {
                 args.trim().to_string()
             } else if name == "py:module" {
@@ -4418,14 +4420,25 @@ fn normalize_confval_id(name: &str) -> String {
 
 fn command_option_id(program: Option<&str>, option: &str) -> String {
     let option = option.trim();
-    let option = option
-        .split(['=', ' '])
-        .next()
-        .unwrap_or(option);
+    let option = option.split(['=', ' ']).next().unwrap_or(option);
     let prefix = program
         .map(|program| format!("cmdoption-{program}"))
         .unwrap_or_else(|| "cmdoption".to_string());
-    format!("{prefix}-{}", normalize_confval_id(option))
+    let mut normalized = String::with_capacity(option.len());
+    let mut last_dash = true;
+    for character in option.chars() {
+        if character.is_ascii_alphanumeric() || character == '_' {
+            normalized.push(character);
+            last_dash = false;
+        } else if !last_dash {
+            normalized.push('-');
+            last_dash = true;
+        }
+    }
+    while normalized.ends_with('-') {
+        normalized.pop();
+    }
+    format!("{prefix}-{normalized}")
 }
 
 // ────────────────────────────────────────────────────────────────────────────

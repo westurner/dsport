@@ -52,6 +52,128 @@ parsed `width` and `height` attributes. The aggregate LLVM percentages above
 remain the last measured values; these focused tests have not been folded into
 a new coverage report yet.
 
+### Strict upstream documentation HTML gate (2026-10-18)
+
+The separate `make otherdocs-sphinx-diff` semantic comparison covers the 131
+shared pages in `src/sphinx/doc` and retains strict 1.00 minimum overlap for
+visible text, link destinations, and heading/anchor IDs. The initial verified
+Rust build reported 99.50% text, 95.73% links, and 93.26% anchors. Case-
+preserving command-option IDs, cached intersphinx lookup, and envvar IDs have
+since advanced links to 95.94% and anchors to 94.15%; visible text remains
+99.50%. This is an active parity gap, not an accepted deviation, and comparator
+thresholds or known-page exclusions must not be relaxed to improve the score.
+
+For fast iterations, build Rust output under an isolated directory such as
+`src/sphinx/doc/_build_rs_probe/html` and invoke `tools/sphinx_html_diff.py`
+directly against the existing Python HTML tree. This avoids overwriting the
+workspace's tracked/modified `otherdocs-sphinx-py-rs.diff`. Run the Make target
+only when a fresh Python/Rust report is intentionally wanted.
+
+#### H11.2e: close the strict semantic documentation gap
+
+Work in this order, using source-page fixtures and semantic DOM/text
+comparisons before broad rebuilds:
+
+1. **Domain anchors and links.** Start with `usage/domains/cpp.html` and
+  `usage/domains/c.html`. Reconcile Python-only Itanium C++ targets and
+  Rust-only shortened declaration IDs for templates, overloads, data, and
+  enumerators. Add representative signature-to-anchor tests before changing
+  the scanners/renderers. Then resolve Python-only external inventory links
+  (`builtins.str`, `sys.path`, numpydoc, and PEP references) by implementing
+  the relevant intersphinx inventory lookup/fallback; compare complete URIs,
+  not only fragments.
+2. **Generated and title anchors.** Reconcile remaining `idN` links/sections,
+  `module-latex`, and `the-sphinxbox-command`, plus case-sensitive
+  `sphinx-apidoc` command-option IDs. Trace each mismatch to its source
+  directive/target and preserve aliases where Sphinx emits both a module and
+  title anchor. Do not key behavior to page names.
+3. **Visible text.** Use the comparator's per-page token counts and aligned
+  token spans, beginning with C++ (2,810 Python vs. 3,013 Rust tokens), then
+  C (1,389 vs. 1,450), autodoc (6,277 vs. 6,068), and the largest remaining
+  pages. Classify each span as missing, extra, or rendered with a different
+  label; fix the owning domain/parser/template behavior and retain a focused
+  regression for each contract.
+4. **Close the gate.** After each focused slice, run its unit tests, rebuild
+  Rust docs in the isolated directory, and rerun the strict comparator. Once
+  all three overlaps are 100.00%, run `make otherdocs-sphinx-diff` from a
+  clean build, verify all shared source pages and diagnostics, and retain the
+  full report as the final evidence. Completion means 100% on all three
+  metrics, no missing/extra source pages, and no unresolved parser
+  diagnostics; no threshold or exclusion changes are permitted.
+
+**Progress:** dotted Python module anchors, signature-derived local TOC labels,
+standard-option TOC exclusion, Sphinx-ordered anonymous target IDs, and
+case-preserving command-option/envvar anchors are implemented and covered by
+focused tests. Cached intersphinx inventories are consulted after local domain
+resolution; the offline resolver test covers qualified builtins fallback and
+`sys.path`, and the docs build resolves the latter. The latest strict result is
+99.50% text, 95.94% links, and 94.15% anchors. Remaining Python `str` links are
+emitted inside autodoc signatures, which currently lack structured xref spans;
+implement typed signature segments before linking annotations. Numpydoc/PEP
+external references remain open. The `usage/domains/cpp.html` gap includes
+generic declaration labels and extra option-field content, so it requires the
+deferred H3f C++ domain parser rather than token-level cleanup. Remaining
+generated/title anchors are also open.
+
+#### H11.2f: markup and event API page parity (2026-10-21)
+
+The direct page comparison used the existing
+`src/sphinx/doc/_build_py/html/extdev/{markupapi,eventapi}.html` and
+`_build_rs` outputs. Treat these as a page-pair diagnostic, not the final
+global measurement: rebuild Rust into `_build_rs_probe` after each fix so the
+previously measured current code and the requested `_build_rs` artifact are
+not conflated.
+
+**`extdev/markupapi.html`:** visible-token counts were 1,448 Python versus
+1,427 Rust; all eight headings match. The principal structural gap is
+qualified Python object identity: Python targets and links use
+`docutils.parsers.rst.Directive.<member>`, while Rust emits short IDs such as
+`run`, `content-offset`, and `block-text`. The module target is also a `dl`
+anchor upstream versus a `span` anchor in Rust. Python has 105 links versus 89
+in Rust; the missing destinations include the qualified member references,
+Sphinx application/API links, Docutils `ValueError`/`TypeError` links, and
+source links. Preserve the matching heading tree; focus this slice on module
+and class context, object IDs, and reference resolution.
+
+**`extdev/eventapi.html`:** visible-token counts were 1,713 Python versus 147
+Rust, with three headings on both sides. Python expands `EventManager` and its
+`add`, `connect`, `disconnect`, `emit`, and `emit_firstresult` members; Rust
+leaves one generic `autodoc autoclass` object with no methods. Python also
+renders repeated overload signatures for `connect`, member docstrings, source
+links, qualified IDs, and Python type references. The source is
+`.. module:: sphinx.events` followed by `.. autoclass:: EventManager
+:members:`. The environment currently expands top-level `automodule`, but
+does not lower `autoclass`; the runtime bridge already provides
+`introspect_class`, and `autodoc.rs` already has member selection/rendering
+used for classes nested under module expansion.
+
+Implementation order:
+
+1. Add `autoclass` expansion in the environment read path, reusing
+  `AutodocOptions`, `select_members`, and `introspect_class`. Preserve module
+  context, fully qualified `py:class`/`py:method` targets, docstrings,
+  properties/attributes, and all overload signatures. First gate: an
+  `EventManager` fixture asserts the five members, overload count, IDs, and
+  source-independent text; then compare `eventapi.html`.
+2. Extend class-context lowering for `markupapi`: qualify standard `method`
+  and attribute declarations under `.. module::`/`.. class::`, preserve
+  underscores in member IDs, and keep the module target and title anchor in
+  their upstream positions. Add tests for `Directive.run`,
+  `Directive.content_offset`, and `Directive.state_machine` before
+  comparing `markupapi.html`.
+3. Render autodoc signature annotations as structured type segments rather
+  than one escaped string. Resolve known Python type names through local
+  domains first and cached intersphinx inventories second; cover `str`,
+  `int`, `list`, `None`, and nested `Callable`/`Literal` signatures. Recheck
+  the type-reference links on both pages.
+4. Resolve remaining explicit Sphinx and Docutils references, including
+  `Sphinx.add_role`, `Directive` member links, `ValueError`/`TypeError`, and
+  `[source]` destinations. Keep external links classified as external and
+  compare full hrefs, not labels alone.
+5. Require zero page-level differences in visible text, heading order,
+  object IDs, and link destinations for both pages, then run the complete
+  131-page strict gate. Do not waive either page or lower the global floors.
+
 ### Gap Clusters
 
 The current `grep -i 'deviation|gap|partial'` inventory groups into six

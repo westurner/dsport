@@ -1,4 +1,8 @@
 
+__pycache__/
+*.pyc
+*.pyo
+
 /build/
 /build/tests
 src/sphinxdocrs/build/tests/

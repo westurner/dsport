@@ -378,8 +378,30 @@ fn build_all_writes_viewcode_pages_and_links_python_objects() {
     assert!(source.contains("href=\"../index.html#pkg.Widget.run\""));
     assert!(source.contains(">def</span>"));
     assert!(source.contains(">run</span>"));
+    assert!(source.contains("../_static/pygments.css"));
+    let css = std::fs::read_to_string(out.path().join("_static/pygments.css")).unwrap();
+    assert!(css.contains(".highlight .k {"));
     let module_index = std::fs::read_to_string(out.path().join("_modules/index.html")).unwrap();
     assert!(module_index.contains("href=\"pkg.html\">pkg</a>"));
+
+    let plain_out = TempDir::new().unwrap();
+    let mut plain_config = SphinxConfig::new_defaults();
+    plain_config.set(
+        "extensions",
+        ConfigVal::List(vec![ConfigVal::Str("sphinx.ext.viewcode".into())]),
+    );
+    plain_config.set("highlight_language", ConfigVal::Str("none".into()));
+    let plain_project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let plain_env =
+        BuildEnvironment::new(plain_config, plain_project, src.path(), plain_out.path());
+
+    HtmlBuilder::new()
+        .build_all(src.path(), plain_out.path(), &plain_env)
+        .unwrap();
+
+    let plain_source = std::fs::read_to_string(plain_out.path().join("_modules/pkg.html")).unwrap();
+    assert!(plain_source.contains("def run"));
+    assert!(!plain_source.contains(">def</span>"));
 }
 
 #[test]

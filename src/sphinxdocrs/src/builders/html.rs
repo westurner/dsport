@@ -288,6 +288,7 @@ impl HtmlBuilder {
                 ctx.css_files = vec![
                     "_static/basic.css".to_string(),
                     "_static/sphinxdocrs.css".to_string(),
+                    "_static/pygments.css".to_string(),
                 ];
                 match renderer.render_page(&ctx) {
                     Ok(html) => html,
@@ -674,6 +675,7 @@ impl Builder for HtmlBuilder {
             .extensions()
             .iter()
             .any(|extension| extension == "sphinx.ext.viewcode");
+        let highlight_language = env.config.highlight_language();
         let mut viewcode_modules = HashMap::new();
 
         for docname in &docnames {
@@ -734,7 +736,13 @@ impl Builder for HtmlBuilder {
 
         for (module_name, module) in &viewcode_modules {
             let page_docname = format!("_modules/{}", module_name.replace('.', "/"));
-            let page = self.render_viewcode_page(&page_docname, module_name, module, &meta);
+            let page = self.render_viewcode_page(
+                &page_docname,
+                module_name,
+                module,
+                &highlight_language,
+                &meta,
+            );
             self.write_page(&page_docname, &page, outdir)?;
         }
         if !viewcode_modules.is_empty() {
@@ -906,6 +914,7 @@ impl HtmlBuilder {
         page_docname: &str,
         module_name: &str,
         module: &ViewCodeModule,
+        highlight_language: &str,
         meta: &PageMeta,
     ) -> String {
         use crate::builders::Builder as _;
@@ -924,8 +933,13 @@ impl HtmlBuilder {
             tags.sort_by_key(|(_, end)| std::cmp::Reverse(*end));
         }
 
-        let highlighted = pygmentsrs::highlight(&module.source, "python", "html")
-            .unwrap_or_else(|| {
+        let lexer = if highlight_language == "none" {
+            "text"
+        } else {
+            "python"
+        };
+        let highlighted =
+            pygmentsrs::highlight(&module.source, lexer, "html").unwrap_or_else(|| {
                 format!(
                     "<div class=\"highlight\"><pre>{}</pre></div>\n",
                     crate::util_strypes::html_escape_text(&module.source)
@@ -1029,6 +1043,8 @@ pub(crate) fn write_static_files(
     let static_dir = outdir.join("_static");
     std::fs::create_dir_all(&static_dir)?;
     std::fs::write(static_dir.join("sphinxdocrs.css"), MINIMAL_CSS.as_bytes())?;
+    let pygments_css = pygmentsrs::formatters::html::css_style_defs(".highlight");
+    std::fs::write(static_dir.join("pygments.css"), pygments_css.as_bytes())?;
     // Jinja2 theme stylesheet (referenced by the theme's layout.html).
     std::fs::write(
         static_dir.join("basic.css"),

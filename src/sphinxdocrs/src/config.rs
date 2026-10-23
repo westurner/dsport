@@ -487,7 +487,7 @@ pub(crate) fn add_vendored_import_paths(py: Python<'_>, start: &Path) -> PyResul
     prepend_python_paths(&sys_path, vendored_python_paths(start))
 }
 
-fn vendored_python_paths(start: &Path) -> Vec<std::path::PathBuf> {
+pub(crate) fn vendored_python_paths(start: &Path) -> Vec<std::path::PathBuf> {
     let mut paths = Vec::new();
     for ancestor in start.ancestors() {
         for source_root in [ancestor.to_path_buf(), ancestor.join("src")] {

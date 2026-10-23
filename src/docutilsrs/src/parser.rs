@@ -4070,6 +4070,7 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                         ids,
                         sig_text,
                         signature_references: Vec::new(),
+                        source_link: None,
                     },
                 );
                 for b in children.into_iter().rev() {
@@ -4120,6 +4121,7 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                             ids: id,
                             sig_text: alias,
                             signature_references: Vec::new(),
+                            source_link: None,
                         },
                     );
                 }

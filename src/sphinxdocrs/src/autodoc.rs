@@ -688,6 +688,14 @@ pub fn signature_type_references(signature: &str) -> Vec<SignatureTypeReference>
         }
     }
 
+    let (signature, signature_offset) = if let Some(class_signature) = signature.strip_prefix("class ") {
+        let Some(open_paren) = class_signature.find('(') else {
+            return Vec::new();
+        };
+        (&class_signature[open_paren..], "class ".len() + open_paren)
+    } else {
+        (signature, 0)
+    };
     let prefix = "def _sphinx_signature";
     let wrapped = format!("{prefix}{signature}: pass");
     let Ok(parsed) = parse_module(&wrapped) else {
@@ -723,6 +731,10 @@ pub fn signature_type_references(signature: &str) -> Vec<SignatureTypeReference>
     }
     if let Some(returns) = &function.returns {
         collect(returns, prefix.len(), &mut references);
+    }
+    for reference in &mut references {
+        reference.start += signature_offset;
+        reference.end += signature_offset;
     }
     references.sort_by_key(|reference| reference.start);
     references
@@ -875,9 +887,11 @@ fn render_function_with_receiver(
     } else {
         let sig = format_signature_with_hints(&func.parameters, typehints);
         let sig = if omit_receiver && matches!(kind, FunctionKind::Method | FunctionKind::ClassMethod) {
-            strip_method_receiver(&format!("({sig})"))
-                .trim_start_matches('(')
-                .trim_end_matches(')')
+            let receiverless = strip_method_receiver(&format!("({sig})"));
+            receiverless
+                .strip_prefix('(')
+                .and_then(|signature| signature.strip_suffix(')'))
+                .unwrap_or(&receiverless)
                 .to_string()
         } else {
             sig
@@ -2391,6 +2405,27 @@ def f(a: int = -1, /, b: str = "x", *args: list[int], flag: bool = True, **kwarg
     }
 
     #[test]
+    fn class_method_tuple_defaults_keep_the_signature_closing_paren() {
+        let source = "class EventManager:\n    def emit(self, name: str, *args: Any, allowed_exceptions: tuple[type[Exception], ...] = ()) -> list[Any]:\n        pass\n";
+        let rendered = document_class_source_with_options(
+            "EventManager",
+            "sphinx.events.EventManager",
+            source,
+            &AutodocOptions {
+                members: MemberSelector::All,
+                undoc_members: true,
+                ..AutodocOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert!(
+            rendered.contains("emit(name: str, *args: Any, allowed_exceptions: tuple[type[Exception], ...] = ()) -> list[Any]"),
+            "got:\n{rendered}"
+        );
+    }
+
+    #[test]
     fn quoted_forward_annotations_render_as_type_expressions() {
         let source = "\
 def callback(name: 'str', count: 'int') -> 'None':
@@ -2423,6 +2458,20 @@ def callback(name: 'str', count: 'int') -> 'None':
             .collect::<Vec<_>>();
 
         assert_eq!(names, ["Literal", "Callable", "Sphinx", "str", "None", "int", "None"]);
+
+        let class_signature = "class EventManager(app: Sphinx)";
+        let references = signature_type_references(class_signature);
+        assert_eq!(references.len(), 1);
+        let reference = &references[0];
+        assert_eq!(&class_signature[reference.start..reference.end], "Sphinx");
+
+        let signature = "emit(name: str, *args: Any, allowed_exceptions: tuple[type[Exception], ...] = ()) -> list[Any]";
+        let references = signature_type_references(signature);
+        let names = references
+            .iter()
+            .map(|reference| &signature[reference.start..reference.end])
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["str", "Any", "tuple", "type", "Exception", "list", "Any"]);
     }
 
     // ── H9a static-path fallback (runtime unavailable) ───────────────────

@@ -23,7 +23,8 @@
 //! runtime-only members). This is an explicit, opt-in bridge, not the
 //! default code path this crate otherwise favors for parsing untrusted RST.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -322,6 +323,30 @@ pub fn introspect_module(
                 all,
                 members,
             })
+        })
+    })
+}
+
+/// Read Python source and definition line spans with Sphinx's `ModuleAnalyzer`
+/// without importing or executing the module.
+pub fn analyze_python_source_file(
+    module_name: &str,
+    path: &Path,
+) -> PyResult<(String, HashMap<String, (String, usize, usize)>)> {
+    Python::attach(|py| {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        crate::config::add_vendored_import_paths(py, &cwd)?;
+        with_python_runtime_lock(py, || {
+            let analyzer_type = py.import("sphinx.pycode")?.getattr("ModuleAnalyzer")?;
+            let analyzer = analyzer_type.call_method1(
+                "for_file",
+                (path.to_string_lossy().as_ref(), module_name),
+            )?;
+            let source = analyzer.getattr("code")?.extract::<String>()?;
+            let tags = analyzer
+                .call_method0("find_tags")?
+                .extract::<HashMap<String, (String, usize, usize)>>()?;
+            Ok((source, tags))
         })
     })
 }

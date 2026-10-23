@@ -34,9 +34,16 @@ class HtmlTokens(HTMLParser):
         self.text: Counter[str] = Counter()
         self.links: Counter[str] = Counter()
         self.anchors: Counter[str] = Counter()
+        self.system_message_stack: list[str] = []
+        self.system_message_text: list[str] = []
+        self.system_messages: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = dict(attrs)
+        if "system-message" in (attributes.get("class") or "").split():
+            if not self.system_message_stack:
+                self.system_message_text = []
+            self.system_message_stack.append(tag)
         if tag in {"script", "style"}:
             self.hidden_depth += 1
             return
@@ -53,12 +60,18 @@ class HtmlTokens(HTMLParser):
                 self.anchors[f"{tag}#{attributes['id']}"] += 1
 
     def handle_endtag(self, tag: str) -> None:
+        if self.system_message_stack and tag == self.system_message_stack[-1]:
+            self.system_message_stack.pop()
+            if not self.system_message_stack:
+                self.system_messages.append("".join(self.system_message_text))
         if tag in {"script", "style"} and self.hidden_depth:
             self.hidden_depth -= 1
 
     def handle_data(self, data: str) -> None:
         if self.hidden_depth:
             return
+        if self.system_message_stack:
+            self.system_message_text.append(data)
         normalized = VERSION_RE.sub("sphinx version", " ".join(data.split()))
         normalized = (
             normalized.replace("’", "'")
@@ -136,9 +149,9 @@ def main() -> int:
     page_scores: list[tuple[float, str, int, int]] = []
 
     for path in args.rust_html.rglob("*.html"):
-        html = path.read_text(encoding="utf-8", errors="replace")
+        html = parse_html(path)
         for message in PARSER_ERRORS:
-            if message in html:
+            if any(message in system_message for system_message in html.system_messages):
                 parser_errors.append(f"{path.relative_to(args.rust_html)}: {message}")
 
     for relative in shared_pages:

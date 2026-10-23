@@ -772,6 +772,7 @@ impl BuildEnvironment {
         }?;
         apply_module_section_ids(&mut tree, source);
         apply_python_object_ids(&mut tree, source);
+        apply_python_docfield_transform(&mut tree);
         if self.config.smartquotes() {
             apply_smartquotes(&mut tree);
         }
@@ -1439,9 +1440,11 @@ impl BuildEnvironment {
         })
     }
 
-    fn resolve_python_module(&self, module_name: &str) -> Option<PathBuf> {
+    pub(crate) fn resolve_python_module(&self, module_name: &str) -> Option<PathBuf> {
         let relative = module_name.replace('.', "/");
-        for root in self.srcdir.ancestors() {
+        let mut roots = self.srcdir.ancestors().map(Path::to_path_buf).collect::<Vec<_>>();
+        roots.extend(crate::config::vendored_python_paths(&self.srcdir));
+        for root in roots {
             let module = root.join(format!("{relative}.py"));
             if module.is_file() {
                 return Some(module);
@@ -1786,6 +1789,10 @@ impl BuildEnvironment {
                     .filter(|(name, item)| {
                         name.rsplit('.').next() == Some(short_name)
                             && [
+                                "/builtins/stdtypes.html#",
+                                "/builtins/functions.html#",
+                                "/builtins/constants.html#",
+                                "/builtins/exceptions.html#",
                                 "/library/stdtypes.html#",
                                 "/library/functions.html#",
                                 "/library/constants.html#",
@@ -3947,6 +3954,137 @@ fn apply_python_object_ids(tree: &mut Doctree, source: &str) {
     }
 }
 
+fn apply_python_docfield_transform(tree: &mut Doctree) {
+    fn text_content(tree: &Doctree, root: NodeId) -> String {
+        let mut text = String::new();
+        let mut pending = vec![root];
+        while let Some(id) = pending.pop() {
+            let node = tree.node(id);
+            if let NodeKind::Text(value) = &node.kind {
+                text.push_str(value);
+            }
+            pending.extend(node.children.iter().rev().copied());
+        }
+        text
+    }
+
+    fn move_children(tree: &mut Doctree, source: NodeId, destination: NodeId) {
+        let children = tree.node(source).children.clone();
+        for child in children {
+            tree.detach(child);
+            tree.node_mut(child).parent = Some(destination);
+            tree.node_mut(destination).children.push(child);
+        }
+    }
+
+    fn set_field_name(tree: &mut Doctree, field_name: NodeId, value: &str) {
+        for child in tree.node(field_name).children.clone() {
+            tree.detach(child);
+        }
+        tree.append(field_name, NodeKind::Text(value.to_string()));
+    }
+
+    let field_lists = (0..tree.nodes_len())
+        .filter(|&id| {
+            let parent = tree.node(id).parent;
+            matches!(tree.node(id).kind, NodeKind::FieldList)
+                && parent.is_some_and(|parent_id| {
+                    matches!(
+                        &tree.node(parent_id).kind,
+                        NodeKind::ObjectDescription { classes, .. }
+                            if classes.split_whitespace().any(|class| class == "py")
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+
+    for field_list in field_lists {
+        let original_fields = tree.node(field_list).children.clone();
+        let parameters = original_fields
+            .iter()
+            .filter_map(|&field| {
+                let children = &tree.node(field).children;
+                let (&name_id, &body_id) = (children.first()?, children.get(1)?);
+                if !matches!(tree.node(name_id).kind, NodeKind::FieldName)
+                    || !matches!(tree.node(body_id).kind, NodeKind::FieldBody)
+                {
+                    return None;
+                }
+                let name = text_content(tree, name_id);
+                let mut parts = name.split_whitespace().map(str::to_owned);
+                let field_type = parts.next()?;
+                let argument = parts.next()?;
+                if parts.next().is_some()
+                    || !matches!(
+                        field_type.as_str(),
+                        "param" | "parameter" | "arg" | "argument" | "keyword" | "kwarg" | "kwparam"
+                    )
+                {
+                    return None;
+                }
+                Some((field, argument, body_id))
+            })
+            .collect::<Vec<_>>();
+
+        let parameter_list = if parameters.is_empty() {
+            None
+        } else {
+            let field = tree.append(field_list, NodeKind::Field);
+            let field_name = tree.append(field, NodeKind::FieldName);
+            tree.append(field_name, NodeKind::Text("Parameters:".into()));
+            let body = tree.append(field, NodeKind::FieldBody);
+            let bullet_list = tree.append(body, NodeKind::BulletList { bullet: '-' });
+
+            for (_, argument, source_body) in &parameters {
+                let item = tree.append(bullet_list, NodeKind::ListItem);
+                let paragraph = tree.append(item, NodeKind::Paragraph);
+                let strong = tree.append(paragraph, NodeKind::Strong);
+                tree.append(strong, NodeKind::Text(argument.clone()));
+                tree.append(paragraph, NodeKind::Text(" -- ".into()));
+
+                let source_children = tree.node(*source_body).children.clone();
+                if source_children.len() == 1
+                    && matches!(tree.node(source_children[0]).kind, NodeKind::Paragraph)
+                {
+                    move_children(tree, source_children[0], paragraph);
+                } else {
+                    for child in source_children {
+                        tree.detach(child);
+                        tree.node_mut(child).parent = Some(item);
+                        tree.node_mut(item).children.push(child);
+                    }
+                }
+            }
+            Some(field)
+        };
+
+        let parameter_ids = parameters
+            .iter()
+            .map(|(field, _, _)| *field)
+            .collect::<std::collections::HashSet<_>>();
+        let mut ordered_fields = Vec::with_capacity(original_fields.len() - parameter_ids.len() + 1);
+        let mut inserted_parameters = false;
+        for field in original_fields {
+            if parameter_ids.contains(&field) {
+                if !inserted_parameters {
+                    ordered_fields.push(parameter_list.expect("parameter fields have a group"));
+                    inserted_parameters = true;
+                }
+                tree.detach(field);
+                continue;
+            }
+            if let Some(&field_name) = tree.node(field).children.first()
+                && matches!(tree.node(field_name).kind, NodeKind::FieldName)
+                && matches!(text_content(tree, field_name).as_str(), "return" | "returns")
+            {
+                set_field_name(tree, field_name, "Returns:");
+            }
+            ordered_fields.push(field);
+        }
+        tree.node_mut(field_list).children = ordered_fields;
+    }
+}
+
 // ── inline tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -5396,6 +5534,40 @@ mod tests {
     }
 
     #[test]
+    fn python_docfields_group_parameters_and_normalize_returns() {
+        let env = make_env();
+        let source = ".. py:module:: pkg\n\n.. py:class:: Widget\n\n   :param first: First description.\n   :param second: Second description.\n   :return: Result description.\n";
+        let tree = env.parse_source("api", source).unwrap();
+        let field_list = (0..tree.nodes_len())
+            .find(|&id| matches!(tree.node(id).kind, NodeKind::FieldList))
+            .expect("Python docfield list should remain in the doctree");
+        let fields = &tree.node(field_list).children;
+
+        assert_eq!(fields.len(), 2);
+        let parameter_name = tree.node(fields[0]).children[0];
+        assert!(matches!(tree.node(parameter_name).kind, NodeKind::FieldName));
+        assert_eq!(tree.node(tree.node(parameter_name).children[0]).kind, NodeKind::Text("Parameters:".into()));
+        let parameter_body = tree.node(fields[0]).children[1];
+        let bullet_list = tree.node(parameter_body).children[0];
+        assert!(matches!(tree.node(bullet_list).kind, NodeKind::BulletList { .. }));
+        assert_eq!(tree.node(bullet_list).children.len(), 2);
+        let visible_parameter_text = (0..tree.nodes_len())
+            .filter_map(|id| match &tree.node(id).kind {
+                NodeKind::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(visible_parameter_text.contains("first"));
+        assert!(visible_parameter_text.contains("First description."));
+        assert!(visible_parameter_text.contains("second"));
+        assert!(visible_parameter_text.contains("Second description."));
+
+        let return_name = tree.node(fields[1]).children[0];
+        let return_text = tree.node(return_name).children[0];
+        assert_eq!(tree.node(return_text).kind, NodeKind::Text("Returns:".into()));
+    }
+
+    #[test]
     fn resolve_xref_nodes_uses_cached_intersphinx_objects() {
         let temp = tempfile::tempdir().unwrap();
         let doctreedir = temp.path().join("doctrees");
@@ -5426,7 +5598,7 @@ mod tests {
                     name: "str".into(),
                     item_type: "py:class".into(),
                     priority: 1,
-                    uri: "library/stdtypes.html#str".into(),
+                    uri: "builtins/stdtypes.html#str".into(),
                     display_name: "-".into(),
                 },
                 crate::intersphinx::InventoryEntry {
@@ -5441,6 +5613,34 @@ mod tests {
                     item_type: "py:data".into(),
                     priority: 1,
                     uri: "library/constants.html#None".into(),
+                    display_name: "-".into(),
+                },
+                crate::intersphinx::InventoryEntry {
+                    name: "list".into(),
+                    item_type: "py:class".into(),
+                    priority: 1,
+                    uri: "builtins/stdtypes.html#list".into(),
+                    display_name: "-".into(),
+                },
+                crate::intersphinx::InventoryEntry {
+                    name: "tuple".into(),
+                    item_type: "py:class".into(),
+                    priority: 1,
+                    uri: "builtins/stdtypes.html#tuple".into(),
+                    display_name: "-".into(),
+                },
+                crate::intersphinx::InventoryEntry {
+                    name: "type".into(),
+                    item_type: "py:class".into(),
+                    priority: 1,
+                    uri: "builtins/functions.html#type".into(),
+                    display_name: "-".into(),
+                },
+                crate::intersphinx::InventoryEntry {
+                    name: "Exception".into(),
+                    item_type: "py:exception".into(),
+                    priority: 1,
+                    uri: "builtins/exceptions.html#Exception".into(),
                     display_name: "-".into(),
                 },
             ],
@@ -5470,6 +5670,17 @@ mod tests {
                 ids: "sample".into(),
                 sig_text: "sample(value: str) -> None".into(),
                 signature_references: Vec::new(),
+                source_link: None,
+            },
+        );
+        let event_signature = tree.append(
+            tree.root(),
+            NodeKind::ObjectDescription {
+                classes: "py py method".into(),
+                ids: "sphinx.events.EventManager.emit".into(),
+                sig_text: "emit(name: str, *args: Any, allowed_exceptions: tuple[type[Exception], ...] = ()) -> list[Any]".into(),
+                signature_references: Vec::new(),
+                source_link: None,
             },
         );
 
@@ -5479,7 +5690,7 @@ mod tests {
             matches!(
                 &tree.node(builtin).kind,
                 NodeKind::Reference { refuri, classes, .. }
-                    if refuri == "https://docs.python.org/3/library/stdtypes.html#str"
+                    if refuri == "https://docs.python.org/3/builtins/stdtypes.html#str"
                         && classes == "reference external"
             ),
             "builtins.str resolved as {:?}",
@@ -5504,11 +5715,33 @@ mod tests {
         };
         assert_eq!(signature_references.len(), 2);
         assert!(signature_references.iter().any(|reference| {
-            reference.uri == "https://docs.python.org/3/library/stdtypes.html#str"
+            reference.uri == "https://docs.python.org/3/builtins/stdtypes.html#str"
         }));
         assert!(signature_references.iter().any(|reference| {
             reference.uri == "https://docs.python.org/3/library/constants.html#None"
         }));
+        let event_references = match &tree.node(event_signature).kind {
+            NodeKind::ObjectDescription {
+                signature_references,
+                ..
+            } => signature_references,
+            _ => panic!("event signature object description changed node kind"),
+        };
+        for (target, uri) in [
+            ("str", "https://docs.python.org/3/builtins/stdtypes.html#str"),
+            ("list", "https://docs.python.org/3/builtins/stdtypes.html#list"),
+            ("tuple", "https://docs.python.org/3/builtins/stdtypes.html#tuple"),
+            ("type", "https://docs.python.org/3/builtins/functions.html#type"),
+            (
+                "Exception",
+                "https://docs.python.org/3/builtins/exceptions.html#Exception",
+            ),
+        ] {
+            assert!(
+                event_references.iter().any(|reference| reference.uri == uri),
+                "{target} should resolve from the nested event signature: {event_references:?}"
+            );
+        }
     }
 
     #[test]

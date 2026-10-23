@@ -19,6 +19,7 @@
 //! **Deferred**: theming, Jinja2 page templates, search index, CSS/JS assets,
 //! image handling, domain indices, i18n.
 
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use docutilsrs::cli::{CommonOptions, Html5Options};
@@ -62,6 +63,13 @@ pub struct HtmlBuilder {
 
     /// docutilsrs common options.
     common_options: CommonOptions,
+}
+
+#[derive(Default)]
+struct ViewCodeModule {
+    source: String,
+    tags: HashMap<String, (String, usize, usize)>,
+    used: HashMap<String, (String, String)>,
 }
 
 /// Output file/URI layout used by [`HtmlBuilder`].
@@ -661,6 +669,12 @@ impl Builder for HtmlBuilder {
                 .unwrap_or_default(),
             language: env.config.language(),
         };
+        let viewcode_enabled = env
+            .config
+            .extensions()
+            .iter()
+            .any(|extension| extension == "sphinx.ext.viewcode");
+        let mut viewcode_modules = HashMap::new();
 
         for docname in &docnames {
             sanitize_docname(docname)?;
@@ -692,7 +706,14 @@ impl Builder for HtmlBuilder {
             // caption + nested bullet-list-of-links subtree (see
             // `BuildEnvironment::resolve_toctree_nodes`).
             env.resolve_toctree_nodes(&mut tree, docname);
-            copy_image_assets(&mut tree, srcdir, outdir, docname)?;
+            if viewcode_enabled {
+                self.attach_viewcode_links(env, &mut tree, docname, &mut viewcode_modules);
+            }
+            let image_prefix = crate::util_osutil::relative_uri(
+                &self.get_target_uri(docname),
+                "_images",
+            );
+            copy_image_assets(&mut tree, srcdir, outdir, docname, &image_prefix)?;
             match &real_theme {
                 Some(renderer) => {
                     self.build_doc_real_themed_from_tree(
@@ -709,6 +730,39 @@ impl Builder for HtmlBuilder {
                 copy_source_file(&src_path, docname, outdir)?;
             }
             result.written += 1;
+        }
+
+        for (module_name, module) in &viewcode_modules {
+            let page_docname = format!("_modules/{}", module_name.replace('.', "/"));
+            let page = self.render_viewcode_page(&page_docname, module_name, module, &meta);
+            self.write_page(&page_docname, &page, outdir)?;
+        }
+        if !viewcode_modules.is_empty() {
+            let index_docname = "_modules/index";
+            let index_uri = self.get_target_uri(index_docname);
+            let mut modules = viewcode_modules.keys().cloned().collect::<Vec<_>>();
+            modules.sort();
+            let mut body = String::from("<h1>All modules for which code is available</h1>\n<ul>\n");
+            for module_name in modules {
+                let module_docname = format!("_modules/{}", module_name.replace('.', "/"));
+                let href = crate::util_osutil::relative_uri(
+                    &index_uri,
+                    &self.get_target_uri(&module_docname),
+                );
+                body.push_str(&format!(
+                    "<li><a href=\"{}\">{}</a></li>\n",
+                    crate::util_strypes::html_escape_text(&href),
+                    crate::util_strypes::html_escape_text(&module_name)
+                ));
+            }
+            body.push_str("</ul>\n");
+            let page = Self::render_embedded_or_wrap(
+                index_docname,
+                "Overview: module code",
+                &body,
+                &meta,
+            );
+            self.write_page(index_docname, &page, outdir)?;
         }
 
         // genindex.html / py-modindex.html (H5e): real pages built from
@@ -746,6 +800,7 @@ impl Builder for HtmlBuilder {
 
         Ok(result)
     }
+
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -767,6 +822,160 @@ fn sanitize_docname(docname: &str) -> Result<(), BuildError> {
         }
     }
     Ok(())
+}
+
+impl HtmlBuilder {
+    fn attach_viewcode_links(
+        &self,
+        env: &BuildEnvironment,
+        tree: &mut Doctree,
+        docname: &str,
+        modules: &mut HashMap<String, ViewCodeModule>,
+    ) {
+        use crate::builders::Builder as _;
+        use crate::util_osutil::relative_uri;
+
+        let source_uri = self.get_target_uri(docname);
+        for node_id in 0..tree.nodes_len() {
+            let (ids, source_link) = match &tree.node(node_id).kind {
+                NodeKind::ObjectDescription {
+                    classes,
+                    ids,
+                    source_link,
+                    ..
+                } if classes.split_whitespace().any(|class| class == "py") => {
+                    (ids.clone(), source_link.clone())
+                }
+                _ => continue,
+            };
+            if ids.is_empty() || source_link.is_some() {
+                continue;
+            }
+
+            let components = ids.split('.').collect::<Vec<_>>();
+            let Some((module_name, object_name, source_path)) = (1..components.len())
+                .rev()
+                .find_map(|count| {
+                    let module_name = components[..count].join(".");
+                    env.resolve_python_module(&module_name).map(|path| {
+                        (module_name, components[count..].join("."), path)
+                    })
+                })
+            else {
+                continue;
+            };
+
+            if !modules.contains_key(&module_name) {
+                let Ok((source, tags)) = crate::autodoc_runtime::analyze_python_source_file(
+                    &module_name,
+                    &source_path,
+                ) else {
+                    continue;
+                };
+                if !tags.contains_key(&object_name) {
+                    continue;
+                }
+                modules.insert(
+                    module_name.clone(),
+                    ViewCodeModule {
+                        source,
+                        tags,
+                        used: HashMap::new(),
+                    },
+                );
+            }
+            let module = modules.get_mut(&module_name).expect("module inserted above");
+            if !module.tags.contains_key(&object_name) {
+                continue;
+            }
+            let page_docname = format!("_modules/{}", module_name.replace('.', "/"));
+            let target_uri = self.get_target_uri(&page_docname);
+            let href = relative_uri(&source_uri, &target_uri);
+            let href = format!("{href}#{object_name}");
+            module.used.insert(object_name, (docname.to_string(), ids.clone()));
+            if let NodeKind::ObjectDescription { source_link, .. } =
+                &mut tree.node_mut(node_id).kind
+            {
+                *source_link = Some(href);
+            }
+        }
+    }
+
+    fn render_viewcode_page(
+        &self,
+        page_docname: &str,
+        module_name: &str,
+        module: &ViewCodeModule,
+        meta: &PageMeta,
+    ) -> String {
+        use crate::builders::Builder as _;
+        use crate::util_osutil::relative_uri;
+
+        let mut starts: HashMap<usize, Vec<(&str, usize)>> = HashMap::new();
+        let mut ends: BTreeMap<usize, Vec<&str>> = BTreeMap::new();
+        for (name, _) in &module.used {
+            let Some((_, start, end)) = module.tags.get(name) else {
+                continue;
+            };
+            starts.entry(*start).or_default().push((name, *end));
+            ends.entry(*end).or_default().push(name);
+        }
+        for tags in starts.values_mut() {
+            tags.sort_by_key(|(_, end)| std::cmp::Reverse(*end));
+        }
+
+        let highlighted = pygmentsrs::highlight(&module.source, "python", "html")
+            .unwrap_or_else(|| {
+                format!(
+                    "<div class=\"highlight\"><pre>{}</pre></div>\n",
+                    crate::util_strypes::html_escape_text(&module.source)
+                )
+            });
+        let mut lines = highlighted.lines().map(str::to_owned).collect::<Vec<_>>();
+        if let Some(first_line) = lines.first().cloned()
+            && let Some((before_pre, after_pre)) = first_line.split_once("<pre>")
+        {
+            lines[0] = format!("{before_pre}<pre>");
+            lines.insert(1, after_pre.to_string());
+        }
+        let max_index = lines.len().saturating_sub(1);
+        for (line_number, tags) in &starts {
+            let index = *line_number;
+            if index >= lines.len() {
+                continue;
+            }
+            let mut prefix = String::new();
+            for (name, _) in tags {
+                let (docname, anchor) = &module.used[*name];
+                let back_uri = relative_uri(
+                    &self.get_target_uri(page_docname),
+                    &self.get_target_uri(docname),
+                );
+                let back_href = format!(
+                    "{back_uri}#{}",
+                    crate::util_strypes::html_escape_text(anchor)
+                );
+                let id = crate::util_strypes::html_escape_text(name);
+                prefix.push_str(&format!(
+                    "<div class=\"viewcode-block\" id=\"{id}\">\n<a class=\"viewcode-back\" href=\"{back_href}\">[docs]</a>\n"
+                ));
+            }
+            lines[index].insert_str(0, &prefix);
+        }
+        for (line_number, tags) in &ends {
+            let index = (*line_number).min(max_index);
+            for _ in tags {
+                lines[index].push_str("</div>\n");
+            }
+        }
+        let body = format!(
+            "<h1>Source code for {}</h1>\n{}\n",
+            crate::util_strypes::html_escape_text(module_name),
+            lines.join("\n")
+        );
+        let title = format!("Source code for {module_name}");
+        Self::render_embedded_or_wrap(page_docname, &title, &body, meta)
+    }
 }
 
 // ── static file helpers ─────────────────────────────────────────────────────
@@ -979,6 +1188,7 @@ fn copy_image_assets(
     srcdir: &Path,
     outdir: &Path,
     docname: &str,
+    image_prefix: &str,
 ) -> Result<(), BuildError> {
     let source_dir = docname
         .rsplit_once('/')
@@ -1033,7 +1243,7 @@ fn copy_image_assets(
             _ => continue,
         };
         tree.node_mut(id).kind = NodeKind::Image {
-            uri: format!("_images/{}", filename.to_string_lossy()),
+            uri: format!("{image_prefix}/{}", filename.to_string_lossy()),
             alt,
             width,
             height,

@@ -311,6 +311,78 @@ fn build_all_with_subdirectory() {
 }
 
 #[test]
+fn build_all_rewrites_nested_image_uri_relative_to_the_page() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    let tutorial = src.path().join("tutorial");
+    std::fs::create_dir_all(&tutorial).unwrap();
+    std::fs::write(src.path().join("index.rst"), "Home\n====\n").unwrap();
+    std::fs::write(
+        tutorial.join("getting-started.rst"),
+        "Getting Started\n===============\n\n.. image:: lumache-first-light.png\n   :alt: Freshly created documentation\n",
+    )
+    .unwrap();
+    std::fs::write(tutorial.join("lumache-first-light.png"), b"image").unwrap();
+    let mut config = SphinxConfig::new_defaults();
+    config.set(
+        "html_theme",
+        ConfigVal::Str("theme-that-does-not-exist".to_string()),
+    );
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let env = BuildEnvironment::new(config, project, src.path(), out.path());
+
+    HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    let html = read_html(out.path(), "tutorial/getting-started");
+    assert!(
+        html.contains("src=\"../_images/lumache-first-light.png\""),
+        "nested page should use a relative image URI: {html}"
+    );
+    assert!(out.path().join("_images/lumache-first-light.png").is_file());
+}
+
+#[test]
+fn build_all_writes_viewcode_pages_and_links_python_objects() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("pkg.py"),
+        "class Widget:\n    def run(self):\n        \"\"\"Run the widget.\"\"\"\n        return True\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "API\n===\n\n.. py:module:: pkg\n\n.. py:class:: Widget\n\n   .. py:method:: run(self)\n",
+    )
+    .unwrap();
+    let mut config = SphinxConfig::new_defaults();
+    config.set(
+        "extensions",
+        ConfigVal::List(vec![ConfigVal::Str("sphinx.ext.viewcode".into())]),
+    );
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let env = BuildEnvironment::new(config, project, src.path(), out.path());
+
+    HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    let html = read_html(out.path(), "index");
+    assert!(html.contains("href=\"_modules/pkg.html#Widget\""), "{html}");
+    assert!(html.contains("href=\"_modules/pkg.html#Widget.run\""), "{html}");
+    let source = std::fs::read_to_string(out.path().join("_modules/pkg.html")).unwrap();
+    assert!(source.contains("id=\"Widget\""));
+    assert!(source.contains("id=\"Widget.run\""));
+    assert!(source.contains("href=\"../index.html#pkg.Widget.run\""));
+    assert!(source.contains(">def</span>"));
+    assert!(source.contains(">run</span>"));
+    let module_index = std::fs::read_to_string(out.path().join("_modules/index.html")).unwrap();
+    assert!(module_index.contains("href=\"pkg.html\">pkg</a>"));
+}
+
+#[test]
 fn build_all_ignores_non_rst_files() {
     let src = TempDir::new().unwrap();
     let out = TempDir::new().unwrap();

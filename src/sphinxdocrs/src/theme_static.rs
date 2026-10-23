@@ -276,6 +276,8 @@ fn resolve_theme(
     }
 
     let resolved = Python::attach(|py| -> PyResult<ResolvedTheme> {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        crate::config::add_vendored_import_paths(py, &cwd)?;
         let globals = PyDict::new(py);
         py.run(
             &std::ffi::CString::new(RESOLVE_PY).unwrap(),

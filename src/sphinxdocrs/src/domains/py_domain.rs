@@ -246,6 +246,11 @@ impl Domain for PyDomain {
         if objtypes.is_empty() {
             return None;
         }
+        let target = if matches!(reftype, "func" | "meth" | "classmethod" | "staticmethod") {
+            target.strip_suffix("()").unwrap_or(target)
+        } else {
+            target
+        };
         let (docname, anchor) = self.lookup(objtypes, target)?;
         Some(XrefTarget {
             docname,
@@ -401,6 +406,33 @@ mod tests {
             .resolve_xref(&env, "index", "meth", ".Widget.render")
             .unwrap();
         assert_eq!(target.docname, "api");
+    }
+
+    #[test]
+    fn resolve_method_role_with_empty_call_suffix() {
+        let env = make_env();
+        let mut domain = PyDomain::new();
+        domain.note_object(
+            "method",
+            "sphinx.util.docutils.SphinxDirective.parse_inline",
+            "extdev/utils",
+            "sphinx.util.docutils.SphinxDirective.parse_inline",
+            "",
+        );
+        let target = domain
+            .resolve_xref(
+                &env,
+                "extdev/markupapi",
+                "meth",
+                ".SphinxDirective.parse_inline()",
+            )
+            .unwrap();
+
+        assert_eq!(target.docname, "extdev/utils");
+        assert_eq!(
+            target.anchor,
+            "sphinx.util.docutils.SphinxDirective.parse_inline"
+        );
     }
 
     #[test]

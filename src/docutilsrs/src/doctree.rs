@@ -446,6 +446,8 @@ pub enum NodeKind {
         sig_text: String,
         /// Optional resolved references in `sig_text`, rendered by HTML writers.
         signature_references: Vec<SignatureReference>,
+        /// Optional viewcode source-page link rendered beside `sig_text`.
+        source_link: Option<String>,
     },
 }
 
@@ -874,6 +876,8 @@ enum NodeKindData {
         sig_text: String,
         #[serde(default)]
         signature_references: Vec<SignatureReference>,
+        #[serde(default)]
+        source_link: Option<String>,
     },
 }
 
@@ -1144,11 +1148,13 @@ impl From<&NodeKind> for NodeKindData {
                 ids,
                 sig_text,
                 signature_references,
+                source_link,
             } => NodeKindData::ObjectDescription {
                 classes,
                 ids,
                 sig_text,
                 signature_references,
+                source_link,
             },
         }
     }
@@ -1377,11 +1383,13 @@ impl From<NodeKindData> for NodeKind {
                 ids,
                 sig_text,
                 signature_references,
+                source_link,
             } => NodeKind::ObjectDescription {
                 classes,
                 ids,
                 sig_text,
                 signature_references,
+                source_link,
             },
         }
     }

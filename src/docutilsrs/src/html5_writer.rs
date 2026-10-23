@@ -757,6 +757,7 @@ fn emit_enter(
             ids,
             sig_text,
             signature_references,
+            source_link,
         } => {
             if classes.is_empty() {
                 out.push_str("<dl>");
@@ -801,6 +802,13 @@ fn emit_enter(
                 out.push_str(&escape(sig_text));
             } else {
                 out.push_str(&escape(sig_text));
+            }
+            if let Some(source_link) = source_link {
+                let _ = write!(
+                    out,
+                    "<a class=\"reference internal\" href=\"{}\"><span class=\"viewcode-link\">[source]</span></a>",
+                    escape(source_link)
+                );
             }
             if !ids.is_empty() {
                 let escaped_id = escape(ids);
@@ -1098,6 +1106,7 @@ mod tests {
                 ids: "rust-type-<report>".into(),
                 sig_text: "rust:struct <Report>".into(),
                 signature_references: Vec::new(),
+                source_link: None,
             },
         );
 
@@ -1127,6 +1136,7 @@ mod tests {
                     uri: "https://docs.python.org/3/library/stdtypes.html#str".into(),
                     classes: "reference external".into(),
                 }],
+                source_link: None,
             },
         );
         let rendered = html5(
@@ -1137,6 +1147,31 @@ mod tests {
 
         assert!(rendered.contains(
             "function(value: <a class=\"reference external\" href=\"https://docs.python.org/3/library/stdtypes.html#str\">str</a>)"
+        ));
+    }
+
+    #[test]
+    fn object_description_renders_viewcode_source_link() {
+        let mut tree = Doctree::new_document("api.rst");
+        tree.append(
+            tree.root(),
+            NodeKind::ObjectDescription {
+                classes: "py py method".into(),
+                ids: "pkg.Widget.run".into(),
+                sig_text: "run()".into(),
+                signature_references: Vec::new(),
+                source_link: Some("../_modules/pkg.html#Widget.run".into()),
+            },
+        );
+
+        let rendered = html5(
+            &tree,
+            &crate::cli::Html5Options::default(),
+            &crate::cli::CommonOptions::default(),
+        );
+
+        assert!(rendered.contains(
+            "<a class=\"reference internal\" href=\"../_modules/pkg.html#Widget.run\"><span class=\"viewcode-link\">[source]</span></a>"
         ));
     }
 
@@ -1151,6 +1186,7 @@ mod tests {
                 ids: "rust-function-answer".into(),
                 sig_text: "rust:function fn answer() -> i32".into(),
                 signature_references: Vec::new(),
+                source_link: None,
             },
         );
         let common = crate::cli::CommonOptions::default();

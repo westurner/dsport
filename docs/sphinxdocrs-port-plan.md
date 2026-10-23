@@ -5,7 +5,21 @@ This document merges the former `docs/sphinx-port-inventory.md`
 (*sphinx port inventory, Phase 4*) and `docs/sphinxdocrs-cli-port-plan.md`
 (*sphinxdocrs CLI port & test plan*); both are superseded by this file.
 
-## Current Verification (2026-09-19)
+## Current Verification (2026-10-23)
+
+The current all-target branch-coverage gate is
+`PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov -p sphinxdocrs --lib --bins --tests --branch --summary-only -- --quiet`.
+All 1,098 library tests and every binary/integration test target pass. The
+measured result is 75.58% branch coverage (986/4,037 branches missed), 93.02%
+line coverage, and 91.31% function coverage. The repository's 100% branch
+target remains open; neither coverage exclusions nor semantic parity
+thresholds were relaxed.
+
+The highest current branch gaps are `environment.rs` (182/734 missed),
+`source_docs.rs` (90/208), `autodoc.rs` (68/240),
+`apidoc/generate.rs` (60/136), `theme_render.rs` (53/242), and
+`builders/html.rs` (51/174). `apidoc/templates.rs`, `genindex.rs`, and
+`quickstart/templates.rs` now each have 100% branch coverage.
 
 The H4-H7 implementation rows below reflect the current native code, not the
 original phase-4 placeholders. The focused theme renderer suite passes 34/34,
@@ -14,7 +28,7 @@ builds match Python viewport metadata. The gated external-document matrix is
 now fully green with all 15 real-project tree, HTML-content, and viewport cases
 passing.
 
-### Latest local verification (2026-09-19)
+### Historical local verification (2026-09-19)
 
 The current native library baseline is `cargo test -p sphinxdocrs --lib`:
 1025 tests pass. The latest library LLVM measurement reports 76.32% branch

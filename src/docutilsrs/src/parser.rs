@@ -2467,7 +2467,11 @@ fn parse_directive(
                     .split_once('(')
                     .map(|(name, _)| name.trim())
                     .unwrap_or(args.trim());
-                normalize_confval_id(object_name)
+                if name == "event" {
+                    format!("event-{}", normalize_id(object_name))
+                } else {
+                    normalize_confval_id(object_name)
+                }
             } else {
                 format!("{objtype}-{}", normalize_id(args.trim()))
             };

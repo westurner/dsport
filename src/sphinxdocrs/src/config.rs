@@ -2999,10 +2999,23 @@ mod raw_config_from_conf_py_tests {
             "PACKAGE_NAME = 'vendored-docutils'\n",
         )
         .unwrap();
+        std::fs::write(
+            sphinx_package.parent().unwrap().join("sphinx_conf_probe.py"),
+            "PROJECT_NAME = 'vendored-sphinx'\n",
+        )
+        .unwrap();
+        std::fs::write(
+            docutils_package
+                .parent()
+                .unwrap()
+                .join("docutils_conf_probe.py"),
+            "PACKAGE_NAME = 'vendored-docutils'\n",
+        )
+        .unwrap();
         let conf_py = confdir.join("conf.py");
         std::fs::write(
             &conf_py,
-            "from sphinx import PROJECT_NAME\nfrom docutils import PACKAGE_NAME\nproject = PROJECT_NAME + ':' + PACKAGE_NAME\n",
+            "from sphinx_conf_probe import PROJECT_NAME\nfrom docutils_conf_probe import PACKAGE_NAME\nproject = PROJECT_NAME + ':' + PACKAGE_NAME\n",
         )
         .unwrap();
 

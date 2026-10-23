@@ -6,6 +6,38 @@ This plan covers hand-written Rust production code in `src/sphinxdocrs`, with
 upstream behavior traced from `src/sphinx/tests/` and native behavior verified
 by `src/sphinxdocrs/tests/`.
 
+### Current all-target measurement (2026-10-23)
+
+The authoritative current gate is:
+
+```sh
+PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov -p sphinxdocrs --lib --bins --tests --branch --summary-only -- --quiet
+```
+
+All 1,098 library tests and all binary/integration test targets pass. The
+all-target report is **75.58% branch coverage** (986/4,037 branches missed),
+93.02% line coverage, and 91.31% function coverage. The 100% branch target is
+still open; no exclusions or parity thresholds were relaxed.
+
+Current highest-miss modules, in execution priority order:
+
+| Module | Missed/total | Branch coverage |
+| --- | ---: | ---: |
+| `environment.rs` | 182/734 | 75.20% |
+| `source_docs.rs` | 90/208 | 56.73% |
+| `autodoc.rs` | 68/240 | 71.67% |
+| `apidoc/generate.rs` | 60/136 | 55.88% |
+| `theme_render.rs` | 53/242 | 78.10% |
+| `builders/html.rs` | 51/174 | 70.69% |
+| `domains/scan.rs` | 33/182 | 81.87% |
+| `config.rs` | 30/210 | 85.71% |
+| `bin/sphinx_source_port.rs` | 27/32 | 15.63% |
+| `builders/latex.rs` | 24/46 | 47.83% |
+
+The latest additions also bring `apidoc/templates.rs` (2/2), `genindex.rs`
+(2/2), and `quickstart/templates.rs` (2/2) to 100% branch coverage. Re-run
+the exact gate above before using these values as a new baseline.
+
 - Measured on 2026-09-18:
   - `cargo test -p sphinxdocrs --all-targets`: 829 tests passed in the latest
     clean run.
@@ -432,11 +464,12 @@ Python stderr parity.
 Keep each tranche independently testable and committed. Do not stage unrelated
 submodule, generated, or devcontainer changes already present in the worktree.
 
-## Complete branch map (2026-09-18)
+## Historical branch map (2026-09-18)
 
-This is the complete nonzero-branch inventory from the library-only LLVM
-report. Entries are ordered by missed branches, so the table is also the
-execution order. `missed/total` is authoritative; percentages are rounded.
+This historical library-only inventory is retained for context and is
+superseded for prioritization by the current all-target ranking above.
+`missed/total` and percentages reflect the report date in the heading, not the
+current measurement.
 
 | Module | Missed/total | Branch % | Upstream coverage source |
 | --- | ---: | ---: | --- |

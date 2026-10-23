@@ -1549,6 +1549,11 @@ impl BuildEnvironment {
                 .note_object("confval", confval, docname, labelid);
         }
 
+        for event in scan::scan_event_names(source) {
+            let labelid = crate::domains::normalize_id(&event);
+            self.std_domain.note_object("event", event, docname, labelid);
+        }
+
         for (objtype, name) in scan::scan_rst_domain_objects(source) {
             // Mirrors real Sphinx's `make_id(env, document, objtype, name)`
             // anchor scheme (e.g. `directive-toctree`, `role-ref`), not a
@@ -1923,7 +1928,7 @@ impl BuildEnvironment {
         use crate::util_osutil::relative_uri;
 
         const KNOWN_STD_REFTYPES: &[&str] =
-            &["ref", "doc", "term", "numref", "keyword", "confval"];
+            &["ref", "doc", "term", "numref", "keyword", "confval", "event"];
         const KNOWN_RST_REFTYPES: &[&str] = &["dir", "role"];
 
         // `sphinx.ext.extlinks`' `extlinks = {name: (url_template, caption_template), ...}`
@@ -2062,6 +2067,19 @@ impl BuildEnvironment {
                         false,
                         "std".to_string(),
                         classes.clone(),
+                        raw_target,
+                        explicit_title,
+                    )
+                }
+                NodeKind::Inline { classes }
+                    if classes.split_whitespace().any(|class| class == "std-event") =>
+                {
+                    let content = flatten_text(tree, id);
+                    let (raw_target, explicit_title) = crate::domains::scan::split_phrase(&content);
+                    (
+                        false,
+                        "std".to_string(),
+                        "event".to_string(),
                         raw_target,
                         explicit_title,
                     )
@@ -4142,6 +4160,39 @@ mod tests {
     }
 
     #[test]
+    fn literalinclude_line_selection_skips_invalid_and_empty_ranges() {
+        let source = "one\ntwo\nthree";
+        assert_eq!(
+            select_literalinclude_lines(source, " , 0, 3-2, invalid, 99, 2 "),
+            "two"
+        );
+        assert_eq!(select_literalinclude_lines(source, "1-2,3"), "one\ntwo\nthree");
+    }
+
+    #[test]
+    fn extract_python_object_includes_decorators_and_stops_at_next_definition() {
+        let source = "@first\n@second(1)\ndef wanted(value):\n    return value\n\ndef other():\n    pass\n";
+        assert_eq!(
+            extract_python_object(source, "package.wanted").as_deref(),
+            Some("@first\n@second(1)\ndef wanted(value):\n    return value")
+        );
+        assert_eq!(extract_python_object(source, "missing"), None);
+    }
+
+    #[test]
+    fn autoattribute_without_module_or_class_context_is_unchanged() {
+        let env = make_env();
+        assert_eq!(
+            env.expand_autoattribute_docs(".. autoattribute:: value\n"),
+            None
+        );
+        assert_eq!(
+            env.expand_autoattribute_docs(".. module:: example\n\n.. autoattribute:: value\n"),
+            None
+        );
+    }
+
+    #[test]
     fn autoattribute_expansion_includes_inherited_source_comments() {
         let env = make_env();
         let expanded = env
@@ -5425,6 +5476,21 @@ mod tests {
             .any(|(domain, entry)| domain == "js" && entry.name == "widgets.render"));
         assert!(!env.indexentries.get("index").unwrap().is_empty());
         assert_eq!(env.pending_xrefs.get("index").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn event_xref_resolves_to_declared_event_anchor() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        let source = "Events\n======\n\n.. event:: env-purge-doc (app, env, docname)\n\nSee :event:`env-purge-doc`.\n";
+        env.read_one_with_source("events", source).unwrap();
+
+        let mut tree = env.get_doctree("events").unwrap();
+        env.resolve_xref_nodes(&mut tree, "events");
+
+        assert!((0..tree.nodes_len()).any(|id| matches!(
+            &tree.node(id).kind,
+            NodeKind::Reference { refuri, .. } if refuri == "#env-purge-doc"
+        )));
     }
 
     #[test]

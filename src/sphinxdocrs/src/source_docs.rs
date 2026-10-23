@@ -2420,8 +2420,17 @@ mod tests {
         let settings = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
             raw,
             HashMap::new(),
-        ))
-        .unwrap();
+        ));
+        if !cfg!(feature = "source-sandbox")
+            && !super::config::sandboxing_disabled_by_env()
+        {
+            assert_eq!(
+                settings.unwrap_err(),
+                "protected-lsp requires the optional source-sandbox feature (MXC)"
+            );
+            return;
+        }
+        let settings = settings.unwrap();
         assert_eq!(
             settings.lsp_read_only_roots,
             [Path::new("/opt/rust-toolchain")]

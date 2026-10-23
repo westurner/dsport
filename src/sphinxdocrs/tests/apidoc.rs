@@ -328,6 +328,34 @@ fn toc_file_snapshot(templates: &ApidocTemplates) {
     insta::assert_snapshot!(content);
 }
 
+#[test]
+fn custom_template_override_is_rendered() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("custom.rst.jinja"), "custom: {{ value }}").unwrap();
+
+    let templates = ApidocTemplates::with_templatedir(Some(tmp.path()));
+    let rendered = templates
+        .render(
+            "custom.rst.jinja",
+            &serde_json::json!({"value": "override"}),
+        )
+        .unwrap();
+    let vendored = templates
+        .render(
+            "module.rst.jinja",
+            &serde_json::json!({
+                "show_headings": true,
+                "basename": "module",
+                "qualname": "pkg",
+                "automodule_options": [],
+            }),
+        )
+        .unwrap();
+
+    assert_eq!(rendered, "custom: override");
+    assert!(vendored.contains(".. automodule:: pkg"));
+}
+
 // ── help snapshot ─────────────────────────────────────────────────────────────
 
 #[test]

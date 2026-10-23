@@ -209,6 +209,16 @@ impl Domain for StdDomain {
                     title: target.to_string(),
                 })
             }
+            "event" => {
+                let (docname, anchor) = self
+                    .objects
+                    .get(&("event".to_string(), target.to_string()))?;
+                Some(XrefTarget {
+                    docname: docname.clone(),
+                    anchor: anchor.clone(),
+                    title: target.to_string(),
+                })
+            }
             "doc" => {
                 let docname = self.resolve_doc(env, fromdocname, target)?;
                 let title = env.get_title(&docname).unwrap_or(&docname).to_string();

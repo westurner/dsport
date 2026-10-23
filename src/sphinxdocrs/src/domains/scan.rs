@@ -281,6 +281,21 @@ pub fn scan_rst_domain_objects(source: &str) -> Vec<(String, String)> {
     out
 }
 
+/// Scan `.. event:: name (arguments)` definitions from the standard domain.
+pub fn scan_event_names(source: &str) -> Vec<String> {
+    source
+        .lines()
+        .filter_map(|line| {
+            let rest = line
+                .trim_start()
+                .strip_prefix(".. event::")?
+                .trim();
+            let name = rest.split('(').next()?.split_whitespace().next()?;
+            (!name.is_empty()).then(|| name.to_string())
+        })
+        .collect()
+}
+
 /// Scan for inline cross-reference roles (`` :ref:`target` ``,
 /// `` :doc:`Title <target>` ``, `` :rst:dir:`toctree` ``, ...) that this
 /// port knows how to resolve.
@@ -845,6 +860,16 @@ mod tests {
                 ("directive".to_string(), "toctree".to_string()),
                 ("role".to_string(), "ref".to_string())
             ]
+        );
+    }
+
+    #[test]
+    fn scan_event_names_extracts_names_from_signatures() {
+        let src = ".. event:: env-purge-doc (app, env, docname)\n\n.. event:: build-finished (app, exception)\n";
+
+        assert_eq!(
+            scan_event_names(src),
+            vec!["env-purge-doc", "build-finished"]
         );
     }
 

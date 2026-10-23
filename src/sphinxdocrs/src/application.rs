@@ -1091,6 +1091,26 @@ mod tests {
     }
 
     #[test]
+    fn build_dispatches_every_native_builder() {
+        for (builder_name, _) in NATIVE_BUILDER_CLASSES {
+            let src = make_src();
+            let out = TempDir::new().unwrap();
+            let doctrees = TempDir::new().unwrap();
+            let mut app = SphinxApp::new(
+                src.path(),
+                out.path(),
+                doctrees.path(),
+                *builder_name,
+                HashMap::new(),
+            )
+            .unwrap();
+
+            app.build()
+                .unwrap_or_else(|error| panic!("{builder_name} dispatch failed: {error}"));
+        }
+    }
+
+    #[test]
     fn build_unknown_builder_errors() {
         let src = make_src();
         let out = TempDir::new().unwrap();

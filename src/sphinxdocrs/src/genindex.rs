@@ -43,13 +43,10 @@ pub fn build_genindex(env: &BuildEnvironment) -> Vec<(String, Vec<GenIndexTerm>)
     // main term (case-insensitive key) -> GenIndexTerm being assembled.
     let mut terms: BTreeMap<String, GenIndexTerm> = BTreeMap::new();
 
-    let mut docnames: Vec<&String> = env.indexentries.keys().collect();
-    docnames.sort();
+    let mut documents: Vec<_> = env.indexentries.iter().collect();
+    documents.sort_by(|left, right| left.0.cmp(right.0));
 
-    for docname in docnames {
-        let Some(entries) = env.indexentries.get(docname) else {
-            continue;
-        };
+    for (docname, entries) in documents {
         for entry in entries {
             match entry.kind {
                 IndexEntryKind::See | IndexEntryKind::SeeAlso => {
@@ -217,6 +214,41 @@ mod tests {
         let index = build_genindex(&env);
         let (_, terms) = index.iter().find(|(l, _)| l == "W").unwrap();
         assert_eq!(terms[0].see, Some(("gadget".to_string(), false)));
+    }
+
+    #[test]
+    fn seealso_entry_records_cross_link() {
+        let mut env = make_env();
+        env.indexentries.insert(
+            "guide".to_string(),
+            vec![crate::domains::IndexEntry {
+                kind: IndexEntryKind::SeeAlso,
+                text: "widget".to_string(),
+                see_target: Some("gadget".to_string()),
+                main: false,
+            }],
+        );
+        let index = build_genindex(&env);
+        let (_, terms) = index.iter().find(|(letter, _)| letter == "W").unwrap();
+        assert_eq!(terms[0].see, Some(("gadget".to_string(), true)));
+    }
+
+    #[test]
+    fn see_entry_without_target_does_not_create_cross_link() {
+        let mut env = make_env();
+        env.indexentries.insert(
+            "guide".to_string(),
+            vec![crate::domains::IndexEntry {
+                kind: IndexEntryKind::See,
+                text: "widget".to_string(),
+                see_target: None,
+                main: false,
+            }],
+        );
+
+        let index = build_genindex(&env);
+        let (_, terms) = index.iter().find(|(letter, _)| letter == "W").unwrap();
+        assert_eq!(terms[0].see, None);
     }
 
     #[test]

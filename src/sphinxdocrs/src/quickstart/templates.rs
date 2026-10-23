@@ -96,3 +96,25 @@ impl QuickstartTemplates {
         self.env.render_str(src, ctx)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::QuickstartTemplates;
+
+    #[test]
+    fn render_uses_custom_template_when_present_and_falls_back_otherwise() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("custom.jinja"), "Custom {{ label }}").unwrap();
+        let templates = QuickstartTemplates::with_templatedir(Some(directory.path()));
+        let context = serde_json::json!({ "label": "page" });
+
+        assert_eq!(
+            templates.render("custom.jinja", &context).unwrap(),
+            "Custom page"
+        );
+        assert!(!templates.has_custom("missing.jinja"));
+        assert!(QuickstartTemplates::vendored()
+            .render("missing.jinja", &context)
+            .is_err());
+    }
+}

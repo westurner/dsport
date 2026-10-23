@@ -478,6 +478,7 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             classes,
             ids,
             sig_text,
+            ..
         } => {
             let mut s = format!("{indent}<object_description");
             if !classes.is_empty() {

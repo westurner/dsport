@@ -1866,6 +1866,10 @@ fn parse_directive(
     } else {
         Vec::new()
     };
+    let no_index = content
+        .iter()
+        .take_while(|line| line.trim().is_empty() || line.trim_start().starts_with(':'))
+        .any(|line| matches!(line.trim(), ":no-index:" | ":noindex:"));
     let content_refs: Vec<&str> = content.iter().map(String::as_str).collect();
     if let Some(blocks) = crate::plugins::invoke_native_directive(&name, args, &content_refs) {
         *i_ref = content_index;
@@ -2437,6 +2441,8 @@ fn parse_directive(
                 format!("class {}", args.trim())
             } else if name == "confval" || objtype == "std" {
                 args.trim().to_string()
+            } else if objtype == "py" {
+                args.trim().to_string()
             } else {
                 sig.trim().to_string()
             };
@@ -2450,7 +2456,7 @@ fn parse_directive(
                 format!("module-{}", args.trim())
             } else if objtype == "py" {
                 args.trim()
-                    .split(['(', '['])
+                    .split(['(', '[', '='])
                     .next()
                     .map(str::trim)
                     .unwrap_or(args.trim())
@@ -2465,10 +2471,11 @@ fn parse_directive(
             } else {
                 format!("{objtype}-{}", normalize_id(args.trim()))
             };
+            let ids = if no_index { String::new() } else { ids };
             let classes = format!("{objtype} {}", name.replace(':', " "));
             *i_ref += 1;
             let mut aliases = Vec::new();
-            if name == "confval" || objtype == "std" {
+            if name == "confval" || objtype == "std" || objtype == "py" {
                 let signature_indent = base_indent + name.len() + 6;
                 let mut next = *i_ref;
                 while next < lines.len() {
@@ -2492,7 +2499,21 @@ fn parse_directive(
             }
             let mut children = Vec::new();
             if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
-                let inner = consume_indented_lines(lines, i_ref, ci);
+                let mut inner = consume_indented_lines(lines, i_ref, ci);
+                if no_index {
+                    let mut option_prefix = true;
+                    inner.retain(|line| {
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() {
+                            return true;
+                        }
+                        if option_prefix && trimmed.starts_with(':') {
+                            return !matches!(trimmed, ":no-index:" | ":noindex:");
+                        }
+                        option_prefix = false;
+                        true
+                    });
+                }
                 let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
                 children = parse_blocks(&refs, ci, 0);
             }
@@ -4048,6 +4069,7 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                         classes,
                         ids,
                         sig_text,
+                        signature_references: Vec::new(),
                     },
                 );
                 for b in children.into_iter().rev() {
@@ -4074,6 +4096,17 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                         )
                     } else if alias_classes.starts_with("std ") {
                         (alias_classes.clone(), normalize_confval_id(&alias))
+                    } else if alias_classes.starts_with("py ") {
+                        let parent_ids = match &tree.node(parent).kind {
+                            NodeKind::ObjectDescription { ids, .. } => ids.as_str(),
+                            _ => "",
+                        };
+                        let id = if parent_ids.is_empty() {
+                            alias.clone()
+                        } else {
+                            format!("{parent_ids}.{}", alias.trim())
+                        };
+                        (alias_classes.clone(), id)
                     } else {
                         (
                             "std confval".to_string(),
@@ -4086,6 +4119,7 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                             classes,
                             ids: id,
                             sig_text: alias,
+                            signature_references: Vec::new(),
                         },
                     );
                 }

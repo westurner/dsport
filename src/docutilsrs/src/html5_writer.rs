@@ -756,6 +756,7 @@ fn emit_enter(
             classes,
             ids,
             sig_text,
+            signature_references,
         } => {
             if classes.is_empty() {
                 out.push_str("<dl>");
@@ -767,7 +768,27 @@ fn emit_enter(
             } else {
                 let _ = write!(out, "<dt id=\"{}\">", escape(ids));
             }
-            if options.highlight_object_signatures
+            if !signature_references.is_empty() {
+                let mut cursor = 0;
+                for reference in signature_references {
+                    if reference.start < cursor
+                        || reference.end > sig_text.len()
+                        || reference.start >= reference.end
+                    {
+                        continue;
+                    }
+                    out.push_str(&escape(&sig_text[cursor..reference.start]));
+                    let _ = write!(
+                        out,
+                        "<a class=\"{}\" href=\"{}\">{}</a>",
+                        escape(&reference.classes),
+                        escape(&reference.uri),
+                        escape(&sig_text[reference.start..reference.end]),
+                    );
+                    cursor = reference.end;
+                }
+                out.push_str(&escape(&sig_text[cursor..]));
+            } else if options.highlight_object_signatures
                 && classes.split_whitespace().any(|class| class == "rust")
             {
                 #[cfg(feature = "syntax-highlighting")]
@@ -1076,6 +1097,7 @@ mod tests {
                 classes: "rust rust struct".into(),
                 ids: "rust-type-<report>".into(),
                 sig_text: "rust:struct <Report>".into(),
+                signature_references: Vec::new(),
             },
         );
 
@@ -1090,6 +1112,34 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn object_signature_renders_only_the_linked_type_span() {
+        let mut tree = Doctree::new_document("api.rst");
+        tree.append(
+            tree.root(),
+            NodeKind::ObjectDescription {
+                classes: "py py function".into(),
+                ids: "pkg.function".into(),
+                sig_text: "function(value: str)".into(),
+                signature_references: vec![crate::doctree::SignatureReference {
+                    start: 16,
+                    end: 19,
+                    uri: "https://docs.python.org/3/library/stdtypes.html#str".into(),
+                    classes: "reference external".into(),
+                }],
+            },
+        );
+        let rendered = html5(
+            &tree,
+            &crate::cli::Html5Options::default(),
+            &crate::cli::CommonOptions::default(),
+        );
+
+        assert!(rendered.contains(
+            "function(value: <a class=\"reference external\" href=\"https://docs.python.org/3/library/stdtypes.html#str\">str</a>)"
+        ));
+    }
+
     #[cfg(feature = "syntax-highlighting")]
     #[test]
     fn rust_object_signature_highlighting_is_opt_in_and_uses_pygmentsrs() {
@@ -1100,6 +1150,7 @@ mod tests {
                 classes: "rust rust function".into(),
                 ids: "rust-function-answer".into(),
                 sig_text: "rust:function fn answer() -> i32".into(),
+                signature_references: Vec::new(),
             },
         );
         let common = crate::cli::CommonOptions::default();

@@ -779,6 +779,7 @@ fn local_toc_from_doctree(
                         classes,
                         ids,
                         sig_text,
+                        ..
                     } if classes.split_whitespace().any(|class| class == "confval") => {
                         let title = sig_text
                             .strip_prefix("confval ")
@@ -794,7 +795,13 @@ fn local_toc_from_doctree(
                         classes,
                         ids,
                         sig_text,
-                    } if !ids.is_empty() && classes != "std option" => {
+                        ..
+                    } if !ids.is_empty()
+                        && classes != "std option"
+                        && !classes
+                            .split_whitespace()
+                            .any(|class| class == "module") =>
+                    {
                         let title = if classes
                             .split_whitespace()
                             .any(|class| class == "autoattribute")
@@ -804,6 +811,65 @@ fn local_toc_from_doctree(
                                 .and_then(|module| ids.strip_prefix(&format!("{module}.")))
                                 .unwrap_or(ids)
                                 .to_string()
+                        } else if classes.split_whitespace().any(|class| class == "py")
+                            && sig_text.starts_with("class ")
+                        {
+                            sig_text
+                                .strip_prefix("class ")
+                                .unwrap_or(sig_text)
+                                .split_once('(')
+                                .map(|(name, _)| name)
+                                .unwrap_or_else(|| sig_text.strip_prefix("class ").unwrap_or(sig_text))
+                                .rsplit('.')
+                                .next()
+                                .unwrap_or(sig_text)
+                                .to_string()
+                        } else if classes.split_whitespace().any(|class| class == "py") {
+                            let name = sig_text
+                                .split_once('(')
+                                .map(|(name, _)| name.trim())
+                                .unwrap_or_else(|| {
+                                    sig_text
+                                        .split_once('=')
+                                        .map(|(name, _)| name.trim())
+                                        .unwrap_or(sig_text.trim())
+                                });
+                            let short_name = name.rsplit('.').next().unwrap_or(name);
+                            let parent_class = node.parent.and_then(|parent_id| {
+                                match &tree.node(parent_id).kind {
+                                    docutilsrs::doctree::NodeKind::ObjectDescription {
+                                        classes,
+                                        sig_text,
+                                        ..
+                                    } if classes.split_whitespace().any(|class| class == "py")
+                                        && sig_text.starts_with("class ") =>
+                                    {
+                                        Some(
+                                            sig_text
+                                                .strip_prefix("class ")
+                                                .unwrap_or(sig_text)
+                                                .split_once('(')
+                                                .map(|(name, _)| name)
+                                                .unwrap_or_else(|| {
+                                                    sig_text.strip_prefix("class ").unwrap_or(sig_text)
+                                                })
+                                                .rsplit('.')
+                                                .next()
+                                                .unwrap_or(sig_text)
+                                                .to_string(),
+                                        )
+                                    }
+                                    _ => None,
+                                }
+                            });
+                            let member = if sig_text.contains('(') {
+                                format!("{short_name}()")
+                            } else {
+                                short_name.to_string()
+                            };
+                            parent_class
+                                .map(|class_name| format!("{class_name}.{member}"))
+                                .unwrap_or(member)
                         } else if classes == "rst directive" {
                             if ids == "directive-rst-directive" {
                                 ".. rst:directive::".to_string()
@@ -826,23 +892,11 @@ fn local_toc_from_doctree(
                                     .to_string()
                             }
                         } else {
-                            let is_python_class = classes
-                                .split_whitespace()
-                                .any(|class| class == "py")
-                                && sig_text.starts_with("class ");
-                            let signature = if is_python_class {
-                                sig_text.strip_prefix("class ").unwrap_or(sig_text)
-                            } else {
-                                sig_text
-                                    .split_once(' ')
-                                    .map(|(_, signature)| signature.trim())
-                                    .unwrap_or(sig_text)
-                            };
-                            if is_python_class {
-                                signature.rsplit('.').next().unwrap_or(signature).to_string()
-                            } else {
-                                signature.to_string()
-                            }
+                            sig_text
+                                .split_once(' ')
+                                .map(|(_, signature)| signature.trim())
+                                .unwrap_or(sig_text)
+                                .to_string()
                         };
                         Some(TocEntry {
                             docname: format!("{docname}#{ids}"),
@@ -2070,7 +2124,7 @@ mod tests {
     #[test]
     fn local_toc_includes_class_and_attribute_descriptions() {
         let doctree = docutilsrs::parse_rst_with_options(
-            "Builders\n========\n\n.. module:: sphinx.builders\n\n.. py:class:: sphinx.builders.ExampleBuilder\n\n   .. autoattribute:: sphinx.builders.ExampleBuilder.name\n\n.. option:: --example\n\n.. rst:directive:: foo\n\n.. rst:directive:: .. rst:directive:: name\n\n.. rst:directive:: .. rst:directive:option:: name\n",
+            "Builders\n========\n\n.. module:: sphinx.builders\n\n.. py:class:: sphinx.builders.ExampleBuilder\n\n   .. py:attribute:: sphinx.builders.ExampleBuilder.name = None\n\n.. option:: --example\n\n.. rst:directive:: foo\n\n.. rst:directive:: .. rst:directive:: name\n\n.. rst:directive:: .. rst:directive:option:: name\n",
             "usage/builders",
             docutilsrs::TitlePromotion::Preserve,
         );
@@ -2102,6 +2156,22 @@ mod tests {
             "got: {titles:?}"
         );
         assert!(!titles.contains(&"--example"), "got: {titles:?}");
+    }
+
+    #[test]
+    fn local_toc_includes_autoclass_members() {
+        let doctree = docutilsrs::parse_rst_with_options(
+            "Event Manager API\n=================\n\n.. py:module:: sphinx.events\n\n.. py:class:: sphinx.events.EventManager\n\n   .. py:method:: add(name)\n",
+            "extdev/eventapi",
+            docutilsrs::TitlePromotion::Preserve,
+        );
+        let entries = local_toc_from_doctree(Some(&doctree), "extdev/eventapi");
+
+        assert_eq!(entries.len(), 1, "got: {entries:?}");
+        assert_eq!(entries[0].title, "Event Manager API");
+        assert_eq!(entries[0].children[0].title, "EventManager");
+        assert_eq!(entries[0].children[0].children[0].title, "EventManager.add()");
+        assert_eq!(entries[0].children[0].children[0].docname, "extdev/eventapi#add");
     }
 
     #[test]

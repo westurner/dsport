@@ -519,6 +519,7 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             classes,
             ids,
             sig_text,
+            ..
         } => {
             let mut xml_attrs: Vec<(&str, &str)> = Vec::new();
             if !classes.is_empty() {

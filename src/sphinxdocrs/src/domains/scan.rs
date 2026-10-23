@@ -611,15 +611,25 @@ pub fn scan_domain_objects(
     let mut current_module: Option<String> = None;
     let mut class_stack: Vec<(usize, String)> = Vec::new();
     let directive_prefix = format!("{domain}:");
+    let lines = source.lines().collect::<Vec<_>>();
 
-    for line in source.lines() {
+    for (line_index, line) in lines.iter().enumerate() {
+        let line = *line;
         let trimmed = line.trim_start();
         let own_indent = line.len() - trimmed.len();
         let Some(rest) = trimmed.strip_prefix("..") else {
             continue;
         };
         let rest = rest.trim_start();
-        let Some(rest) = rest.strip_prefix(directive_prefix.as_str()) else {
+        let rest = if let Some(rest) = rest.strip_prefix(directive_prefix.as_str()) {
+            rest
+        } else if domain == "py"
+            && rest
+                .split_once("::")
+                .is_some_and(|(ty, _)| module_types.contains(&ty.trim()))
+        {
+            rest
+        } else {
             continue;
         };
         let Some((ty, args)) = rest.split_once("::") else {
@@ -633,6 +643,18 @@ pub fn scan_domain_objects(
             || container_object_types.contains(&ty)
             || plain_object_types.contains(&ty);
         if !recognized {
+            continue;
+        }
+
+        let has_no_index = lines
+            .iter()
+            .skip(line_index + 1)
+            .take_while(|following| {
+                let following = following.trim();
+                following.is_empty() || following.starts_with(':')
+            })
+            .any(|following| matches!(following.trim(), ":no-index:" | ":noindex:"));
+        if has_no_index {
             continue;
         }
 
@@ -679,7 +701,13 @@ pub fn scan_domain_objects(
             parts.push(cname.clone());
         }
         parts.push(local_name.clone());
-        let fullname = parts.join(".");
+        let mut fullname = parts.join(".");
+        if let Some(module) = &current_module {
+            let duplicate_prefix = format!("{module}.{module}.");
+            if let Some(suffix) = fullname.strip_prefix(&duplicate_prefix) {
+                fullname = format!("{module}.{suffix}");
+            }
+        }
 
         out.push(ScannedObject {
             objtype: ty.to_string(),
@@ -1005,6 +1033,63 @@ mod tests {
         // Dedenting back to top level after the class body drops the
         // class prefix for the next sibling.
         assert_eq!(objs[3].fullname, "pkg.top_level");
+    }
+
+    #[test]
+    fn scan_domain_objects_skips_python_no_index_overloads() {
+        use super::super::py_domain::py_signature_of;
+
+        let src = ".. py:module:: sphinx.events\n\n.. py:class:: EventManager\n\n   .. py:method:: connect(self, name: str)\n      :no-index:\n\n   .. py:method:: connect(self, name: str, callback)\n";
+        let objects = scan_domain_objects(
+            src,
+            "py",
+            &["module", "currentmodule"],
+            &["currentclass"],
+            &["class", "exception"],
+            &[
+                "function",
+                "method",
+                "classmethod",
+                "staticmethod",
+                "attribute",
+                "data",
+            ],
+            py_signature_of,
+        );
+
+        assert_eq!(
+            objects
+                .iter()
+                .filter(|object| object.fullname == "sphinx.events.EventManager.connect")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn scan_domain_objects_does_not_duplicate_qualified_class_module() {
+        use super::super::py_domain::py_signature_of;
+
+        let src = ".. py:module:: sphinx.events\n\n.. py:class:: sphinx.events.EventManager\n\n   .. py:method:: add(self, name)\n";
+        let objects = scan_domain_objects(
+            src,
+            "py",
+            &["module", "currentmodule"],
+            &["currentclass"],
+            &["class", "exception"],
+            &[
+                "function",
+                "method",
+                "classmethod",
+                "staticmethod",
+                "attribute",
+                "data",
+            ],
+            py_signature_of,
+        );
+
+        assert_eq!(objects[1].fullname, "sphinx.events.EventManager");
+        assert_eq!(objects[2].fullname, "sphinx.events.EventManager.add");
     }
 
     #[test]

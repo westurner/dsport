@@ -101,78 +101,75 @@ comparisons before broad rebuilds:
   metrics, no missing/extra source pages, and no unresolved parser
   diagnostics; no threshold or exclusion changes are permitted.
 
+deferred H3f C++ domain parser rather than token-level cleanup. Remaining
 **Progress:** dotted Python module anchors, signature-derived local TOC labels,
 standard-option TOC exclusion, Sphinx-ordered anonymous target IDs, and
 case-preserving command-option/envvar anchors are implemented and covered by
-focused tests. Cached intersphinx inventories are consulted after local domain
-resolution; the offline resolver test covers qualified builtins fallback and
-`sys.path`, and the docs build resolves the latter. The latest strict result is
-99.50% text, 95.94% links, and 94.15% anchors. Remaining Python `str` links are
-emitted inside autodoc signatures, which currently lack structured xref spans;
-implement typed signature segments before linking annotations. Numpydoc/PEP
-external references remain open. The `usage/domains/cpp.html` gap includes
-generic declaration labels and extra option-field content, so it requires the
-deferred H3f C++ domain parser rather than token-level cleanup. Remaining
-generated/title anchors are also open.
+focused tests. Cached intersphinx inventories and structured signature type
+spans are implemented. The latest whole-tree diagnostic reports 99.51% text,
+96.51% links, and 95.17% anchors across all 131 shared source pages, with no
+missing/extra pages or unresolved parser diagnostics. This remains below the
+strict 100% gate. Numpydoc/PEP links, remaining builtin links, C/C++ domain
+anchors, and generated/title anchors are still open. The
+`usage/domains/cpp.html` gap includes generic declaration labels and extra
+option-field content, so it requires the deferred H3f C++ domain parser rather
+than token-level cleanup.
 
 #### H11.2f: markup and event API page parity (2026-10-21)
 
-The direct page comparison used the existing
-`src/sphinx/doc/_build_py/html/extdev/{markupapi,eventapi}.html` and
-`_build_rs` outputs. Treat these as a page-pair diagnostic, not the final
-global measurement: rebuild Rust into `_build_rs_probe` after each fix so the
-previously measured current code and the requested `_build_rs` artifact are
-not conflated.
+The latest Rust build is isolated at
+`src/sphinx/doc/_build_rs_probe/html`; comparisons use the existing Python
+build at `src/sphinx/doc/_build_py/html`. The global diagnostic remains the
+strict acceptance check; these excluded `extdev/` pages are measured directly
+to guide this work without overwriting the existing parity report.
 
-**`extdev/markupapi.html`:** visible-token counts were 1,448 Python versus
-1,427 Rust; all eight headings match. The principal structural gap is
-qualified Python object identity: Python targets and links use
-`docutils.parsers.rst.Directive.<member>`, while Rust emits short IDs such as
-`run`, `content-offset`, and `block-text`. The module target is also a `dl`
-anchor upstream versus a `span` anchor in Rust. Python has 105 links versus 89
-in Rust; the missing destinations include the qualified member references,
-Sphinx application/API links, Docutils `ValueError`/`TypeError` links, and
-source links. Preserve the matching heading tree; focus this slice on module
-and class context, object IDs, and reference resolution.
+**`extdev/markupapi.html`:** current semantic overlap is 99.91% visible text,
+97.54% link destinations, and 100.00% heading/anchor IDs. The Python and Rust
+token totals are 1,077 and 1,075. Module/class context now yields the same 23
+anchors, including qualified `Directive` members and continuation alias
+`state_machine`; local TOC labels omit attribute defaults as upstream does.
+Five destinations remain: two `viewcode` source links for `Directive` and
+`Directive.run`, plus three links to `SphinxDirective` members on `utils.html`.
+The two remaining text tokens are the missing `[source]` labels.
 
-**`extdev/eventapi.html`:** visible-token counts were 1,713 Python versus 147
-Rust, with three headings on both sides. Python expands `EventManager` and its
-`add`, `connect`, `disconnect`, `emit`, and `emit_firstresult` members; Rust
-leaves one generic `autodoc autoclass` object with no methods. Python also
-renders repeated overload signatures for `connect`, member docstrings, source
-links, qualified IDs, and Python type references. The source is
-`.. module:: sphinx.events` followed by `.. autoclass:: EventManager
-:members:`. The environment currently expands top-level `automodule`, but
-does not lower `autoclass`; the runtime bridge already provides
-`introspect_class`, and `autodoc.rs` already has member selection/rendering
-used for classes nested under module expansion.
+**`extdev/eventapi.html`:** current semantic overlap is 98.68% visible text,
+96.58% link destinations, and 100.00% heading/anchor IDs. Both sides contain
+912 visible tokens, but Python groups field docs under `Parameters` and
+`Returns` while Rust still renders individual `param`/`return` field names.
+Six `viewcode` source links and ten signature type links remain unmatched:
+`Sphinx`, `str`, `list`, `Exception`, `tuple`, and `type`. `EventManager`
+expansion, its five documented members, overload signatures, qualified IDs,
+  local TOC entries, intersphinx-backed type spans, and class-relative
+  `connect`/`disconnect` method references are implemented.
 
-Implementation order:
+Implementation status:
 
-1. Add `autoclass` expansion in the environment read path, reusing
-  `AutodocOptions`, `select_members`, and `introspect_class`. Preserve module
-  context, fully qualified `py:class`/`py:method` targets, docstrings,
-  properties/attributes, and all overload signatures. First gate: an
-  `EventManager` fixture asserts the five members, overload count, IDs, and
-  source-independent text; then compare `eventapi.html`.
-2. Extend class-context lowering for `markupapi`: qualify standard `method`
-  and attribute declarations under `.. module::`/`.. class::`, preserve
-  underscores in member IDs, and keep the module target and title anchor in
-  their upstream positions. Add tests for `Directive.run`,
-  `Directive.content_offset`, and `Directive.state_machine` before
-  comparing `markupapi.html`.
-3. Render autodoc signature annotations as structured type segments rather
-  than one escaped string. Resolve known Python type names through local
-  domains first and cached intersphinx inventories second; cover `str`,
-  `int`, `list`, `None`, and nested `Callable`/`Literal` signatures. Recheck
-  the type-reference links on both pages.
-4. Resolve remaining explicit Sphinx and Docutils references, including
-  `Sphinx.add_role`, `Directive` member links, `ValueError`/`TypeError`, and
-  `[source]` destinations. Keep external links classified as external and
-  compare full hrefs, not labels alone.
-5. Require zero page-level differences in visible text, heading order,
-  object IDs, and link destinations for both pages, then run the complete
-  131-page strict gate. Do not waive either page or lower the global floors.
+1. **Implemented:** `autoclass` expansion uses the runtime/static autodoc
+  paths, preserves overload signatures and documentation, and is covered by
+  the `EventManager` source fixture.
+2. **Implemented:** markup API class/member lowering and Python-domain
+  qualification preserve the module/title anchors and underscore-bearing
+  member IDs. Plain `.. module::` context is now included by the Python-domain
+  scanner.
+3. **Implemented, incomplete parity:** annotations use structured byte-range
+  references with local-domain and cached-inventory resolution. The remaining
+  EventManager type hrefs listed above need exact inventory parity.
+4. **Partially implemented:** same-class method/attribute roles resolve
+  relative to their enclosing class. `viewcode` source links and grouped
+  Sphinx field-list rendering remain open.
+5. **Open:** both page-level link scores are below 100%, and eventapi visible
+  text differs. The whole-tree strict gate is also open; do not waive either
+  page or lower its thresholds.
+
+Focused verification passed for 64 Docutils parser tests, 9 HTML-writer
+tests, 33 autodoc tests, 29 domain-scanner tests, 10 Python-domain tests, and
+77 environment tests. The theme-render suite passed 37/38 tests; its
+`real_theme_keeps_default_metatags_alongside_theme_viewport` fixture still
+fails to resolve the `basic` theme from its `/tmp` source directory. A fresh
+155-file Rust docs build succeeded with three existing `toc.not_included`
+warnings. The diagnostic comparator reported 131 shared source pages, no
+missing/extra pages, and no unresolved parser diagnostics; global overlap is
+99.51% text, 96.51% links, and 95.17% anchors.
 
 ### Gap Clusters
 

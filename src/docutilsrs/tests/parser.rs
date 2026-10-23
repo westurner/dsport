@@ -487,6 +487,7 @@ fn autodoc_autoattribute_preserves_qualified_anchor() {
                 classes,
                 ids,
                 sig_text,
+                ..
             } if classes == "autodoc autoattribute" => {
                 Some((ids.as_str(), sig_text.as_str()))
             }
@@ -581,7 +582,7 @@ fn standard_domain_objects_use_declared_names_for_ids_and_signatures() {
     let tree = parse_rst(".. data:: script_files\n\n.. function:: pathto(document)\n");
     let objects: Vec<_> = (0..tree.nodes_len())
         .filter_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, sig_text }
+            NodeKind::ObjectDescription { classes, ids, sig_text, .. }
                 if classes.starts_with("std ") =>
             {
                 Some((ids.as_str(), sig_text.as_str()))
@@ -617,7 +618,7 @@ fn standard_domain_signature_aliases_emit_peer_objects() {
     );
     let objects: Vec<_> = (0..tree.nodes_len())
         .filter_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, sig_text }
+            NodeKind::ObjectDescription { classes, ids, sig_text, .. }
                 if classes == "std data" =>
             {
                 Some((ids.as_str(), sig_text.as_str()))
@@ -636,7 +637,7 @@ fn rst_directive_option_keeps_qualified_owner_in_anchor() {
     );
     let objects: Vec<_> = (0..tree.nodes_len())
         .filter_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, sig_text }
+            NodeKind::ObjectDescription { classes, ids, sig_text, .. }
                 if classes == "rst directive:option" =>
             {
                 Some((ids.as_str(), sig_text.as_str()))
@@ -677,6 +678,42 @@ fn python_domain_ids_preserve_object_name_case_and_underscores() {
 }
 
 #[test]
+fn python_domain_signature_text_omits_directive_prefix() {
+    let tree = parse_rst(".. py:method:: connect(self, name: str)\n");
+    let signature = (0..tree.nodes_len())
+        .find_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription {
+                classes,
+                sig_text,
+                ..
+            } if classes == "py py method" => Some(sig_text.as_str()),
+            _ => None,
+        })
+        .expect("Python method object description should be present");
+
+    assert_eq!(signature, "connect(self, name: str)");
+}
+
+#[test]
+fn python_domain_continuation_signatures_get_qualified_ids() {
+    let tree = parse_rst(
+        ".. py:module:: package\n\n.. py:class:: package.Widget\n\n   .. py:attribute:: state\n                      state_machine\n",
+    );
+    let ids = (0..tree.nodes_len())
+        .filter_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, .. }
+                if classes == "py py attribute" =>
+            {
+                Some(ids.as_str())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(ids, ["state", "package.Widget.state_machine"]);
+}
+
+#[test]
 fn glossary_directive_preserves_definition_list_structure() {
     let tree = parse_rst(
         ".. glossary::\n\n   builder\n      A class that builds output.\n",
@@ -708,7 +745,7 @@ fn autodoc_autoclass_preserves_qualified_target() {
     );
     let object = (0..tree.nodes_len())
         .find_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, sig_text }
+            NodeKind::ObjectDescription { classes, ids, sig_text, .. }
                 if classes == "autodoc autoclass" =>
             {
                 Some((ids.as_str(), sig_text.as_str()))
@@ -731,7 +768,7 @@ fn program_options_use_program_scoped_ids_for_each_alias() {
     let tree = parse_rst(".. program:: sphinx-quickstart\n\n.. option:: -q, --quiet\n");
     let option = (0..tree.nodes_len())
         .find_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, sig_text }
+            NodeKind::ObjectDescription { classes, ids, sig_text, .. }
                 if classes == "std option" =>
             {
                 Some((ids.as_str(), sig_text.as_str()))
@@ -749,6 +786,26 @@ fn program_options_use_program_scoped_ids_for_each_alias() {
     assert_eq!(option, ("cmdoption-sphinx-quickstart-q", "-q, --quiet"));
     assert!(target_ids.contains(&"cmdoption-sphinx-quickstart-quiet"));
     assert!(!pseudo_xml(&tree).contains("std program"));
+}
+
+#[test]
+fn py_no_index_option_omits_object_anchor_and_option_field() {
+    let tree = parse_rst(
+        ".. py:class:: EventManager\n\n   .. py:method:: connect(self, name)\n      :no-index:\n",
+    );
+    let method = (0..tree.nodes_len())
+        .find_map(|id| match &tree.node(id).kind {
+            NodeKind::ObjectDescription { classes, ids, .. }
+                if classes.split_whitespace().any(|class| class == "py")
+                    && classes.contains("method") =>
+            {
+                Some(ids.as_str())
+            }
+            _ => None,
+        })
+        .expect("method object description should be present");
+
+    assert_eq!(method, "");
 }
 
 #[test]

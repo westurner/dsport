@@ -163,6 +163,9 @@ impl ModuleIntrospection {
 pub struct ClassIntrospection {
     pub name: String,
     pub docstring: Option<String>,
+    /// `str(inspect.signature(class))`, excluding the implicit `self` from
+    /// `__init__` and matching the signature shown by Sphinx autodoc.
+    pub signature: Option<String>,
     pub members: Vec<MemberInfo>,
 }
 
@@ -252,6 +255,8 @@ pub fn introspect_module(
     mock_imports: &[String],
 ) -> PyResult<ModuleIntrospection> {
     Python::attach(|py| {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        crate::config::add_vendored_import_paths(py, &cwd)?;
         with_python_runtime_lock(py, || {
             install_mock_imports_unlocked(py, mock_imports)?;
             let module = py.import(module_name)?;
@@ -329,6 +334,8 @@ pub fn introspect_class(
     mock_imports: &[String],
 ) -> PyResult<ClassIntrospection> {
     Python::attach(|py| {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        crate::config::add_vendored_import_paths(py, &cwd)?;
         with_python_runtime_lock(py, || {
             install_mock_imports_unlocked(py, mock_imports)?;
             let module = py.import(module_name)?;
@@ -338,6 +345,7 @@ pub fn introspect_class(
             let docstring = inspect
                 .call_method1("getdoc", (&class,))?
                 .extract::<Option<String>>()?;
+            let signature = signature_of(&inspect, &class);
 
             let mut members = Vec::new();
             let member_pairs = inspect.call_method1("getmembers", (&class,))?;
@@ -381,6 +389,7 @@ pub fn introspect_class(
             Ok(ClassIntrospection {
                 name: class_name.to_string(),
                 docstring,
+                signature,
                 members,
             })
         })
@@ -396,6 +405,8 @@ pub fn attribute_doc(
     mock_imports: &[String],
 ) -> PyResult<Option<String>> {
     Python::attach(|py| {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        crate::config::add_vendored_import_paths(py, &cwd)?;
         with_python_runtime_lock(py, || {
             install_mock_imports_unlocked(py, mock_imports)?;
             let module = py.import(module_name)?;
@@ -419,6 +430,47 @@ pub fn attribute_doc(
                         return Ok(Some(text.to_string()));
                     }
                 }
+            }
+            Ok(None)
+        })
+    })
+}
+
+/// Return a deterministic literal value for simple class attributes.
+/// Complex objects are omitted rather than rendered with process-specific reprs.
+pub fn attribute_value(
+    module_name: &str,
+    class_name: &str,
+    attribute_name: &str,
+    mock_imports: &[String],
+) -> PyResult<Option<String>> {
+    Python::attach(|py| {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        crate::config::add_vendored_import_paths(py, &cwd)?;
+        with_python_runtime_lock(py, || {
+            install_mock_imports_unlocked(py, mock_imports)?;
+            let module = py.import(module_name)?;
+            let class = module.getattr(class_name)?;
+            let inspect = py.import("inspect")?;
+            let value = match inspect.call_method1("getattr_static", (&class, attribute_name)) {
+                Ok(value) => value,
+                Err(error) if error.is_instance_of::<pyo3::exceptions::PyAttributeError>(py) => {
+                    return Ok(None);
+                }
+                Err(error) => return Err(error),
+            };
+
+            if value.is_none() {
+                return Ok(Some("None".to_string()));
+            }
+            if let Ok(value) = value.extract::<bool>() {
+                return Ok(Some(if value { "True" } else { "False" }.to_string()));
+            }
+            if let Ok(value) = value.extract::<i64>() {
+                return Ok(Some(value.to_string()));
+            }
+            if value.is_instance_of::<pyo3::types::PyString>() {
+                return Ok(Some(value.repr()?.extract::<String>()?));
             }
             Ok(None)
         })
@@ -512,6 +564,15 @@ mod tests {
             Err(e) => panic!("expected OrderedDict to introspect cleanly: {e}"),
         };
         assert!(classinfo.methods().contains(&"popitem".to_string()));
+
+        let decoder = introspect_class("json", "JSONDecoder", &[])
+            .expect("expected JSONDecoder to introspect cleanly");
+        assert!(
+            decoder
+                .signature
+                .as_deref()
+                .is_some_and(|signature| signature.starts_with("(*, object_hook="))
+        );
     }
 
     #[test]
@@ -525,6 +586,35 @@ mod tests {
         .expect("attribute documentation lookup should succeed");
 
         assert!(result.is_some_and(|text| text.contains("select builders on the command line")));
+    }
+
+    #[test]
+    fn extracts_simple_class_attribute_values() {
+        let required = attribute_value(
+            "docutils.parsers.rst",
+            "Directive",
+            "required_arguments",
+            &[],
+        )
+        .unwrap();
+        let whitespace = attribute_value(
+            "docutils.parsers.rst",
+            "Directive",
+            "final_argument_whitespace",
+            &[],
+        )
+        .unwrap();
+        let option_spec = attribute_value(
+            "docutils.parsers.rst",
+            "Directive",
+            "option_spec",
+            &[],
+        )
+        .unwrap();
+
+        assert_eq!(required.as_deref(), Some("0"));
+        assert_eq!(whitespace.as_deref(), Some("False"));
+        assert_eq!(option_spec.as_deref(), Some("None"));
     }
 
     #[test]

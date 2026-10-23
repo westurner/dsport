@@ -11,6 +11,15 @@ use std::fmt;
 
 pub type NodeId = usize;
 
+/// A resolved link covering a byte range in an object signature.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SignatureReference {
+    pub start: usize,
+    pub end: usize,
+    pub uri: String,
+    pub classes: String,
+}
+
 /// A non-executable representation of Python node attributes.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum NodeAttributeValue {
@@ -435,6 +444,8 @@ pub enum NodeKind {
         ids: String,
         /// The rendered signature text, e.g. `".. toctree::"` or `":ref:"`.
         sig_text: String,
+        /// Optional resolved references in `sig_text`, rendered by HTML writers.
+        signature_references: Vec<SignatureReference>,
     },
 }
 
@@ -861,6 +872,8 @@ enum NodeKindData {
         classes: String,
         ids: String,
         sig_text: String,
+        #[serde(default)]
+        signature_references: Vec<SignatureReference>,
     },
 }
 
@@ -1130,10 +1143,12 @@ impl From<&NodeKind> for NodeKindData {
                 classes,
                 ids,
                 sig_text,
+                signature_references,
             } => NodeKindData::ObjectDescription {
                 classes,
                 ids,
                 sig_text,
+                signature_references,
             },
         }
     }
@@ -1361,10 +1376,12 @@ impl From<NodeKindData> for NodeKind {
                 classes,
                 ids,
                 sig_text,
+                signature_references,
             } => NodeKind::ObjectDescription {
                 classes,
                 ids,
                 sig_text,
+                signature_references,
             },
         }
     }

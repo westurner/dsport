@@ -771,6 +771,7 @@ impl BuildEnvironment {
             ))),
         }?;
         apply_module_section_ids(&mut tree, source);
+        apply_python_object_ids(&mut tree, source);
         if self.config.smartquotes() {
             apply_smartquotes(&mut tree);
         }
@@ -1096,11 +1097,26 @@ impl BuildEnvironment {
         let mut output: Vec<String> = Vec::with_capacity(lines.len());
         let mut changed = false;
         let mut index = 0;
+        let mut current_module = None;
 
         while index < lines.len() {
             let line = lines[index];
             let trimmed = line.trim_start();
             let indent = line.len() - trimmed.len();
+            if indent == 0 {
+                if let Some(module_name) = [
+                    ".. module::",
+                    ".. currentmodule::",
+                    ".. py:module::",
+                    ".. py:currentmodule::",
+                ]
+                .iter()
+                .find_map(|prefix| trimmed.strip_prefix(prefix))
+                {
+                    current_module = Some(module_name.trim().to_string());
+                }
+            }
+
             if indent == 0 && trimmed.starts_with(".. automodule::") {
                 let module_name = trimmed[15..].trim();
                 if !module_name.is_empty()
@@ -1134,6 +1150,64 @@ impl BuildEnvironment {
                     }
                 }
             }
+
+            if indent == 0 && trimmed.starts_with(".. autoclass::") {
+                let target = trimmed[14..].trim();
+                let (module_name, class_name) = target
+                    .rsplit_once('.')
+                    .map(|(module_name, class_name)| {
+                        (module_name.to_string(), class_name.to_string())
+                    })
+                    .or_else(|| {
+                        current_module
+                            .as_ref()
+                            .map(|module_name| (module_name.clone(), target.to_string()))
+                    })
+                    .unwrap_or_default();
+                let qualified_target = if target.contains('.') {
+                    target.to_string()
+                } else if !module_name.is_empty() {
+                    format!("{module_name}.{class_name}")
+                } else {
+                    target.to_string()
+                };
+                if !module_name.is_empty()
+                    && !class_name.is_empty()
+                    && let Some(path) = self.resolve_python_module(&module_name)
+                {
+                    let mut pairs = Vec::new();
+                    let mut next = index + 1;
+                    while next < lines.len() {
+                        let option = lines[next].trim();
+                        if let Some(option) = option.strip_prefix(':')
+                            && let Some((name, value)) = option.split_once(':')
+                        {
+                            pairs.push((name.trim().to_string(), value.trim().to_string()));
+                            next += 1;
+                            continue;
+                        }
+                        if option.is_empty() {
+                            next += 1;
+                        }
+                        break;
+                    }
+                    let options = crate::autodoc::AutodocOptions::from_option_pairs(&pairs);
+                    if let Ok(rendered) = crate::autodoc::document_class_auto(
+                        &path,
+                        &module_name,
+                        &class_name,
+                        &qualified_target,
+                        &options,
+                        &[],
+                    ) {
+                        output.extend(rendered.lines().map(str::to_owned));
+                        output.push(String::new());
+                        index = next;
+                        changed = true;
+                        continue;
+                    }
+                }
+            }
             output.push(line.to_owned());
             index += 1;
         }
@@ -1147,6 +1221,7 @@ impl BuildEnvironment {
         let mut module_name = String::new();
         let mut class_context: Option<(usize, String)> = None;
         let mut literal_block_indent = None;
+        let mut continuation_shift: Option<(usize, usize)> = None;
         let mut changed = false;
 
         for line in &lines {
@@ -1158,6 +1233,17 @@ impl BuildEnvironment {
                     literal_block_indent = None;
                 }
                 continue;
+            }
+
+            if let Some((directive_indent, shift)) = continuation_shift {
+                if trimmed.is_empty() {
+                    continuation_shift = None;
+                } else if indent > directive_indent {
+                    output.push(format!("{}{}", " ".repeat(indent + shift), trimmed));
+                    continue;
+                } else {
+                    continuation_shift = None;
+                }
             }
 
             if !trimmed.is_empty()
@@ -1191,18 +1277,90 @@ impl BuildEnvironment {
                 .iter()
                 .find_map(|prefix| trimmed.strip_prefix(prefix));
             if let Some(name) = class_directive {
-                let class_name = name.trim().to_string();
+                let qualified_prefix = format!("{module_name}.");
+                let class_name = name
+                    .trim()
+                    .strip_prefix(&qualified_prefix)
+                    .unwrap_or(name.trim())
+                    .to_string();
                 class_context = Some((indent, class_name.clone()));
                 if trimmed.starts_with(".. class::") && !module_name.is_empty() {
                     let prefix = &line[..line.len() - trimmed.len()];
-                    output.push(format!(
-                        "{prefix}.. py:class:: {module_name}.{class_name}"
-                    ));
+                    output.push(format!("{prefix}.. py:class:: {module_name}.{class_name}"));
                     changed = true;
                 } else {
                     output.push((*line).to_string());
                 }
                 continue;
+            }
+
+            let class_member = [
+                (".. method::", "method"),
+                (".. automethod::", "method"),
+                (".. attribute::", "attribute"),
+            ]
+            .iter()
+            .find_map(|(prefix, kind)| trimmed.strip_prefix(prefix).map(|name| (*kind, name.trim())));
+            if let Some((kind, signature)) = class_member {
+                let has_class_context = class_context.is_some();
+                let (class_name, member_signature) = if let Some((_, class_name)) = &class_context {
+                    let qualified_prefix = format!("{class_name}.");
+                    let member = signature
+                        .strip_prefix(&qualified_prefix)
+                        .unwrap_or(signature);
+                    (class_name.clone(), member)
+                } else if let Some((class_name, member)) = signature.rsplit_once('.') {
+                    (class_name.to_string(), member)
+                } else {
+                    (String::new(), signature)
+                };
+                if !class_name.is_empty() && !module_name.is_empty() {
+                    let (member_name, raw_suffix) = if kind == "method" {
+                        member_signature
+                            .find('(')
+                            .map(|open| (&member_signature[..open], &member_signature[open..]))
+                            .unwrap_or((member_signature, ""))
+                    } else {
+                        (member_signature, "")
+                    };
+                    let suffix = if kind == "method"
+                        && raw_suffix.is_empty()
+                        && trimmed.starts_with(".. automethod::")
+                    {
+                        let class_short_name = class_name.rsplit('.').next().unwrap_or(&class_name);
+                        crate::autodoc_runtime::introspect_class(
+                            &module_name,
+                            class_short_name,
+                            &[],
+                        )
+                        .ok()
+                        .and_then(|class| {
+                            class.members.into_iter().find_map(|member| {
+                                (member.name == member_name).then_some(member.signature).flatten()
+                            })
+                        })
+                        .as_deref()
+                        .map(crate::autodoc::strip_method_receiver)
+                        .unwrap_or_default()
+                    } else {
+                        raw_suffix.to_string()
+                    };
+                    let class_name = if class_name.contains('.') {
+                        class_name
+                    } else {
+                        format!("{module_name}.{class_name}")
+                    };
+                    let displayed_name = if has_class_context {
+                        format!("{member_name}{suffix}")
+                    } else {
+                        format!("{class_name}.{member_name}{suffix}")
+                    };
+                    let prefix = &line[..line.len() - trimmed.len()];
+                    output.push(format!("{prefix}.. py:{kind}:: {displayed_name}"));
+                    continuation_shift = Some((indent, 3));
+                    changed = true;
+                    continue;
+                }
             }
 
             let Some(attribute) = trimmed.strip_prefix(".. autoattribute::") else {
@@ -1212,7 +1370,13 @@ impl BuildEnvironment {
             let attribute = attribute.trim();
             let (class_name, attribute_name) = class_context
                 .as_ref()
-                .map(|(_, class_name)| (class_name.as_str(), attribute))
+                .map(|(_, class_name)| {
+                    let qualified_prefix = format!("{class_name}.");
+                    (
+                        class_name.as_str(),
+                        attribute.strip_prefix(&qualified_prefix).unwrap_or(attribute),
+                    )
+                })
                 .or_else(|| attribute.rsplit_once('.'))
                 .unwrap_or(("", ""));
             if module_name.is_empty() || class_name.is_empty() || attribute_name.is_empty() {
@@ -1227,20 +1391,40 @@ impl BuildEnvironment {
             )
             .ok()
             .flatten();
-            let Some(doc) = doc else {
-                output.push((*line).to_string());
-                continue;
-            };
-
+            let value = crate::autodoc_runtime::attribute_value(
+                &module_name,
+                class_name,
+                attribute_name,
+                &[],
+            )
+            .ok()
+            .flatten();
             let prefix = &line[..line.len() - trimmed.len()];
-            let qualified_name = format!("{module_name}.{class_name}.{attribute_name}");
-            output.push(format!("{prefix}.. autoattribute:: {qualified_name}"));
-            let content_indent = " ".repeat(indent + 3);
-            for doc_line in doc.lines() {
-                if doc_line.is_empty() {
-                    output.push(String::new());
-                } else {
-                    output.push(format!("{content_indent}{doc_line}"));
+            let qualified_class = if class_name.starts_with(&format!("{module_name}.")) {
+                class_name.to_string()
+            } else {
+                format!("{module_name}.{class_name}")
+            };
+            let qualified_name = format!("{qualified_class}.{attribute_name}");
+            let signature_value = value
+                .map(|value| format!(" = {value}"))
+                .unwrap_or_default();
+            let displayed_name = if class_context.is_some() {
+                attribute_name
+            } else {
+                &qualified_name
+            };
+            output.push(format!(
+                "{prefix}.. py:attribute:: {displayed_name}{signature_value}"
+            ));
+            if let Some(doc) = doc {
+                let content_indent = " ".repeat(indent + 3);
+                for doc_line in doc.lines() {
+                    if doc_line.is_empty() {
+                        output.push(String::new());
+                    } else {
+                        output.push(format!("{content_indent}{doc_line}"));
+                    }
                 }
             }
             changed = true;
@@ -1257,12 +1441,17 @@ impl BuildEnvironment {
 
     fn resolve_python_module(&self, module_name: &str) -> Option<PathBuf> {
         let relative = module_name.replace('.', "/");
-        let module = self.srcdir.join(format!("{relative}.py"));
-        if module.is_file() {
-            return Some(module);
+        for root in self.srcdir.ancestors() {
+            let module = root.join(format!("{relative}.py"));
+            if module.is_file() {
+                return Some(module);
+            }
+            let package = root.join(&relative).join("__init__.py");
+            if package.is_file() {
+                return Some(package);
+            }
         }
-        let package = self.srcdir.join(relative).join("__init__.py");
-        package.is_file().then_some(package)
+        None
     }
 
     /// Resolve Sphinx's current `highlight` directive for code directives
@@ -1568,14 +1757,156 @@ impl BuildEnvironment {
                 })
                 .collect()
         });
-        let item_type = format!("{domain}:{reftype}");
-        inventories.iter().find_map(|inventory| {
-            inventory.get(&item_type, target).or_else(|| {
-                target
-                    .strip_prefix("builtins.")
-                    .and_then(|short_name| inventory.get(&item_type, short_name))
-            })
+        let item_types = if domain == "py" {
+            match reftype {
+                "class" => vec!["py:class", "py:exception", "py:data"],
+                "data" => vec!["py:data", "py:class"],
+                "exc" => vec!["py:exception"],
+                "func" => vec!["py:function"],
+                "meth" => vec!["py:method", "py:classmethod", "py:staticmethod"],
+                "attr" => vec!["py:attribute", "py:property"],
+                "mod" => vec!["py:module"],
+                _ => vec!["py:class", "py:data", "py:exception"],
+            }
+        } else {
+            return inventories
+                .iter()
+                .find_map(|inventory| inventory.get(&format!("{domain}:{reftype}"), target));
+        };
+        let short_name = target.rsplit('.').next().unwrap_or(target);
+        for inventory in inventories {
+            for item_type in &item_types {
+                if let Some(item) = inventory.get(item_type, target) {
+                    return Some(item);
+                }
+                let mut matches = inventory
+                    .objects_of_type(item_type)
+                    .into_iter()
+                    .flat_map(|objects| objects.iter())
+                    .filter(|(name, item)| {
+                        name.rsplit('.').next() == Some(short_name)
+                            && [
+                                "/library/stdtypes.html#",
+                                "/library/functions.html#",
+                                "/library/constants.html#",
+                                "/library/exceptions.html#",
+                            ]
+                            .iter()
+                            .any(|path| item.uri.contains(path))
+                    });
+                if let Some((_, item)) = matches.next()
+                    && matches.next().is_none()
+                {
+                    return Some(item);
+                }
+            }
+        }
+        None
+    }
+
+    fn resolve_local_signature_xref(
+        &self,
+        docname: &str,
+        reftype: &str,
+        target: &str,
+    ) -> Option<crate::domains::XrefTarget> {
+        use crate::domains::Domain as _;
+
+        if let Some(resolved) = self.py_domain.resolve_xref(self, docname, reftype, target) {
+            return Some(resolved);
+        }
+        let object_types: &[&str] = match reftype {
+            "class" => &["class", "exception", "data"],
+            "data" => &["data", "class"],
+            "exc" => &["exception"],
+            "func" => &["function"],
+            "meth" => &["method", "classmethod", "staticmethod"],
+            "attr" => &["attribute", "property"],
+            _ => &["class", "exception", "data"],
+        };
+        let short_name = target.rsplit('.').next().unwrap_or(target);
+        let mut matches = self.py_domain.objects.iter().filter(|((object_type, name), _)| {
+            object_types.contains(&object_type.as_str())
+                && name.rsplit('.').next() == Some(short_name)
+        });
+        let ((_, _), (resolved_docname, anchor, _)) = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        Some(crate::domains::XrefTarget {
+            docname: resolved_docname.clone(),
+            anchor: anchor.clone(),
+            title: target.to_string(),
         })
+    }
+
+    fn resolve_signature_references(&self, tree: &mut Doctree, docname: &str) {
+        use crate::builders::Builder as _;
+        use crate::builders::html::HtmlBuilder;
+        use crate::util_osutil::relative_uri;
+
+        let builder = HtmlBuilder::new();
+        let source_uri = builder.get_target_uri(docname);
+        let candidates = (0..tree.nodes_len())
+            .filter_map(|node_id| match &tree.node(node_id).kind {
+                NodeKind::ObjectDescription {
+                    classes,
+                    sig_text,
+                    ..
+                } if classes.split_whitespace().any(|class| class == "py") => {
+                    Some((node_id, sig_text.clone()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        for (node_id, sig_text) in candidates {
+            let references = crate::autodoc::signature_type_references(&sig_text)
+                .into_iter()
+                .filter_map(|reference| {
+                    let local = self.resolve_local_signature_xref(
+                        docname,
+                        &reference.reftype,
+                        &reference.target,
+                    );
+                    let (uri, classes) = if let Some(target) = local {
+                        let target_uri = builder.get_target_uri(&target.docname);
+                        let href = if target.docname == docname && !target.anchor.is_empty() {
+                            format!("#{}", target.anchor)
+                        } else {
+                            let relative = relative_uri(&source_uri, &target_uri);
+                            if target.anchor.is_empty() {
+                                relative
+                            } else {
+                                format!("{relative}#{}", target.anchor)
+                            }
+                        };
+                        (href, "reference internal".to_string())
+                    } else if let Some(target) = self.resolve_external_xref(
+                        "py",
+                        &reference.reftype,
+                        &reference.target,
+                    ) {
+                        (target.uri.clone(), "reference external".to_string())
+                    } else {
+                        return None;
+                    };
+                    Some(docutilsrs::doctree::SignatureReference {
+                        start: reference.start,
+                        end: reference.end,
+                        uri,
+                        classes,
+                    })
+                })
+                .collect::<Vec<_>>();
+            if let NodeKind::ObjectDescription {
+                signature_references,
+                ..
+            } = &mut tree.node_mut(node_id).kind
+            {
+                *signature_references = references;
+            }
+        }
     }
 
     pub fn resolve_xref_nodes(&self, tree: &mut Doctree, docname: &str) {
@@ -1622,6 +1953,20 @@ impl BuildEnvironment {
                 }
             }
             out
+        }
+
+        fn python_class_context(tree: &Doctree, id: NodeId) -> Option<String> {
+            let mut parent = tree.node(id).parent;
+            while let Some(parent_id) = parent {
+                if let NodeKind::ObjectDescription { classes, ids, .. } = &tree.node(parent_id).kind
+                    && classes.split_whitespace().any(|class| class == "py")
+                    && classes.split_whitespace().any(|class| class == "class")
+                {
+                    return Some(ids.clone());
+                }
+                parent = tree.node(parent_id).parent;
+            }
+            None
         }
 
         let builder = HtmlBuilder::new();
@@ -1761,6 +2106,13 @@ impl BuildEnvironment {
                 Some(rest) => (rest.to_string(), true),
                 None => (raw_target.clone(), false),
             };
+            let contextual_target = (domain == "py"
+                && matches!(reftype.as_str(), "meth" | "classmethod" | "staticmethod" | "attr")
+                && !target.starts_with('.')
+                && !target.contains('.'))
+                .then(|| python_class_context(tree, id).map(|class| format!("{class}.{target}")))
+                .flatten();
+            let resolve_target = contextual_target.as_deref().unwrap_or(&target);
 
             let resolved = match domain.as_str() {
                 "std" | "" => self.std_domain.resolve_xref_explicit(
@@ -1778,7 +2130,7 @@ impl BuildEnvironment {
                     .resolve_xref(self, docname, &reftype, &target),
                 "py" => self
                     .py_domain
-                    .resolve_xref(self, docname, &reftype, &target),
+                    .resolve_xref(self, docname, &reftype, resolve_target),
                 "rst" => self
                     .rst_domain
                     .resolve_xref(self, docname, &reftype, &target),
@@ -1846,6 +2198,8 @@ impl BuildEnvironment {
                 t.clone()
             } else if shorten {
                 shorten_xref_target(&target, &domain)
+            } else if contextual_target.is_some() {
+                target.clone()
             } else if let Some(resolved) = &resolved {
                 resolved.title.clone()
             } else if let Some(external) = external {
@@ -1918,6 +2272,7 @@ impl BuildEnvironment {
             );
             tree.append(span, NodeKind::Text(title));
         }
+        self.resolve_signature_references(tree, docname);
     }
 
     /// Expands every `docutilsrs::doctree::NodeKind::Toctree` placeholder
@@ -3412,27 +3767,80 @@ fn apply_module_section_ids(tree: &mut Doctree, source: &str) {
         }
     }
 
+    fn module_name_in_section(tree: &Doctree, id: NodeId) -> Option<String> {
+        if let Some(module) = module_name(tree, id) {
+            return Some(module);
+        }
+        if matches!(tree.node(id).kind, NodeKind::Section { .. }) {
+            return None;
+        }
+        tree.node(id)
+            .children
+            .iter()
+            .find_map(|&child| module_name_in_section(tree, child))
+    }
+
+    fn assign_module_section(tree: &mut Doctree, section: NodeId, module: &str) {
+        let old_id = match &tree.node(section).kind {
+            NodeKind::Section { ids, .. } => ids.clone(),
+            _ => String::new(),
+        };
+        let module_id = format!("module-{module}");
+        if !old_id.is_empty() && old_id != module_id {
+            let already_has_alias = tree.node(section).children.iter().any(|&id| {
+                matches!(
+                    &tree.node(id).kind,
+                    NodeKind::Target { ids, .. } if ids == &old_id
+                )
+            });
+            if !already_has_alias {
+                let title_index = tree
+                    .node(section)
+                    .children
+                    .iter()
+                    .position(|&id| matches!(tree.node(id).kind, NodeKind::Title))
+                    .map_or(0, |index| index + 1);
+                let alias = tree.append(
+                    section,
+                    NodeKind::Target {
+                        ids: old_id,
+                        names: String::new(),
+                        refuri: String::new(),
+                        anonymous: false,
+                    },
+                );
+                let children = &mut tree.node_mut(section).children;
+                children.pop();
+                children.insert(title_index, alias);
+            }
+        }
+        if let NodeKind::Section { ids, .. } = &mut tree.node_mut(section).kind {
+            *ids = module_id;
+        }
+    }
+
     fn visit(
         tree: &mut Doctree,
         parent: NodeId,
         active_module: Option<String>,
         noindex_modules: &HashSet<String>,
     ) {
+        let is_document = matches!(tree.node(parent).kind, NodeKind::Document { .. });
         let children = tree.node(parent).children.clone();
         let mut active_module = active_module;
         for child in children {
             if matches!(tree.node(child).kind, NodeKind::Section { .. }) {
-                if let Some(module) = &active_module {
-                    if let NodeKind::Section { ids, .. } = &mut tree.node_mut(child).kind {
-                        *ids = format!("module-{module}");
-                    }
-                }
-                if let Some(module) = tree.node(child).children.iter().find_map(|&id| {
-                    module_name(tree, id).filter(|name| !noindex_modules.contains(name))
-                }) {
-                    if let NodeKind::Section { ids, .. } = &mut tree.node_mut(child).kind {
-                        *ids = format!("module-{module}");
-                    }
+                let module = active_module.clone().or_else(|| {
+                    is_document.then(|| {
+                        tree.node(child)
+                            .children
+                            .iter()
+                            .find_map(|&id| module_name_in_section(tree, id))
+                    })
+                    .flatten()
+                });
+                if let Some(module) = module.filter(|name| !noindex_modules.contains(name)) {
+                    assign_module_section(tree, child, &module);
                 }
                 visit(tree, child, None, noindex_modules);
                 active_module = None;
@@ -3447,6 +3855,96 @@ fn apply_module_section_ids(tree: &mut Doctree, source: &str) {
     }
 
     visit(tree, tree.root(), None, &noindex_modules);
+}
+
+fn apply_python_object_ids(tree: &mut Doctree, source: &str) {
+    let objects = crate::domains::scan::scan_domain_objects(
+        source,
+        "py",
+        crate::domains::py_domain::MODULE_TYPES,
+        crate::domains::py_domain::CLASS_CONTEXT_TYPES,
+        crate::domains::py_domain::CONTAINER_TYPES,
+        crate::domains::py_domain::PLAIN_TYPES,
+        crate::domains::py_domain::py_signature_of,
+    );
+    let mut next_object = 0;
+
+    for node_id in 0..tree.nodes_len() {
+        let (classes, ids, signature) = match &tree.node(node_id).kind {
+            NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                ..
+            }
+                if classes.split_whitespace().any(|class| class == "py") =>
+            {
+                (classes.clone(), ids.clone(), sig_text.clone())
+            }
+            _ => continue,
+        };
+        if ids.is_empty() {
+            continue;
+        }
+        let object_type = classes.split_whitespace().last().unwrap_or_default();
+        let signature_name = signature
+            .strip_prefix("class ")
+            .unwrap_or(&signature)
+            .split(['(', '[', '='])
+            .next()
+            .unwrap_or(&signature)
+            .trim()
+            .rsplit('.')
+            .next()
+            .unwrap_or(&signature)
+            .trim();
+        let object_index = objects
+            .iter()
+            .enumerate()
+            .skip(next_object)
+            .find(|(_, object)| {
+                object.objtype == object_type
+                    && object.fullname.rsplit('.').next() == Some(signature_name)
+            })
+            .map(|(index, _)| index);
+        let Some(object_index) = object_index else {
+            continue;
+        };
+        let object = &objects[object_index];
+        if let NodeKind::ObjectDescription { ids, .. } = &mut tree.node_mut(node_id).kind {
+            *ids = object.fullname.clone();
+        }
+        next_object = object_index + 1;
+    }
+
+    for node_id in 0..tree.nodes_len() {
+        let Some(parent_id) = tree.node(node_id).parent else {
+            continue;
+        };
+        let (child_classes, child_ids) = match &tree.node(node_id).kind {
+            NodeKind::ObjectDescription { classes, ids, .. }
+                if classes.split_whitespace().any(|class| class == "py") && !ids.is_empty() =>
+            {
+                (classes.clone(), ids.clone())
+            }
+            _ => continue,
+        };
+        let (parent_classes, parent_ids) = match &tree.node(parent_id).kind {
+            NodeKind::ObjectDescription { classes, ids, .. } => (classes.clone(), ids.clone()),
+            _ => continue,
+        };
+        if !parent_classes.split_whitespace().any(|class| class == "py")
+            || !parent_classes.split_whitespace().any(|class| class == "class")
+            || !child_classes.split_whitespace().any(|class| class == "py")
+            || child_ids.starts_with(&format!("{parent_ids}."))
+        {
+            continue;
+        }
+        let member = child_ids.rsplit('.').next().unwrap_or(&child_ids).to_string();
+        if let NodeKind::ObjectDescription { ids, .. } = &mut tree.node_mut(node_id).kind {
+            *ids = format!("{parent_ids}.{member}");
+        }
+    }
 }
 
 // ── inline tests ──────────────────────────────────────────────────────────────
@@ -3514,15 +4012,79 @@ mod tests {
             )
             .expect("the inherited attribute comment should be expanded");
 
-        assert!(expanded.contains(
-            ".. autoattribute:: sphinx.builders.html.StandaloneHTMLBuilder.name"
-        ));
-        assert!(expanded.contains(
-            ".. py:class:: sphinx.builders.html.StandaloneHTMLBuilder"
-        ));
-        assert_eq!(expanded.matches(".. autoattribute::").count(), 1);
+        assert!(expanded.contains(".. py:attribute:: name"));
+        assert!(expanded.contains(".. py:class:: sphinx.builders.html.StandaloneHTMLBuilder"));
+        assert_eq!(expanded.matches(".. py:attribute::").count(), 1);
         assert!(expanded.contains("The builder's name."));
         assert!(expanded.contains("select builders on the command line."));
+        let tree = env.parse_source("standalone-builder", &expanded).unwrap();
+        assert!((0..tree.nodes_len()).any(|id| matches!(
+            &tree.node(id).kind,
+            NodeKind::ObjectDescription { ids, .. }
+                if ids == "sphinx.builders.html.StandaloneHTMLBuilder.name"
+        )));
+    }
+
+    #[test]
+    fn markup_api_class_members_are_qualified_without_attribute_docs() {
+        let env = make_env();
+        let expanded = env
+            .expand_autoattribute_docs(
+                ".. module:: docutils.parsers.rst\n\n.. class:: Directive\n\n   .. method:: run()\n\n   .. attribute:: name\n\n   .. attribute:: state\n                  state_machine\n\n   .. autoattribute:: required_arguments\n",
+            )
+            .expect("bare markup API declarations should be qualified");
+
+        assert!(expanded.contains(".. module:: docutils.parsers.rst"));
+        assert!(expanded.contains(".. py:class:: docutils.parsers.rst.Directive"));
+        assert!(expanded.contains(".. py:method:: run()"));
+        assert!(expanded.contains(".. py:attribute:: name"));
+        assert!(expanded.contains("                  state_machine"));
+        assert!(expanded.contains(".. py:attribute:: required_arguments = 0"));
+        let tree = env.parse_source("markupapi", &expanded).unwrap();
+        let parsed_ids = (0..tree.nodes_len())
+            .filter_map(|id| match &tree.node(id).kind {
+                NodeKind::ObjectDescription { classes, ids, sig_text, .. } => {
+                    Some((classes.clone(), ids.clone(), sig_text.clone()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!((0..tree.nodes_len()).any(|id| matches!(
+            &tree.node(id).kind,
+            NodeKind::ObjectDescription { ids, .. }
+                if ids == "docutils.parsers.rst.Directive.state_machine"
+        )), "expanded:\n{expanded}\nparsed IDs: {parsed_ids:?}");
+
+        let tree = env
+            .parse_source(
+                "extdev/markupapi",
+                include_str!("../../sphinx/doc/extdev/markupapi.rst"),
+            )
+            .unwrap();
+        assert!((0..tree.nodes_len()).any(|id| matches!(
+            &tree.node(id).kind,
+            NodeKind::Section { ids, names, .. }
+                if ids == "directives" && names == "directives"
+        )));
+    }
+
+    #[test]
+    fn autodoc_member_directives_lower_to_python_domain_objects() {
+        let env = make_env();
+        let source = include_str!("../../sphinx/doc/extdev/appapi.rst");
+        let expanded = env
+            .expand_autoattribute_docs(source)
+            .expect("appapi autodoc member directives should be lowered");
+
+        assert!(
+            expanded.contains(".. py:method:: sphinx.application.Sphinx.add_role("),
+            "expanded source:\n{expanded}"
+        );
+        assert!(
+            expanded.contains(".. py:attribute:: sphinx.application.Sphinx.project"),
+            "expanded source:\n{expanded}"
+        );
+        assert!(!expanded.contains(".. automethod:: Sphinx.add_role"));
     }
 
     #[test]
@@ -3801,7 +4363,59 @@ mod tests {
             tree.node(section).kind,
             NodeKind::Section { ref ids, .. } if ids == "module-jinja2.seccomp"
         ));
+    }
 
+    #[test]
+    fn eventapi_module_target_promotes_title_section_and_preserves_alias() {
+        let env = make_env();
+        let tree = env
+            .parse_source(
+                "extdev/eventapi",
+                include_str!("../../sphinx/doc/extdev/eventapi.rst"),
+            )
+            .unwrap();
+        let section = (0..tree.nodes_len())
+            .find(|&id| {
+                matches!(
+                    &tree.node(id).kind,
+                    NodeKind::Section { ids, .. } if ids == "module-sphinx.events"
+                )
+            })
+            .expect("module target should anchor the document-title section");
+
+        assert!(tree.node(section).children.iter().any(|&id| matches!(
+            &tree.node(id).kind,
+            NodeKind::Target { ids, .. } if ids == "event-manager-api"
+        )));
+    }
+
+    #[test]
+    fn python_object_ids_inherit_module_and_class_context() {
+        let env = make_env();
+        let tree = env
+            .parse_source(
+                "api",
+                ".. py:module:: package.mod\n\n.. py:class:: Widget\n\n   .. py:method:: render(self)\n\n   .. py:attribute:: state\n                      state_machine\n",
+            )
+            .unwrap();
+        let ids = (0..tree.nodes_len())
+            .filter_map(|id| match &tree.node(id).kind {
+                NodeKind::ObjectDescription { classes, ids, .. }
+                    if classes.split_whitespace().any(|class| class == "py") => Some(ids.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            ids,
+            [
+                "package.mod",
+                "package.mod.Widget",
+                "package.mod.Widget.render",
+                "package.mod.Widget.state",
+                "package.mod.Widget.state_machine"
+            ]
+        );
     }
 
     #[test]
@@ -3854,6 +4468,39 @@ mod tests {
             .expand_autodoc(".. automodule:: package\n   :members:\n\n")
             .expect("package automodule should expand");
         assert!(expanded.contains("Package docs."));
+    }
+
+    #[test]
+    fn expand_autoclass_renders_members_from_the_project_python_root() {
+        let workspace = tempfile::tempdir().unwrap();
+        let srcdir = workspace.path().join("doc");
+        let module_dir = workspace.path().join("sphinx");
+        std::fs::create_dir_all(&srcdir).unwrap();
+        std::fs::create_dir_all(&module_dir).unwrap();
+        std::fs::write(
+            module_dir.join("events.py"),
+            include_str!("../../sphinx/sphinx/events.py"),
+        )
+        .unwrap();
+        let project = EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
+        let env = BuildEnvironment::new(
+            SphinxConfig::new_defaults(),
+            project,
+            &srcdir,
+            workspace.path().join("doctrees"),
+        );
+
+        let expanded = env
+            .expand_autodoc(
+                ".. module:: sphinx.events\n\n.. autoclass:: EventManager\n   :members:\n",
+            )
+            .expect("autoclass should expand from the project Python root");
+
+        assert!(expanded.contains(".. py:class:: sphinx.events.EventManager"));
+        assert!(expanded.contains(".. py:method:: add("));
+        assert!(expanded.contains(".. py:method:: connect("));
+        assert!(expanded.contains(".. py:method:: emit_firstresult("));
+        assert!(!expanded.contains(".. autoclass::"));
     }
 
     #[test]
@@ -4734,6 +5381,21 @@ mod tests {
     }
 
     #[test]
+    fn resolve_python_method_xrefs_relative_to_the_enclosing_class() {
+        let mut env = make_env();
+        let source = ".. py:module:: pkg\n\n.. py:class:: Widget\n\n   .. py:method:: connect()\n\n      See :meth:`disconnect`.\n\n   .. py:method:: disconnect()\n";
+        env.note_domain_data("api", source);
+        let mut tree = env.parse_source("api", source).unwrap();
+
+        env.resolve_xref_nodes(&mut tree, "api");
+
+        assert!((0..tree.nodes_len()).any(|id| matches!(
+            &tree.node(id).kind,
+            NodeKind::Reference { refuri, .. } if refuri == "#pkg.Widget.disconnect"
+        )));
+    }
+
+    #[test]
     fn resolve_xref_nodes_uses_cached_intersphinx_objects() {
         let temp = tempfile::tempdir().unwrap();
         let doctreedir = temp.path().join("doctrees");
@@ -4774,6 +5436,13 @@ mod tests {
                     uri: "library/sys.html#sys.path".into(),
                     display_name: "-".into(),
                 },
+                crate::intersphinx::InventoryEntry {
+                    name: "None".into(),
+                    item_type: "py:data".into(),
+                    priority: 1,
+                    uri: "library/constants.html#None".into(),
+                    display_name: "-".into(),
+                },
             ],
         )
         .unwrap();
@@ -4794,6 +5463,15 @@ mod tests {
             },
         );
         tree.append(path, NodeKind::Text("sys.path".into()));
+        let signature = tree.append(
+            tree.root(),
+            NodeKind::ObjectDescription {
+                classes: "py py function".into(),
+                ids: "sample".into(),
+                sig_text: "sample(value: str) -> None".into(),
+                signature_references: Vec::new(),
+            },
+        );
 
         env.resolve_xref_nodes(&mut tree, "index");
 
@@ -4817,6 +5495,20 @@ mod tests {
             "sys.path resolved as {:?}",
             tree.node(path).kind
         );
+        let signature_references = match &tree.node(signature).kind {
+            NodeKind::ObjectDescription {
+                signature_references,
+                ..
+            } => signature_references,
+            _ => panic!("signature object description changed node kind"),
+        };
+        assert_eq!(signature_references.len(), 2);
+        assert!(signature_references.iter().any(|reference| {
+            reference.uri == "https://docs.python.org/3/library/stdtypes.html#str"
+        }));
+        assert!(signature_references.iter().any(|reference| {
+            reference.uri == "https://docs.python.org/3/library/constants.html#None"
+        }));
     }
 
     #[test]

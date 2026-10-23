@@ -120,7 +120,10 @@ impl Config {
     pub fn from_conf_py(path: &Path) -> PyResult<Self> {
         let source = std::fs::read_to_string(path)
             .map_err(|e| ConfigError::new_err(format!("cannot read {}: {e}", path.display())))?;
-        Python::attach(|py| Self::from_source(py, &source))
+        Python::attach(|py| {
+            add_conf_import_paths(py, path)?;
+            Self::from_source(py, &source)
+        })
     }
 
     /// Read a `conf.py` from an in-memory source string.
@@ -219,6 +222,7 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
         .map_err(|e| ConfigError::new_err(format!("cannot read {}: {e}", path.display())))?;
 
     Python::attach(|py| {
+        add_conf_import_paths(py, path)?;
         let globals = PyDict::new(py);
         // Provide a stub __file__ so conf.py code that inspects it works.
         globals.set_item("__file__", path.to_string_lossy().as_ref())?;
@@ -453,6 +457,7 @@ pub fn conf_py_setup(path: &Path) -> PyResult<Option<Py<PyAny>>> {
         .map_err(|e| ConfigError::new_err(format!("cannot read {}: {e}", path.display())))?;
 
     Python::attach(|py| {
+        add_conf_import_paths(py, path)?;
         let globals = PyDict::new(py);
         globals.set_item("__file__", path.to_string_lossy().as_ref())?;
         py.run(
@@ -467,6 +472,57 @@ pub fn conf_py_setup(path: &Path) -> PyResult<Option<Py<PyAny>>> {
             _ => Ok(None),
         }
     })
+}
+
+fn add_conf_import_paths(py: Python<'_>, conf_py: &Path) -> PyResult<()> {
+    let sys_path = py.import("sys")?.getattr("path")?.cast_into::<PyList>()?;
+    let confdir = conf_py.parent().unwrap_or_else(|| Path::new("."));
+    let mut paths = vec![confdir.to_path_buf()];
+    paths.extend(vendored_python_paths(confdir));
+    prepend_python_paths(&sys_path, paths)
+}
+
+pub(crate) fn add_vendored_import_paths(py: Python<'_>, start: &Path) -> PyResult<()> {
+    let sys_path = py.import("sys")?.getattr("path")?.cast_into::<PyList>()?;
+    prepend_python_paths(&sys_path, vendored_python_paths(start))
+}
+
+fn vendored_python_paths(start: &Path) -> Vec<std::path::PathBuf> {
+    let mut paths = Vec::new();
+    for ancestor in start.ancestors() {
+        for source_root in [ancestor.to_path_buf(), ancestor.join("src")] {
+            let sphinx_root = source_root.join("sphinx");
+            if sphinx_root.join("sphinx/__init__.py").is_file() {
+                paths.push(sphinx_root);
+            }
+
+            let docutils_root = source_root.join("docutils/docutils");
+            if docutils_root.join("docutils/__init__.py").is_file() {
+                paths.push(docutils_root);
+            }
+            let docutils_root = source_root.join("docutils");
+            if docutils_root.join("docutils/__init__.py").is_file() {
+                paths.push(docutils_root);
+            }
+        }
+    }
+    paths
+}
+
+fn prepend_python_paths(
+    sys_path: &Bound<'_, PyList>,
+    paths: Vec<std::path::PathBuf>,
+) -> PyResult<()> {
+    for path in paths.into_iter().rev() {
+        let value = path.to_string_lossy().into_owned();
+        if !sys_path
+            .iter()
+            .any(|existing| existing.extract::<String>().ok().as_deref() == Some(&value))
+        {
+            sys_path.insert(0, value)?;
+        }
+    }
+    Ok(())
 }
 
 /// Recursively convert an arbitrary Python value into a [`ConfigVal`].
@@ -2922,6 +2978,40 @@ mod raw_config_from_conf_py_tests {
         let path = dir.path().join("conf.py");
         std::fs::write(&path, body).unwrap();
         (dir, path)
+    }
+
+    #[test]
+    fn conf_py_imports_sibling_vendored_packages() {
+        let workspace = TempDir::new().unwrap();
+        let sphinx_package = workspace.path().join("sphinx/sphinx");
+        let docutils_package = workspace.path().join("docutils/docutils/docutils");
+        let confdir = workspace.path().join("docs");
+        std::fs::create_dir_all(&sphinx_package).unwrap();
+        std::fs::create_dir_all(&docutils_package).unwrap();
+        std::fs::create_dir_all(&confdir).unwrap();
+        std::fs::write(
+            sphinx_package.join("__init__.py"),
+            "PROJECT_NAME = 'vendored-sphinx'\n",
+        )
+        .unwrap();
+        std::fs::write(
+            docutils_package.join("__init__.py"),
+            "PACKAGE_NAME = 'vendored-docutils'\n",
+        )
+        .unwrap();
+        let conf_py = confdir.join("conf.py");
+        std::fs::write(
+            &conf_py,
+            "from sphinx import PROJECT_NAME\nfrom docutils import PACKAGE_NAME\nproject = PROJECT_NAME + ':' + PACKAGE_NAME\n",
+        )
+        .unwrap();
+
+        let raw = raw_config_from_conf_py(&conf_py).unwrap();
+
+        assert_eq!(
+            raw["project"].as_str(),
+            Some("vendored-sphinx:vendored-docutils")
+        );
     }
 
     #[test]

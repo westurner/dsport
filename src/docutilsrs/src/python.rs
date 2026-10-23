@@ -544,6 +544,7 @@ impl PyNode {
                 classes,
                 ids,
                 sig_text,
+                ..
             } => {
                 if !classes.is_empty() {
                     dict.set_item("classes", classes)?;

@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use super::scan::{ScannedObject, scan_domain_objects};
-use super::{Domain, ObjectEntry, XrefTarget, normalize_id};
+use super::{Domain, ObjectEntry, XrefTarget};
 use crate::environment::BuildEnvironment;
 
 /// Directive types that set the ambient module context. Only the
@@ -102,6 +102,13 @@ pub fn py_signature_of(objtype: &str, args: &str) -> (String, String) {
         "function" | "method" | "classmethod" | "staticmethod" => {
             super::py_sig::parse_function_signature(args)
         }
+        "attribute" | "data" | "property" => (
+            args.split_once('=')
+                .map(|(name, _)| name.trim())
+                .unwrap_or(args.trim())
+                .to_string(),
+            String::new(),
+        ),
         _ => (args.trim().to_string(), String::new()),
     }
 }
@@ -135,8 +142,8 @@ impl PyDomain {
     }
 
     /// Scan `source` for `.. py:...::` directives and note every object
-    /// found, synthesizing an anchor of `py-{objtype}-{normalize_id(fullname)}`
-    /// (matching the convention `std_domain`/`rst_domain` already use).
+    /// found, matching PythonDomain's qualified-name anchors. The module
+    /// object remains the special `module-{fullname}` target.
     pub fn note_source(&mut self, docname: &str, source: &str) {
         for ScannedObject {
             objtype,
@@ -154,7 +161,7 @@ impl PyDomain {
             let anchor = if objtype == "module" {
                 format!("module-{fullname}")
             } else {
-                format!("py-{objtype}-{}", normalize_id(&fullname))
+                fullname.clone()
             };
             self.note_object(objtype, fullname, docname, anchor, signature);
         }
@@ -208,15 +215,15 @@ impl PyDomain {
             }
         }
         let stripped = target.trim_start_matches('.');
-        if stripped != target {
-            for objtype in objtypes {
-                for ((ty, fullname), (docname, anchor, _sig)) in &self.objects {
-                    if ty == objtype
-                        && (fullname == stripped || fullname.ends_with(&format!(".{stripped}")))
-                    {
-                        return Some((docname.clone(), anchor.clone()));
-                    }
-                }
+        for objtype in objtypes {
+            let mut matches = self.objects.iter().filter(|((ty, fullname), _)| {
+                ty == objtype
+                    && (fullname == stripped || fullname.ends_with(&format!(".{stripped}")))
+            });
+            if let Some((_, (docname, anchor, _))) = matches.next()
+                && matches.next().is_none()
+            {
+                return Some((docname.clone(), anchor.clone()));
             }
         }
         None
@@ -335,6 +342,28 @@ mod tests {
     }
 
     #[test]
+    fn note_source_anchors_match_rendered_python_object_ids() {
+        let mut domain = PyDomain::new();
+        domain.note_source(
+            "api",
+            ".. py:module:: pkg.mod\n\n.. py:class:: Widget\n\n   .. py:method:: render(self)\n\n.. py:function:: run()\n",
+        );
+
+        assert_eq!(
+            domain.objects[&("class".into(), "pkg.mod.Widget".into())].1,
+            "pkg.mod.Widget"
+        );
+        assert_eq!(
+            domain.objects[&("method".into(), "pkg.mod.Widget.render".into())].1,
+            "pkg.mod.Widget.render"
+        );
+        assert_eq!(
+            domain.objects[&("function".into(), "pkg.mod.run".into())].1,
+            "pkg.mod.run"
+        );
+    }
+
+    #[test]
     fn resolve_func_xref() {
         let env = make_env();
         let mut domain = PyDomain::new();
@@ -372,6 +401,37 @@ mod tests {
             .resolve_xref(&env, "index", "meth", ".Widget.render")
             .unwrap();
         assert_eq!(target.docname, "api");
+    }
+
+    #[test]
+    fn resolve_unique_unqualified_suffix_but_reject_ambiguous_suffix() {
+        let env = make_env();
+        let mut domain = PyDomain::new();
+        domain.note_object(
+            "method",
+            "sphinx.application.Sphinx.add_role",
+            "appapi",
+            "sphinx.application.Sphinx.add_role",
+            "",
+        );
+        assert_eq!(
+            domain
+                .resolve_xref(&env, "markupapi", "meth", "Sphinx.add_role")
+                .unwrap()
+                .anchor,
+            "sphinx.application.Sphinx.add_role"
+        );
+
+        domain.note_object(
+            "method",
+            "other.application.Sphinx.add_role",
+            "other",
+            "other.application.Sphinx.add_role",
+            "",
+        );
+        assert!(domain
+            .resolve_xref(&env, "markupapi", "meth", "Sphinx.add_role")
+            .is_none());
     }
 
     #[test]

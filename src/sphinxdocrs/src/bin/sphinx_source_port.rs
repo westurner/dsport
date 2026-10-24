@@ -54,6 +54,15 @@ struct Args {
     /// Run as an embedded stdio LSP server for the given language (`python` or `rust`).
     #[arg(long, value_name = "LANGUAGE")]
     lsp_stdio: Option<String>,
+    /// Build an LSP-driven API and test function comparison report for `sphinx` and `sphinxdocrs`.
+    #[arg(long)]
+    compare_tests: bool,
+    /// Optional path to write the Markdown comparison report.
+    #[arg(long, value_name = "PATH")]
+    report_out: Option<PathBuf>,
+    /// Optional path to write the JSON comparison report.
+    #[arg(long, value_name = "PATH")]
+    json_out: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -139,6 +148,46 @@ fn run(args: Args) -> Result<ExitCode, Box<dyn std::error::Error>> {
         {
             let _ = language;
             return Err("--lsp-stdio requires --features lsp-source-analysis".into());
+        }
+    }
+    if args.compare_tests {
+        #[cfg(feature = "lsp-source-analysis")]
+        {
+            let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .canonicalize()?;
+            let current_exe = std::env::current_exe()?;
+            let report =
+                sphinxdocrs::source_docs::embedded_lsp::build_repository_comparison_report(
+                    &current_exe,
+                    &repo_root,
+                )?;
+            let markdown = report.render_markdown();
+            if let Some(out_path) = &args.report_out {
+                std::fs::write(out_path, &markdown)?;
+            }
+            if let Some(json_path) = &args.json_out {
+                let json = serde_json::to_string_pretty(&report)?;
+                std::fs::write(json_path, json)?;
+            }
+            if args.report_out.is_none() && args.json_out.is_none() {
+                print!("{markdown}");
+            } else {
+                println!(
+                    "[implemented] LSP comparison report: sphinx API={} fns/{} types, sphinx tests={} fns; sphinxdocrs API={} fns/{} types, sphinxdocrs tests={} fns",
+                    report.sphinx_api.api_functions_and_methods,
+                    report.sphinx_api.api_types_and_classes,
+                    report.sphinx_tests.test_functions,
+                    report.sphinxdocrs_src.api_functions_and_methods,
+                    report.sphinxdocrs_src.api_types_and_classes,
+                    report.total_sphinxdocrs_test_functions(),
+                );
+            }
+            return Ok(ExitCode::SUCCESS);
+        }
+        #[cfg(not(feature = "lsp-source-analysis"))]
+        {
+            return Err("--compare-tests requires --features lsp-source-analysis".into());
         }
     }
     let manifest_path = if args.manifest.is_absolute() {

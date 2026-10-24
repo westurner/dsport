@@ -42,7 +42,7 @@ const MAX_SOURCE_DOCUMENT_BYTES: usize = 1024 * 1024;
 const MAX_REQUEST_TIMEOUT_MS: u64 = 5 * 60 * 1000;
 const MAX_SESSION_DURATION: Duration = Duration::from_secs(30 * 60);
 const MAX_SOURCE_FILES: usize = 2_048;
-const MAX_DIAGNOSTICS: usize = 10_000;
+const MAX_DIAGNOSTICS: usize = 50_000;
 const MAX_DIRECTORY_ENTRIES: usize = 100_000;
 const MAX_HOVER_REQUESTS: usize = 256;
 const MAX_DEFINITION_REQUESTS: usize = 256;
@@ -1497,13 +1497,17 @@ pub struct LspSnapshotProvider {
 }
 
 impl LspSnapshotProvider {
-    #[cfg(test)]
-    pub(crate) fn new(config: LspServerConfig) -> Self {
+    pub fn new_trusted_local(config: LspServerConfig) -> Self {
         Self {
             config,
             execution: LspExecutionMode::TrustedLocal,
             process: Mutex::new(None),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new(config: LspServerConfig) -> Self {
+        Self::new_trusted_local(config)
     }
 
     pub fn from_settings(

@@ -4516,6 +4516,22 @@ mod tests {
     }
 
     #[test]
+    fn source_snapshot_rejects_python_language() {
+        let mut env = make_env();
+        let mut snapshot = source_snapshot();
+        snapshot.language = SourceLanguage::Python;
+
+        let error = env.note_source_snapshot("api", snapshot).unwrap_err();
+
+        assert!(matches!(
+            error,
+            AnalysisError::InvalidRequest(message)
+                if message == "Python snapshots are not registered by the Rust/Lean source domains"
+        ));
+        assert!(env.source_snapshots.is_empty());
+    }
+
+    #[test]
     fn source_snapshot_persists_provider_and_toolchain_metadata() {
         let mut env = make_env();
         let mut snapshot = source_snapshot();
@@ -4529,6 +4545,22 @@ mod tests {
         assert_eq!(metadata["request_identity"], "request-id");
         assert_eq!(metadata["provider_identity"], "provider-id");
         assert_eq!(metadata["toolchain"], "rustc test");
+    }
+
+    #[test]
+    fn source_snapshot_omits_empty_optional_cache_metadata() {
+        let mut env = make_env();
+        let mut snapshot = source_snapshot();
+        snapshot.request_identity.clear();
+        snapshot.provider_identity.clear();
+        snapshot.toolchain = None;
+
+        env.note_source_snapshot("api", snapshot).unwrap();
+
+        let metadata = &env.domaindata["rust"];
+        assert!(!metadata.contains_key("request_identity"));
+        assert!(!metadata.contains_key("provider_identity"));
+        assert!(!metadata.contains_key("toolchain"));
     }
 
     #[test]

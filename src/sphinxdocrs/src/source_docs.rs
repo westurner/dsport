@@ -2456,6 +2456,28 @@ mod tests {
         assert!(error.contains("absolute non-root paths"));
     }
 
+    #[test]
+    fn lsp_read_only_roots_reject_non_strings_and_filesystem_root() {
+        let settings_with_root = |root| {
+            let mut raw = HashMap::new();
+            raw.insert(
+                "source_lsp_read_only_roots".into(),
+                ConfigVal::List(vec![root]),
+            );
+            super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+                raw,
+                HashMap::new(),
+            ))
+        };
+
+        assert!(settings_with_root(ConfigVal::Int(7))
+            .unwrap_err()
+            .contains("entries must be path strings"));
+        assert!(settings_with_root(ConfigVal::Str("/".into()))
+            .unwrap_err()
+            .contains("absolute non-root paths"));
+    }
+
     #[cfg(feature = "source-sandbox")]
     #[test]
     fn protected_lsp_settings_parse_explicit_roots_and_environment_allowlist() {

@@ -10,13 +10,13 @@ This document merges the former `docs/sphinx-port-inventory.md`
 The current all-target branch-coverage gate is
 `PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov -p sphinxdocrs --lib --bins --tests --branch --summary-only -- --quiet`.
 All library tests and every binary/integration test target pass. The measured
-result is 76.25% branch coverage (974/4,101 branches missed), 93.45% line
-coverage, and 91.59% function coverage. The repository's 100% branch
+result is 76.49% branch coverage (964/4,101 branches missed), 93.51% line
+coverage, and 91.66% function coverage. The repository's 100% branch
 target remains open; neither coverage exclusions nor semantic parity
 thresholds were relaxed.
 
 The highest current branch gaps are `environment.rs` (189/772 missed),
-`source_docs.rs` (82/208), `autodoc.rs` (71/252),
+`source_docs.rs` (72/208), `autodoc.rs` (71/252),
 `apidoc/generate.rs` (60/136), `theme_render.rs` (54/246), and
 `builders/html.rs` (52/176). `apidoc/templates.rs`, `genindex.rs`, and
 `quickstart/templates.rs` now each have 100% branch coverage.
@@ -41,13 +41,13 @@ full report):
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `sphinx` API (`src/sphinx/sphinx`) | 245 | 6,893 | 4,890 | 768 | 3 |
 | `sphinx` tests (`src/sphinx/tests`) | 143 | 2,138 | 0 | 0 | 1,562 |
-| `sphinxdocrs` crate (`src/sphinxdocrs/src`, incl. inline `#[cfg(test)]`) | 104 | 3,671 | 1,554 | 526 | 1,187 |
+| `sphinxdocrs` crate (`src/sphinxdocrs/src`, incl. inline `#[cfg(test)]`) | 104 | 3,673 | 1,554 | 526 | 1,189 |
 | `sphinxdocrs` Rust integration tests (`src/sphinxdocrs/tests`) | 48 | 923 | 0 | 0 | 744 |
 | `sphinxdocrs` Python bridge tests (`src/tests/test_sphinx*`) | 9 | 91 | 0 | 0 | 83 |
-| **`sphinxdocrs` combined** | **161** | **4,685** | **1,554** | **526** | **2,014** |
+| **`sphinxdocrs` combined** | **161** | **4,687** | **1,554** | **526** | **2,016** |
 
-Across all 23 tracked subsystems, `sphinxdocrs` defines **2,014 test functions**
-(1,187 inline `#[cfg(test)]` tests + 744 Rust integration tests + 83 Python
+Across all 23 tracked subsystems, `sphinxdocrs` defines **2,016 test functions**
+(1,189 inline `#[cfg(test)]` tests + 744 Rust integration tests + 83 Python
 bridge tests) compared to upstream `sphinx`'s **1,562 test functions**, and
 exposes **1,554 API callables / 526 API types** vs. upstream's **4,890 callables
 / 768 types** (where the largest intentionally unported Python surfaces are
@@ -559,7 +559,7 @@ from `sphinx-source-status --compare-tests`
 | `test_builders/`, `test_writers/` | builders & writers | P3 | 1,323 / 82 | 219 / 67 | 309 | 401 | **partial** — `tests/builders*.rs` (12 files), `tests/linkcheck_wiremock.rs`, `tests/myst_bridge.rs`, `tests/otherdocs.rs`, `tests/parity.rs`, `tests/snapshot.rs` + inline builder tests |
 | `test_environment/` | environment & toctree | P3 | 132 / 12 | 113 / 11 | 28 | 198 | **mirrored** ✅ — `tests/environment.rs`, `tests/toctree.rs`, `tests/genindex.rs`, `tests/incremental.rs` + inline tests |
 | `test_roles.py`, `test_directives/`, `test_markup/` | roles & directives | P3 | 81 / 44 | 7 / 5 | 98 | 46 | **partial** — `tests/roles.rs` + `roles.rs` inline tests (directive/role parser dispatch also covered in `docutilsrs`) |
-| `test_domains/` | domains & source_docs (LSP/H14) | P3 | 1,431 / 255 | 331 / 116 | 209 | 190 | **partial** — `std`/`rst`/`py`/`js` (`tests/domains_{std,rst,py,js}.rs`) + Rust/Lean `source_docs`/LSP (`source_docs.rs`, `lsp_backend.rs`, `embedded_lsp.rs`); `c`/`cpp` **keep-python** (**H3f**) |
+| `test_domains/` | domains & source_docs (LSP/H14) | P3 | 1,431 / 255 | 331 / 116 | 209 | 192 | **partial** — `std`/`rst`/`py`/`js` (`tests/domains_{std,rst,py,js}.rs`) + Rust/Lean `source_docs`/LSP (`source_docs.rs`, `lsp_backend.rs`, `embedded_lsp.rs`); `c`/`cpp` **keep-python** (**H3f**) |
 | `test_theming/` | theming | P3 | 26 / 3 | 70 / 32 | 16 | 52 | **mirrored** — inline `theme.rs`/`theme_render.rs`/`theme_static.rs` unit tests + `tests/builders.rs` and `tests/otherdocs.rs` |
 | `test_search.py` | search & stemming | P3 | 80 / 26 | 43 / 9 | 15 | 33 | **done** — `tests/stemmer_parity.rs` (**H1f**), `tests/search_objects.rs` (**H3d**) + `search.rs`/`stemmer.rs` inline tests |
 | `test_ext_autodoc/`, `test_pycode/` | autodoc & pycode | P3 | 420 / 59 | 99 / 37 | 262 | 47 | **partial** — `tests/autodoc_cli.rs` + `autodoc.rs`/`autodoc_runtime.rs` inline tests (**H9**, **H14**); `pycode` **keep-python** |
@@ -573,7 +573,7 @@ from `sphinx-source-status --compare-tests`
 
 | suite | test fns (LSP) | scope |
 | --- | ---: | --- |
-| lib (inline `#[cfg(test)]`) | 1,187 | 60+ source files carry inline unit tests (validators, arg parsing, generators, builders, registry, versioning, util modules, autodoc, theme_render, environment, source_docs, LSP backend, embedded LSP) |
+| lib (inline `#[cfg(test)]`) | 1,189 | 60+ source files carry inline unit tests (validators, arg parsing, generators, builders, registry, versioning, util modules, autodoc, theme_render, environment, source_docs, LSP backend, embedded LSP) |
 | `tests/quickstart.rs`, `tests/quickstart_cli.rs` | 35 | validators (`#[case]` tables), parser flags, `valid_dir`, tree-layout snapshots, `conf.py` snapshot, LF/CRLF assertions, scripted-terminal `ask_user`, help-text snapshot |
 | `tests/build.rs`, `tests/cli_bins.rs` | 53 | `jobs_argument`, `parse_confdir`, `parse_doctreedir`, `validate_filenames`, `parse_confoverrides`, `parse_color`, `build_clean` safety, `run_generic_build`, dispatch, `BUILDERS` completeness, CLI binary smoke tests, help snapshot |
 | `tests/apidoc.rs` | 17 | parser flags, `is_initpy`, `module_join`, `is_excluded`, `recurse_tree` variants, Rust/Lean source entry points, module/TOC/help snapshots |

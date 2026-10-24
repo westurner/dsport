@@ -5380,6 +5380,22 @@ mod tests {
     }
 
     #[test]
+    fn register_yaml_notebooks_keeps_chapters_with_external_root() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(
+            env.srcdir.join("_toc.yml"),
+            "root: https://example.invalid/root\nchapters:\n  - file: notebook.ipynb\n",
+        )
+        .unwrap();
+        std::fs::write(env.srcdir.join("notebook.ipynb"), "notebook").unwrap();
+
+        env.register_yaml_notebooks().unwrap();
+
+        assert!(env.found_docs().contains("notebook"));
+        assert!(env.toctree_includes.is_empty());
+    }
+
+    #[test]
     fn register_yaml_notebooks_reads_source_directives_and_reports_read_errors() {
         let (_tmp, mut env) = make_env_with_tempdir();
         std::fs::write(

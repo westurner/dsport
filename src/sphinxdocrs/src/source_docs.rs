@@ -1251,11 +1251,6 @@ pub fn lsp_provider_from_settings(
     language: SourceLanguage,
     source_root: &std::path::Path,
 ) -> Result<Box<dyn SourceSnapshotProvider>, AnalysisError> {
-    if language == SourceLanguage::Python {
-        return Err(AnalysisError::InvalidRequest(
-            "source LSP analysis supports Rust and Lean only".into(),
-        ));
-    }
     let provider =
         lsp_backend::LspSnapshotProvider::from_settings(settings, language, source_root)?;
     Ok(Box::new(provider))

@@ -495,6 +495,9 @@ impl AnalysisSnapshot {
                 .cmp(&right.qualified_name)
                 .then(left.kind.cmp(&right.kind))
                 .then(left.id.cmp(&right.id))
+                .then(left.source.path.cmp(&right.source.path))
+                .then(left.source.start.line.cmp(&right.source.start.line))
+                .then(left.source.start.column.cmp(&right.source.start.column))
         });
         self.diagnostics.sort_by(|left, right| {
             left.backend
@@ -595,9 +598,20 @@ pub fn source_input_hash(
             }
         }
         SourceLanguage::Python => {
-            return Err(AnalysisError::InvalidRequest(
-                "Python snapshots do not have a source-analysis hash".to_string(),
-            ));
+            if !request.selected.is_empty() {
+                request.selected.clone()
+            } else if request.source_root.is_file() {
+                vec![request.source_root.clone()]
+            } else {
+                let mut files = Vec::new();
+                collect_source_files(&request.source_root, "py", &mut files).map_err(|error| {
+                    AnalysisError::Io {
+                        path: request.source_root.display().to_string(),
+                        message: error.to_string(),
+                    }
+                })?;
+                files
+            }
         }
     };
 
@@ -605,7 +619,7 @@ pub fn source_input_hash(
         path.extension().is_some_and(|extension| match language {
             SourceLanguage::Rust => extension == "json",
             SourceLanguage::Lean => extension == "lean",
-            SourceLanguage::Python => false,
+            SourceLanguage::Python => extension == "py",
         })
     });
     files.sort();
@@ -889,6 +903,9 @@ pub(crate) mod provider_contract {
                 .cmp(&right.qualified_name)
                 .then(left.kind.cmp(&right.kind))
                 .then(left.id.cmp(&right.id))
+                .then(left.source.path.cmp(&right.source.path))
+                .then(left.source.start.line.cmp(&right.source.start.line))
+                .then(left.source.start.column.cmp(&right.source.start.column))
         });
         assert_eq!(snapshot.declarations, declarations);
         let mut ids = snapshot
@@ -899,13 +916,14 @@ pub(crate) mod provider_contract {
         ids.sort_unstable();
         assert!(ids.windows(2).all(|pair| pair[0] != pair[1]));
         for declaration in &snapshot.declarations {
-            assert_eq!(
-                declaration.id,
-                stable_declaration_id(
-                    declaration.language,
-                    &declaration.qualified_name,
-                    &declaration.kind,
-                )
+            let expected_id = stable_declaration_id(
+                declaration.language,
+                &declaration.qualified_name,
+                &declaration.kind,
+            );
+            assert!(
+                declaration.id == expected_id
+                    || declaration.id.starts_with(&format!("{expected_id}:"))
             );
             assert!(!declaration.source.path.is_empty());
             assert!(declaration.source.start.line > 0);

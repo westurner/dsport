@@ -4,7 +4,12 @@
 //! should use it only for trusted local language-server commands. Protected
 //! modes remain unavailable until an audited OS sandbox provider exists.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+use std::collections::{BTreeMap, HashMap};
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -15,14 +20,19 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
+#[cfg(all(
+    feature = "source-sandbox",
+    any(target_os = "linux", target_os = "macos")
+))]
+use super::config::{MxcLspContainment, MxcNetworkAction};
 use super::config::{
-    sandboxing_disabled_by_env, MxcLspConfig, MxcLspContainment, MxcNetworkAction,
-    SourceDocsSettings, SourceSandboxEngine, SourceSandboxMode,
+    sandboxing_disabled_by_env, MxcLspConfig, SourceDocsSettings, SourceSandboxEngine,
+    SourceSandboxMode,
 };
 use super::model::{
-    normalize_text, AnalysisDiagnostic, AnalysisError, AnalysisSnapshot, DeclarationKind,
-    DiagnosticSeverity, SourceAnalysisRequest, SourceBackendKind, SourceDeclaration,
-    SourceLanguage, SourcePosition, SourceSpan, Visibility,
+    normalize_path, normalize_text, AnalysisDiagnostic, AnalysisError, AnalysisSnapshot,
+    DeclarationKind, DiagnosticSeverity, SourceAnalysisRequest, SourceBackendKind,
+    SourceDeclaration, SourceLanguage, SourcePosition, SourceSpan, Visibility,
 };
 use super::provider::SourceSnapshotProvider;
 
@@ -55,6 +65,7 @@ pub struct LspServerConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 enum LspExecutionMode {
     TrustedLocal,
     ProtectedLsp {
@@ -1681,7 +1692,7 @@ impl LspSnapshotProvider {
         paths.retain(|path| match self.config.language {
             SourceLanguage::Rust => path.extension().is_some_and(|ext| ext == "rs"),
             SourceLanguage::Lean => path.extension().is_some_and(|ext| ext == "lean"),
-            SourceLanguage::Python => false,
+            SourceLanguage::Python => path.extension().is_some_and(|ext| ext == "py"),
         });
         if paths.is_empty() && source_root.is_dir() {
             paths = collect_source_files(&source_root, self.config.language)?;
@@ -1805,6 +1816,22 @@ impl LspSnapshotProvider {
                 source: None,
                 declaration: None,
             });
+        }
+        let mut seen_ids = HashSet::new();
+        for declaration in &mut declarations {
+            if !seen_ids.insert(declaration.id.clone()) {
+                let disambiguator = hash_bytes(
+                    format!(
+                        "{}:{}:{}",
+                        declaration.source.path,
+                        declaration.source.start.line,
+                        declaration.source.start.column
+                    )
+                    .as_bytes(),
+                );
+                declaration.id = format!("{}:{}", declaration.id, disambiguator);
+                seen_ids.insert(declaration.id.clone());
+            }
         }
         let source_hash = hash_paths(&paths)?;
         let mut snapshot = AnalysisSnapshot::new(
@@ -1978,6 +2005,15 @@ impl LspSnapshotProvider {
                 DeclarationKind::Function | DeclarationKind::Method => (detail.clone(), None),
                 _ => (None, detail.clone()),
             };
+            let span_path = path
+                .canonicalize()
+                .ok()
+                .and_then(|canonical| {
+                    let root = self.config.workspace_root.canonicalize().ok()?;
+                    let rel = canonical.strip_prefix(root).ok()?;
+                    (!rel.as_os_str().is_empty()).then(|| PathBuf::from(normalize_path(rel)))
+                })
+                .unwrap_or_else(|| path.to_path_buf());
             let mut declaration = SourceDeclaration::new(
                 self.config.language,
                 "lsp",
@@ -1988,9 +2024,12 @@ impl LspSnapshotProvider {
                 type_text,
                 documentation,
                 Visibility::Unknown,
-                SourceSpan::new(path, start, Some(end)),
+                SourceSpan::new(&span_path, start, Some(end)),
             );
             declaration.attributes.insert("lsp:uri".into(), uri.clone());
+            if symbol_is_test_function(&item, name, parent.as_deref(), &text, start, end, self.config.language) {
+                declaration.attributes.insert("lsp:is_test".into(), "true".into());
+            }
             if let Some(span) = definition_span {
                 declaration
                     .attributes
@@ -2194,7 +2233,7 @@ fn collect_source_files(
                 && match language {
                     SourceLanguage::Rust => candidate.extension().is_some_and(|ext| ext == "rs"),
                     SourceLanguage::Lean => candidate.extension().is_some_and(|ext| ext == "lean"),
-                    SourceLanguage::Python => false,
+                    SourceLanguage::Python => candidate.extension().is_some_and(|ext| ext == "py"),
                 }
             {
                 files.push(candidate);
@@ -2320,6 +2359,79 @@ fn unsupported_symbol(path: &Path, message: &str) -> AnalysisDiagnostic {
         )),
         declaration: None,
     }
+}
+
+fn symbol_is_test_function(
+    item: &Value,
+    name: &str,
+    parent: Option<&str>,
+    text: &str,
+    start: SourcePosition,
+    end: SourcePosition,
+    language: SourceLanguage,
+) -> bool {
+    if item
+        .get("isTest")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    let Some(kind) = item.get("kind").and_then(Value::as_u64).and_then(lsp_kind) else {
+        return false;
+    };
+    if !matches!(kind, DeclarationKind::Function | DeclarationKind::Method) {
+        return false;
+    }
+    match language {
+        SourceLanguage::Python => {
+            name.starts_with("test_")
+                || (name == "test"
+                    && parent.is_some_and(|p| p.rsplit('.').next().unwrap_or(p).starts_with("Test")))
+        }
+        SourceLanguage::Rust => {
+            let lines: Vec<&str> = text.lines().collect();
+            let start_idx = start.line.saturating_sub(1);
+            let lookback_start = start_idx.saturating_sub(15);
+            for idx in (lookback_start..=start_idx.min(lines.len().saturating_sub(1))).rev() {
+                let trimmed = lines[idx].trim();
+                if is_rust_test_attribute(trimmed) {
+                    return true;
+                }
+                if idx < start_idx
+                    && !trimmed.is_empty()
+                    && !trimmed.starts_with("#[")
+                    && !trimmed.starts_with("//")
+                    && !trimmed.starts_with("/*")
+                    && !trimmed.starts_with('*')
+                {
+                    break;
+                }
+            }
+            let end_idx = end.line.min(lines.len());
+            for line in lines.get(start_idx..end_idx).unwrap_or(&[]) {
+                let trimmed = line.trim();
+                if is_rust_test_attribute(trimmed) {
+                    return true;
+                }
+                if trimmed.contains("fn ") {
+                    break;
+                }
+            }
+            false
+        }
+        SourceLanguage::Lean => false,
+    }
+}
+
+fn is_rust_test_attribute(trimmed: &str) -> bool {
+    trimmed.starts_with("#[test")
+        || trimmed.starts_with("#[rstest")
+        || trimmed.starts_with("#[tokio::test")
+        || trimmed.contains("::test]")
+        || trimmed.contains("::test(")
+        || trimmed.contains("::rstest]")
+        || trimmed.contains("::rstest(")
 }
 
 #[cfg(test)]
@@ -3323,6 +3435,69 @@ mod tests {
         let request = SourceAnalysisRequest::new(workspace.path());
         let paths = provider.source_paths(&request).unwrap();
         assert_eq!(paths, [source.canonicalize().unwrap()]);
+    }
+
+    #[test]
+    fn python_source_discovery_and_test_classification_work() {
+        let workspace = TempDir::new().unwrap();
+        let pkg = workspace.path().join("pkg");
+        std::fs::create_dir_all(&pkg).unwrap();
+        let py_file = pkg.join("test_demo.py");
+        std::fs::write(&py_file, "def test_alpha():\n    pass\n\ndef helper():\n    pass\n").unwrap();
+        let mut config = fake_server_config(workspace.path(), "symbols");
+        config.language = SourceLanguage::Python;
+        let provider = LspSnapshotProvider::new(config);
+        let request = SourceAnalysisRequest::new(workspace.path());
+        let paths = provider.source_paths(&request).unwrap();
+        assert_eq!(paths, [py_file.canonicalize().unwrap()]);
+
+        let pos = SourcePosition { byte: 0, line: 1, column: 0 };
+        let fn_item = json!({"kind": 12});
+        assert!(symbol_is_test_function(
+            &fn_item,
+            "test_alpha",
+            None,
+            "def test_alpha():\n    pass\n",
+            pos,
+            pos,
+            SourceLanguage::Python,
+        ));
+        assert!(!symbol_is_test_function(
+            &fn_item,
+            "helper",
+            None,
+            "def helper():\n    pass\n",
+            pos,
+            pos,
+            SourceLanguage::Python,
+        ));
+    }
+
+    #[test]
+    fn rust_test_classification_recognizes_test_and_rstest_attributes() {
+        let rust_source = "#[rstest]\n#[case(1)]\nfn check_case(#[case] x: i32) {\n    assert_eq!(x, 1);\n}\n\npub fn api_fn() {}\n";
+        let fn_item = json!({"kind": 12});
+        let test_start = SourcePosition { byte: 21, line: 3, column: 0 };
+        let test_end = SourcePosition { byte: 75, line: 5, column: 1 };
+        assert!(symbol_is_test_function(
+            &fn_item,
+            "check_case",
+            None,
+            rust_source,
+            test_start,
+            test_end,
+            SourceLanguage::Rust,
+        ));
+        let api_start = SourcePosition { byte: 77, line: 7, column: 0 };
+        assert!(!symbol_is_test_function(
+            &fn_item,
+            "api_fn",
+            None,
+            rust_source,
+            api_start,
+            api_start,
+            SourceLanguage::Rust,
+        ));
     }
 }
 

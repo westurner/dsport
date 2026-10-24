@@ -8,10 +8,10 @@ Generated via `sphinxdocrs` LSP `textDocument/documentSymbol` analysis (`sphinx-
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `sphinx` API (`src/sphinx/sphinx`) | 245 | 6893 | 4890 | 768 | 3 |
 | `sphinx` tests (`src/sphinx/tests`) | 143 | 2138 | 0 | 0 | 1562 |
-| `sphinxdocrs` crate (`src/sphinxdocrs/src`, incl. inline `#[cfg(test)]`) | 104 | 3659 | 1554 | 526 | 1175 |
+| `sphinxdocrs` crate (`src/sphinxdocrs/src`, incl. inline `#[cfg(test)]`) | 104 | 3671 | 1554 | 526 | 1187 |
 | `sphinxdocrs` Rust integration tests (`src/sphinxdocrs/tests`) | 48 | 923 | 0 | 0 | 744 |
 | `sphinxdocrs` Python bridge tests (`src/tests/test_sphinx*`) | 9 | 91 | 0 | 0 | 83 |
-| **`sphinxdocrs` combined** | **161** | **4673** | **1554** | **526** | **2002** |
+| **`sphinxdocrs` combined** | **161** | **4685** | **1554** | **526** | **2014** |
 
 ## 2. Per-Subsystem API & Test Function Breakdown
 
@@ -31,10 +31,10 @@ Generated via `sphinxdocrs` LSP `textDocument/documentSymbol` analysis (`sphinx-
 | `apidoc (C3)` | 24 / 2 | 42 / 14 | 1 | 28 | 3 | 37 |
 | `autosummary / autogen (C4)` | 50 / 10 | 21 / 7 | 2 | 30 | 4 | 56 |
 | `application` | 85 / 2 | 17 / 10 | 1 | 8 | 2 | 44 |
-| `environment & toctree` | 132 / 12 | 113 / 11 | 4 | 28 | 7 | 193 |
+| `environment & toctree` | 132 / 12 | 113 / 11 | 4 | 28 | 7 | 198 |
 | `builders & writers` | 1323 / 82 | 219 / 67 | 29 | 309 | 31 | 401 |
 | `roles & directives` | 81 / 44 | 7 / 5 | 13 | 98 | 2 | 46 |
-| `domains & source_docs (LSP/H14)` | 1431 / 255 | 331 / 116 | 10 | 209 | 19 | 183 |
+| `domains & source_docs (LSP/H14)` | 1431 / 255 | 331 / 116 | 10 | 209 | 19 | 190 |
 | `theming` | 26 / 3 | 70 / 32 | 3 | 16 | 3 | 52 |
 | `search & stemming` | 80 / 26 | 43 / 9 | 1 | 15 | 4 | 33 |
 | `autodoc & pycode` | 420 / 59 | 99 / 37 | 19 | 262 | 4 | 47 |

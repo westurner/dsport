@@ -15,23 +15,23 @@ PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov -p sphinx
 ```
 
 All library tests and all binary/integration test targets pass. The all-target
-report is **75.37% branch coverage** (1,007/4,089 branches missed), 93.02% line
-coverage, and 91.26% function coverage. The 100% branch target is
+report is **76.25% branch coverage** (974/4,101 branches missed), 93.45% line
+coverage, and 91.59% function coverage. The 100% branch target is
 still open; no exclusions or parity thresholds were relaxed.
 
 Current highest-miss modules, in execution priority order:
 
 | Module | Missed/total | Branch coverage |
 | --- | ---: | ---: |
-| `environment.rs` | 191/760 | 74.87% |
-| `source_docs.rs` | 90/208 | 56.73% |
+| `environment.rs` | 189/772 | 75.52% |
+| `source_docs.rs` | 82/208 | 60.58% |
 | `autodoc.rs` | 71/252 | 71.83% |
 | `apidoc/generate.rs` | 60/136 | 55.88% |
 | `theme_render.rs` | 54/246 | 78.05% |
 | `builders/html.rs` | 52/176 | 70.45% |
-| `domains/scan.rs` | 33/182 | 81.87% |
+| `domains/scan.rs` | 32/182 | 82.42% |
 | `config.rs` | 30/210 | 85.71% |
-| `bin/sphinx_source_port.rs` | 27/32 | 15.63% |
+| `bin/sphinx_source_port.rs` | 31/36 | 13.89% |
 | `builders/latex.rs` | 24/46 | 47.83% |
 
 The latest additions also bring `apidoc/templates.rs` (2/2), `genindex.rs`

@@ -4515,6 +4515,22 @@ mod tests {
         assert!(env.source_snapshots.is_empty());
     }
 
+    #[test]
+    fn source_snapshot_persists_provider_and_toolchain_metadata() {
+        let mut env = make_env();
+        let mut snapshot = source_snapshot();
+        snapshot.request_identity = "request-id".into();
+        snapshot.provider_identity = "provider-id".into();
+        snapshot.toolchain = Some("rustc test".into());
+
+        env.note_source_snapshot("api", snapshot).unwrap();
+
+        let metadata = &env.domaindata["rust"];
+        assert_eq!(metadata["request_identity"], "request-id");
+        assert_eq!(metadata["provider_identity"], "provider-id");
+        assert_eq!(metadata["toolchain"], "rustc test");
+    }
+
     #[cfg(feature = "rust-source-analysis")]
     #[test]
     fn provider_cache_identity_preserves_request_identity_and_toolchain_invalidation() {

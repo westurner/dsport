@@ -1880,6 +1880,30 @@ mod tests {
         assert_eq!(settings.lsp_timeout_ms, 30_000);
         assert!(settings.lsp_allow_fallback);
 
+        let parse_backend = |value| {
+            let mut raw = HashMap::new();
+            raw.insert("source_backend".into(), value);
+            super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+                raw,
+                HashMap::new(),
+            ))
+        };
+        assert_eq!(
+            parse_backend(ConfigVal::Str("auto".into())).unwrap().backend,
+            SourceBackendMode::Auto
+        );
+        assert_eq!(
+            parse_backend(ConfigVal::Str("lsp".into())).unwrap().backend,
+            SourceBackendMode::Lsp
+        );
+        assert_eq!(
+            parse_backend(ConfigVal::Int(5)).unwrap().backend,
+            SourceBackendMode::Static
+        );
+        assert!(parse_backend(ConfigVal::Str("unknown".into()))
+            .unwrap_err()
+            .contains("invalid source_backend"));
+
         let mut raw = HashMap::new();
         raw.insert("source_backend".into(), ConfigVal::Str("hybrid".into()));
         raw.insert(
@@ -1923,6 +1947,42 @@ mod tests {
             SourceAnalysisSession::from_settings(&settings, "rust", Some(static_provider()), None);
         let request = SourceAnalysisRequest::new("src");
         assert!(session.cache_identity(&request).contains(&identity));
+    }
+
+    #[test]
+    fn lsp_server_commands_reject_invalid_shapes_and_arguments() {
+        let settings_with_servers = |servers| {
+            let mut raw = HashMap::new();
+            raw.insert("source_lsp_servers".into(), servers);
+            super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+                raw,
+                HashMap::new(),
+            ))
+        };
+
+        assert!(settings_with_servers(ConfigVal::Int(1))
+            .unwrap_err()
+            .contains("source_lsp_servers must be a mapping"));
+        assert!(settings_with_servers(ConfigVal::Map(vec![(
+            "rust".into(),
+            ConfigVal::Int(1),
+        )]))
+        .unwrap_err()
+        .contains("source_lsp_servers[\"rust\"] must be a list"));
+        assert!(settings_with_servers(ConfigVal::Map(vec![(
+            "rust".into(),
+            ConfigVal::List(vec![ConfigVal::Int(1)]),
+        )]))
+        .unwrap_err()
+        .contains("arguments must be strings"));
+        for args in [Vec::new(), vec![ConfigVal::Str(String::new())]] {
+            assert!(settings_with_servers(ConfigVal::Map(vec![(
+                "rust".into(),
+                ConfigVal::List(args),
+            )]))
+            .unwrap_err()
+            .contains("command is empty"));
+        }
     }
 
     #[test]
@@ -2017,6 +2077,8 @@ mod tests {
             ("LD_PRELOAD", "/tmp/inject.so"),
             ("PYTHONPATH", "/tmp/inject"),
             ("PATH", ".:/usr/bin"),
+            ("2INVALID", "value"),
+            ("LEAN_PATH", "bad\0value"),
         ] {
             let mut raw = HashMap::new();
             raw.insert(
@@ -2032,6 +2094,30 @@ mod tests {
             ))
             .unwrap_err();
             assert!(error.contains(key), "{error}");
+        }
+
+        for (environment, expected_error) in [
+            (ConfigVal::Int(1), "source_lsp_server_environment must be a mapping"),
+            (
+                ConfigVal::Map(vec![("lean".into(), ConfigVal::Str("invalid".into()))]),
+                "source_lsp_server_environment[\"lean\"] must be a mapping",
+            ),
+            (
+                ConfigVal::Map(vec![(
+                    "lean".into(),
+                    ConfigVal::Map(vec![("LEAN_PATH".into(), ConfigVal::Int(1))]),
+                )]),
+                "source_lsp_server_environment[\"lean\"][\"LEAN_PATH\"] must be a string",
+            ),
+        ] {
+            let mut raw = HashMap::new();
+            raw.insert("source_lsp_server_environment".into(), environment);
+            let error = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+                raw,
+                HashMap::new(),
+            ))
+            .unwrap_err();
+            assert!(error.contains(expected_error), "{error}");
         }
 
         for path in ["/", "/dev/shm", "/proc/self", "/tmp", "/home", "/root"] {

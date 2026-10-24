@@ -2478,6 +2478,40 @@ mod tests {
             .contains("absolute non-root paths"));
     }
 
+    #[test]
+    fn lsp_workspace_root_accepts_none_or_path_and_rejects_other_values() {
+        let settings_with_root = |root| {
+            let mut raw = HashMap::new();
+            raw.insert("source_lsp_workspace_root".into(), root);
+            super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+                raw,
+                HashMap::new(),
+            ))
+        };
+
+        let defaults = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+            HashMap::new(),
+            HashMap::new(),
+        ))
+        .unwrap();
+        assert_eq!(defaults.lsp_workspace_root, None);
+        assert_eq!(
+            settings_with_root(ConfigVal::Null)
+                .unwrap()
+                .lsp_workspace_root,
+            None
+        );
+        assert_eq!(
+            settings_with_root(ConfigVal::Str("workspace".into()))
+                .unwrap()
+                .lsp_workspace_root,
+            Some(Path::new("workspace").to_path_buf())
+        );
+        assert!(settings_with_root(ConfigVal::Int(1))
+            .unwrap_err()
+            .contains("path string or None"));
+    }
+
     #[cfg(feature = "source-sandbox")]
     #[test]
     fn protected_lsp_settings_parse_explicit_roots_and_environment_allowlist() {

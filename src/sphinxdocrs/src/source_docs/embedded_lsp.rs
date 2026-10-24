@@ -910,10 +910,10 @@ pub fn summarize_declarations(
             | DeclarationKind::Enum
             | DeclarationKind::Trait
             | DeclarationKind::TypeAlias
-            | DeclarationKind::Union => {
-                if !treat_all_callables_as_non_api && !in_test_mod {
-                    summary.api_types_and_classes += 1;
-                }
+            | DeclarationKind::Union
+                if !treat_all_callables_as_non_api && !in_test_mod =>
+            {
+                summary.api_types_and_classes += 1;
             }
             _ => {}
         }

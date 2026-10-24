@@ -28,6 +28,32 @@ builds match Python viewport metadata. The gated external-document matrix is
 now fully green with all 15 real-project tree, HTML-content, and viewport cases
 passing.
 
+### LSP API & test function comparison (2026-10-24)
+
+Running `cargo run -p sphinxdocrs --features rust-source-analysis,lean-source-analysis,lsp-source-analysis --bin sphinx-source-status -- --compare-tests --report-out docs/SPHINX_LSP_API_TEST_COMPARISON.md`
+queries both Python (`src/sphinx`) and Rust (`src/sphinxdocrs`) source and test
+trees over the LSP `textDocument/documentSymbol` protocol using the embedded
+stdio server (`sphinx-source-status --lsp-stdio python|rust`, see
+[SPHINX_LSP_API_TEST_COMPARISON.md](SPHINX_LSP_API_TEST_COMPARISON.md) for the
+full report):
+
+| tree | files | total symbols | API callables (`fn`/`def`) | API types (`class`/`struct`/`enum`/`trait`) | test functions |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `sphinx` API (`src/sphinx/sphinx`) | 245 | 6,893 | 4,890 | 768 | 3 |
+| `sphinx` tests (`src/sphinx/tests`) | 143 | 2,138 | 0 | 0 | 1,562 |
+| `sphinxdocrs` crate (`src/sphinxdocrs/src`, incl. inline `#[cfg(test)]`) | 104 | 3,658 | 1,554 | 526 | 1,174 |
+| `sphinxdocrs` Rust integration tests (`src/sphinxdocrs/tests`) | 48 | 923 | 0 | 0 | 744 |
+| `sphinxdocrs` Python bridge tests (`src/tests/test_sphinx*`) | 9 | 91 | 0 | 0 | 83 |
+| **`sphinxdocrs` combined** | **161** | **4,672** | **1,554** | **526** | **2,001** |
+
+Across all 23 tracked subsystems, `sphinxdocrs` defines **2,001 test functions**
+(1,174 inline `#[cfg(test)]` tests + 744 Rust integration tests + 83 Python
+bridge tests) compared to upstream `sphinx`'s **1,562 test functions**, and
+exposes **1,554 API callables / 526 API types** vs. upstream's **4,890 callables
+/ 768 types** (where the largest intentionally unported Python surfaces are
+`c`/`cpp` domains, `pycode`, docutils writer internals handled in `docutilsrs`,
+and `keep-python` third-party/optional extensions).
+
 ### Historical local verification (2026-09-19)
 
 The current native library baseline is `cargo test -p sphinxdocrs --lib`:
@@ -420,6 +446,9 @@ manually because minijinja lacks it.
 | `src/theme_static.rs` | `sphinx.builders.html` asset copy | `copy_theme_assets`, `render_templates` |
 | `src/search.rs` | `sphinx.search` | `SearchIndex`, `split_words`, `feed`, `to_json` |
 | `src/autodoc.rs` | `sphinx.ext.autodoc` | static extraction over `ruff_python_ast`; `AutodocError` |
+| `src/source_analysis.rs`, `src/source_analysis/{rust,lean}.rs` | — (H14) | language-neutral `SourceDeclaration` / `AnalysisSnapshot` model, `RustdocJsonAnalyzer`, and `ArboriumLeanAnalyzer` |
+| `src/source_docs.rs`, `src/source_docs/{lsp_backend,embedded_lsp}.rs` | — (H14 / LSP) | `SourceAnalysisSession`, `LspSnapshotProvider`, MXC/ai-sandbox protected LSP providers, embedded Python/Rust `textDocument/documentSymbol` stdio server, and `LspComparisonReport` |
+| `src/bin/sphinx_source_port.rs` (`sphinx-source-status`) | — (H14 / LSP) | source-documentation status CLI, `--lsp-stdio <python\|rust\|lean>`, and `--compare-tests` API/test report generator |
 | `src/intersphinx.rs` | `sphinx.ext.intersphinx`, `sphinx.util.inventory` | `fetch_inventories`, `InvCache`, `Inventory::loads` / `load_file`, `dumps` |
 | `src/scan.rs` | — | `scan_requirements`, `collect_packages` |
 | `src/assets.rs` | — | SRI hashing + fetch/cache |
@@ -463,80 +492,80 @@ already does.
 
 ## 6. Upstream test triage
 
-Tagged from `src/sphinx/tests/`.
+Tagged from `src/sphinx/tests/`, with LSP-derived API and test function counts
+from `sphinx-source-status --compare-tests`
+(see [SPHINX_LSP_API_TEST_COMPARISON.md](SPHINX_LSP_API_TEST_COMPARISON.md)).
 
-| test file | subsystem | tier | status |
-| --- | --- | --- | --- |
-| `test_errors.py` | errors | P1 | **mirrored** — `tests/test_sphinxdocrs_errors.py` |
-| `test_events.py` | events | P1 | **mirrored** — `tests/test_sphinxdocrs_events.py` |
-| `test_project.py` | project | P1 | **mirrored** — `tests/test_sphinxdocrs_project{,_discover}.py` |
-| `test_addnodes.py` | addnodes | P1 | **mirrored** — `tests/addnodes.rs` |
-| *(no upstream file)* | extension | P2 | **mirrored** — `tests/test_sphinxdocrs_extension.py` |
-| `test_config/` | config | P2 | **mirrored** — `tests/config.rs` |
-| `test_extensions/` | registry | P2 | **done** — `tests/registry.rs`; `load_extension` landed on `SphinxApp` (**H4b**), covered by `tests/events_app.rs` |
-| `test_versioning.py` | versioning | P2 | **done** — `tests/versioning.rs` |
-| `test_util/` | util | P2 | **mirrored** — `tests/util_rst_osutil.rs`, `tests/util_extra.rs`; `default_role` closed (**H1d**). The two upstream `escape` expectations are replaced by native hardened-contract assertions. |
-| `test_intl/` | intl / locale | P3 | **mirrored** — `tests/locale.rs`, `tests/intl.rs`, plus `test_util_i18n.py`'s `test_catalog_write_mo` / `test_format_date` cases as `intl` unit tests |
-| `test_quickstart.py` | quickstart | C1 | **mirrored** — `tests/quickstart.rs`, `tests/quickstart_cli.rs` |
-| `test_ext_apidoc/` | apidoc | C3 | **mirrored** — `tests/apidoc.rs` |
-| `test_ext_autosummary/` | autogen | C4 | **done** — `tests/autogen.rs` |
-| `test_command_line.py`, `test__cli/` | cli | P3 | **partial** — arg layer native; full `Sphinx()` invocation deferred |
-| `test_application.py` | application | P3 | **partial** — `tests/application.rs` |
-| `test_builders/` | builders | P3 | **partial** — `tests/builders.rs` includes **H2d** two-phase parity, HTML artifact/nested-toctree/HTML5 structure tests, and regular asset checksum/attribute/loading-method checks; `tests/builders_json.rs`, `tests/builders_text.rs`/`builders_xml.rs`/`builders_pseudoxml.rs` (**H7a**, done), `tests/builders_dirhtml.rs`/`builders_singlehtml.rs` (**H7b**, done), `tests/builders_gettext.rs` (**H7c**, done), `tests/builders_changes.rs` (**H7d** partial, done) |
-| `test_environment/` | environment | P3 | **mirrored** ✅ — `tests/environment.rs` gained the **H2** read-phase group (`find_files`, doctree store round trip, `read_all`, `check_consistency`); `tests/toctree.rs` (**H5d**) covers nested resolution, max-depth expansion, multiple parents, consistency, and chapter numbering; `tests/genindex.rs` (**H5e**) covers genindex/modindex generation |
-| `test_roles.py` | roles | P3 | **partial** — `tests/roles.rs`; `std`/`rst`/`py`/`js` xref recovery+resolution now covered by `tests/domains_std.rs`/`tests/domains_rst.rs`/`tests/domains_py.rs`/`tests/domains_js.rs` (**H5b**/**H5c**); other role classes' node execution still deferred (→ **H5a**) |
-| `test_directives/` | directives | P3 | **partial** — registry dispatch smoke coverage landed; upstream directive parity fixtures remain (→ **H5a**) |
-| `test_domains/` | domains | P3 | **partial** — `std` (**H3a**), `rst` (**H3c**), `py` (**H3b**), `js` (**H3e**) done; `c`/`cpp` **keep-python** (**H3f**) |
-| `test_transforms/` | transforms | P3 | **deferred** — per-transform port |
-| `test_writers/` | writers | P3 | **partial** — `docutilsrs::text`/`to_xml` (new, backing **H7a**) have inline unit tests; `docutilsrs::pseudo_xml` was already covered. Sphinx-specific writers (`html5`, `latex2e`) covered elsewhere; one remaining writer at a time (→ **H7**) |
-| `test_theming/` | theming | P3 | **mirrored** — no dedicated `tests/theming.rs`; covered by inline `theme_render.rs`/`theme_static.rs` unit tests, `tests/builders.rs` HTML structure/artifact checks, and `tests/otherdocs.rs` real-theme builds (**H6**, done) |
-| `test_search.py` | search | P3 | **partial** — `tests/stemmer_parity.rs` (**H1f** closed); `objects`/`objtypes`/`objnames`/`indexentries` now populated from domain data (**H3d**, `tests/search_objects.rs`) |
-| `test_highlighting.py` | highlighting | P3 | **partial** — native alias selection and normalized token-span parity are covered; dedicated Sphinx lexer-error and diagnostic parity remains (→ **H10**) |
-| `test_markup/` | markup | P3 | **deferred** — depends on the docutils converter |
-| `test_pycode/` | pycode | P3 | **keep-python** |
-| `test_ext_autodoc/` | autodoc | P3 | **partial** — inline unit tests in `autodoc.rs`/`autodoc_runtime.rs`/`autogen/generate.rs` cover option handling, type hints, decorators, runtime introspection, and static-path fallback (**H9**, done); a dedicated `tests/ext_autodoc.rs` mirroring upstream's fixture-based cases directly is still pending |
-| `test_ext_intersphinx/`, `test_util_inventory.py` | intersphinx | P3 | **partial** — `tests/intersphinx.rs` covers `InventoryFile` parsing with an upstream-generated fixture (exact parity); xref-resolution cases still pending (→ **H5c**) |
-| `test_ext_imgconverter/`, `test_ext_napoleon/`, other `test_ext_*` | extensions | P3 | **keep-python** — run against vendored sphinx |
-| `js/` | search JS | — | external |
+| test file / group | subsystem | tier | sphinx API (`fn`/`cls`) | sphinxdocrs API (`fn`/`type`) | sphinx test fns | sphinxdocrs test fns | status |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `test_errors.py` | errors | P1 | 7 / 13 | 40 / 22 | 2 | 14 | **mirrored** — `tests/test_sphinxdocrs_errors.py` + `error_log.rs` inline tests |
+| `test_events.py` | events | P1 | 37 / 2 | 19 / 11 | 3 | 26 | **mirrored** — `tests/test_sphinxdocrs_events.py`, `tests/events_app.rs` |
+| `test_project.py` | project | P1 | 5 / 1 | 10 / 4 | 7 | 14 | **mirrored** — `tests/test_sphinxdocrs_project{,_discover}.py` + inline tests |
+| `test_addnodes.py` | addnodes | P1 | 17 / 51 | 10 / 46 | 1 | 45 | **mirrored** — `tests/addnodes.rs` + inline tests |
+| *(no upstream file)*, `test_extensions/` | extension & registry | P2 | 43 / 2 | 97 / 31 | 82 | 141 | **done** — `tests/registry.rs`, `tests/scan_requirements.rs`, `tests/test_sphinxdocrs_extension.py`, `tests/test_sphinxdocrs_hybrid.py`, `app_facade.rs` inline tests |
+| `test_config/` | config | P2 | 48 / 4 | 87 / 13 | 53 | 65 | **mirrored** — `tests/config.rs` + `config.rs` inline tests |
+| `test_versioning.py` | versioning | P2 | 6 / 1 | 9 / 1 | 10 | 52 | **done** — `tests/versioning.rs` + inline tests |
+| `test_util/` | util | P2 | 502 / 89 | 135 / 23 | 191 | 266 | **mirrored** — `tests/util_rst_osutil.rs`, `tests/util_extra.rs`, `tests/assets.rs`, `tests/test_sphinxdocrs_util_{console,matching}.py` + inline tests |
+| `test_intl/` | intl / locale | P3 | 26 / 1 | 57 / 14 | 68 | 83 | **mirrored** — `tests/locale.rs`, `tests/intl.rs` + inline unit tests |
+| `test_quickstart.py` | quickstart | C1 | 20 / 2 | 34 / 14 | 10 | 52 | **mirrored** — `tests/quickstart.rs`, `tests/quickstart_cli.rs` + inline tests |
+| `test_extensions/test_ext_apidoc.py` | apidoc | C3 | 24 / 2 | 42 / 14 | 28 | 37 | **mirrored** — `tests/apidoc.rs` + `apidoc/generate.rs` inline tests |
+| `test_ext_autosummary/` | autogen | C4 | 50 / 10 | 21 / 7 | 30 | 56 | **done** — `tests/autogen.rs` + `autogen/generate.rs` inline tests |
+| `test_command_line.py`, `test__cli/` | build & cli | C2/P3 | 51 / 2 | 66 / 33 | 12 | 116 | **partial** — `tests/build.rs`, `tests/cli_bins.rs`, `tests/cli_tests/test_sphinx_cli.py`; arg/make-mode native |
+| `test_application.py` | application | P3 | 85 / 2 | 17 / 10 | 8 | 44 | **partial** — `tests/application.rs` + `application.rs` inline tests |
+| `test_builders/`, `test_writers/` | builders & writers | P3 | 1,323 / 82 | 219 / 67 | 309 | 401 | **partial** — `tests/builders*.rs` (12 files), `tests/linkcheck_wiremock.rs`, `tests/myst_bridge.rs`, `tests/otherdocs.rs`, `tests/parity.rs`, `tests/snapshot.rs` + inline builder tests |
+| `test_environment/` | environment & toctree | P3 | 132 / 12 | 113 / 11 | 28 | 192 | **mirrored** ✅ — `tests/environment.rs`, `tests/toctree.rs`, `tests/genindex.rs`, `tests/incremental.rs` + inline tests |
+| `test_roles.py`, `test_directives/`, `test_markup/` | roles & directives | P3 | 81 / 44 | 7 / 5 | 98 | 46 | **partial** — `tests/roles.rs` + `roles.rs` inline tests (directive/role parser dispatch also covered in `docutilsrs`) |
+| `test_domains/` | domains & source_docs (LSP/H14) | P3 | 1,431 / 255 | 331 / 116 | 209 | 183 | **partial** — `std`/`rst`/`py`/`js` (`tests/domains_{std,rst,py,js}.rs`) + Rust/Lean `source_docs`/LSP (`source_docs.rs`, `lsp_backend.rs`, `embedded_lsp.rs`); `c`/`cpp` **keep-python** (**H3f**) |
+| `test_theming/` | theming | P3 | 26 / 3 | 70 / 32 | 16 | 52 | **mirrored** — inline `theme.rs`/`theme_render.rs`/`theme_static.rs` unit tests + `tests/builders.rs` and `tests/otherdocs.rs` |
+| `test_search.py` | search & stemming | P3 | 80 / 26 | 43 / 9 | 15 | 33 | **done** — `tests/stemmer_parity.rs` (**H1f**), `tests/search_objects.rs` (**H3d**) + `search.rs`/`stemmer.rs` inline tests |
+| `test_ext_autodoc/`, `test_pycode/` | autodoc & pycode | P3 | 420 / 59 | 99 / 37 | 262 | 47 | **partial** — `tests/autodoc_cli.rs` + `autodoc.rs`/`autodoc_runtime.rs` inline tests (**H9**, **H14**); `pycode` **keep-python** |
+| `test_ext_intersphinx/`, `test_util_inventory.py` | intersphinx | P3 | 44 / 6 | 18 / 6 | 34 | 35 | **partial** — `tests/intersphinx.rs` + `intersphinx.rs` inline tests |
+| `test_highlighting.py`, `test_transforms/`, other `test_ext_*` | highlighting, transforms & other ext | P3 | 364 / 82 | 10 / 0 | 91 | 1 | **partial / keep-python** — highlighting via `docutilsrs`/`pygmentsrs`; other `test_ext_*` run against vendored sphinx |
+| `js/` | search JS | — | — | — | — | — | external |
 
 ---
 
 ## 7. Rust-side test suites
 
-| suite | scope |
-| --- | --- |
-| lib (inline `#[cfg(test)]`) | ~41 source files carry inline unit tests (validators, arg parsing, generators, builders, registry, versioning, util modules) |
-| `tests/quickstart.rs`, `tests/quickstart_cli.rs` | validators (`#[case]` tables), parser flags, `valid_dir`, tree-layout snapshots, `conf.py` snapshot, LF/CRLF assertions, scripted-terminal `ask_user`, help-text snapshot |
-| `tests/build.rs` | `jobs_argument`, `parse_confdir`, `parse_doctreedir`, `validate_filenames`, `parse_confoverrides`, `parse_color`, `build_clean` safety, `run_generic_build`, dispatch, `BUILDERS` completeness, help snapshot |
-| `tests/apidoc.rs` | parser flags, `is_initpy`, `module_join`, `is_excluded`, `recurse_tree` variants, module/TOC/help snapshots |
-| `tests/autogen.rs` | parser flags, `find_autosummary_in_lines` / `_in_files`, `infer_obj_type`, `split_fqn`, `generate_stub(s)`, stub-content snapshots |
-| `tests/registry.rs` | source suffix/parser, transforms, CSS/JS/static, LaTeX packages, HTML themes, builder/domain/translator/math-renderer registration |
-| `tests/versioning.rs` | `levenshtein_distance`, `get_ratio`, `add_uids`, all 7 `merge_doctrees` upstream fixtures |
-| `tests/config.rs` | defaults, raw + CLI overrides, `add`/`set`/`contains`/`iter`/`filter`, alias sync, coercion |
-| `tests/addnodes.rs` | `SIG_ELEMENTS` exact set, `desc_sig_*` classes, `Translatable`, `astext` behaviours |
-| `tests/environment.rs` | construction, `default_settings`, config-status labels, doc-read / title / dependency tracking |
-| `tests/domains_std.rs` | **H3a**/**H5b**/**H5c**: label registration (w/wo attached section), `:ref:` (named + explicit-title + undefined-label warning), `:doc:` (relative/absolute/unknown), glossary `:term:` (case-insensitive + missing-term warning), stale-entry clearing on re-read, virtual `genindex`/`modindex`/`search` label seeding |
-| `tests/domains_rst.rs` | **H3c**: `rst:directive`/`rst:role` object registration and `:rst:dir:`/`:rst:role:` xref resolution across documents, unresolved-target warning |
-| `tests/domains_py.rs` | **H3b**: `py:module`/`function`/`class`/`method` registration with nesting, `:py:func:`/`:py:meth:` xref resolution incl. `~`-shortening, unresolved-target warning, stale-entry clearing on re-read |
-| `tests/domains_js.rs` | **H3e**: `js:module`/`function`/`class`/`method` registration with nesting, `:js:func:` xref resolution, unresolved-target warning |
-| `tests/toctree.rs` | **H5d**: nested toctree resolution via `read_all`, docname-not-in-any-toctree cross-check against `check_consistency`, `:numbered:` chapter-number assignment order |
-| `tests/genindex.rs` | **H5e**: `.. index::`-driven genindex grouping/sorting, `py-modindex` module grouping, stale-entry clearing on re-read |
-| `tests/search_objects.rs` | **H3d**: `domain_objects()` aggregation across all four domains, `SearchIndex`'s `objects`/`objtypes`/`objnames`/`indexentries` populated end-to-end from `BuildEnvironment` |
-| `tests/builders.rs`, `tests/builders_json.rs` | `Builder` trait contract, `get_target_uri`, `build_doc` HTML5 structure, `build_all` variants, `.fjson` output |
-| `tests/builders_text.rs`, `tests/builders_xml.rs`, `tests/builders_pseudoxml.rs` | **H7a**: multi-doc/subdirectory `build_all` for each builder, XML well-formedness (stack-based tag-balance check) + entity-escaping for `xml`, byte-identical parity with calling `docutilsrs::pseudo_xml` directly for `pseudoxml`, `get_target_uri` parity with upstream for all three |
-| `tests/builders_dirhtml.rs`, `tests/builders_singlehtml.rs` | **H7b**: `dirhtml` vs. flat `HtmlBuilder` byte-level pipeline-reuse comparison (same search index/static assets, different physical layout), `SphinxApp::build()` dispatch for both, `singlehtml`'s multi-document/subdirectory merge into one `index.html` with `index` rendered first |
-| `tests/builders_gettext.rs` | **H7c**: multi-document `.pot` aggregation (shared message deduplicated with both docnames' location comments, unique message present), `SphinxApp::build()` dispatch |
-| `tests/builders_changes.rs` | **H7d** (`changes` only): multi-document version-change scanning + grouping, newest-version-first ordering, `SphinxApp::build()` dispatch |
-| `tests/application.rs` | `NATIVE_BUILDERS`, path validation, constructor fields, `build()` HTML output, config defaults/overrides |
-| `tests/events_app.rs` | **H4**: core event emission order across a full `build()`, per-document `source-read`/`doctree-read` pairing, auto-loading extensions from `conf.py` before `config-inited` fires, unknown-module error path, an ADR-0005 round trip proving a registered Rust equivalent is called instead of the Python extension's `setup()`, an ADR-0005 version-guard-rejection fallback + warning, and `needs_extensions` (missing-extension warning + version-mismatch error) |
-| `tests/roles.rs` | docrole table completeness, `format_rfc_target`, `parse_emphasized_literal` |
-| `tests/locale.rs`, `tests/intl.rs` | `.po` parsing, translator registry, catalog discovery, `docname_to_domain`, date-format mapping |
-| `tests/util_rst_osutil.rs`, `tests/util_extra.rs` | full `sphinx.util` mirrors |
-| `tests/assets.rs` | SRI hashing + fetch/cache |
-| `tests/scan_requirements.rs` | `conf.py` extension → package scanning |
-| `tests/snapshot.rs` | misc rendered-string snapshots |
-| `tests/parity.rs` | cross-language harness, gated by `--features test-parity`; skips gracefully without Python |
-| `tests/otherdocs.rs` | real external doc-tree builds, gated by `--features test-build-extdocs` |
+| suite | test fns (LSP) | scope |
+| --- | ---: | --- |
+| lib (inline `#[cfg(test)]`) | 1,174 | 60+ source files carry inline unit tests (validators, arg parsing, generators, builders, registry, versioning, util modules, autodoc, theme_render, environment, source_docs, LSP backend, embedded LSP) |
+| `tests/quickstart.rs`, `tests/quickstart_cli.rs` | 35 | validators (`#[case]` tables), parser flags, `valid_dir`, tree-layout snapshots, `conf.py` snapshot, LF/CRLF assertions, scripted-terminal `ask_user`, help-text snapshot |
+| `tests/build.rs`, `tests/cli_bins.rs` | 53 | `jobs_argument`, `parse_confdir`, `parse_doctreedir`, `validate_filenames`, `parse_confoverrides`, `parse_color`, `build_clean` safety, `run_generic_build`, dispatch, `BUILDERS` completeness, CLI binary smoke tests, help snapshot |
+| `tests/apidoc.rs` | 17 | parser flags, `is_initpy`, `module_join`, `is_excluded`, `recurse_tree` variants, Rust/Lean source entry points, module/TOC/help snapshots |
+| `tests/autodoc_cli.rs` | 3 | `sphinx-autodoc-rs` CLI Rust/Lean directive rendering and backend error context |
+| `tests/autogen.rs` | 28 | parser flags, `find_autosummary_in_lines` / `_in_files`, `infer_obj_type`, `split_fqn`, `generate_stub(s)`, stub-content snapshots |
+| `tests/registry.rs` | 36 | source suffix/parser, transforms, CSS/JS/static, LaTeX packages, HTML themes, builder/domain/translator/math-renderer registration |
+| `tests/versioning.rs` | 25 | `levenshtein_distance`, `get_ratio`, `add_uids`, all 7 `merge_doctrees` upstream fixtures |
+| `tests/config.rs` | 39 | defaults, raw + CLI overrides, `add`/`set`/`contains`/`iter`/`filter`, alias sync, coercion |
+| `tests/addnodes.rs` | 29 | `SIG_ELEMENTS` exact set, `desc_sig_*` classes, `Translatable`, `astext` behaviours |
+| `tests/environment.rs`, `tests/incremental.rs` | 76 | construction, `default_settings`, config-status labels, doc-read / title / dependency tracking, incremental rebuild & persistence |
+| `tests/domains_std.rs` | 26 | **H3a**/**H5b**/**H5c**: label registration (w/wo attached section), `:ref:` (named + explicit-title + undefined-label warning), `:doc:` (relative/absolute/unknown), glossary `:term:` (case-insensitive + missing-term warning), stale-entry clearing on re-read, virtual `genindex`/`modindex`/`search` label seeding |
+| `tests/domains_rst.rs` | 8 | **H3c**: `rst:directive`/`rst:role` object registration and `:rst:dir:`/`:rst:role:` xref resolution across documents, unresolved-target warning |
+| `tests/domains_py.rs` | 11 | **H3b**: `py:module`/`function`/`class`/`method` registration with nesting, `:py:func:`/`:py:meth:` xref resolution incl. `~`-shortening, unresolved-target warning, stale-entry clearing on re-read |
+| `tests/domains_js.rs` | 8 | **H3e**: `js:module`/`function`/`class`/`method` registration with nesting, `:js:func:` xref resolution, unresolved-target warning |
+| `tests/toctree.rs` | 8 | **H5d**: nested toctree resolution via `read_all`, docname-not-in-any-toctree cross-check against `check_consistency`, `:numbered:` chapter-number assignment order |
+| `tests/genindex.rs` | 11 | **H5e**: `.. index::`-driven genindex grouping/sorting, `py-modindex` module grouping, stale-entry clearing on re-read |
+| `tests/search_objects.rs`, `tests/stemmer_parity.rs` | 12 | **H1f**/**H3d**: Snowball stemmer parity, `domain_objects()` aggregation across domains, `SearchIndex`'s `objects`/`objtypes`/`objnames`/`indexentries` populated end-to-end |
+| `tests/builders.rs`, `tests/builders_json.rs`, `tests/builders_source_suffix.rs` | 53 | `Builder` trait contract, `get_target_uri`, `build_doc` HTML5 structure, `build_all` variants, `.fjson` output, multi-suffix discovery |
+| `tests/builders_text.rs`, `tests/builders_xml.rs`, `tests/builders_pseudoxml.rs` | 16 | **H7a**: multi-doc/subdirectory `build_all` for each builder, XML well-formedness + entity-escaping, byte-identical parity for `pseudoxml`, `get_target_uri` parity |
+| `tests/builders_dirhtml.rs`, `tests/builders_singlehtml.rs` | 11 | **H7b**: `dirhtml` vs. flat `HtmlBuilder` pipeline-reuse comparison, `SphinxApp::build()` dispatch, `singlehtml` multi-document merge |
+| `tests/builders_gettext.rs` | 7 | **H7c**: multi-document `.pot` aggregation and compact/non-compact catalog emission, `SphinxApp::build()` dispatch |
+| `tests/builders_changes.rs`, `tests/builders_epub.rs`, `tests/builders_texinfo.rs` | 14 | **H7d**: `changes` version-change scanning + frameset report, `epub` OPF/nav/ncx packaging, `texinfo` output and dispatch |
+| `tests/linkcheck_wiremock.rs` | 12 | **H1b**: `wiremock`-backed HTTP status, redirect, anchor, rate-limit, and retry checks |
+| `tests/myst_bridge.rs` | 9 | **H13**: mixed `.rst`/`.md` discovery, `myst-md-rs` doctree persistence, single-/two-phase HTML parity, and diagnostics |
+| `tests/application.rs` | 29 | `NATIVE_BUILDERS`, path validation, constructor fields, `build()` HTML output, config defaults/overrides |
+| `tests/events_app.rs` | 13 | **H4**: core event emission order, `source-read`/`doctree-read` pairing, extension auto-loading, ADR-0005 Rust equivalent resolution, `needs_extensions` |
+| `tests/roles.rs` | 35 | docrole table completeness, `format_rfc_target`, `parse_emphasized_literal` |
+| `tests/locale.rs`, `tests/intl.rs` | 50 | `.po` parsing, translator registry, catalog discovery, `docname_to_domain`, date-format mapping |
+| `tests/util_rst_osutil.rs`, `tests/util_extra.rs` | 123 | full `sphinx.util` mirrors |
+| `tests/assets.rs` | 17 | SRI hashing + fetch/cache |
+| `tests/scan_requirements.rs` | 25 | `conf.py` extension → package scanning |
+| `tests/intersphinx.rs` | 13 | **H1a**: `objects.inv` v1/v2 parsing, `$`-anchor expansion, dump→load round trip |
+| `tests/snapshot.rs` | 5 | misc rendered-string snapshots |
+| `tests/parity.rs` | 5 | cross-language harness, gated by `--features test-parity`; skips gracefully without Python |
+| `tests/otherdocs.rs` | 4 | real external doc-tree builds, gated by `--features test-build-extdocs` |
+| `src/tests/test_sphinx*.py` | 83 | Python-side PyO3 bridge tests (`errors`, `events`, `extension`, `hybrid`, `project`, `util_console`, `util_matching`, `cli`) |
 
 Snapshot conventions: rendered strings (`conf_py_snapshot`,
 `*_help_snapshot`) and generated trees

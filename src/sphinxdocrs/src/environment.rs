@@ -5824,6 +5824,20 @@ mod tests {
     }
 
     #[test]
+    fn read_all_without_events_processes_and_persists_found_docs() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
+        std::fs::write(env.srcdir.join("other.rst"), "Other\n=====\n").unwrap();
+        env.find_files().unwrap();
+
+        let read = env.read_all().unwrap();
+
+        assert_eq!(read, vec!["index", "other"]);
+        assert!(env.has_stored_doctree("index"));
+        assert!(env.has_stored_doctree("other"));
+    }
+
+    #[test]
     fn read_all_with_events_propagates_source_listener_errors() {
         use crate::app_events::AppEventManager;
 
@@ -5838,6 +5852,24 @@ mod tests {
         let error = env.read_all_with_events(&events).unwrap_err().to_string();
         assert!(error.contains("listener failed"));
         assert!(!env.has_stored_doctree("index"));
+    }
+
+    #[test]
+    fn read_all_with_events_propagates_doctree_listener_errors_after_persisting() {
+        use crate::app_events::AppEventManager;
+
+        let (_tmp, mut env) = make_env_with_tempdir();
+        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
+        env.find_files().unwrap();
+        let events = AppEventManager::shared();
+        events.borrow_mut().connect("doctree-read", 0, |_args| {
+            Err(crate::app_events::EventError("doctree listener failed".into()))
+        });
+
+        let error = env.read_all_with_events(&events).unwrap_err().to_string();
+
+        assert!(error.contains("doctree listener failed"));
+        assert!(env.has_stored_doctree("index"));
     }
 
     #[test]

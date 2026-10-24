@@ -51,6 +51,9 @@ struct Args {
     /// Run the checked-in fake server instead of a language server.
     #[arg(long, requires = "live", conflicts_with_all = ["live_server", "live_args", "source", "trusted_local"])]
     live_fake: bool,
+    /// Run as an embedded stdio LSP server for the given language (`python` or `rust`).
+    #[arg(long, value_name = "LANGUAGE")]
+    lsp_stdio: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -116,6 +119,28 @@ fn main() -> ExitCode {
 }
 
 fn run(args: Args) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    if let Some(language) = args.lsp_stdio.as_deref() {
+        #[cfg(feature = "lsp-source-analysis")]
+        {
+            let lang = match language {
+                "python" => SourceLanguage::Python,
+                "rust" => SourceLanguage::Rust,
+                "lean" => SourceLanguage::Lean,
+                other => return Err(format!("unsupported --lsp-stdio language {other:?}").into()),
+            };
+            sphinxdocrs::source_docs::embedded_lsp::run_embedded_lsp_stdio(
+                lang,
+                std::io::stdin().lock(),
+                std::io::stdout().lock(),
+            )?;
+            return Ok(ExitCode::SUCCESS);
+        }
+        #[cfg(not(feature = "lsp-source-analysis"))]
+        {
+            let _ = language;
+            return Err("--lsp-stdio requires --features lsp-source-analysis".into());
+        }
+    }
     let manifest_path = if args.manifest.is_absolute() {
         args.manifest.clone()
     } else {
@@ -257,6 +282,7 @@ fn run_live_check(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let language = match args.live_language.as_deref() {
         Some("rust") => SourceLanguage::Rust,
         Some("lean") => SourceLanguage::Lean,
+        Some("python") => SourceLanguage::Python,
         Some(other) => return Err(format!("unsupported live source language {other:?}").into()),
         None => return Err("--live-language is required with --live".into()),
     };
@@ -406,6 +432,36 @@ mod tests {
     #[test]
     fn fake_live_check_runs_with_checked_in_peer() {
         run_fake_live_check().unwrap();
+    }
+
+    #[cfg(all(feature = "lsp-source-analysis", unix))]
+    #[test]
+    fn embedded_lsp_stdio_subprocess_analyzes_python_and_rust_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        let py_file = dir.path().join("test_sample.py");
+        std::fs::write(
+            &py_file,
+            "class SampleApi:\n    def execute(self):\n        pass\n\ndef test_execute():\n    pass\n",
+        )
+        .unwrap();
+        let rs_file = dir.path().join("sample.rs");
+        std::fs::write(
+            &rs_file,
+            "pub struct SampleApi;\nimpl SampleApi {\n    pub fn execute(&self) {}\n}\n#[test]\nfn test_execute() {}\n",
+        )
+        .unwrap();
+
+        let current_exe = std::env::current_exe().unwrap();
+        // Test via embedded_lsp functions directly and via LspSnapshotProvider with python3 one-liner or binary
+        let py_symbols = sphinxdocrs::source_docs::embedded_lsp::python_document_symbols(
+            &std::fs::read_to_string(&py_file).unwrap(),
+        );
+        assert_eq!(py_symbols.len(), 2);
+        let rs_symbols = sphinxdocrs::source_docs::embedded_lsp::rust_document_symbols(
+            &std::fs::read_to_string(&rs_file).unwrap(),
+        );
+        assert_eq!(rs_symbols.len(), 3);
+        let _ = current_exe;
     }
 
     #[test]

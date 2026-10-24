@@ -1243,7 +1243,11 @@ fn parse_rpc_message(body: &[u8]) -> Result<RpcMessage, ()> {
     })
 }
 
-fn write_frame(writer: &mut impl Write, body: &Value, max_bytes: usize) -> std::io::Result<()> {
+pub(crate) fn write_frame(
+    writer: &mut impl Write,
+    body: &Value,
+    max_bytes: usize,
+) -> std::io::Result<()> {
     let bytes = serde_json::to_vec(body).map_err(std::io::Error::other)?;
     if bytes.len() > max_bytes.min(MAX_MESSAGE_BYTES) {
         return Err(std::io::Error::new(
@@ -1256,7 +1260,10 @@ fn write_frame(writer: &mut impl Write, body: &Value, max_bytes: usize) -> std::
     writer.flush()
 }
 
-fn read_frame(reader: &mut impl BufRead, max_bytes: usize) -> std::io::Result<Option<Vec<u8>>> {
+pub(crate) fn read_frame(
+    reader: &mut impl BufRead,
+    max_bytes: usize,
+) -> std::io::Result<Option<Vec<u8>>> {
     let mut length = None;
     let mut header_total = 0;
     loop {

@@ -1260,6 +1260,10 @@ pub fn lsp_provider_from_settings(
 #[path = "source_docs/lsp_backend.rs"]
 pub mod lsp_backend;
 
+#[cfg(feature = "lsp-source-analysis")]
+#[path = "source_docs/embedded_lsp.rs"]
+pub mod embedded_lsp;
+
 pub mod static_backend {
     #[cfg(feature = "rust-source-analysis")]
     pub mod rust {

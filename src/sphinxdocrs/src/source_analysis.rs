@@ -765,7 +765,11 @@ mod tests {
         declaration.add_alias("crate::Zed");
         declaration.add_alias("crate::Alias");
         declaration.add_alias("crate::Alias");
+        declaration.add_alias("");
+        declaration.add_alias("crate::Thing");
         declaration.add_child("child-2");
+        declaration.add_child("child-1");
+        declaration.add_child("");
         declaration.add_child("child-1");
 
         assert_eq!(declaration.documentation, "first line\n\n second line");
@@ -778,7 +782,7 @@ mod tests {
 
     #[test]
     fn snapshots_sort_and_round_trip() {
-        let first = SourceDeclaration::new(
+        let mut first = SourceDeclaration::new(
             SourceLanguage::Lean,
             "arborium-lean",
             "Demo.zeta",
@@ -790,6 +794,11 @@ mod tests {
             Visibility::Public,
             span(),
         );
+        first.aliases = vec![
+            String::new(),
+            "Demo.zeta".to_string(),
+            "Demo.alias".to_string(),
+        ];
         let second = SourceDeclaration::new(
             SourceLanguage::Lean,
             "arborium-lean",
@@ -812,6 +821,7 @@ mod tests {
             Vec::new(),
         );
         assert_eq!(snapshot.declarations[0].qualified_name, "Demo.alpha");
+        assert_eq!(snapshot.declarations[1].aliases, ["Demo.alias"]);
         let bytes = serde_json::to_vec(&snapshot).unwrap();
         let restored: AnalysisSnapshot = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(restored.schema_version, SOURCE_ANALYSIS_SCHEMA_VERSION);
@@ -869,6 +879,123 @@ mod tests {
 
         second.target = Some("wasm32-unknown-unknown".to_string());
         assert_ne!(first.cache_identity(), second.cache_identity());
+    }
+
+    #[test]
+    fn rust_source_hash_selects_json_inputs_and_reports_missing_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let json_path = directory.path().join("crate.json");
+        fs::write(&json_path, b"rustdoc input").unwrap();
+
+        let request = SourceAnalysisRequest::new(&json_path);
+        assert_eq!(
+            source_input_hash(&request, SourceLanguage::Rust).unwrap(),
+            hash_bytes(b"rustdoc input")
+        );
+
+        let mut selected_request = SourceAnalysisRequest::new(directory.path());
+        selected_request.selected = vec![directory.path().join("notes.txt"), json_path.clone()];
+        assert_eq!(
+            source_input_hash(&selected_request, SourceLanguage::Rust).unwrap(),
+            hash_bytes(b"rustdoc input")
+        );
+
+        selected_request.selected = vec![directory.path().join("missing.json")];
+        assert!(matches!(
+            source_input_hash(&selected_request, SourceLanguage::Rust),
+            Err(AnalysisError::Io { .. })
+        ));
+
+        selected_request.selected.clear();
+        assert!(matches!(
+            source_input_hash(&selected_request, SourceLanguage::Rust),
+            Err(AnalysisError::InvalidRequest(_))
+        ));
+    }
+
+    #[test]
+    fn lean_and_python_source_hashes_support_file_roots_and_recursive_discovery() {
+        for (language, extension) in [
+            (SourceLanguage::Lean, "lean"),
+            (SourceLanguage::Python, "py"),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let root_file = directory.path().join(format!("root.{extension}"));
+            fs::write(&root_file, b"root").unwrap();
+            let file_request = SourceAnalysisRequest::new(&root_file);
+            assert_eq!(
+                source_input_hash(&file_request, language).unwrap(),
+                hash_bytes(b"root")
+            );
+
+            let nested = directory.path().join("nested");
+            fs::create_dir_all(&nested).unwrap();
+            let first = directory.path().join(format!("a.{extension}"));
+            let second = nested.join(format!("b.{extension}"));
+            fs::write(&first, b"a").unwrap();
+            fs::write(&second, b"b").unwrap();
+            fs::write(directory.path().join("ignored.txt"), b"ignored").unwrap();
+
+            let directory_request = SourceAnalysisRequest::new(directory.path());
+            assert_eq!(
+                source_input_hash(&directory_request, language).unwrap(),
+                hash_bytes(b"abroot")
+            );
+        }
+    }
+
+    #[test]
+    fn selected_source_hashes_filter_extensions_sort_and_deduplicate() {
+        for (language, extension) in [
+            (SourceLanguage::Lean, "lean"),
+            (SourceLanguage::Python, "py"),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let first = directory.path().join(format!("a.{extension}"));
+            let last = directory.path().join(format!("z.{extension}"));
+            let ignored = directory.path().join("ignored.txt");
+            fs::write(&first, b"a").unwrap();
+            fs::write(&last, b"z").unwrap();
+            fs::write(&ignored, b"ignored").unwrap();
+
+            let mut request = SourceAnalysisRequest::new(directory.path());
+            request.selected = vec![last.clone(), ignored, first.clone(), last];
+            assert_eq!(
+                source_input_hash(&request, language).unwrap(),
+                hash_bytes(b"az")
+            );
+        }
+    }
+
+    #[test]
+    fn source_hash_reports_empty_inputs_and_recursive_read_errors() {
+        for (language, extension) in [
+            (SourceLanguage::Lean, "lean"),
+            (SourceLanguage::Python, "py"),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let empty_request = SourceAnalysisRequest::new(directory.path());
+            assert!(matches!(
+                source_input_hash(&empty_request, language),
+                Err(AnalysisError::InvalidRequest(_))
+            ));
+
+            let missing_root = directory.path().join("missing");
+            let missing_request = SourceAnalysisRequest::new(missing_root);
+            assert!(matches!(
+                source_input_hash(&missing_request, language),
+                Err(AnalysisError::Io { .. })
+            ));
+
+            let mut selected_request = SourceAnalysisRequest::new(directory.path());
+            selected_request
+                .selected
+                .push(directory.path().join(format!("missing.{extension}")));
+            assert!(matches!(
+                source_input_hash(&selected_request, language),
+                Err(AnalysisError::Io { .. })
+            ));
+        }
     }
 }
 

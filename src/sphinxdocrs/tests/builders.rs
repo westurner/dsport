@@ -362,6 +362,7 @@ fn build_all_writes_viewcode_pages_and_links_python_objects() {
         "extensions",
         ConfigVal::List(vec![ConfigVal::Str("sphinx.ext.viewcode".into())]),
     );
+    config.set("pygments_style", ConfigVal::Str("monokai".into()));
     let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
     let env = BuildEnvironment::new(config, project, src.path(), out.path());
 
@@ -381,6 +382,10 @@ fn build_all_writes_viewcode_pages_and_links_python_objects() {
     assert!(source.contains("../_static/pygments.css"));
     let css = std::fs::read_to_string(out.path().join("_static/pygments.css")).unwrap();
     assert!(css.contains(".highlight .k {"));
+    assert!(
+        css.contains("#66D9EF"),
+        "configured Pygments style missing: {css}"
+    );
     let module_index = std::fs::read_to_string(out.path().join("_modules/index.html")).unwrap();
     assert!(module_index.contains("href=\"pkg.html\">pkg</a>"));
 

@@ -150,12 +150,12 @@ def _parse_conf(theme_dir):
         inherit = None
     return inherit, options, pyg, sidebars, stylesheets
 
-def resolve(theme_name, theme_path_dirs, registered_themes):
+def resolve(theme_name, theme_path_dirs, registered_themes, configured_pygments_style=None):
     requested_theme = theme_name
     chain = []
     seen = set()
     name = theme_name
-    pygments_style = None
+    pygments_style = configured_pygments_style
     sidebars = []
     stylesheets = []
     while name and name not in seen:
@@ -254,8 +254,9 @@ fn resolve_theme(
     theme_name: &str,
     theme_path_dirs: &[String],
     registered_themes: &[(String, std::path::PathBuf)],
+    configured_pygments_style: Option<&str>,
 ) -> Option<ResolvedTheme> {
-    type ThemeCacheKey = (String, Vec<String>, Vec<(String, String)>);
+    type ThemeCacheKey = (String, Vec<String>, Vec<(String, String)>, Option<String>);
     static CACHE: OnceLock<Mutex<HashMap<ThemeCacheKey, Option<ResolvedTheme>>>> = OnceLock::new();
 
     let key = (
@@ -265,6 +266,7 @@ fn resolve_theme(
             .iter()
             .map(|(name, path)| (name.clone(), path.to_string_lossy().into_owned()))
             .collect(),
+        configured_pygments_style.map(str::to_owned),
     );
     let cacheable = theme_path_dirs.is_empty() && registered_themes.is_empty();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
@@ -289,7 +291,12 @@ fn resolve_theme(
             .iter()
             .map(|(name, path)| (name.clone(), path.to_string_lossy().into_owned()))
             .collect();
-        let result = resolve.call1((theme_name, theme_path_dirs.to_vec(), registered))?;
+        let result = resolve.call1((
+            theme_name,
+            theme_path_dirs.to_vec(),
+            registered,
+            configured_pygments_style,
+        ))?;
         let dict = result.cast::<PyDict>()?;
 
         let static_dirs: Vec<String> = dict
@@ -387,7 +394,7 @@ pub fn resolve_theme_templates(
     Vec<String>,
 )> {
     let theme_path_dirs = resolve_theme_path_dirs(confdir, theme_path);
-    let theme = resolve_theme(theme_name, &theme_path_dirs, registered_themes)?;
+    let theme = resolve_theme(theme_name, &theme_path_dirs, registered_themes, None)?;
     if theme.template_dirs.is_empty() {
         return None;
     }
@@ -510,7 +517,15 @@ pub fn copy_theme_static_files_for_builder(
 ) -> std::io::Result<()> {
     let theme_name = config.html_theme();
     let theme_path_dirs = resolve_theme_path_dirs(confdir, &config.html_theme_path());
-    let Some(theme) = resolve_theme(&theme_name, &theme_path_dirs, config.registered_themes())
+    let pygments_style = config
+        .get("pygments_style")
+        .and_then(|value| value.as_str().map(str::to_owned));
+    let Some(theme) = resolve_theme(
+        &theme_name,
+        &theme_path_dirs,
+        config.registered_themes(),
+        pygments_style.as_deref(),
+    )
     else {
         // No Python/Sphinx — skip theme assets silently.
         return Ok(());

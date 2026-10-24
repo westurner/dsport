@@ -3828,6 +3828,121 @@ fn html_anchor_counts(html: &str) -> std::collections::BTreeMap<String, usize> {
     counts
 }
 
+fn html_page_title(html: &str) -> &str {
+    static TITLE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    TITLE
+        .get_or_init(|| regex::Regex::new(r"(?is)<title>(.*?)</title>").unwrap())
+        .captures(html)
+        .and_then(|captures| captures.get(1))
+        .map(|title| title.as_str().trim())
+        .expect("HTML page should have a title")
+}
+
+fn highlighted_span_tokens(html: &str) -> Vec<(String, String)> {
+    static BLOCK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static SPAN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let block = BLOCK
+        .get_or_init(|| {
+            regex::Regex::new(r#"(?s)<div class="highlight"><pre>(.*?)</pre>"#).unwrap()
+        })
+        .captures(html)
+        .and_then(|captures| captures.get(1))
+        .expect("viewcode page should contain a highlighted source block")
+        .as_str();
+    SPAN.get_or_init(|| {
+        regex::Regex::new(r#"<span(?: class="([^"]+)")?>(.*?)</span>"#).unwrap()
+    })
+    .captures_iter(block)
+    .map(|captures| {
+        (
+            captures
+                .get(1)
+                .map_or_else(String::new, |class| class.as_str().to_string()),
+            captures[2].to_string(),
+        )
+    })
+    .collect()
+}
+
+/// Keep the extension API and viewcode output in the parity gate even though
+/// the aggregate docs check excludes pages with broader autodoc gaps.
+#[rstest]
+fn sphinx_docs_i18n_and_viewcode_pages_match(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built || !sphinx_docs_build_shared.rs_built {
+        return;
+    }
+
+    let read_page = |out: &Path, page: &str| {
+        std::fs::read_to_string(out.join(page))
+            .unwrap_or_else(|error| panic!("read {page}: {error}"))
+    };
+    let python_i18n = read_page(&sphinx_docs_build_shared.py_out, "extdev/i18n.html");
+    let rust_i18n = read_page(&sphinx_docs_build_shared.rs_out, "extdev/i18n.html");
+    for id in [
+        "sphinx.locale.init",
+        "sphinx.locale.init_console",
+        "sphinx.locale.get_translation",
+        "sphinx.locale._",
+        "sphinx.locale.__",
+    ] {
+        let anchor = format!("dt#{id}");
+        assert!(
+            html_anchor_counts(&python_i18n).contains_key(&anchor),
+            "Python i18n page is missing {anchor}"
+        );
+        assert!(
+            html_anchor_counts(&rust_i18n).contains_key(&anchor),
+            "Rust i18n page is missing {anchor}"
+        );
+    }
+    assert_eq!(
+        visible_html_token_counts(&python_i18n),
+        visible_html_token_counts(&rust_i18n),
+        "i18n page visible text should match"
+    );
+    assert_eq!(
+        html_link_counts(&python_i18n),
+        html_link_counts(&rust_i18n),
+        "i18n page link destinations should match"
+    );
+    assert_eq!(
+        html_anchor_counts(&python_i18n),
+        html_anchor_counts(&rust_i18n),
+        "i18n page heading and object anchors should match"
+    );
+
+    let python_viewcode = read_page(
+        &sphinx_docs_build_shared.py_out,
+        "_modules/sphinx/events.html",
+    );
+    let rust_viewcode = read_page(
+        &sphinx_docs_build_shared.rs_out,
+        "_modules/sphinx/events.html",
+    );
+    assert_eq!(
+        html_page_title(&python_viewcode),
+        html_page_title(&rust_viewcode),
+        "viewcode should use the same page-template title"
+    );
+    for marker in ["Module code", "<body", "sphinx13.css"] {
+        assert!(
+            python_viewcode.contains(marker),
+            "Python viewcode frame lacks {marker}"
+        );
+        assert!(
+            rust_viewcode.contains(marker),
+            "Rust viewcode frame lacks {marker}"
+        );
+    }
+    assert!(python_viewcode.contains("id=\"EventManager\""));
+    assert!(rust_viewcode.contains("id=\"EventManager\""));
+    assert_eq!(
+        highlighted_span_tokens(&python_viewcode),
+        highlighted_span_tokens(&rust_viewcode),
+        "viewcode Pygments output should preserve Python token classes and text"
+    );
+}
+
 fn visible_text_overlap(
     python: &std::collections::BTreeMap<String, usize>,
     rust: &std::collections::BTreeMap<String, usize>,

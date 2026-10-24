@@ -327,6 +327,55 @@ pub fn introspect_module(
     })
 }
 
+/// Import `module_name` and introspect one named callable, including aliases
+/// that are not represented by a top-level `def` in the module source.
+pub fn introspect_function(
+    module_name: &str,
+    function_name: &str,
+    mock_imports: &[String],
+) -> PyResult<MemberInfo> {
+    Python::attach(|py| {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        crate::config::add_vendored_import_paths(py, &cwd)?;
+        with_python_runtime_lock(py, || {
+            install_mock_imports_unlocked(py, mock_imports)?;
+            let module = py.import(module_name)?;
+            let function = module.getattr(function_name)?;
+            let inspect = py.import("inspect")?;
+            let signature = signature_of(&inspect, &function);
+            let docstring = inspect
+                .call_method1("getdoc", (&function,))?
+                .extract::<Option<String>>()
+                .unwrap_or(None)
+                .or_else(|| {
+                    let analyzer = py
+                        .import("sphinx.pycode")
+                        .ok()?
+                        .getattr("ModuleAnalyzer")
+                        .ok()?
+                        .call_method1("for_module", (module_name,))
+                        .ok()?;
+                    let docs = analyzer.call_method0("find_attr_docs").ok()?;
+                    let lines = docs
+                        .call_method1("get", (("", function_name),))
+                        .ok()?;
+                    lines
+                        .extract::<Vec<String>>()
+                        .ok()
+                        .map(|lines| lines.join("\n").trim().to_string())
+                        .filter(|doc| !doc.is_empty())
+                });
+
+            Ok(MemberInfo {
+                name: function_name.to_string(),
+                kind: MemberKind::Function,
+                signature,
+                docstring,
+            })
+        })
+    })
+}
+
 /// Read Python source and definition line spans with Sphinx's `ModuleAnalyzer`
 /// without importing or executing the module.
 pub fn analyze_python_source_file(
@@ -509,7 +558,12 @@ fn is_property(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<bool> {
 }
 
 fn signature_of(inspect: &Bound<'_, PyAny>, obj: &Bound<'_, PyAny>) -> Option<String> {
-    let sig = inspect.call_method1("signature", (obj,)).ok()?;
+    let kwargs = PyDict::new(inspect.py());
+    kwargs.set_item("eval_str", true).ok()?;
+    let sig = inspect
+        .call_method("signature", (obj,), Some(&kwargs))
+        .or_else(|_| inspect.call_method1("signature", (obj,)))
+        .ok()?;
     let s: String = sig.call_method0("__str__").ok()?.extract().ok()?;
     Some(s)
 }

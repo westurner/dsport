@@ -741,6 +741,8 @@ impl Builder for HtmlBuilder {
                 module_name,
                 module,
                 &highlight_language,
+                env,
+                real_theme.as_ref(),
                 &meta,
             );
             self.write_page(&page_docname, &page, outdir)?;
@@ -915,6 +917,8 @@ impl HtmlBuilder {
         module_name: &str,
         module: &ViewCodeModule,
         highlight_language: &str,
+        env: &BuildEnvironment,
+        real_theme: Option<&crate::theme_render::ThemeRenderer>,
         meta: &PageMeta,
     ) -> String {
         use crate::builders::Builder as _;
@@ -938,8 +942,14 @@ impl HtmlBuilder {
         } else {
             "python"
         };
-        let highlighted =
-            pygmentsrs::highlight(&module.source, lexer, "html").unwrap_or_else(|| {
+        let highlighted = pygmentsrs::highlight_with_backend(
+            &module.source,
+            lexer,
+            "html",
+            pygmentsrs::Backend::Python,
+        )
+        .or_else(|| pygmentsrs::highlight(&module.source, lexer, "html"))
+        .unwrap_or_else(|| {
                 format!(
                     "<div class=\"highlight\"><pre>{}</pre></div>\n",
                     crate::util_strypes::html_escape_text(&module.source)
@@ -988,7 +998,17 @@ impl HtmlBuilder {
             lines.join("\n")
         );
         let title = format!("Source code for {module_name}");
-        Self::render_embedded_or_wrap(page_docname, &title, &body, meta)
+        if let Some(renderer) = real_theme {
+            match renderer.render_page(env, page_docname, module_name, &body, "", None) {
+                Ok(page) => page,
+                Err(error) => {
+                    eprintln!("Warning: real theme render failed for {page_docname:?}: {error}; using embedded fallback");
+                    Self::render_embedded_or_wrap(page_docname, &title, &body, meta)
+                }
+            }
+        } else {
+            Self::render_embedded_or_wrap(page_docname, &title, &body, meta)
+        }
     }
 }
 

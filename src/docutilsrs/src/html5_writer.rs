@@ -226,19 +226,39 @@ fn emit_enter(
             schedule(node, "</span>", tasks);
         }
         NodeKind::LiteralBlock {
-            classes, caption, ..
+            ids,
+            classes,
+            caption,
+            ..
         } => {
             let language = classes.split_whitespace().nth(1).unwrap_or("text");
             let line_numbers = classes.split_whitespace().any(|class| class == "linenos");
             if classes.split_whitespace().next() == Some("code") {
                 if caption.is_some() {
-                    out.push_str("<div class=\"literal-block-wrapper docutils container\">");
+                    if let Some(id) = ids {
+                        let _ = write!(
+                            out,
+                            "<div class=\"literal-block-wrapper docutils container\" id=\"{}\">",
+                            escape(id)
+                        );
+                    } else {
+                        out.push_str("<div class=\"literal-block-wrapper docutils container\">");
+                    }
                     let caption = caption.as_deref().unwrap_or_default();
-                    let _ = write!(
-                        out,
-                        "<div class=\"code-block-caption\"><span class=\"caption-text\">{}</span></div>",
-                        escape(caption)
-                    );
+                    if let Some(id) = ids {
+                        let _ = write!(
+                            out,
+                            "<div class=\"code-block-caption\"><span class=\"caption-text\">{}</span><a class=\"headerlink\" href=\"#{}\" title=\"Link to this code\">¶</a></div>",
+                            escape(caption),
+                            escape(id)
+                        );
+                    } else {
+                        let _ = write!(
+                            out,
+                            "<div class=\"code-block-caption\"><span class=\"caption-text\">{}</span></div>",
+                            escape(caption)
+                        );
+                    }
                 }
                 if line_numbers {
                     out.push_str(
@@ -1010,7 +1030,7 @@ mod tests {
             )
         );
         assert!(rendered.contains(
-            "<div class=\"literal-block-wrapper docutils container\"><div class=\"code-block-caption\"><span class=\"caption-text\">example.py</span></div>"
+            "<div class=\"literal-block-wrapper docutils container\" id=\"id2\"><div class=\"code-block-caption\"><span class=\"caption-text\">example.py</span><a class=\"headerlink\" href=\"#id2\" title=\"Link to this code\">¶</a></div>"
         ));
         assert!(!rendered.contains("<span class=\"n\">caption</span>"));
         assert!(rendered.contains(

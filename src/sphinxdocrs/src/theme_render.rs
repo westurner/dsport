@@ -1344,11 +1344,17 @@ impl ThemeRenderer {
             .unwrap_or_default();
         append_relation_rellinks(&mut rellinks, &relation, title_of);
         ctx.insert("rellinks".into(), rellinks.into());
-        let parents: Vec<serde_json::Value> =
+        let parents: Vec<serde_json::Value> = if docname.starts_with("_modules/") {
+            vec![serde_json::json!({
+                "link": link_of("_modules/index"),
+                "title": "Module code"
+            })]
+        } else {
             parent_chain(docname, &self.relations, &env.config.root_doc())
                 .iter()
                 .map(|d| serde_json::json!({"link": link_of(d), "title": title_of(d)}))
-                .collect();
+                .collect()
+        };
         ctx.insert("parents".into(), parents.into());
 
         let toc_entries_for_doc = local_toc_from_doctree(doctree, docname);
@@ -1371,7 +1377,9 @@ impl ThemeRenderer {
             resolve_sidebars(docname, &self.html_sidebars, &self.default_sidebars).into(),
         );
 
-        let sourcename = if env.config.html_copy_source() {
+        let sourcename = if docname.starts_with("_modules/") {
+            String::new()
+        } else if env.config.html_copy_source() {
             format!(
                 "{docname}{source_suffix}{}",
                 env.config.html_sourcelink_suffix()

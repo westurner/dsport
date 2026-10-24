@@ -3781,9 +3781,11 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 caption,
                 tokens,
             } => {
+                let ids = caption.as_ref().map(|_| ctx.next_figure_id());
                 let lb = tree.append(
                     parent,
                     NodeKind::LiteralBlock {
+                        ids,
                         classes,
                         caption,
                         source: None,

@@ -205,6 +205,7 @@ pub enum NodeKind {
     },
     /// Pre-formatted block. `classes` is space-separated (e.g. "code python").
     LiteralBlock {
+        ids: Option<String>,
         classes: String,
         caption: Option<String>,
         source: Option<String>,
@@ -710,6 +711,8 @@ enum NodeKindData {
         latex: String,
     },
     LiteralBlock {
+        #[serde(default)]
+        ids: Option<String>,
         classes: String,
         #[serde(default)]
         caption: Option<String>,
@@ -957,10 +960,12 @@ impl From<&NodeKind> for NodeKindData {
             NodeKind::Math { latex } => NodeKindData::Math { latex },
             NodeKind::MathBlock { latex } => NodeKindData::MathBlock { latex },
             NodeKind::LiteralBlock {
+                ids,
                 classes,
                 caption,
                 source,
             } => NodeKindData::LiteralBlock {
+                ids,
                 classes,
                 caption,
                 source,
@@ -1196,10 +1201,12 @@ impl From<NodeKindData> for NodeKind {
             NodeKindData::Math { latex } => NodeKind::Math { latex },
             NodeKindData::MathBlock { latex } => NodeKind::MathBlock { latex },
             NodeKindData::LiteralBlock {
+                ids,
                 classes,
                 caption,
                 source,
             } => NodeKind::LiteralBlock {
+                ids,
                 classes,
                 caption,
                 source,
@@ -1442,6 +1449,7 @@ mod doctree_serde_tests {
         let literal = tree.append(
             tree.root(),
             NodeKind::LiteralBlock {
+                ids: None,
                 classes: String::new(),
                 caption: None,
                 source: Some("docs/example.md".into()),

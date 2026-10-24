@@ -694,7 +694,10 @@ pub fn signature_type_references(signature: &str) -> Vec<SignatureTypeReference>
         };
         (&class_signature[open_paren..], "class ".len() + open_paren)
     } else {
-        (signature, 0)
+        let Some(open_paren) = signature.find('(') else {
+            return Vec::new();
+        };
+        (&signature[open_paren..], open_paren)
     };
     let prefix = "def _sphinx_signature";
     let wrapped = format!("{prefix}{signature}: pass");
@@ -1231,6 +1234,41 @@ pub fn document_class_auto(
     static_rendered
 }
 
+/// Render one callable with runtime introspection when available, falling
+/// back to the static source parser for modules that cannot be imported.
+pub fn document_function_auto(
+    path: &Path,
+    module_name: &str,
+    function_name: &str,
+    qualified_name: &str,
+    mock_imports: &[String],
+) -> Result<String, AutodocError> {
+    let source = std::fs::read_to_string(path)?;
+    let static_rendered = document_function_source(function_name, qualified_name, &source);
+    if let Ok(rendered) = &static_rendered {
+        return Ok(rendered.clone());
+    }
+
+    if let Ok(function) = crate::autodoc_runtime::introspect_function(
+        module_name,
+        function_name,
+        mock_imports,
+    ) {
+        let mut rendered = format!(
+            ".. py:function:: {qualified_name}{}\n",
+            function.signature.as_deref().unwrap_or("()")
+        );
+        if let Some(docstring) = function.docstring {
+            rendered.push('\n');
+            rendered.push_str(&indent(&docstring, 3));
+            rendered.push('\n');
+        }
+        return Ok(rendered);
+    }
+
+    static_rendered
+}
+
 /// Render one top-level class from Python source without importing the module.
 pub fn document_class_source_with_options(
     class_name: &str,
@@ -1249,6 +1287,28 @@ pub fn document_class_source_with_options(
         )));
     };
     Ok(render_class_with_name(class, qualified_name, options, true, true))
+}
+
+/// Render one top-level function from Python source without importing it.
+pub fn document_function_source(
+    function_name: &str,
+    qualified_name: &str,
+    source: &str,
+) -> Result<String, AutodocError> {
+    let parsed = parse_module(source).map_err(|error| AutodocError::Parse(error.to_string()))?;
+    let function = parsed.suite().iter().find_map(|statement| match statement {
+        Stmt::FunctionDef(function) if function.name.as_str() == function_name => Some(function),
+        _ => None,
+    });
+    let Some(function) = function else {
+        return Err(AutodocError::Parse(format!(
+            "function {function_name:?} was not found in the module source"
+        )));
+    };
+    let rendered = render_function(function, FunctionKind::Function, 0, TypeHints::Signature);
+    let local_prefix = format!(".. py:function:: {}", function.name.as_str());
+    let qualified_prefix = format!(".. py:function:: {qualified_name}");
+    Ok(rendered.replacen(&local_prefix, &qualified_prefix, 1))
 }
 
 /// Source-neutral request for Rust/Lean autodoc generation.
@@ -2458,6 +2518,28 @@ def callback(name: 'str', count: 'int') -> 'None':
             .collect::<Vec<_>>();
 
         assert_eq!(names, ["Literal", "Callable", "Sphinx", "str", "None", "int", "None"]);
+
+        let qualified_signature = "sphinx.locale.init(locale_dirs: Iterable[str | os.PathLike[str] | None], language: str | None) -> tuple[NullTranslations, bool]";
+        let references = signature_type_references(qualified_signature);
+        let names = references
+            .iter()
+            .map(|reference| &qualified_signature[reference.start..reference.end])
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "Iterable",
+                "str",
+                "os.PathLike",
+                "str",
+                "None",
+                "str",
+                "None",
+                "tuple",
+                "NullTranslations",
+                "bool",
+            ]
+        );
 
         let class_signature = "class EventManager(app: Sphinx)";
         let references = signature_type_references(class_signature);

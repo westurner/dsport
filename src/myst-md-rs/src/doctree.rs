@@ -661,6 +661,7 @@ fn start_tag(
                     backrefs: String::new(),
                 },
                 CodeKind::Literal(info) => NodeKind::LiteralBlock {
+                    ids: None,
                     classes: if info.is_empty() {
                         String::new()
                     } else {
@@ -1514,6 +1515,7 @@ fn handle_include(
         let block = tree.append(
             parent,
             NodeKind::LiteralBlock {
+                ids: None,
                 classes,
                 caption: None,
                 source: Some(path.to_string_lossy().into_owned()),

@@ -1209,6 +1209,62 @@ impl BuildEnvironment {
                     }
                 }
             }
+
+            if indent == 0
+                && let Some(target) = trimmed
+                    .strip_prefix(".. autofunction::")
+                    .or_else(|| trimmed.strip_prefix(".. py:autofunction::"))
+            {
+                let target = target.trim();
+                let (module_name, function_name) = target
+                    .rsplit_once('.')
+                    .map(|(module_name, function_name)| {
+                        (module_name.to_string(), function_name.to_string())
+                    })
+                    .or_else(|| {
+                        current_module
+                            .as_ref()
+                            .map(|module_name| (module_name.clone(), target.to_string()))
+                    })
+                    .unwrap_or_default();
+                let qualified_target = if target.contains('.') {
+                    target.to_string()
+                } else if !module_name.is_empty() {
+                    format!("{module_name}.{function_name}")
+                } else {
+                    target.to_string()
+                };
+                if !module_name.is_empty()
+                    && !function_name.is_empty()
+                    && let Some(path) = self.resolve_python_module(&module_name)
+                {
+                    let mut next = index + 1;
+                    while next < lines.len() {
+                        let option = lines[next].trim();
+                        if option.starts_with(':') {
+                            next += 1;
+                            continue;
+                        }
+                        if option.is_empty() {
+                            next += 1;
+                        }
+                        break;
+                    }
+                    if let Ok(rendered) = crate::autodoc::document_function_auto(
+                        &path,
+                        &module_name,
+                        &function_name,
+                        &qualified_target,
+                        &[],
+                    ) {
+                        output.extend(rendered.lines().map(str::to_owned));
+                        output.push(String::new());
+                        index = next;
+                        changed = true;
+                        continue;
+                    }
+                }
+            }
             output.push(line.to_owned());
             index += 1;
         }
@@ -4678,7 +4734,6 @@ mod tests {
             &srcdir,
             workspace.path().join("doctrees"),
         );
-
         let expanded = env
             .expand_autodoc(
                 ".. module:: sphinx.events\n\n.. autoclass:: EventManager\n   :members:\n",
@@ -4690,6 +4745,95 @@ mod tests {
         assert!(expanded.contains(".. py:method:: connect("));
         assert!(expanded.contains(".. py:method:: emit_firstresult("));
         assert!(!expanded.contains(".. autoclass::"));
+    }
+
+    #[test]
+    fn expand_autofunction_renders_qualified_function_docs() {
+        let workspace = tempfile::tempdir().unwrap();
+        let srcdir = workspace.path().join("doc");
+        let module_dir = workspace.path().join("sphinx");
+        std::fs::create_dir_all(&srcdir).unwrap();
+        std::fs::create_dir_all(&module_dir).unwrap();
+        std::fs::write(
+            module_dir.join("locale.py"),
+            include_str!("../../sphinx/sphinx/locale/__init__.py"),
+        )
+        .unwrap();
+        let project = EnvProject::new(&srcdir, &[(".rst", "restructuredtext")]);
+        let env = BuildEnvironment::new(
+            SphinxConfig::new_defaults(),
+            project,
+            &srcdir,
+            workspace.path().join("doctrees"),
+        );
+        let module_path = env
+            .resolve_python_module("sphinx.locale")
+            .expect("test module should resolve from the workspace root");
+        let function_rst = crate::autodoc::document_function_auto(
+            &module_path,
+            "sphinx.locale",
+            "init",
+            "sphinx.locale.init",
+            &[],
+        )
+        .expect("test function should render");
+        assert!(function_rst.contains(
+            "sphinx.locale.init(locale_dirs: Iterable[str | os.PathLike[str] | None], language: str | None, catalog: str = 'sphinx', namespace: str = 'general') -> tuple[NullTranslations, bool]"
+        ));
+
+        let expanded = env
+            .expand_autodoc(".. module:: sphinx.locale\n\n.. autofunction:: init\n")
+            .expect("autofunction should expand from the project Python root");
+
+        assert!(expanded.contains(
+            ".. py:function:: sphinx.locale.init(locale_dirs: Iterable[str | os.PathLike[str] | None], language: str | None, catalog: str = 'sphinx', namespace: str = 'general') -> tuple[NullTranslations, bool]"
+        ));
+        assert!(expanded.contains("Look for message catalogs"));
+        assert!(!expanded.contains(".. autofunction::"));
+        for (name, expected) in [
+            (
+                "_",
+                "Translation function for messages on documentation",
+            ),
+            ("__", "Translation function for console messages"),
+        ] {
+            let alias_rst = crate::autodoc::document_function_auto(
+                &module_path,
+                "sphinx.locale",
+                name,
+                &format!("sphinx.locale.{name}"),
+                &[],
+            )
+            .expect("callable alias should be runtime-introspected");
+            assert!(alias_rst.contains(expected), "{name}: {alias_rst}");
+            assert!(alias_rst.contains("message: str"), "{name}: {alias_rst}");
+        }
+
+        let i18n_source = include_str!("../../sphinx/doc/extdev/i18n.rst");
+        let qualified_i18n = i18n_source.replace(".. autofunction::", ".. py:autofunction::");
+        let expanded_i18n = env
+            .expand_autodoc(&qualified_i18n)
+            .expect("real i18n API directives should expand");
+        assert!(expanded_i18n.contains(
+            ".. py:function:: sphinx.locale.init(locale_dirs: Iterable[str | os.PathLike[str] | None]"
+        ));
+        assert!(!expanded_i18n.contains(".. autofunction::"));
+
+        let tree = env
+            .parse_source("extdev/i18n", &expanded_i18n)
+            .expect("expanded i18n source should parse");
+        let init_signature = (0..tree.nodes_len()).find_map(|node_id| {
+            match &tree.node(node_id).kind {
+                NodeKind::ObjectDescription { ids, sig_text, .. }
+                    if ids == "sphinx.locale.init" => Some(sig_text),
+                _ => None,
+            }
+        });
+        let init_signature = init_signature.expect("parsed init directive should have an object node");
+        assert!(
+            init_signature.contains("Iterable[str | os.PathLike[str] | None]"),
+            "signature should be unquoted before HTML rendering: {init_signature}"
+        );
     }
 
     #[test]

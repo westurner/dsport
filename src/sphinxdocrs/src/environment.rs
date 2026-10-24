@@ -5352,6 +5352,33 @@ mod tests {
         assert_eq!(env.found_docs().iter().filter(|doc| *doc == "notebook").count(), 1);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn register_yaml_notebooks_skips_invalid_and_out_of_root_targets() {
+        use std::os::unix::fs::symlink;
+
+        let (tmp, mut env) = make_env_with_tempdir();
+        let outside = tmp.path().join("outside.ipynb");
+        std::fs::write(&outside, "outside").unwrap();
+        std::fs::write(env.srcdir.join("target.txt"), "not a notebook").unwrap();
+        std::fs::write(
+            env.srcdir.join("_toc.yml"),
+            "root: index\nchapters:\n  - file: valid.ipynb\n  - file: valid.ipynb\n  - file: ignored.rst\n  - file: /absolute.ipynb\n  - file: https://example.invalid/remote.ipynb\n  - file: missing.ipynb\n  - file: non-notebook.ipynb\n  - file: outside.ipynb\n",
+        )
+        .unwrap();
+        std::fs::write(env.srcdir.join("valid.ipynb"), "valid").unwrap();
+        symlink(env.srcdir.join("target.txt"), env.srcdir.join("non-notebook.ipynb")).unwrap();
+        symlink(&outside, env.srcdir.join("outside.ipynb")).unwrap();
+
+        env.register_yaml_notebooks().unwrap();
+
+        assert_eq!(env.found_docs(), &HashSet::from(["valid".to_string()]));
+        assert_eq!(
+            env.project.docname_to_path.get("valid").map(String::as_str),
+            Some("valid.ipynb")
+        );
+    }
+
     #[test]
     fn register_yaml_notebooks_reads_source_directives_and_reports_read_errors() {
         let (_tmp, mut env) = make_env_with_tempdir();

@@ -596,6 +596,11 @@ fn strip_rust_line_comment(line: &str) -> &str {
             } else if b == b'"' {
                 in_str = false;
             }
+        } else if b == b'\'' {
+            if let Some(advance) = rust_char_literal_len(&bytes[i..]) {
+                i += advance;
+                continue;
+            }
         } else if b == b'"' {
             in_str = true;
         } else if b == b'/' && bytes.get(i + 1) == Some(&b'/') {
@@ -606,23 +611,50 @@ fn strip_rust_line_comment(line: &str) -> &str {
     line
 }
 
+fn rust_char_literal_len(slice: &[u8]) -> Option<usize> {
+    if slice.first() != Some(&b'\'') {
+        return None;
+    }
+    if slice.get(1) == Some(&b'\\') {
+        for (idx, b) in slice.iter().enumerate().skip(2).take(10) {
+            if *b == b'\'' {
+                return Some(idx + 1);
+            }
+        }
+        None
+    } else if slice.len() >= 3 && slice[2] == b'\'' {
+        Some(3)
+    } else {
+        None
+    }
+}
+
 fn has_unquoted_char(code: &str, target: char) -> bool {
     let mut in_str = false;
     let mut escaped = false;
-    for ch in code.chars() {
+    let bytes = code.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
         if in_str {
             if escaped {
                 escaped = false;
-            } else if ch == '\\' {
+            } else if b == b'\\' {
                 escaped = true;
-            } else if ch == '"' {
+            } else if b == b'"' {
                 in_str = false;
             }
-        } else if ch == '"' {
+        } else if b == b'\'' {
+            if let Some(advance) = rust_char_literal_len(&bytes[i..]) {
+                i += advance;
+                continue;
+            }
+        } else if b == b'"' {
             in_str = true;
-        } else if ch == target {
+        } else if char::from(b) == target {
             return true;
         }
+        i += 1;
     }
     false
 }
@@ -631,23 +663,32 @@ fn brace_delta(code: &str) -> i32 {
     let mut delta = 0i32;
     let mut in_str = false;
     let mut escaped = false;
-    for ch in code.chars() {
+    let bytes = code.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
         if in_str {
             if escaped {
                 escaped = false;
-            } else if ch == '\\' {
+            } else if b == b'\\' {
                 escaped = true;
-            } else if ch == '"' {
+            } else if b == b'"' {
                 in_str = false;
             }
+        } else if b == b'\'' {
+            if let Some(advance) = rust_char_literal_len(&bytes[i..]) {
+                i += advance;
+                continue;
+            }
         } else {
-            match ch {
-                '"' => in_str = true,
-                '{' => delta += 1,
-                '}' => delta -= 1,
+            match b {
+                b'"' => in_str = true,
+                b'{' => delta += 1,
+                b'}' => delta -= 1,
                 _ => {}
             }
         }
+        i += 1;
     }
     delta
 }
@@ -1131,7 +1172,7 @@ const SUBSYSTEM_SPECS: &[SubsystemSpec] = &[
     SubsystemSpec {
         name: "apidoc (C3)",
         sphinx_api_prefixes: &["ext/apidoc/"],
-        sphinx_test_prefixes: &["test_ext_apidoc/"],
+        sphinx_test_prefixes: &["test_ext_apidoc/", "test_extensions/test_ext_apidoc.py"],
         rs_api_prefixes: &["apidoc/", "bin/sphinx_apidoc.rs"],
         rs_test_prefixes: &["apidoc.rs"],
         py_bridge_prefixes: &[],
@@ -1291,6 +1332,8 @@ fn build_subsystem_rows(
         };
         let exclude_tests: &[&str] = if spec.name.starts_with("highlighting") {
             specific_ext_tests
+        } else if spec.name == "extension & registry" {
+            &["test_extensions/test_ext_apidoc.py"]
         } else {
             &[]
         };

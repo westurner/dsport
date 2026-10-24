@@ -4532,6 +4532,26 @@ mod tests {
     }
 
     #[test]
+    fn source_snapshot_registers_lean_domain_metadata() {
+        let mut env = make_env();
+        let snapshot = AnalysisSnapshot::new(
+            SourceLanguage::Lean,
+            "lean-test",
+            "1",
+            "/tmp/lean",
+            "lean-hash",
+            Vec::new(),
+            Vec::new(),
+        );
+
+        env.note_source_snapshot("lean-api", snapshot).unwrap();
+
+        assert_eq!(env.domaindata["lean"]["backend"], "lean-test");
+        assert_eq!(env.domaindata["lean"]["source_root"], "/tmp/lean");
+        assert_eq!(env.source_snapshots["lean-api"].language, SourceLanguage::Lean);
+    }
+
+    #[test]
     fn source_snapshot_persists_provider_and_toolchain_metadata() {
         let mut env = make_env();
         let mut snapshot = source_snapshot();

@@ -15,15 +15,15 @@ PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov -p sphinx
 ```
 
 All library tests and all binary/integration test targets pass. The all-target
-report is **76.49% branch coverage** (964/4,101 branches missed), 93.51% line
-coverage, and 91.66% function coverage. The 100% branch target is
+report is **76.70% branch coverage** (956/4,103 branches missed), 93.55% line
+coverage, and 91.70% function coverage. The 100% branch target is
 still open; no exclusions or parity thresholds were relaxed.
 
 Current highest-miss modules, in execution priority order:
 
 | Module | Missed/total | Branch coverage |
 | --- | ---: | ---: |
-| `environment.rs` | 189/772 | 75.52% |
+| `environment.rs` | 181/774 | 76.61% |
 | `source_docs.rs` | 72/208 | 65.38% |
 | `autodoc.rs` | 71/252 | 71.83% |
 | `apidoc/generate.rs` | 60/136 | 55.88% |

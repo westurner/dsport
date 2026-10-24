@@ -10,12 +10,12 @@ This document merges the former `docs/sphinx-port-inventory.md`
 The current all-target branch-coverage gate is
 `PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov -p sphinxdocrs --lib --bins --tests --branch --summary-only -- --quiet`.
 All library tests and every binary/integration test target pass. The measured
-result is 76.49% branch coverage (964/4,101 branches missed), 93.51% line
-coverage, and 91.66% function coverage. The repository's 100% branch
+result is 76.70% branch coverage (956/4,103 branches missed), 93.55% line
+coverage, and 91.70% function coverage. The repository's 100% branch
 target remains open; neither coverage exclusions nor semantic parity
 thresholds were relaxed.
 
-The highest current branch gaps are `environment.rs` (189/772 missed),
+The highest current branch gaps are `environment.rs` (181/774 missed),
 `source_docs.rs` (72/208), `autodoc.rs` (71/252),
 `apidoc/generate.rs` (60/136), `theme_render.rs` (54/246), and
 `builders/html.rs` (52/176). `apidoc/templates.rs`, `genindex.rs`, and
@@ -41,13 +41,13 @@ full report):
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `sphinx` API (`src/sphinx/sphinx`) | 245 | 6,893 | 4,890 | 768 | 3 |
 | `sphinx` tests (`src/sphinx/tests`) | 143 | 2,138 | 0 | 0 | 1,562 |
-| `sphinxdocrs` crate (`src/sphinxdocrs/src`, incl. inline `#[cfg(test)]`) | 104 | 3,673 | 1,554 | 526 | 1,189 |
+| `sphinxdocrs` crate (`src/sphinxdocrs/src`, incl. inline `#[cfg(test)]`) | 104 | 3,680 | 1,554 | 526 | 1,196 |
 | `sphinxdocrs` Rust integration tests (`src/sphinxdocrs/tests`) | 48 | 923 | 0 | 0 | 744 |
 | `sphinxdocrs` Python bridge tests (`src/tests/test_sphinx*`) | 9 | 91 | 0 | 0 | 83 |
-| **`sphinxdocrs` combined** | **161** | **4,687** | **1,554** | **526** | **2,016** |
+| **`sphinxdocrs` combined** | **161** | **4,694** | **1,554** | **526** | **2,023** |
 
-Across all 23 tracked subsystems, `sphinxdocrs` defines **2,016 test functions**
-(1,189 inline `#[cfg(test)]` tests + 744 Rust integration tests + 83 Python
+Across all 23 tracked subsystems, `sphinxdocrs` defines **2,023 test functions**
+(1,196 inline `#[cfg(test)]` tests + 744 Rust integration tests + 83 Python
 bridge tests) compared to upstream `sphinx`'s **1,562 test functions**, and
 exposes **1,554 API callables / 526 API types** vs. upstream's **4,890 callables
 / 768 types** (where the largest intentionally unported Python surfaces are

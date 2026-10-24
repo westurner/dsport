@@ -2280,6 +2280,107 @@ mod tests {
     }
 
     #[test]
+    fn mxc_lsp_config_rejects_invalid_shapes_values_and_fields() {
+        let field = |name: &str, value| (name.to_string(), value);
+        let map = |fields| ConfigVal::Map(fields);
+        let invalid_configs = [
+            (ConfigVal::Int(1), "must be a mapping"),
+            (
+                map(vec![field("containment", ConfigVal::Str("unknown".into()))]),
+                "containment must be process, bubblewrap, or seatbelt",
+            ),
+            (
+                map(vec![field("filesystem", ConfigVal::Int(1))]),
+                "filesystem must be a mapping",
+            ),
+            (
+                map(vec![field(
+                    "filesystem",
+                    map(vec![field("mount_procfs", ConfigVal::Str("yes".into()))]),
+                )]),
+                "mount_procfs must be boolean",
+            ),
+            (
+                map(vec![field(
+                    "filesystem",
+                    map(vec![field("unknown", ConfigVal::List(Vec::new()))]),
+                )]),
+                "unsupported source_lsp_mxc_config.filesystem field",
+            ),
+            (
+                map(vec![field(
+                    "filesystem",
+                    map(vec![field(
+                        "readonly_paths",
+                        ConfigVal::List(vec![ConfigVal::Int(1)]),
+                    )]),
+                )]),
+                "readonly_paths entries must be path strings",
+            ),
+            (
+                map(vec![field("network", ConfigVal::Int(1))]),
+                "network must be a mapping",
+            ),
+            (
+                map(vec![field(
+                    "network",
+                    map(vec![field("egress", ConfigVal::Str("allow".into()))]),
+                )]),
+                "network.egress must be a mapping",
+            ),
+            (
+                map(vec![field(
+                    "network",
+                    map(vec![field(
+                        "egress",
+                        map(vec![field("default", ConfigVal::Str("sometimes".into()))]),
+                    )]),
+                )]),
+                "must be 'deny' or 'allow'",
+            ),
+            (
+                map(vec![field(
+                    "network",
+                    map(vec![field(
+                        "egress",
+                        map(vec![field("default", ConfigVal::Bool(true))]),
+                    )]),
+                )]),
+                "must be 'deny' or 'allow'",
+            ),
+            (
+                map(vec![field(
+                    "network",
+                    map(vec![field(
+                        "egress",
+                        map(vec![field("unknown", ConfigVal::Str("deny".into()))]),
+                    )]),
+                )]),
+                "unsupported source_lsp_mxc_config.network field",
+            ),
+            (
+                map(vec![field("timeout_ms", ConfigVal::Int(0))]),
+                "timeout_ms must be between 1 and 1800000",
+            ),
+            (
+                map(vec![field("unknown", ConfigVal::Bool(true))]),
+                "unsupported source_lsp_mxc_config field",
+            ),
+        ];
+
+        for (mxc_config, expected_error) in invalid_configs {
+            let mut raw = HashMap::new();
+            raw.insert("source_lsp_mxc_config".into(), mxc_config);
+            let error = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+                raw,
+                HashMap::new(),
+            ))
+            .unwrap_err();
+            assert!(error.contains(expected_error), "{error}");
+        }
+    }
+
+    #[test]
     fn sandbox_engine_defaults_parses_and_invalidates_cache_identity() {
         let defaults = super::config::SourceDocsSettings::default();
         assert_eq!(
@@ -2470,12 +2571,26 @@ mod tests {
             ))
         };
 
-        assert!(settings_with_root(ConfigVal::Int(7))
-            .unwrap_err()
-            .contains("entries must be path strings"));
-        assert!(settings_with_root(ConfigVal::Str("/".into()))
-            .unwrap_err()
-            .contains("absolute non-root paths"));
+        assert!(
+            settings_with_root(ConfigVal::Int(7))
+                .unwrap_err()
+                .contains("entries must be path strings")
+        );
+        assert!(
+            settings_with_root(ConfigVal::Str("/".into()))
+                .unwrap_err()
+                .contains("absolute non-root paths")
+        );
+        assert!(
+            settings_with_root(ConfigVal::Str("../toolchain".into()))
+                .unwrap_err()
+                .contains("absolute non-root paths")
+        );
+        assert!(
+            settings_with_root(ConfigVal::Str("/proc/sys".into()))
+                .unwrap_err()
+                .contains("protected sandbox mount points")
+        );
     }
 
     #[test]
@@ -2507,9 +2622,11 @@ mod tests {
                 .lsp_workspace_root,
             Some(Path::new("workspace").to_path_buf())
         );
-        assert!(settings_with_root(ConfigVal::Int(1))
-            .unwrap_err()
-            .contains("path string or None"));
+        assert!(
+            settings_with_root(ConfigVal::Int(1))
+                .unwrap_err()
+                .contains("path string or None")
+        );
     }
 
     #[cfg(feature = "source-sandbox")]

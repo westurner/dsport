@@ -4499,6 +4499,22 @@ mod tests {
         assert!(restored.source_snapshots.is_empty());
     }
 
+    #[test]
+    fn source_snapshot_rejects_empty_source_root() {
+        let mut env = make_env();
+        let mut snapshot = source_snapshot();
+        snapshot.source_root.clear();
+
+        let error = env.note_source_snapshot("api", snapshot).unwrap_err();
+
+        assert!(matches!(
+            error,
+            AnalysisError::InvalidRequest(message)
+                if message == "source analysis snapshot has an empty source root"
+        ));
+        assert!(env.source_snapshots.is_empty());
+    }
+
     #[cfg(feature = "rust-source-analysis")]
     #[test]
     fn provider_cache_identity_preserves_request_identity_and_toolchain_invalidation() {

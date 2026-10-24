@@ -5,20 +5,20 @@ This document merges the former `docs/sphinx-port-inventory.md`
 (*sphinx port inventory, Phase 4*) and `docs/sphinxdocrs-cli-port-plan.md`
 (*sphinxdocrs CLI port & test plan*); both are superseded by this file.
 
-## Current Verification (2026-10-23)
+## Current Verification (2026-10-24)
 
 The current all-target branch-coverage gate is
 `PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov -p sphinxdocrs --lib --bins --tests --branch --summary-only -- --quiet`.
-All 1,098 library tests and every binary/integration test target pass. The
-measured result is 75.58% branch coverage (986/4,037 branches missed), 93.02%
-line coverage, and 91.31% function coverage. The repository's 100% branch
+All library tests and every binary/integration test target pass. The measured
+result is 75.37% branch coverage (1,007/4,089 branches missed), 93.02% line
+coverage, and 91.26% function coverage. The repository's 100% branch
 target remains open; neither coverage exclusions nor semantic parity
 thresholds were relaxed.
 
-The highest current branch gaps are `environment.rs` (182/734 missed),
-`source_docs.rs` (90/208), `autodoc.rs` (68/240),
-`apidoc/generate.rs` (60/136), `theme_render.rs` (53/242), and
-`builders/html.rs` (51/174). `apidoc/templates.rs`, `genindex.rs`, and
+The highest current branch gaps are `environment.rs` (191/760 missed),
+`source_docs.rs` (90/208), `autodoc.rs` (71/252),
+`apidoc/generate.rs` (60/136), `theme_render.rs` (54/246), and
+`builders/html.rs` (52/176). `apidoc/templates.rs`, `genindex.rs`, and
 `quickstart/templates.rs` now each have 100% branch coverage.
 
 The H4-H7 implementation rows below reflect the current native code, not the
@@ -41,18 +41,62 @@ full report):
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `sphinx` API (`src/sphinx/sphinx`) | 245 | 6,893 | 4,890 | 768 | 3 |
 | `sphinx` tests (`src/sphinx/tests`) | 143 | 2,138 | 0 | 0 | 1,562 |
-| `sphinxdocrs` crate (`src/sphinxdocrs/src`, incl. inline `#[cfg(test)]`) | 104 | 3,658 | 1,554 | 526 | 1,174 |
+| `sphinxdocrs` crate (`src/sphinxdocrs/src`, incl. inline `#[cfg(test)]`) | 104 | 3,659 | 1,554 | 526 | 1,175 |
 | `sphinxdocrs` Rust integration tests (`src/sphinxdocrs/tests`) | 48 | 923 | 0 | 0 | 744 |
 | `sphinxdocrs` Python bridge tests (`src/tests/test_sphinx*`) | 9 | 91 | 0 | 0 | 83 |
-| **`sphinxdocrs` combined** | **161** | **4,672** | **1,554** | **526** | **2,001** |
+| **`sphinxdocrs` combined** | **161** | **4,673** | **1,554** | **526** | **2,002** |
 
-Across all 23 tracked subsystems, `sphinxdocrs` defines **2,001 test functions**
-(1,174 inline `#[cfg(test)]` tests + 744 Rust integration tests + 83 Python
+Across all 23 tracked subsystems, `sphinxdocrs` defines **2,002 test functions**
+(1,175 inline `#[cfg(test)]` tests + 744 Rust integration tests + 83 Python
 bridge tests) compared to upstream `sphinx`'s **1,562 test functions**, and
 exposes **1,554 API callables / 526 API types** vs. upstream's **4,890 callables
 / 768 types** (where the largest intentionally unported Python surfaces are
 `c`/`cpp` domains, `pycode`, docutils writer internals handled in `docutilsrs`,
 and `keep-python` third-party/optional extensions).
+
+The LSP report is an inventory, not a parity score: symbol kinds and test
+function counts do not establish equivalent behavior, and subsystem totals can
+include intentionally bridged or **keep-python** surfaces. For each native
+port slice, record the in-scope upstream symbols, their upstream behavior
+tests, the Rust implementation/tests that cover them, and any explicit
+deviation or Python boundary. Select work by combining that map with LLVM's
+missed-branch counts; do not use raw API or test-count ratios as a completion
+target. The branch-coverage workflow and current ranking are maintained in
+[sphinxdocrs-coverage-console-plan.md](sphinxdocrs-coverage-console-plan.md).
+
+#### Port-slice evidence
+
+Each slice should leave a short evidence trail before its §3/§6 status changes:
+
+1. Name the upstream API/behavior and source test, the native scope, and the
+  Rust test target. Mark excluded Python-only APIs as a deliberate boundary,
+  not as missing native work.
+2. Run the narrow Rust test first. For library-owned branches, use a filtered
+  LLVM text report with branch annotations, for example:
+
+  ```sh
+  PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov \
+    -p sphinxdocrs --lib --branch --text --show-missing-lines \
+    --output-path /tmp/sphinxdocrs-environment-coverage.txt -- \
+    environment::tests --quiet
+  ```
+
+  Use `--test <target>` for an integration-owned path; `--lib` does not run
+  integration-test binaries. Compare the relevant branch outcomes before and
+  after the slice, not just line or function coverage. Every new test must
+  assert the observable contract it represents.
+3. After a coherent tranche, run the full all-target gate recorded above and
+  update the measured totals and missed-branch ranking. Keep the focused
+  report with the tranche's evidence when its branch delta is not obvious
+  from the aggregate.
+4. For every remaining uncovered branch, record whether it is a real test gap,
+  platform/FFI-only, or unreachable by design, with a rationale. Do not add
+  coverage exclusions or weaken parity thresholds to improve the score.
+
+For example, the environment snapshot-registration slice added a test for the
+empty `source_root` rejection. Its focused LLVM report changed that condition
+from `True: 0, False: 1` to `True: 1, False: 1`; this is useful branch evidence,
+whereas the subsystem's test-function count alone would not reveal the gap.
 
 ### Historical local verification (2026-09-19)
 
@@ -513,7 +557,7 @@ from `sphinx-source-status --compare-tests`
 | `test_command_line.py`, `test__cli/` | build & cli | C2/P3 | 51 / 2 | 66 / 33 | 12 | 116 | **partial** — `tests/build.rs`, `tests/cli_bins.rs`, `tests/cli_tests/test_sphinx_cli.py`; arg/make-mode native |
 | `test_application.py` | application | P3 | 85 / 2 | 17 / 10 | 8 | 44 | **partial** — `tests/application.rs` + `application.rs` inline tests |
 | `test_builders/`, `test_writers/` | builders & writers | P3 | 1,323 / 82 | 219 / 67 | 309 | 401 | **partial** — `tests/builders*.rs` (12 files), `tests/linkcheck_wiremock.rs`, `tests/myst_bridge.rs`, `tests/otherdocs.rs`, `tests/parity.rs`, `tests/snapshot.rs` + inline builder tests |
-| `test_environment/` | environment & toctree | P3 | 132 / 12 | 113 / 11 | 28 | 192 | **mirrored** ✅ — `tests/environment.rs`, `tests/toctree.rs`, `tests/genindex.rs`, `tests/incremental.rs` + inline tests |
+| `test_environment/` | environment & toctree | P3 | 132 / 12 | 113 / 11 | 28 | 193 | **mirrored** ✅ — `tests/environment.rs`, `tests/toctree.rs`, `tests/genindex.rs`, `tests/incremental.rs` + inline tests |
 | `test_roles.py`, `test_directives/`, `test_markup/` | roles & directives | P3 | 81 / 44 | 7 / 5 | 98 | 46 | **partial** — `tests/roles.rs` + `roles.rs` inline tests (directive/role parser dispatch also covered in `docutilsrs`) |
 | `test_domains/` | domains & source_docs (LSP/H14) | P3 | 1,431 / 255 | 331 / 116 | 209 | 183 | **partial** — `std`/`rst`/`py`/`js` (`tests/domains_{std,rst,py,js}.rs`) + Rust/Lean `source_docs`/LSP (`source_docs.rs`, `lsp_backend.rs`, `embedded_lsp.rs`); `c`/`cpp` **keep-python** (**H3f**) |
 | `test_theming/` | theming | P3 | 26 / 3 | 70 / 32 | 16 | 52 | **mirrored** — inline `theme.rs`/`theme_render.rs`/`theme_static.rs` unit tests + `tests/builders.rs` and `tests/otherdocs.rs` |
@@ -529,7 +573,7 @@ from `sphinx-source-status --compare-tests`
 
 | suite | test fns (LSP) | scope |
 | --- | ---: | --- |
-| lib (inline `#[cfg(test)]`) | 1,174 | 60+ source files carry inline unit tests (validators, arg parsing, generators, builders, registry, versioning, util modules, autodoc, theme_render, environment, source_docs, LSP backend, embedded LSP) |
+| lib (inline `#[cfg(test)]`) | 1,175 | 60+ source files carry inline unit tests (validators, arg parsing, generators, builders, registry, versioning, util modules, autodoc, theme_render, environment, source_docs, LSP backend, embedded LSP) |
 | `tests/quickstart.rs`, `tests/quickstart_cli.rs` | 35 | validators (`#[case]` tables), parser flags, `valid_dir`, tree-layout snapshots, `conf.py` snapshot, LF/CRLF assertions, scripted-terminal `ask_user`, help-text snapshot |
 | `tests/build.rs`, `tests/cli_bins.rs` | 53 | `jobs_argument`, `parse_confdir`, `parse_doctreedir`, `validate_filenames`, `parse_confoverrides`, `parse_color`, `build_clean` safety, `run_generic_build`, dispatch, `BUILDERS` completeness, CLI binary smoke tests, help snapshot |
 | `tests/apidoc.rs` | 17 | parser flags, `is_initpy`, `module_join`, `is_excluded`, `recurse_tree` variants, Rust/Lean source entry points, module/TOC/help snapshots |
@@ -2917,6 +2961,14 @@ remain explicit boundaries rather than blockers for these native workstreams.
 
 ### 9.2 Current suggested execution order
 
+The order below preserves subsystem dependencies. Within each item, choose the
+smallest behavior slice where the LSP inventory identifies an in-scope API or
+upstream-test gap and the current LLVM report identifies reachable missed
+branches. The subsystem-level comparison is only a locator: for example,
+`domains & source_docs` combines several domains, including the intentional
+`c`/`cpp` Python boundary, so its aggregate callable delta must be split by
+native ownership before creating port work.
+
 | step | items | rationale |
 | --- | --- | --- |
 | 1 | **H11.2** | finish the remaining real-theme HTML/dirhtml/singlehtml DOM, navigation, search, and artifact contracts |
@@ -2946,14 +2998,22 @@ remain explicit boundaries rather than blockers for these native workstreams.
 
 For each H-item:
 
-1. Locate the upstream test(s) in `src/sphinx/tests/`.
-2. Port them into the crate's Rust test module — or a mirrored
+1. Use the LSP comparison to identify the in-scope upstream API/behavior and
+  locate its test(s) in `src/sphinx/tests/`; list intentional Python/FFI
+  boundaries separately.
+2. Inspect the current branch ranking and the focused source report. Select
+  reachable branches tied to that behavior; record the baseline branch
+  outcomes before editing.
+3. Port the behavior test into the crate's Rust test module — or a mirrored
    `tests/test_sphinxdocrs_*.py` when the surface is PyO3-facing.
-3. Implement the minimal code to pass.
-4. Add interop checks whenever the Python boundary is touched.
-5. Tag each ported function *exact parity* / *accepted deviation* /
+4. Implement the minimal code to pass, then rerun the same focused test and
+  LLVM report. Confirm the intended branch outcome changed and the test
+  asserts user-visible behavior rather than merely executing the branch.
+5. Add interop checks whenever the Python boundary is touched.
+6. Tag each ported function *exact parity* / *accepted deviation* /
    *pending*.
-6. Flip the affected row(s) in §3 and §6, and note the change here.
+7. Run the relevant tranche gate, flip the affected row(s) in §3 and §6, and
+  record the upstream/native test mapping and measured branch delta here.
 
 ---
 

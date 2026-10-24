@@ -6,7 +6,7 @@ This plan covers hand-written Rust production code in `src/sphinxdocrs`, with
 upstream behavior traced from `src/sphinx/tests/` and native behavior verified
 by `src/sphinxdocrs/tests/`.
 
-### Current all-target measurement (2026-10-23)
+### Current all-target measurement (2026-10-24)
 
 The authoritative current gate is:
 
@@ -14,21 +14,21 @@ The authoritative current gate is:
 PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov -p sphinxdocrs --lib --bins --tests --branch --summary-only -- --quiet
 ```
 
-All 1,098 library tests and all binary/integration test targets pass. The
-all-target report is **75.58% branch coverage** (986/4,037 branches missed),
-93.02% line coverage, and 91.31% function coverage. The 100% branch target is
+All library tests and all binary/integration test targets pass. The all-target
+report is **75.37% branch coverage** (1,007/4,089 branches missed), 93.02% line
+coverage, and 91.26% function coverage. The 100% branch target is
 still open; no exclusions or parity thresholds were relaxed.
 
 Current highest-miss modules, in execution priority order:
 
 | Module | Missed/total | Branch coverage |
 | --- | ---: | ---: |
-| `environment.rs` | 182/734 | 75.20% |
+| `environment.rs` | 191/760 | 74.87% |
 | `source_docs.rs` | 90/208 | 56.73% |
-| `autodoc.rs` | 68/240 | 71.67% |
+| `autodoc.rs` | 71/252 | 71.83% |
 | `apidoc/generate.rs` | 60/136 | 55.88% |
-| `theme_render.rs` | 53/242 | 78.10% |
-| `builders/html.rs` | 51/174 | 70.69% |
+| `theme_render.rs` | 54/246 | 78.05% |
+| `builders/html.rs` | 52/176 | 70.45% |
 | `domains/scan.rs` | 33/182 | 81.87% |
 | `config.rs` | 30/210 | 85.71% |
 | `bin/sphinx_source_port.rs` | 27/32 | 15.63% |
@@ -37,6 +37,11 @@ Current highest-miss modules, in execution priority order:
 The latest additions also bring `apidoc/templates.rs` (2/2), `genindex.rs`
 (2/2), and `quickstart/templates.rs` (2/2) to 100% branch coverage. Re-run
 the exact gate above before using these values as a new baseline.
+
+Inline tests in source modules are included in LLVM's instrumented source, so
+adding tests can change the aggregate branch denominator. Judge a test tranche
+by the targeted production-branch outcomes as well as the aggregate report;
+never infer a production regression from the aggregate percentage alone.
 
 - Measured on 2026-09-18:
   - `cargo test -p sphinxdocrs --all-targets`: 829 tests passed in the latest

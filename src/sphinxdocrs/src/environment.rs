@@ -4249,6 +4249,37 @@ mod tests {
     }
 
     #[test]
+    fn autoattribute_expansion_preserves_literal_directives_and_resets_context() {
+        let env = make_env();
+        let source = ".. module:: example\n\n.. class:: Thing\n\n   .. method:: run()\n      :param value: Input\n\n   .. code-block:: rst\n\n      .. method:: literal()\n\nOutside the class.\n\n.. method:: orphan()\n";
+
+        let expanded = env
+            .expand_autoattribute_docs(source)
+            .expect("the class and method declarations should be qualified");
+
+        assert!(expanded.contains(".. py:class:: example.Thing"));
+        assert!(expanded.contains("   .. py:method:: run()"));
+        assert!(expanded.contains("         :param value: Input"));
+        assert!(expanded.contains("      .. method:: literal()"));
+        assert!(expanded.contains(".. method:: orphan()"));
+        assert!(!expanded.contains(".. py:method:: literal()"));
+        assert!(!expanded.contains(".. py:method:: orphan()"));
+    }
+
+    #[test]
+    fn autoattribute_expansion_qualifies_members_without_class_context() {
+        let env = make_env();
+        let expanded = env
+            .expand_autoattribute_docs(
+                ".. module:: pkg.api\n\n.. method:: Widget.run(value)\n\n.. attribute:: Widget.name\n",
+            )
+            .expect("qualified member directives should be normalized");
+
+        assert!(expanded.contains(".. py:method:: pkg.api.Widget.run(value)"));
+        assert!(expanded.contains(".. py:attribute:: pkg.api.Widget.name"));
+    }
+
+    #[test]
     fn autoattribute_expansion_includes_inherited_source_comments() {
         let env = make_env();
         let expanded = env

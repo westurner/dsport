@@ -2078,6 +2078,7 @@ mod tests {
             ("PYTHONPATH", "/tmp/inject"),
             ("PATH", ".:/usr/bin"),
             ("2INVALID", "value"),
+            ("LEAN-PATH", "value"),
             ("LEAN_PATH", "bad\0value"),
         ] {
             let mut raw = HashMap::new();
@@ -2155,6 +2156,27 @@ mod tests {
         ))
         .unwrap_err();
         assert!(error.contains("LD_LIBRARY_PATH"), "{error}");
+    }
+
+    #[test]
+    fn lsp_server_environment_accepts_absolute_path_entries() {
+        let path = std::env::join_paths([Path::new("/usr/bin"), Path::new("/bin")]).unwrap();
+        let value = path.to_string_lossy().into_owned();
+        let mut raw = HashMap::new();
+        raw.insert(
+            "source_lsp_server_environment".into(),
+            ConfigVal::Map(vec![(
+                "rust".into(),
+                ConfigVal::Map(vec![("PATH".into(), ConfigVal::Str(value.clone()))]),
+            )]),
+        );
+
+        let settings = super::config::SourceDocsSettings::from_sphinx_config(&SphinxConfig::new(
+            raw,
+            HashMap::new(),
+        ))
+        .unwrap();
+        assert_eq!(settings.lsp_server_environment_for("rust").unwrap(), [("PATH".into(), value)]);
     }
 
     #[cfg(feature = "source-sandbox")]

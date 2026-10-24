@@ -4531,6 +4531,107 @@ mod tests {
         assert_eq!(metadata["toolchain"], "rustc test");
     }
 
+    #[test]
+    fn source_snapshot_match_helpers_treat_unknown_docs_as_cache_misses() {
+        let directory = tempfile::tempdir().unwrap();
+        let json_path = directory.path().join("fixture.json");
+        std::fs::write(&json_path, b"source input").unwrap();
+        let mut request = SourceAnalysisRequest::new(directory.path());
+        request.selected.push(json_path);
+        struct FixtureProvider {
+            identity: Option<String>,
+            fail_preparation: bool,
+        }
+
+        impl SourceSnapshotProvider for FixtureProvider {
+            fn analyze(
+                &self,
+                _request: &SourceAnalysisRequest,
+            ) -> Result<AnalysisSnapshot, AnalysisError> {
+                unreachable!("cache matching must not analyze source")
+            }
+
+            fn prepare_for_cache(&self) -> Result<(), AnalysisError> {
+                if self.fail_preparation {
+                    Err(AnalysisError::InvalidRequest("provider unavailable".into()))
+                } else {
+                    Ok(())
+                }
+            }
+
+            fn cache_identity(&self, request: &SourceAnalysisRequest) -> String {
+                self.identity
+                    .clone()
+                    .unwrap_or_else(|| request.cache_identity())
+            }
+        }
+
+        let provider = FixtureProvider {
+            identity: None,
+            fail_preparation: false,
+        };
+        let mut env = make_env();
+
+        assert!(!env.source_snapshot_matches_request("missing", &request));
+        assert!(!env.source_snapshot_matches_provider("missing", &provider, &request));
+
+        let mut snapshot = source_snapshot();
+        snapshot.source_root = directory.path().to_string_lossy().into_owned();
+        snapshot.source_hash = source_input_hash(&request, SourceLanguage::Rust).unwrap();
+        snapshot.request_identity = request.cache_identity();
+        env.note_source_snapshot("api", snapshot).unwrap();
+
+        assert!(env.source_snapshot_matches_request("api", &request));
+        assert!(env.source_snapshot_matches_provider("api", &provider, &request));
+
+        let explicit_identity = "provider-specific".to_string();
+        env.source_snapshots
+            .get_mut("api")
+            .unwrap()
+            .provider_identity = explicit_identity.clone();
+        let explicit_provider = FixtureProvider {
+            identity: Some(explicit_identity.clone()),
+            fail_preparation: false,
+        };
+        assert!(env.source_snapshot_matches_provider("api", &explicit_provider, &request));
+        assert!(!env.source_snapshot_matches_provider(
+            "api",
+            &FixtureProvider {
+                identity: Some("different-provider".into()),
+                fail_preparation: false,
+            },
+            &request,
+        ));
+        assert!(!env.source_snapshot_matches_provider(
+            "api",
+            &FixtureProvider {
+                identity: Some(explicit_identity.clone()),
+                fail_preparation: true,
+            },
+            &request,
+        ));
+
+        let snapshot = env.source_snapshots.get_mut("api").unwrap();
+        snapshot.provider_identity.clear();
+        snapshot.request_identity.clear();
+        assert!(!env.source_snapshot_matches_provider(
+            "api",
+            &FixtureProvider {
+                identity: Some(String::new()),
+                fail_preparation: false,
+            },
+            &request,
+        ));
+
+        let snapshot = env.source_snapshots.get_mut("api").unwrap();
+        snapshot.request_identity = request.cache_identity();
+        snapshot.source_hash = "different-hash".into();
+        assert!(!env.source_snapshot_matches_provider("api", &provider, &request));
+
+        std::fs::remove_file(directory.path().join("fixture.json")).unwrap();
+        assert!(!env.source_snapshot_matches_provider("api", &provider, &request));
+    }
+
     #[cfg(feature = "rust-source-analysis")]
     #[test]
     fn provider_cache_identity_preserves_request_identity_and_toolchain_invalidation() {

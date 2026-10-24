@@ -5752,6 +5752,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_source_respects_disabled_smartquotes() {
+        let mut config = SphinxConfig::new_defaults();
+        config.set("smartquotes", ConfigVal::Bool(false));
+        let project = EnvProject::new("/tmp/src", &[(".rst", "restructuredtext")]);
+        let env = BuildEnvironment::new(config, project, "/tmp/src", "/tmp/doctrees");
+
+        let tree = env.parse_source("guide", "one--two").unwrap();
+        let mut node_ids = Vec::new();
+        collect_ids(&tree, tree.root(), &mut node_ids);
+
+        assert!(node_ids.into_iter().any(|node_id| matches!(
+            &tree.node(node_id).kind,
+            NodeKind::Text(text) if text.contains("one--two")
+        )));
+    }
+
+    #[test]
     fn parse_source_rejects_invalid_notebook_json() {
         let mut config = SphinxConfig::new_defaults();
         config.set(

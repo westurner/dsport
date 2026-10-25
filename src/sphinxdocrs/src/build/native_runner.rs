@@ -122,7 +122,9 @@ impl Runner for NativeMakeRunner {
             Ok(mut app) => {
                 // H8a: -E/--fresh-env and -a/--write-all.
                 app.set_incremental_options(parsed.freshenv, parsed.force_all);
-                match app.build() {
+                let build_result = app.build();
+                crate::build::logging::emit_debug_messages(app.debug_messages(), &logging);
+                match build_result {
                     Ok(result) => {
                         record_error_log(
                             &parsed,

@@ -6,7 +6,7 @@ This plan covers hand-written Rust production code in `src/sphinxdocrs`, with
 upstream behavior traced from `src/sphinx/tests/` and native behavior verified
 by `src/sphinxdocrs/tests/`.
 
-### Current all-target measurement (2026-10-24)
+### Current all-target measurement (2026-10-25)
 
 The authoritative current gate is:
 
@@ -15,17 +15,17 @@ PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov -p sphinx
 ```
 
 All library tests and all binary/integration test targets pass. The all-target
-report is **76.70% branch coverage** (956/4,103 branches missed), 93.55% line
-coverage, and 91.70% function coverage. The 100% branch target is
+report is **78.60% branch coverage** (887/4,145 branches missed), 94.09% line
+coverage, and 92.01% function coverage. The 100% branch target is
 still open; no exclusions or parity thresholds were relaxed.
 
 Current highest-miss modules, in execution priority order:
 
 | Module | Missed/total | Branch coverage |
 | --- | ---: | ---: |
-| `environment.rs` | 181/774 | 76.61% |
+| `environment.rs` | 113/812 | 86.08% |
 | `source_docs.rs` | 72/208 | 65.38% |
-| `autodoc.rs` | 71/252 | 71.83% |
+| `autodoc.rs` | 66/252 | 73.81% |
 | `apidoc/generate.rs` | 60/136 | 55.88% |
 | `theme_render.rs` | 54/246 | 78.05% |
 | `builders/html.rs` | 52/176 | 70.45% |

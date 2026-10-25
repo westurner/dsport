@@ -190,6 +190,8 @@ pub struct SphinxApp {
     pub buildername: String,
     /// Warnings collected during the build.
     pub warnings: Vec<String>,
+    /// Sphinx-compatible debug messages collected during incremental reads.
+    pub(crate) debug_messages: Vec<String>,
     /// Native event bus (**H4a**). Shared (via `Rc<RefCell<_>>`) with any
     /// [`PyAppFacade`] constructed by [`load_extension`](Self::load_extension)
     /// so Python-registered listeners fire alongside native ones.
@@ -221,6 +223,7 @@ impl std::fmt::Debug for SphinxApp {
             .field("doctreedir", &self.doctreedir)
             .field("buildername", &self.buildername)
             .field("warnings", &self.warnings)
+            .field("debug_messages", &self.debug_messages)
             .finish_non_exhaustive()
     }
 }
@@ -313,6 +316,7 @@ impl SphinxApp {
             env,
             buildername,
             warnings: Vec::new(),
+            debug_messages: Vec::new(),
             events: AppEventManager::shared(),
             extensions: HashMap::new(),
             extension_sources: HashMap::new(),
@@ -573,6 +577,7 @@ impl SphinxApp {
     /// stored doctrees, `check_consistency`) between the read and write
     /// phases.
     pub fn read(&mut self) -> Result<(), AppError> {
+        self.debug_messages.clear();
         self.env.borrow_mut().registered_roles =
             self.registry.borrow().roles.keys().cloned().collect();
         self.env.borrow_mut().find_files()?;
@@ -604,7 +609,11 @@ impl SphinxApp {
             }
         };
 
-        let (mut added, mut changed, removed) = self.env.borrow().get_outdated(config_changed);
+        let ((mut added, mut changed, removed), debug_messages) = self
+            .env
+            .borrow()
+            .get_outdated_with_debug_logs(config_changed);
+        self.debug_messages.extend(debug_messages);
         for docname in &removed {
             self.env.borrow_mut().remove_doc(docname);
         }
@@ -651,6 +660,11 @@ impl SphinxApp {
     pub fn set_incremental_options(&mut self, freshenv: bool, force_all: bool) {
         self.freshenv = freshenv;
         self.force_all = force_all;
+    }
+
+    /// Debug messages produced during the most recent incremental read.
+    pub fn debug_messages(&self) -> &[String] {
+        &self.debug_messages
     }
 
     /// Run the build.
@@ -947,6 +961,22 @@ mod tests {
             SphinxApp::new(src.path(), out.path(), dt.path(), "html", HashMap::new()).unwrap();
         assert_eq!(app.buildername, "html");
         assert!(app.supports_native());
+    }
+
+    #[test]
+    fn read_exposes_incremental_debug_messages_for_new_documents() {
+        let src = make_src();
+        let base = TempDir::new().unwrap();
+        let out = base.path().join("out");
+        let doctrees = base.path().join("doctrees");
+        let mut app =
+            SphinxApp::new(src.path(), &out, &doctrees, "html", HashMap::new()).unwrap();
+
+        app.read().unwrap();
+        std::fs::write(src.path().join("guide.rst"), "Guide\n=====\n").unwrap();
+        app.read().unwrap();
+
+        assert_eq!(app.debug_messages(), &["[build target] added 'guide'"]);
     }
 
     #[test]

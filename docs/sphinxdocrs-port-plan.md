@@ -5,21 +5,27 @@ This document merges the former `docs/sphinx-port-inventory.md`
 (*sphinx port inventory, Phase 4*) and `docs/sphinxdocrs-cli-port-plan.md`
 (*sphinxdocrs CLI port & test plan*); both are superseded by this file.
 
-## Current Verification (2026-10-24)
+## Current Verification (2026-10-25)
 
 The current all-target branch-coverage gate is
 `PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov -p sphinxdocrs --lib --bins --tests --branch --summary-only -- --quiet`.
 All library tests and every binary/integration test target pass. The measured
-result is 76.70% branch coverage (956/4,103 branches missed), 93.55% line
-coverage, and 91.70% function coverage. The repository's 100% branch
+result is 78.60% branch coverage (887/4,145 branches missed), 94.09% line
+coverage, and 92.01% function coverage. The repository's 100% branch
 target remains open; neither coverage exclusions nor semantic parity
 thresholds were relaxed.
 
-The highest current branch gaps are `environment.rs` (181/774 missed),
-`source_docs.rs` (72/208), `autodoc.rs` (71/252),
+The highest current branch gaps are `environment.rs` (113/812 missed),
+`source_docs.rs` (72/208), `autodoc.rs` (66/252),
 `apidoc/generate.rs` (60/136), `theme_render.rs` (54/246), and
 `builders/html.rs` (52/176). `apidoc/templates.rs`, `genindex.rs`, and
 `quickstart/templates.rs` now each have 100% branch coverage.
+
+The environment now emits Sphinx-compatible verbose diagnostics for
+incremental additions and reread decisions, including missing doctrees and
+stale or missing dependencies; consistency warnings retain the `toc` warning
+category. Native toctree self-cycle and multiple-parent diagnostics remain
+pending the corresponding traversal/parent-selection implementation.
 
 The H4-H7 implementation rows below reflect the current native code, not the
 original phase-4 placeholders. The focused theme renderer suite passes 34/34,

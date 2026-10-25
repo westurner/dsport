@@ -65,6 +65,15 @@ pub fn format_warning(warning: &str, color: bool) -> String {
     }
 }
 
+/// Emit Sphinx-style debug messages when status output is verbose.
+pub fn emit_debug_messages(messages: &[String], config: &LoggingConfig) {
+    if debug_messages_enabled(config) {
+        for message in messages {
+            eprintln!("{message}");
+        }
+    }
+}
+
 /// Finalize a build: print collected `warnings` to stderr (unless
 /// [`LoggingConfig::suppress_warnings`]), write an ANSI-stripped copy to
 /// [`LoggingConfig::warnfile`] if one was requested (mirrors upstream's
@@ -144,6 +153,17 @@ mod tests {
     }
 
     #[test]
+    fn debug_messages_require_verbose_non_quiet_output() {
+        let normal = parse_logging(false, false, None, 0, "no");
+        let verbose = parse_logging(false, false, None, 1, "no");
+        let quiet_verbose = parse_logging(true, false, None, 1, "no");
+
+        assert!(!debug_messages_enabled(&normal));
+        assert!(debug_messages_enabled(&verbose));
+        assert!(!debug_messages_enabled(&quiet_verbose));
+    }
+
+    #[test]
     fn finish_build_exits_zero_without_warningiserror() {
         let config = parse_logging(false, false, None, 0, "no");
         let code = finish_build(&["a warning".to_string()], &config, false);
@@ -203,4 +223,8 @@ mod tests {
             "index.rst: WARNING: located warning"
         );
     }
+}
+
+fn debug_messages_enabled(config: &LoggingConfig) -> bool {
+    config.verbosity > 0 && !config.suppress_status
 }

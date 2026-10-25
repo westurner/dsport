@@ -2633,6 +2633,15 @@ impl BuildEnvironment {
     /// filesystem/OS clock gives (the same source upstream's `os.stat`
     /// uses), not content hashing.
     pub fn get_outdated(&self, config_changed: bool) -> (Vec<String>, Vec<String>, Vec<String>) {
+        self.get_outdated_with_debug_logs(config_changed).0
+    }
+
+    /// Determine which documents need rereading and return Sphinx-compatible
+    /// debug messages explaining each incremental-read decision.
+    pub fn get_outdated_with_debug_logs(
+        &self,
+        config_changed: bool,
+    ) -> ((Vec<String>, Vec<String>, Vec<String>), Vec<String>) {
         let found = self.found_docs();
         let mut removed: Vec<String> = self
             .all_docs
@@ -2644,28 +2653,76 @@ impl BuildEnvironment {
 
         let mut added = Vec::new();
         let mut changed = Vec::new();
+        let mut debug_messages = Vec::new();
 
         for docname in found {
             let Some(&last_read) = self.all_docs.get(docname) else {
                 added.push(docname.clone());
+                if !config_changed {
+                    debug_messages.push(format!(
+                        "[build target] added {}",
+                        sphinx_repr(docname)
+                    ));
+                }
                 continue;
             };
-            if config_changed || self.reread_always.contains(docname) {
+            if config_changed {
                 changed.push(docname.clone());
                 continue;
             }
+            if self.reread_always.contains(docname) {
+                debug_messages.push(format!(
+                    "[build target] changed {}: re-read forced",
+                    sphinx_repr(docname)
+                ));
+                changed.push(docname.clone());
+                continue;
+            }
+            if !self.has_stored_doctree(docname) {
+                debug_messages.push(format!(
+                    "[build target] changed {}: doctree file does not exist",
+                    sphinx_repr(docname)
+                ));
+                changed.push(docname.clone());
+                continue;
+            }
+
             let src_path = self.doc2path(docname);
-            let mut outdated = mtime_micros(&src_path)
-                .map(|m| m > last_read)
-                .unwrap_or(true);
+            let src_mtime = mtime_micros(&src_path);
+            let mut outdated = src_mtime.map(|mtime| mtime > last_read).unwrap_or(true);
+            if let Some(new_mtime) = src_mtime.filter(|mtime| *mtime > last_read) {
+                debug_messages.push(format!(
+                    "[build target] changed: {} is outdated ({} -> {})",
+                    sphinx_repr(docname),
+                    format_sphinx_timestamp(last_read),
+                    format_sphinx_timestamp(new_mtime)
+                ));
+            }
             if !outdated {
                 if let Some(deps) = self.dependencies.get(docname) {
                     for dep in deps {
                         let dep_path = self.srcdir.join(dep);
-                        if mtime_micros(&dep_path)
-                            .map(|m| m > last_read)
-                            .unwrap_or(true)
-                        {
+                        if !dep_path.is_file() {
+                            debug_messages.push(format!(
+                                "[build target] changed: {} is missing dependency {}",
+                                sphinx_repr(docname),
+                                sphinx_path_repr(&dep_path)
+                            ));
+                            outdated = true;
+                            break;
+                        }
+                        let Some(dep_mtime) = mtime_micros(&dep_path) else {
+                            outdated = true;
+                            break;
+                        };
+                        if dep_mtime > last_read {
+                            debug_messages.push(format!(
+                                "[build target] changed: {} is outdated due to dependency {} ({} -> {})",
+                                sphinx_repr(docname),
+                                sphinx_path_repr(&dep_path),
+                                format_sphinx_timestamp(last_read),
+                                format_sphinx_timestamp(dep_mtime)
+                            ));
                             outdated = true;
                             break;
                         }
@@ -2678,7 +2735,7 @@ impl BuildEnvironment {
         }
         added.sort();
         changed.sort();
-        (added, changed, removed)
+        ((added, changed, removed), debug_messages)
     }
 
     /// Purge every trace of `docname` from this environment (mirrors
@@ -3061,6 +3118,27 @@ fn mtime_micros(path: &Path) -> Option<i64> {
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
         .map(|d| d.as_micros() as i64)
+}
+
+fn sphinx_repr(value: &str) -> String {
+    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+fn sphinx_path_repr(path: &Path) -> String {
+    format!("PosixPath({})", sphinx_repr(&path.to_string_lossy()))
+}
+
+fn format_sphinx_timestamp(timestamp: i64) -> String {
+    let seconds = timestamp.div_euclid(1_000_000);
+    let milliseconds = timestamp.rem_euclid(1_000_000) / 1_000;
+    chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0)
+        .map(|datetime| {
+            format!(
+                "{}.{milliseconds:03}",
+                datetime.format("%Y-%m-%d %H:%M:%S")
+            )
+        })
+        .unwrap_or_else(|| timestamp.to_string())
 }
 
 #[derive(Debug, Clone)]
@@ -4279,17 +4357,58 @@ mod tests {
     fn autoattribute_expansion_qualifies_members_without_class_context() {
         let env = make_env();
         let expanded = env
-            .expand_autoattribute_docs(
-                concat!(
-                    ".. module:: pkg.api\n\n",
-                    ".. method:: Widget.run(value)\n\n",
-                    ".. attribute:: Widget.name\n",
-                ),
-            )
+            .expand_autoattribute_docs(concat!(
+                ".. module:: pkg.api\n\n",
+                ".. method:: Widget.run(value)\n",
+                ".. attribute:: Widget.name\n\n",
+                ".. autoattribute:: pkg.api.Widget.name\n",
+            ))
             .expect("qualified member directives should be normalized");
 
         assert!(expanded.contains(".. py:method:: pkg.api.Widget.run(value)"));
         assert!(expanded.contains(".. py:attribute:: pkg.api.Widget.name"));
+        assert_eq!(
+            expanded
+                .matches(".. py:attribute:: pkg.api.Widget.name")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn autoattribute_expansion_handles_autoclass_and_automethod_aliases() {
+        let env = make_env();
+        let expanded = env
+            .expand_autoattribute_docs(concat!(
+                ".. module:: pkg.api\n\n",
+                ".. autoclass:: Widget\n\n",
+                "   .. automethod:: run\n\n",
+                "   .. autoattribute::\n\n",
+                ".. method:: orphan()\n",
+            ))
+            .expect("the method alias should be qualified");
+
+        assert!(expanded.contains(".. autoclass:: Widget"));
+        assert!(expanded.contains("   .. py:method:: run"));
+        assert!(expanded.contains("   .. autoattribute::"));
+        assert!(expanded.contains(".. method:: orphan()"));
+        assert!(!expanded.contains(".. py:method:: orphan()"));
+    }
+
+    #[test]
+    fn autoattribute_expansion_preserves_multiline_attribute_docs() {
+        let env = make_env();
+        let expanded = env
+            .expand_autoattribute_docs(concat!(
+                ".. module:: sphinx.domains._index\n\n",
+                ".. class:: IndexEntry\n\n",
+                "   .. autoattribute:: subtype\n",
+            ))
+            .expect("the documented attribute should be expanded");
+
+        assert!(expanded.contains(".. py:attribute:: subtype"));
+        assert!(expanded.contains("One of:\n\n      ``0``"));
+        assert!(expanded.contains("A normal entry."));
     }
 
     #[test]
@@ -4865,6 +4984,43 @@ mod tests {
     }
 
     #[test]
+    fn module_section_assignment_handles_empty_and_already_assigned_ids() {
+        for initial_id in ["", "module-pkg.mod"] {
+            let mut tree = Doctree::new_document("api");
+            let root = tree.root();
+            tree.append(
+                root,
+                NodeKind::ObjectDescription {
+                    classes: "module".into(),
+                    ids: String::new(),
+                    sig_text: "module pkg.mod".into(),
+                    signature_references: Vec::new(),
+                    source_link: None,
+                },
+            );
+            let section = tree.append(
+                root,
+                NodeKind::Section {
+                    ids: initial_id.into(),
+                    names: String::new(),
+                    classes: String::new(),
+                },
+            );
+
+            apply_module_section_ids(&mut tree, ".. module:: pkg.mod\n");
+
+            assert!(matches!(
+                &tree.node(section).kind,
+                NodeKind::Section { ids, .. } if ids == "module-pkg.mod"
+            ));
+            assert!(!tree.node(section).children.iter().any(|&id| matches!(
+                &tree.node(id).kind,
+                NodeKind::Target { .. }
+            )));
+        }
+    }
+
+    #[test]
     fn python_object_ids_inherit_module_and_class_context() {
         let env = make_env();
         let tree = env
@@ -5174,6 +5330,32 @@ mod tests {
         });
         empty.append(section, NodeKind::Paragraph);
         assert_eq!(BuildEnvironment::document_title_from_tree(&empty), None);
+
+        let mut fallback = Doctree::new_document("fallback");
+        let empty_section = fallback.append(
+            fallback.root(),
+            NodeKind::Section {
+                ids: "empty".into(),
+                names: String::new(),
+                classes: String::new(),
+            },
+        );
+        fallback.append(empty_section, NodeKind::Title);
+        let titled_section = fallback.append(
+            fallback.root(),
+            NodeKind::Section {
+                ids: "title".into(),
+                names: String::new(),
+                classes: String::new(),
+            },
+        );
+        let title = fallback.append(titled_section, NodeKind::Title);
+        fallback.append(title, NodeKind::Text("Fallback title".into()));
+
+        assert_eq!(
+            BuildEnvironment::document_title_from_tree(&fallback).as_deref(),
+            Some("Fallback title")
+        );
     }
 
     #[test]
@@ -5310,6 +5492,30 @@ mod tests {
     }
 
     #[test]
+    fn check_consistency_ignores_root_and_visible_or_hidden_toc_entries() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.project.docnames.extend([
+            "index".to_string(),
+            "chapter".to_string(),
+            "hidden".to_string(),
+            "orphan".to_string(),
+        ]);
+        env.note_toctree("index", vec!["chapter".to_string()]);
+        env.note_hidden_toctree("index", vec!["hidden".to_string()]);
+
+        let warnings = env.check_consistency();
+
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0],
+            format!(
+                "{}: WARNING: document isn't included in any toctree [toc.not_included]",
+                env.doc2path("orphan").display()
+            )
+        );
+    }
+
+    #[test]
     fn clear_temp_data() {
         let mut env = make_env();
         env.temp_data.insert("key".into(), "val".into());
@@ -5426,6 +5632,14 @@ mod tests {
 
     fn write_toc(env: &BuildEnvironment, contents: &str) {
         write_src_file(env, "_toc.yml", contents);
+    }
+
+    fn write_stored_doctree(env: &BuildEnvironment, docname: &str) {
+        let path = env.doctree_path(docname).unwrap();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, b"persisted doctree").unwrap();
     }
 
     #[test]
@@ -5586,16 +5800,19 @@ chapters:
     fn get_outdated_reports_found_but_unread_docname_as_added() {
         let (_tmp, mut env) = make_env_with_tempdir();
         env.project.docnames.insert("index".to_string());
-        let (added, changed, removed) = env.get_outdated(false);
+        let ((added, changed, removed), debug_messages) =
+            env.get_outdated_with_debug_logs(false);
         assert_eq!(added, vec!["index".to_string()]);
         assert!(changed.is_empty());
         assert!(removed.is_empty());
+        assert_eq!(debug_messages, vec!["[build target] added 'index'"]);
     }
 
     #[test]
     fn get_outdated_reports_unchanged_read_docname_as_neither() {
         let (_tmp, mut env) = make_env_with_tempdir();
         std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
+        write_stored_doctree(&env, "index");
         env.project.docnames.insert("index".to_string());
         // Record a read time far in the future so the file's real mtime
         // is never newer than it, regardless of test execution speed.
@@ -5611,14 +5828,105 @@ chapters:
     fn get_outdated_reports_source_newer_than_last_read_as_changed() {
         let (_tmp, mut env) = make_env_with_tempdir();
         std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
+        write_stored_doctree(&env, "index");
         env.project.docnames.insert("index".to_string());
         // Record a read time far in the past so the file's real mtime is
         // always newer than it.
         env.record_doc_read("index", 0);
-        let (added, changed, removed) = env.get_outdated(false);
+        let ((added, changed, removed), debug_messages) =
+            env.get_outdated_with_debug_logs(false);
         assert!(added.is_empty());
         assert_eq!(changed, vec!["index".to_string()]);
         assert!(removed.is_empty());
+        assert_eq!(debug_messages.len(), 1);
+        assert!(debug_messages[0].starts_with(
+            "[build target] changed: 'index' is outdated (1970-01-01 00:00:00.000 -> "
+        ));
+        assert!(debug_messages[0].ends_with(')'));
+    }
+
+    #[test]
+    fn get_outdated_logs_missing_doctree_before_checking_source_mtime() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        write_src_file(&env, "index.rst", "Index\n=====\n");
+        env.project.docnames.insert("index".to_string());
+        env.record_doc_read("index", now_micros() + 60_000_000_000);
+
+        let ((added, changed, removed), debug_messages) =
+            env.get_outdated_with_debug_logs(false);
+
+        assert!(added.is_empty());
+        assert_eq!(changed, vec!["index".to_string()]);
+        assert!(removed.is_empty());
+        assert_eq!(
+            debug_messages,
+            vec!["[build target] changed 'index': doctree file does not exist"]
+        );
+    }
+
+    #[test]
+    fn get_outdated_checks_dependencies_after_a_current_source() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        write_src_file(&env, "index.rst", "Index\n=====\n");
+        write_src_file(&env, "api.rst", "API\n===\n");
+        write_stored_doctree(&env, "index");
+        env.project.docnames.insert("index".to_string());
+        env.note_dependency("index", "api.rst");
+        env.record_doc_read("index", now_micros() + 60_000_000_000);
+
+        assert!(env.get_outdated(false).1.is_empty());
+
+        env.note_dependency("index", "missing.rst");
+        let ((_, changed, _), debug_messages) = env.get_outdated_with_debug_logs(false);
+        assert_eq!(changed, vec!["index".to_string()]);
+        assert_eq!(debug_messages.len(), 1);
+        assert!(debug_messages[0].starts_with(
+            "[build target] changed: 'index' is missing dependency PosixPath('",
+        ));
+        assert!(debug_messages[0].ends_with("/src/missing.rst')"));
+    }
+
+    #[test]
+    fn get_outdated_logs_a_newer_dependency_with_sphinx_timestamps() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        write_src_file(&env, "index.rst", "Index\n=====\n");
+        write_src_file(&env, "api.rst", "API\n===\n");
+        write_stored_doctree(&env, "index");
+        env.project.docnames.insert("index".to_string());
+        env.note_dependency("index", "api.rst");
+
+        let source = env.srcdir.join("index.rst");
+        let dependency = env.srcdir.join("api.rst");
+        let epoch = std::time::UNIX_EPOCH;
+        std::fs::File::options()
+            .write(true)
+            .open(&source)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(
+                epoch + std::time::Duration::from_secs(1),
+            ))
+            .unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&dependency)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(
+                epoch + std::time::Duration::from_secs(2),
+            ))
+            .unwrap();
+        env.record_doc_read("index", 1_500_000);
+
+        let ((_, changed, _), debug_messages) = env.get_outdated_with_debug_logs(false);
+
+        assert_eq!(changed, vec!["index".to_string()]);
+        assert_eq!(debug_messages.len(), 1);
+        assert_eq!(
+            debug_messages[0],
+            format!(
+                "[build target] changed: 'index' is outdated due to dependency {} (1970-01-01 00:00:01.500 -> 1970-01-01 00:00:02.000)",
+                sphinx_path_repr(&dependency)
+            )
+        );
     }
 
     #[test]
@@ -5650,8 +5958,18 @@ chapters:
         env.project.docnames.insert("index".to_string());
         env.record_doc_read("index", now_micros() + 60_000_000_000);
         env.reread_always.insert("index".to_string());
-        let (_added, changed, _removed) = env.get_outdated(false);
+        let ((_, changed, _), debug_messages) = env.get_outdated_with_debug_logs(false);
         assert_eq!(changed, vec!["index".to_string()]);
+        assert_eq!(
+            debug_messages,
+            vec!["[build target] changed 'index': re-read forced"]
+        );
+    }
+
+    #[test]
+    fn sphinx_log_timestamp_uses_utc_milliseconds() {
+        assert_eq!(format_sphinx_timestamp(0), "1970-01-01 00:00:00.000");
+        assert_eq!(format_sphinx_timestamp(1_234_567), "1970-01-01 00:00:01.234");
     }
 
     #[test]
@@ -6106,6 +6424,8 @@ chapters:
         let mut env = make_env();
         env.std_domain
             .note_label("target", "index", "target-id", "Target title");
+        env.std_domain
+            .note_label("pkg.target", "index", "pkg-target-id", "Package target");
         env.pending_xrefs.insert(
             "index".into(),
             vec![
@@ -6126,11 +6446,19 @@ chapters:
                     shorten: true,
                 },
                 crate::domains::PendingXref {
+                    domain: "std".into(),
+                    reftype: "ref".into(),
+                    target: "pkg.missing".into(),
+                    explicit_title: None,
+                    line: 3,
+                    shorten: true,
+                },
+                crate::domains::PendingXref {
                     domain: "unknown".into(),
                     reftype: "ref".into(),
                     target: "missing".into(),
                     explicit_title: None,
-                    line: 3,
+                    line: 4,
                     shorten: false,
                 },
             ],
@@ -6143,10 +6471,15 @@ chapters:
         ));
         assert!(matches!(
             &resolutions[1],
-            crate::domains::XrefResolution::Unresolved { .. }
+            crate::domains::XrefResolution::Resolved { target, .. }
+                if target.title == "target"
         ));
         assert!(matches!(
             &resolutions[2],
+            crate::domains::XrefResolution::Unresolved { .. }
+        ));
+        assert!(matches!(
+            &resolutions[3],
             crate::domains::XrefResolution::Unresolved { warning, .. }
                 if warning.contains("missing")
         ));
@@ -6182,6 +6515,13 @@ chapters:
         tree.append(external, NodeKind::Text("42".into()));
         let unknown = tree.append(root, NodeKind::Inline { classes: "unknown".into() });
         tree.append(unknown, NodeKind::Text("text".into()));
+        let unknown_rst = tree.append(
+            root,
+            NodeKind::Inline {
+                classes: "rst:unknown".into(),
+            },
+        );
+        tree.append(unknown_rst, NodeKind::Text("directive".into()));
 
         env.resolve_xref_nodes(&mut tree, "index");
         assert!(matches!(&tree.node(ref_id).kind, NodeKind::Reference { refuri, .. } if refuri == "#target-id"));
@@ -6190,6 +6530,60 @@ chapters:
         assert!(matches!(tree.node(disabled).kind, NodeKind::Inline { .. }));
         assert!(matches!(&tree.node(external).kind, NodeKind::Reference { refuri, classes, .. } if refuri == "https://tracker.test/42" && classes.contains("extlink-issue")));
         assert!(matches!(tree.node(unknown).kind, NodeKind::Inline { .. }));
+        assert!(matches!(
+            tree.node(unknown_rst).kind,
+            NodeKind::Inline { .. }
+        ));
+    }
+
+    #[test]
+    fn resolve_doc_pending_xrefs_handles_resolved_and_unresolved_titles() {
+        let add_doc_xref = |tree: &mut Doctree, target: &str, text: &str, explicit: bool| {
+            let root = tree.root();
+            let id = tree.append(
+                root,
+                NodeKind::PendingXref {
+                    reftype: "doc".into(),
+                    reftarget: target.into(),
+                    refdoc: "index".into(),
+                    refdomain: String::new(),
+                    refexplicit: explicit,
+                    warn_missing: false,
+                },
+            );
+            tree.append(id, NodeKind::Text(text.into()));
+            id
+        };
+
+        let mut env = make_env();
+        env.project.docnames.insert("guide".into());
+        env.set_title("guide", "Guide");
+
+        let mut tree = Doctree::new_document("index");
+        let resolved = add_doc_xref(&mut tree, "guide", "guide", false);
+        let explicit = add_doc_xref(&mut tree, "missing", "Friendly guide", true);
+        let shortened = add_doc_xref(&mut tree, "~pkg.Widget", "pkg.Widget", false);
+        let unchanged = add_doc_xref(&mut tree, "missing", "missing", false);
+
+        env.resolve_xref_nodes(&mut tree, "index");
+
+        assert!(matches!(
+            tree.node(resolved).kind,
+            NodeKind::Reference { .. }
+        ));
+        for (id, expected_text) in [
+            (explicit, "Friendly guide"),
+            (shortened, "Widget"),
+            (unchanged, "missing"),
+        ] {
+            assert!(
+                matches!(&tree.node(id).kind, NodeKind::Inline { classes } if classes == "xref doc")
+            );
+            assert!(matches!(
+                &tree.node(tree.node(id).children[0]).kind,
+                NodeKind::Text(text) if text == expected_text
+            ));
+        }
     }
 
     #[test]
@@ -6205,6 +6599,74 @@ chapters:
             &tree.node(id).kind,
             NodeKind::Reference { refuri, .. } if refuri == "#pkg.Widget.disconnect"
         )));
+    }
+
+    #[test]
+    fn resolve_signature_references_links_local_types_to_same_document_fragments() {
+        let mut env = make_env();
+        let source = ".. py:module:: pkg\n\n.. py:class:: Widget\n\n.. py:function:: consume(value: Widget)\n";
+        env.note_domain_data("api", source);
+        let mut tree = env.parse_source("api", source).unwrap();
+
+        env.resolve_xref_nodes(&mut tree, "api");
+
+        assert!((0..tree.nodes_len()).any(|id| matches!(
+            &tree.node(id).kind,
+            NodeKind::ObjectDescription {
+                sig_text,
+                signature_references,
+                ..
+            } if sig_text.contains("consume")
+                && signature_references.iter().any(|reference| reference.uri == "#pkg.Widget")
+        )));
+    }
+
+    #[test]
+    fn resolve_signature_references_links_types_from_other_documents() {
+        let mut env = make_env();
+        env.note_domain_data(
+            "types",
+            ".. py:module:: pkg.types\n\n.. py:class:: Widget\n",
+        );
+        let source = ".. py:module:: pkg.client\n\n.. py:function:: consume(value: Widget)\n";
+        env.note_domain_data("consumer", source);
+        let mut tree = env.parse_source("consumer", source).unwrap();
+
+        env.resolve_xref_nodes(&mut tree, "consumer");
+
+        assert!((0..tree.nodes_len()).any(|id| matches!(
+            &tree.node(id).kind,
+            NodeKind::ObjectDescription {
+                sig_text,
+                signature_references,
+                ..
+            } if sig_text.contains("consume")
+                && signature_references.iter().any(|reference| {
+                    reference.uri.ends_with("#pkg.types.Widget")
+                        && !reference.uri.starts_with('#')
+                })
+        )));
+    }
+
+    #[test]
+    fn resolve_local_signature_xref_uses_only_unambiguous_short_names() {
+        let mut env = make_env();
+        env.note_domain_data(
+            "first",
+            ".. py:module:: pkg.first\n\n.. py:class:: Widget\n\n.. py:class:: Gadget\n",
+        );
+
+        let unique = env.resolve_local_signature_xref("consumer", "unknown", "Widget");
+        assert!(matches!(unique, Some(target) if target.docname == "first"));
+
+        env.note_domain_data(
+            "second",
+            ".. py:module:: pkg.second\n\n.. py:class:: Widget\n",
+        );
+        assert!(
+            env.resolve_local_signature_xref("consumer", "unknown", "Widget")
+                .is_none()
+        );
     }
 
     #[test]
@@ -6464,6 +6926,110 @@ chapters:
     }
 
     #[test]
+    fn local_section_entries_handles_missing_and_promoted_document_titles() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+
+        let mut guide = Doctree::new_document("guide");
+        let root_section = guide.append(
+            guide.root(),
+            NodeKind::Section {
+                ids: "guide".into(),
+                names: String::new(),
+                classes: String::new(),
+            },
+        );
+        let root_title = guide.append(root_section, NodeKind::Title);
+        guide.append(root_title, NodeKind::Text("Guide".into()));
+        let child_section = guide.append(
+            root_section,
+            NodeKind::Section {
+                ids: "intro".into(),
+                names: String::new(),
+                classes: String::new(),
+            },
+        );
+        let child_title = guide.append(child_section, NodeKind::Title);
+        guide.append(child_title, NodeKind::Text("Introduction".into()));
+        env.store_doctree("guide", &guide).unwrap();
+        env.set_title("guide", "Guide");
+
+        assert!(local_section_entries(&env, "missing").is_empty());
+        let promoted = local_section_entries(&env, "guide");
+        assert_eq!(promoted.len(), 1);
+        assert_eq!(promoted[0].docname, "guide#intro");
+        assert_eq!(promoted[0].title, "Introduction");
+
+        let mut reference = Doctree::new_document("reference");
+        let section = reference.append(
+            reference.root(),
+            NodeKind::Section {
+                ids: "contents".into(),
+                names: String::new(),
+                classes: String::new(),
+            },
+        );
+        let title = reference.append(section, NodeKind::Title);
+        reference.append(title, NodeKind::Text("Contents".into()));
+        env.store_doctree("reference", &reference).unwrap();
+        env.set_title("reference", "Reference");
+
+        let retained = local_section_entries(&env, "reference");
+        assert_eq!(retained.len(), 1);
+        assert_eq!(retained[0].title, "Contents");
+    }
+
+    #[test]
+    fn append_toc_entries_preserves_fragments_and_literal_title_markers() {
+        let mut tree = Doctree::new_document("index");
+        let root = tree.root();
+        let builder = crate::builders::html::HtmlBuilder::new();
+        let entries = vec![
+            crate::toctree::TocEntry {
+                docname: "index#section".into(),
+                title: "Read \x01important\x02 now".into(),
+                children: Vec::new(),
+            },
+            crate::toctree::TocEntry {
+                docname: "guide#details".into(),
+                title: "broken \x01literal".into(),
+                children: Vec::new(),
+            },
+        ];
+
+        BuildEnvironment::append_toc_entries(&mut tree, root, &entries, &builder, "index.html");
+
+        let references = (0..tree.nodes_len())
+            .filter(|&id| matches!(tree.node(id).kind, NodeKind::Reference { .. }))
+            .collect::<Vec<_>>();
+        assert_eq!(references.len(), 2);
+        assert!(matches!(
+            &tree.node(references[0]).kind,
+            NodeKind::Reference { refuri, .. } if refuri == "#section"
+        ));
+        assert!(matches!(
+            &tree.node(references[1]).kind,
+            NodeKind::Reference { refuri, .. } if refuri == "guide.html#details"
+        ));
+
+        let literal = tree.node(references[0]).children[1];
+        assert!(matches!(tree.node(literal).kind, NodeKind::Literal));
+        assert!(matches!(
+            &tree.node(tree.node(literal).children[0]).kind,
+            NodeKind::Text(text) if text == "important"
+        ));
+        let malformed_title = tree
+            .node(references[1])
+            .children
+            .iter()
+            .map(|&id| match &tree.node(id).kind {
+                NodeKind::Text(text) => text.as_str(),
+                _ => "",
+            })
+            .collect::<String>();
+        assert_eq!(malformed_title, "broken \x01literal");
+    }
+
+    #[test]
     fn doctree_store_rejects_traversal_and_corruption() {
         let (_tmp, env) = make_env_with_tempdir();
         assert!(env.doctree_path("../escape").is_err());
@@ -6660,6 +7226,24 @@ options:
     }
 
     #[test]
+    fn yaml_option_lines_handles_supported_keys_with_unexpected_scalar_types() {
+        let src = r#"
+maxdepth: true
+caption: 42
+glob: "true"
+hidden: null
+options:
+  numbered: 1
+  reversed: false
+"#;
+
+        assert_eq!(
+            yaml_option_lines(src).unwrap(),
+            vec![":maxdepth:", ":caption: 42"]
+        );
+    }
+
+    #[test]
     fn yaml_option_lines_returns_empty_for_non_mapping() {
         assert_eq!(yaml_option_lines("- a\n- b\n").unwrap(), Vec::<String>::new());
     }
@@ -6790,5 +7374,46 @@ options:
     #[test]
     fn scan_include_entries_returns_empty_when_none_present() {
         assert!(scan_include_entries("just some text\n").is_empty());
+    }
+
+    #[test]
+    fn expand_rst_includes_preserves_missing_paths_and_empty_file_position() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let unresolved = ".. include::\n.. include:: missing.rst";
+        assert_eq!(
+            expand_rst_includes(unresolved, tmp.path(), "utf-8"),
+            unresolved
+        );
+
+        std::fs::write(tmp.path().join("empty.rst"), "").unwrap();
+        assert_eq!(
+            expand_rst_includes("Before\n.. include:: empty.rst", tmp.path(), "utf-8"),
+            "Before\n"
+        );
+
+        let recursive = ".. include:: recursive.rst";
+        std::fs::write(tmp.path().join("recursive.rst"), recursive).unwrap();
+        assert_eq!(
+            expand_rst_includes(recursive, tmp.path(), "utf-8"),
+            recursive
+        );
+    }
+
+    #[test]
+    fn normalize_confval_id_collapses_punctuation_and_preserves_underscores() {
+        assert_eq!(
+            normalize_confval_id("---Foo__BAR...Baz-..."),
+            "foo__bar-baz"
+        );
+        assert_eq!(normalize_confval_id("..."), "");
+    }
+
+    #[test]
+    fn smartquote_text_handles_quotes_apostrophes_and_punctuation() {
+        assert_eq!(
+            smartquote_text("\"Open\" and it's \"closed\"... -- yes"),
+            "“Open” and it’s “closed”… — yes"
+        );
+        assert_eq!(smartquote_text("\""), "”");
     }
 }

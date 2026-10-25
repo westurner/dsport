@@ -4251,7 +4251,16 @@ mod tests {
     #[test]
     fn autoattribute_expansion_preserves_literal_directives_and_resets_context() {
         let env = make_env();
-        let source = ".. module:: example\n\n.. class:: Thing\n\n   .. method:: run()\n      :param value: Input\n\n   .. code-block:: rst\n\n      .. method:: literal()\n\nOutside the class.\n\n.. method:: orphan()\n";
+        let source = concat!(
+            ".. module:: example\n\n",
+            ".. class:: Thing\n\n",
+            "   .. method:: run()\n",
+            "      :param value: Input\n\n",
+            "   .. code-block:: rst\n\n",
+            "      .. method:: literal()\n\n",
+            "Outside the class.\n\n",
+            ".. method:: orphan()\n",
+        );
 
         let expanded = env
             .expand_autoattribute_docs(source)
@@ -4271,7 +4280,11 @@ mod tests {
         let env = make_env();
         let expanded = env
             .expand_autoattribute_docs(
-                ".. module:: pkg.api\n\n.. method:: Widget.run(value)\n\n.. attribute:: Widget.name\n",
+                concat!(
+                    ".. module:: pkg.api\n\n",
+                    ".. method:: Widget.run(value)\n\n",
+                    ".. attribute:: Widget.name\n",
+                ),
             )
             .expect("qualified member directives should be normalized");
 
@@ -5323,6 +5336,14 @@ mod tests {
         (tmp, env)
     }
 
+    fn write_src_file(env: &BuildEnvironment, relative_path: &str, contents: &str) {
+        std::fs::write(env.srcdir.join(relative_path), contents).unwrap();
+    }
+
+    fn write_toc(env: &BuildEnvironment, contents: &str) {
+        write_src_file(env, "_toc.yml", contents);
+    }
+
     #[test]
     fn find_files_prefers_longest_suffix_and_skips_unknown_files() {
         let (_tmp, mut env) = make_env_with_tempdir();
@@ -5350,16 +5371,19 @@ mod tests {
     #[test]
     fn register_yaml_notebooks_adds_targets_titles_and_root_toctree() {
         let (_tmp, mut env) = make_env_with_tempdir();
-        std::fs::write(
-            env.srcdir.join("_toc.yml"),
-            "root: index\nchapters:\n  - file: notebook.ipynb\n    title: Notebook Chapter\n",
-        )
-        .unwrap();
-        std::fs::write(
-            env.srcdir.join("notebook.ipynb"),
+        write_toc(
+            &env,
+            r#"root: index
+chapters:
+  - file: notebook.ipynb
+    title: Notebook Chapter
+"#,
+        );
+        write_src_file(
+            &env,
+            "notebook.ipynb",
             r##"{"cells":[],"metadata":{},"nbformat":4,"nbformat_minor":5}"##,
-        )
-        .unwrap();
+        );
 
         env.register_yaml_notebooks().unwrap();
 
@@ -5391,13 +5415,22 @@ mod tests {
         let (tmp, mut env) = make_env_with_tempdir();
         let outside = tmp.path().join("outside.ipynb");
         std::fs::write(&outside, "outside").unwrap();
-        std::fs::write(env.srcdir.join("target.txt"), "not a notebook").unwrap();
-        std::fs::write(
-            env.srcdir.join("_toc.yml"),
-            "root: index\nchapters:\n  - file: valid.ipynb\n  - file: valid.ipynb\n  - file: ignored.rst\n  - file: /absolute.ipynb\n  - file: https://example.invalid/remote.ipynb\n  - file: missing.ipynb\n  - file: non-notebook.ipynb\n  - file: outside.ipynb\n",
-        )
-        .unwrap();
-        std::fs::write(env.srcdir.join("valid.ipynb"), "valid").unwrap();
+        write_src_file(&env, "target.txt", "not a notebook");
+        write_toc(
+            &env,
+            r#"root: index
+chapters:
+  - file: valid.ipynb
+  - file: valid.ipynb
+  - file: ignored.rst
+  - file: /absolute.ipynb
+  - file: https://example.invalid/remote.ipynb
+  - file: missing.ipynb
+  - file: non-notebook.ipynb
+  - file: outside.ipynb
+"#,
+        );
+        write_src_file(&env, "valid.ipynb", "valid");
         symlink(env.srcdir.join("target.txt"), env.srcdir.join("non-notebook.ipynb")).unwrap();
         symlink(&outside, env.srcdir.join("outside.ipynb")).unwrap();
 
@@ -5413,12 +5446,14 @@ mod tests {
     #[test]
     fn register_yaml_notebooks_keeps_chapters_with_external_root() {
         let (_tmp, mut env) = make_env_with_tempdir();
-        std::fs::write(
-            env.srcdir.join("_toc.yml"),
-            "root: https://example.invalid/root\nchapters:\n  - file: notebook.ipynb\n",
-        )
-        .unwrap();
-        std::fs::write(env.srcdir.join("notebook.ipynb"), "notebook").unwrap();
+        write_toc(
+            &env,
+            r#"root: https://example.invalid/root
+chapters:
+  - file: notebook.ipynb
+"#,
+        );
+        write_src_file(&env, "notebook.ipynb", "notebook");
 
         env.register_yaml_notebooks().unwrap();
 
@@ -5827,7 +5862,7 @@ mod tests {
         use std::rc::Rc;
 
         let (_tmp, mut env) = make_env_with_tempdir();
-        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n\nBody.\n").unwrap();
+        write_src_file(&env, "index.rst", "Index\n=====\n\nBody.\n");
         env.find_files().unwrap();
         let events = AppEventManager::shared();
         let source_count = Rc::new(RefCell::new(0usize));
@@ -5857,8 +5892,8 @@ mod tests {
     #[test]
     fn read_all_without_events_processes_and_persists_found_docs() {
         let (_tmp, mut env) = make_env_with_tempdir();
-        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
-        std::fs::write(env.srcdir.join("other.rst"), "Other\n=====\n").unwrap();
+        write_src_file(&env, "index.rst", "Index\n=====\n");
+        write_src_file(&env, "other.rst", "Other\n=====\n");
         env.find_files().unwrap();
 
         let read = env.read_all().unwrap();
@@ -5873,7 +5908,7 @@ mod tests {
         use crate::app_events::AppEventManager;
 
         let (_tmp, mut env) = make_env_with_tempdir();
-        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
+        write_src_file(&env, "index.rst", "Index\n=====\n");
         env.find_files().unwrap();
         let events = AppEventManager::shared();
         events.borrow_mut().connect("source-read", 0, |_args| {
@@ -5890,7 +5925,7 @@ mod tests {
         use crate::app_events::AppEventManager;
 
         let (_tmp, mut env) = make_env_with_tempdir();
-        std::fs::write(env.srcdir.join("index.rst"), "Index\n=====\n").unwrap();
+        write_src_file(&env, "index.rst", "Index\n=====\n");
         env.find_files().unwrap();
         let events = AppEventManager::shared();
         events.borrow_mut().connect("doctree-read", 0, |_args| {

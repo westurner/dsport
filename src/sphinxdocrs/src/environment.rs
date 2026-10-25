@@ -4932,6 +4932,8 @@ mod tests {
         );
 
         assert!(env.expand_autodoc(".. automodule:: missing\n").is_none());
+        assert!(env.expand_autodoc(".. autoclass:: missing.Widget\n").is_none());
+        assert!(env.expand_autodoc(".. autofunction:: missing.run\n").is_none());
 
         std::fs::create_dir(dir.path().join("package")).unwrap();
         std::fs::write(
@@ -4973,6 +4975,18 @@ mod tests {
     }
 
     #[test]
+    fn expand_autodoc_rejects_empty_class_and_function_targets_in_module_context() {
+        let env = make_env();
+        let source = concat!(
+            ".. currentmodule:: pkg.api\n\n",
+            ".. autoclass::\n\n",
+            ".. autofunction::\n",
+        );
+
+        assert_eq!(env.expand_autodoc(source), None);
+    }
+
+    #[test]
     fn expand_autodoc_preserves_unparseable_option_lines() {
         let (_tmp, env) = make_env_with_tempdir();
         write_src_file(
@@ -4992,10 +5006,13 @@ mod tests {
         );
         let source = concat!(
             ".. automodule:: autodoc_options_fixture\n",
-            "   :members:\n\n",
+            "   :members:\n",
+            "   :broken-module-option\n\n",
             ".. autoclass:: autodoc_options_fixture.Widget\n",
             "   :members:\n\n",
+            "   :broken-class-option\n\n",
             ".. autofunction:: autodoc_options_fixture.run\n",
+            "   :noindex:\n\n",
             "   not-an-option\n",
         );
 
@@ -5006,6 +5023,8 @@ mod tests {
         assert!(expanded.contains(".. py:module:: autodoc_options_fixture"));
         assert!(expanded.contains(".. py:class:: autodoc_options_fixture.Widget"));
         assert!(expanded.contains(".. py:function:: autodoc_options_fixture.run"));
+        assert!(expanded.contains("   :broken-module-option"));
+        assert!(expanded.contains("   :broken-class-option"));
         assert!(expanded.contains("   not-an-option"));
     }
 

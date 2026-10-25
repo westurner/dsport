@@ -4945,6 +4945,70 @@ mod tests {
     }
 
     #[test]
+    fn expand_autodoc_preserves_directives_when_python_source_is_invalid() {
+        let (_tmp, env) = make_env_with_tempdir();
+        write_src_file(&env, "autodoc_invalid_fixture.py", "def broken(:\n");
+
+        for directive in [
+            ".. automodule:: autodoc_invalid_fixture\n",
+            ".. autoclass:: autodoc_invalid_fixture.Widget\n",
+            ".. autofunction:: autodoc_invalid_fixture.run\n",
+        ] {
+            assert_eq!(env.expand_autodoc(directive), None, "{directive}");
+        }
+    }
+
+    #[test]
+    fn expand_autodoc_leaves_empty_targets_unchanged() {
+        let env = make_env();
+
+        for directive in [
+            ".. automodule::\n",
+            ".. autoclass::\n",
+            ".. autofunction::\n",
+        ] {
+            assert_eq!(env.expand_autodoc(directive), None, "{directive}");
+        }
+    }
+
+    #[test]
+    fn expand_autodoc_preserves_unparseable_option_lines() {
+        let (_tmp, env) = make_env_with_tempdir();
+        write_src_file(
+            &env,
+            "autodoc_options_fixture.py",
+            concat!(
+                "\"\"\"Fixture docs.\"\"\"\n\n",
+                "class Widget:\n",
+                "    \"\"\"Widget docs.\"\"\"\n\n",
+                "    def run(self):\n",
+                "        \"\"\"Run docs.\"\"\"\n",
+                "        pass\n\n",
+                "def run():\n",
+                "    \"\"\"Standalone docs.\"\"\"\n",
+                "    pass\n",
+            ),
+        );
+        let source = concat!(
+            ".. automodule:: autodoc_options_fixture\n",
+            "   :members:\n\n",
+            ".. autoclass:: autodoc_options_fixture.Widget\n",
+            "   :members:\n\n",
+            ".. autofunction:: autodoc_options_fixture.run\n",
+            "   not-an-option\n",
+        );
+
+        let expanded = env
+            .expand_autodoc(source)
+            .expect("the valid Python objects should expand");
+
+        assert!(expanded.contains(".. py:module:: autodoc_options_fixture"));
+        assert!(expanded.contains(".. py:class:: autodoc_options_fixture.Widget"));
+        assert!(expanded.contains(".. py:function:: autodoc_options_fixture.run"));
+        assert!(expanded.contains("   not-an-option"));
+    }
+
+    #[test]
     fn expand_autoclass_renders_members_from_the_project_python_root() {
         let workspace = tempfile::tempdir().unwrap();
         let srcdir = workspace.path().join("doc");

@@ -7,7 +7,6 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use tempfile::TempDir;
-
 const APIDOC_RS: &str = env!("CARGO_BIN_EXE_sphinx-apidoc-rs");
 const AUTOGEN_RS: &str = env!("CARGO_BIN_EXE_sphinx-autogen-rs");
 const BUILD_RS: &str = env!("CARGO_BIN_EXE_sphinx-build-rs");
@@ -392,6 +391,165 @@ fn build_covers_parse_scan_native_success_and_native_error() {
         tmp.path(),
     );
     assert_exit(&invalid_build, 1);
+}
+
+#[test]
+fn build_routes_status_and_warnings_to_sphinx_cli_streams() {
+    let tmp = TempDir::new().unwrap();
+    let source = tmp.path().join("docs");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("conf.py"), "project = 'CLI streams'\n").unwrap();
+    std::fs::write(source.join("index.rst"), "Home\n====\n\nBody.\n").unwrap();
+    std::fs::write(source.join("orphan.rst"), "Orphan\n======\n\nBody.\n").unwrap();
+
+    let source_arg = source.to_str().unwrap();
+    let normal_out = tmp.path().join("normal");
+    let normal = run(
+        BUILD_RS,
+        &["-b", "html", "-E", source_arg, normal_out.to_str().unwrap()],
+        tmp.path(),
+    );
+    assert_exit(&normal, 0);
+    let normal_stdout = String::from_utf8_lossy(&normal.stdout);
+    let normal_stderr = String::from_utf8_lossy(&normal.stderr);
+    assert!(
+        normal_stdout.contains("Build succeeded"),
+        "stdout: {normal_stdout}"
+    );
+    assert!(
+        normal_stderr.contains("isn't included in any toctree"),
+        "stderr: {normal_stderr}"
+    );
+
+    let quiet_out = tmp.path().join("quiet");
+    let quiet = run(
+        BUILD_RS,
+        &[
+            "-b",
+            "html",
+            "-E",
+            "-q",
+            source_arg,
+            quiet_out.to_str().unwrap(),
+        ],
+        tmp.path(),
+    );
+    assert_exit(&quiet, 0);
+    assert!(
+        quiet.stdout.is_empty(),
+        "quiet stdout: {}",
+        String::from_utf8_lossy(&quiet.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&quiet.stderr).contains("isn't included in any toctree"),
+        "quiet should keep warnings on stderr: {}",
+        String::from_utf8_lossy(&quiet.stderr)
+    );
+
+    let silent_out = tmp.path().join("silent");
+    let silent = run(
+        BUILD_RS,
+        &[
+            "-b",
+            "html",
+            "-E",
+            "-Q",
+            source_arg,
+            silent_out.to_str().unwrap(),
+        ],
+        tmp.path(),
+    );
+    assert_exit(&silent, 0);
+    assert!(
+        silent.stdout.is_empty(),
+        "-Q stdout: {}",
+        String::from_utf8_lossy(&silent.stdout)
+    );
+    assert!(
+        silent.stderr.is_empty(),
+        "-Q stderr: {}",
+        String::from_utf8_lossy(&silent.stderr)
+    );
+
+    let verbose_out = tmp.path().join("verbose");
+    let verbose_warm = run(
+        BUILD_RS,
+        &[
+            "-b",
+            "html",
+            "-E",
+            source_arg,
+            verbose_out.to_str().unwrap(),
+        ],
+        tmp.path(),
+    );
+    assert_exit(&verbose_warm, 0);
+    std::fs::write(source.join("added.rst"), "Added\n=====\n\nBody.\n").unwrap();
+    let verbose = run(
+        BUILD_RS,
+        &[
+            "-b",
+            "html",
+            "-v",
+            source_arg,
+            verbose_out.to_str().unwrap(),
+        ],
+        tmp.path(),
+    );
+    assert_exit(&verbose, 0);
+    assert!(
+        String::from_utf8_lossy(&verbose.stdout).contains("[build target] added"),
+        "verbose status should be on stdout: {}",
+        String::from_utf8_lossy(&verbose.stdout)
+    );
+
+    let warnfile = tmp.path().join("warnings.log");
+    let warnfile_out = tmp.path().join("warnfile-out");
+    let warnfile_build = run(
+        BUILD_RS,
+        &[
+            "-b",
+            "html",
+            "-E",
+            "-w",
+            warnfile.to_str().unwrap(),
+            source_arg,
+            warnfile_out.to_str().unwrap(),
+        ],
+        tmp.path(),
+    );
+    assert_exit(&warnfile_build, 0);
+    assert!(
+        String::from_utf8_lossy(&warnfile_build.stderr).contains("isn't included in any toctree"),
+        "-w should preserve warning stderr: {}",
+        String::from_utf8_lossy(&warnfile_build.stderr)
+    );
+    assert!(
+        std::fs::read_to_string(&warnfile)
+            .unwrap()
+            .contains("isn't included in any toctree"),
+        "-w should write warnings to its file"
+    );
+
+    let warning_error_out = tmp.path().join("warning-error");
+    let warning_error = run(
+        BUILD_RS,
+        &[
+            "-b",
+            "html",
+            "-E",
+            "-W",
+            source_arg,
+            warning_error_out.to_str().unwrap(),
+        ],
+        tmp.path(),
+    );
+    assert_exit(&warning_error, 1);
+    assert!(
+        String::from_utf8_lossy(&warning_error.stderr).contains("isn't included in any toctree"),
+        "-W should keep warnings on stderr: {}",
+        String::from_utf8_lossy(&warning_error.stderr)
+    );
 }
 
 #[test]

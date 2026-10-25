@@ -135,7 +135,7 @@ impl Runner for NativeMakeRunner {
                             None,
                         );
                         if !logging.suppress_status {
-                            eprintln!("{}", crate::util_display::build_succeeded(result.written));
+                            println!("{}", crate::util_display::build_succeeded(result.written));
                         }
                         Ok(crate::build::logging::finish_build(
                             &app.warnings,

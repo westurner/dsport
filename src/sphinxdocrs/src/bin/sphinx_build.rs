@@ -91,7 +91,7 @@ fn main() {
         );
 
         if !logging.suppress_status {
-            eprintln!("sphinxdocrs: running SphinxApp::new");
+            println!("sphinxdocrs: running SphinxApp::new");
         }
         match SphinxApp::new(&srcdir, &outdir, &doctreedir, &parsed.builder, overrides) {
             Err(e) => {
@@ -132,7 +132,7 @@ fn main() {
                             None,
                         );
                         if !logging.suppress_status {
-                            eprintln!(
+                            println!(
                                 "{}",
                                 sphinxdocrs::util_display::build_succeeded(result.written)
                             );

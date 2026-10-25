@@ -116,14 +116,14 @@ fn run(program: &str, args: &[&str], cwd: &Path) -> (i32, String, String) {
 /// emits for a successful 2-doc HTML build.
 struct MockBuildOutput {
     exit: i32,
-    stderr: String,
+    stdout: String,
 }
 
 impl MockBuildOutput {
     fn rs_success() -> Self {
         MockBuildOutput {
             exit: 0,
-            stderr: "sphinxdocrs: make mode: running SphinxApp (builder=html)\nBuild succeeded: 2 file(s) written.\n".into(),
+            stdout: "Build succeeded: 2 file(s) written.\n".into(),
         }
     }
 }
@@ -1337,6 +1337,8 @@ pub struct MakeHtmlShared {
     pub rs_html: PathBuf, // <rs_out>/html
     pub py_exit: i32,
     pub rs_exit: i32,
+    pub py_stdout: String,
+    pub rs_stdout: String,
     pub py_stderr: String,
     pub rs_stderr: String,
     pub py_built: bool,
@@ -1355,7 +1357,7 @@ fn make_html_shared() -> MakeHtmlShared {
     let rs_out = TempDir::new().unwrap().keep();
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
 
-    let (py_exit, _, py_stderr) = if has_sphinx_build() {
+    let (py_exit, py_stdout, py_stderr) = if has_sphinx_build() {
         run(
             "sphinx-build",
             &[
@@ -1363,7 +1365,6 @@ fn make_html_shared() -> MakeHtmlShared {
                 "html",
                 src.to_str().unwrap(),
                 py_out.to_str().unwrap(),
-                "-q",
             ],
             &src,
         )
@@ -1371,7 +1372,7 @@ fn make_html_shared() -> MakeHtmlShared {
         (1, String::new(), String::new())
     };
 
-    let (rs_exit, _, rs_stderr) = run(
+    let (rs_exit, rs_stdout, rs_stderr) = run(
         rs_bin,
         &[
             "-M",
@@ -1392,6 +1393,8 @@ fn make_html_shared() -> MakeHtmlShared {
         rs_html,
         py_exit,
         rs_exit,
+        py_stdout,
+        rs_stdout,
         py_stderr,
         rs_stderr,
     }
@@ -1439,13 +1442,14 @@ fn html_parity_shared() -> HtmlParityShared {
         (1, String::new(), String::new())
     };
 
-    let (rs_exit, _, rs_stderr) = run(
+    let (rs_exit, _rs_stdout, rs_stderr) = run(
         rs_bin,
         &[
             "-M",
             "html",
             src.to_str().unwrap(),
             rs_out.to_str().unwrap(),
+            "-q",
         ],
         &src,
     );
@@ -1691,7 +1695,7 @@ fn make_html_both_contain_rst_body_text(make_html_shared: &MakeHtmlShared, #[cas
 
 // ── log message parity ────────────────────────────────────────────────────────
 
-/// `sphinx-build-rs -M html` must emit "Build succeeded" to stderr on success.
+/// `sphinx-build-rs -M html` must emit "Build succeeded" to stdout on success.
 #[rstest]
 fn make_html_rs_emits_build_succeeded(make_html_shared: &MakeHtmlShared) {
     assert_eq!(
@@ -1700,22 +1704,21 @@ fn make_html_rs_emits_build_succeeded(make_html_shared: &MakeHtmlShared) {
         make_html_shared.rs_stderr
     );
     assert!(
-        make_html_shared.rs_stderr.contains("Build succeeded"),
-        "expected 'Build succeeded' in stderr; got:\n{}",
-        make_html_shared.rs_stderr
+        make_html_shared.rs_stdout.contains("Build succeeded"),
+        "expected 'Build succeeded' in stdout; got:\n{}",
+        make_html_shared.rs_stdout
     );
     // A file count must appear alongside the success message.
     assert!(
         regex::Regex::new(r"\d+ file")
             .unwrap()
-            .is_match(&make_html_shared.rs_stderr),
+            .is_match(&make_html_shared.rs_stdout),
         "expected file count in 'Build succeeded' message; got:\n{}",
-        make_html_shared.rs_stderr
+        make_html_shared.rs_stdout
     );
 }
 
-/// `sphinx-build -M html` (Python) emits some success indicator to stderr.
-/// Both sides must exit 0 and emit a success signal — exact wording differs.
+/// Both CLIs emit their success indicator on stdout and exit 0.
 #[rstest]
 fn make_html_both_emit_success_indicator(make_html_shared: &MakeHtmlShared) {
     if !has_sphinx_build() {
@@ -1731,11 +1734,21 @@ fn make_html_both_emit_success_indicator(make_html_shared: &MakeHtmlShared) {
         "Rust must exit 0; stderr:\n{}",
         make_html_shared.rs_stderr
     );
-    // Python is run with -q in the shared fixture so success is indicated by exit 0 alone.
     assert!(
-        make_html_shared.rs_stderr.contains("Build succeeded"),
-        "Rust must emit 'Build succeeded'; got:\n{}",
-        make_html_shared.rs_stderr
+        make_html_shared
+            .py_stdout
+            .to_lowercase()
+            .contains("build succeeded"),
+        "Python must emit a success indicator on stdout; got:\n{}",
+        make_html_shared.py_stdout
+    );
+    assert!(
+        make_html_shared
+            .rs_stdout
+            .to_lowercase()
+            .contains("build succeeded"),
+        "Rust must emit a success indicator on stdout; got:\n{}",
+        make_html_shared.rs_stdout
     );
 }
 
@@ -2692,7 +2705,180 @@ fn log_make_help_snapshot(log_make_help_shared: &LogMakeHelpShared) {
 
 // ── sphinx-build -M html success messages ────────────────────────────────────
 
-/// On a successful HTML build the Rust binary must emit to stderr:
+/// Compare the stdout/stderr contract of native builds with upstream Sphinx.
+#[test]
+fn log_build_stream_modes_match_upstream() {
+    if !has_sphinx_build() {
+        return;
+    }
+
+    let project = TempDir::new().unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("conf.py"), "project = 'CLI stream parity'\n").unwrap();
+    std::fs::write(source.join("index.rst"), "Home\n====\n\nBody.\n").unwrap();
+    std::fs::write(source.join("orphan.rst"), "Orphan\n======\n\nBody.\n").unwrap();
+
+    let run_build =
+        |program: &str, outdir: &Path, options: &[String], fresh: bool, make_mode: bool| {
+            let mut args = if make_mode {
+                vec!["-M".to_owned(), "html".to_owned()]
+            } else {
+                vec!["-b".to_owned(), "html".to_owned()]
+            };
+            args.push(source.to_string_lossy().into_owned());
+            args.push(outdir.to_string_lossy().into_owned());
+            if fresh {
+                args.push("-E".to_owned());
+            }
+            args.extend_from_slice(options);
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            run(program, &args, &source)
+        };
+
+    let rust_binary = env!("CARGO_BIN_EXE_sphinx-build-rs");
+    for (build_mode, use_make_mode) in [("direct", false), ("make", true)] {
+        for mode in [
+            "normal",
+            "quiet",
+            "silent",
+            "verbose",
+            "warnfile",
+            "warning-error",
+        ] {
+            let output_root = TempDir::new().unwrap();
+            let python_out = output_root.path().join("python-out");
+            let rust_out = output_root.path().join("rust-out");
+            let python_warnfile = output_root.path().join("python-warnings.log");
+            let rust_warnfile = output_root.path().join("rust-warnings.log");
+            let mut python_options = Vec::new();
+            let mut rust_options = Vec::new();
+
+            match mode {
+                "quiet" => {
+                    python_options.push("-q".to_owned());
+                    rust_options.push("-q".to_owned());
+                }
+                "silent" => {
+                    python_options.push("-Q".to_owned());
+                    rust_options.push("-Q".to_owned());
+                }
+                "verbose" => {
+                    python_options.push("-v".to_owned());
+                    rust_options.push("-v".to_owned());
+                }
+                "warnfile" => {
+                    python_options.extend([
+                        "-w".to_owned(),
+                        python_warnfile.to_string_lossy().into_owned(),
+                    ]);
+                    rust_options.extend([
+                        "-w".to_owned(),
+                        rust_warnfile.to_string_lossy().into_owned(),
+                    ]);
+                }
+                "warning-error" => {
+                    python_options.push("-W".to_owned());
+                    rust_options.push("-W".to_owned());
+                }
+                _ => {}
+            }
+
+            let fresh = mode != "verbose";
+            if !fresh {
+                let (python_warm_exit, _, python_warm_stderr) =
+                    run_build("sphinx-build", &python_out, &[], true, use_make_mode);
+                let (rust_warm_exit, _, rust_warm_stderr) =
+                    run_build(rust_binary, &rust_out, &[], true, use_make_mode);
+                assert_eq!(
+                    python_warm_exit, 0,
+                    "Python {build_mode} warm build failed: {python_warm_stderr}"
+                );
+                assert_eq!(
+                    rust_warm_exit, 0,
+                    "Rust {build_mode} warm build failed: {rust_warm_stderr}"
+                );
+                std::fs::write(
+                    source.join(format!("added-{build_mode}.rst")),
+                    "Added\n=====\n\nBody.\n",
+                )
+                .unwrap();
+            }
+
+            let (python_exit, python_stdout, python_stderr) = run_build(
+                "sphinx-build",
+                &python_out,
+                &python_options,
+                fresh,
+                use_make_mode,
+            );
+            let (rust_exit, rust_stdout, rust_stderr) =
+                run_build(rust_binary, &rust_out, &rust_options, fresh, use_make_mode);
+            let expected_exit = if mode == "warning-error" { 1 } else { 0 };
+            let label = format!("{build_mode}/{mode}");
+
+            assert_eq!(
+                python_exit, expected_exit,
+                "Python `{label}` exit mismatch: {python_stderr}"
+            );
+            assert_eq!(
+                rust_exit, expected_exit,
+                "Rust `{label}` exit mismatch: {rust_stderr}"
+            );
+            assert_eq!(
+                python_stdout.is_empty(),
+                rust_stdout.is_empty(),
+                "`{label}` stdout routing differs\nPython:\n{python_stdout}\nRust:\n{rust_stdout}"
+            );
+            assert_eq!(
+                python_stderr.is_empty(),
+                rust_stderr.is_empty(),
+                "`{label}` stderr routing differs\nPython:\n{python_stderr}\nRust:\n{rust_stderr}"
+            );
+
+            if mode == "silent" {
+                continue;
+            }
+            assert!(
+                python_stderr.contains("included in any toctree"),
+                "Python `{label}` warning missing from stderr:\n{python_stderr}"
+            );
+            assert!(
+                rust_stderr.contains("included in any toctree"),
+                "Rust `{label}` warning missing from stderr:\n{rust_stderr}"
+            );
+
+            if mode == "normal" {
+                assert!(python_stdout.to_lowercase().contains("build succeeded"));
+                assert!(rust_stdout.to_lowercase().contains("build succeeded"));
+            }
+            if mode == "verbose" {
+                assert!(
+                    python_stdout.contains("added"),
+                    "Python `{label}` should report the added document on stdout:\n{python_stdout}"
+                );
+                assert!(
+                    rust_stdout.contains("[build target] added"),
+                    "Rust `{label}` should report the added document on stdout:\n{rust_stdout}"
+                );
+            }
+            if mode == "warnfile" {
+                assert!(
+                    std::fs::read_to_string(&python_warnfile)
+                        .unwrap()
+                        .contains("included in any toctree")
+                );
+                assert!(
+                    std::fs::read_to_string(&rust_warnfile)
+                        .unwrap()
+                        .contains("included in any toctree")
+                );
+            }
+        }
+    }
+}
+
+/// On a successful HTML build the Rust binary must emit to stdout:
 /// - a "make mode: running SphinxApp" banner
 /// - a "Build succeeded" summary with a file count
 #[test]
@@ -2714,23 +2900,24 @@ fn log_html_build_success_keywords() {
         .output()
         .unwrap();
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(
         output.status.code(),
         Some(0),
-        "expected exit 0, stderr:\n{stderr}"
+        "expected exit 0, stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        stderr.contains("Build succeeded"),
-        "expected 'Build succeeded' in stderr; got:\n{stderr}"
+        stdout.contains("Build succeeded"),
+        "expected 'Build succeeded' in stdout; got:\n{stdout}"
     );
     assert!(
-        regex::Regex::new(r"\d+ file").unwrap().is_match(&stderr),
-        "expected file count in stderr; got:\n{stderr}"
+        regex::Regex::new(r"\d+ file").unwrap().is_match(&stdout),
+        "expected file count in stdout; got:\n{stdout}"
     );
 }
 
-/// On a successful HTML build the Python binary emits "build succeeded" to stderr.
+/// Both CLIs exit 0 on a successful HTML build.
 /// Both sides must exit 0.
 #[rstest]
 fn log_html_build_success_both_exit_zero(html_parity_shared: &HtmlParityShared) {
@@ -2792,11 +2979,11 @@ fn log_html_build_stderr_snapshot(html_parity_shared: &HtmlParityShared) {
 fn log_format_build_succeeded_contains_file_count() {
     let mock = MockBuildOutput::rs_success();
     assert_eq!(mock.exit, 0);
-    assert!(mock.stderr.contains("Build succeeded"));
+    assert!(mock.stdout.contains("Build succeeded"));
     assert!(
         regex::Regex::new(r"\d+ file")
             .unwrap()
-            .is_match(&mock.stderr)
+            .is_match(&mock.stdout)
     );
 }
 
@@ -3287,11 +3474,11 @@ fn sphinx_docs_build_shared() -> SphinxDocsBuildShared {
         (1, String::new(), String::new())
     };
 
-    // Rust: sphinx-build-rs <srcdir> <outdir>
+    // Rust: sphinx-build-rs <srcdir> <outdir> -q
     let (rs_exit, rs_stdout, rs_stderr) = if has_sphinx_doc_src() {
         run(
             rs_bin,
-            &[src.to_str().unwrap(), rs_out.to_str().unwrap()],
+            &[src.to_str().unwrap(), rs_out.to_str().unwrap(), "-q"],
             &src,
         )
     } else {
@@ -4081,33 +4268,6 @@ fn sphinx_docs_supported_html_content_parity(sphinx_docs_build_shared: &SphinxDo
 
 // ── stderr / stdout assertions ────────────────────────────────────────────────
 
-/// `sphinx-build-rs` must emit "Build succeeded" to stderr for a successful
-/// sphinx/doc build, together with a file-count.
-#[rstest]
-fn sphinx_docs_rs_stderr_build_succeeded(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
-    if !has_sphinx_doc_src() {
-        return;
-    }
-    assert_eq!(
-        sphinx_docs_build_shared.rs_exit, 0,
-        "expected exit 0; stderr:\n{}",
-        sphinx_docs_build_shared.rs_stderr
-    );
-    assert!(
-        sphinx_docs_build_shared
-            .rs_stderr
-            .contains("Build succeeded"),
-        "Rust stderr should contain 'Build succeeded'; got:\n{}",
-        sphinx_docs_build_shared.rs_stderr
-    );
-    let re_count = regex::Regex::new(r"\d+ file").unwrap();
-    assert!(
-        re_count.is_match(&sphinx_docs_build_shared.rs_stderr),
-        "Rust stderr should contain a file count (e.g. '42 file(s)'); got:\n{}",
-        sphinx_docs_build_shared.rs_stderr
-    );
-}
-
 /// Rust stderr must not contain any "Error:" lines on a successful sphinx/doc build.
 #[rstest]
 fn sphinx_docs_rs_stderr_no_errors(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
@@ -4166,7 +4326,7 @@ fn sphinx_docs_py_stderr_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShar
     insta::assert_yaml_snapshot!("sphinx_docs_py_stderr_normalised", normalised);
 }
 
-/// Rust stdout must be empty (all progress output goes to stderr).
+/// Rust stdout must be empty under `-q`.
 #[rstest]
 fn sphinx_docs_rs_stdout_is_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
     if !has_sphinx_doc_src() {
@@ -4175,11 +4335,11 @@ fn sphinx_docs_rs_stdout_is_empty(sphinx_docs_build_shared: &SphinxDocsBuildShar
     let stripped = sphinx_docs_build_shared.rs_stdout.trim();
     assert!(
         stripped.is_empty(),
-        "Rust stdout should be empty (output goes to stderr); got:\n{stripped}"
+        "Rust stdout should be empty under -q; got:\n{stripped}"
     );
 }
 
-/// Python `sphinx-build -q` stdout must also be empty.
+/// Python `sphinx-build -q` stdout must be empty.
 #[rstest]
 fn sphinx_docs_py_stdout_is_empty(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
     if !has_sphinx_doc_src() {
@@ -4191,7 +4351,7 @@ fn sphinx_docs_py_stdout_is_empty(sphinx_docs_build_shared: &SphinxDocsBuildShar
     let stripped = sphinx_docs_build_shared.py_stdout.trim();
     assert!(
         stripped.is_empty(),
-        "Python sphinx-build stdout should be empty (output goes to stderr); got:\n{stripped}"
+        "Python sphinx-build stdout should be empty under -q; got:\n{stripped}"
     );
 }
 

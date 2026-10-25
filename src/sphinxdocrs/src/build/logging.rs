@@ -69,7 +69,7 @@ pub fn format_warning(warning: &str, color: bool) -> String {
 pub fn emit_debug_messages(messages: &[String], config: &LoggingConfig) {
     if debug_messages_enabled(config) {
         for message in messages {
-            eprintln!("{message}");
+            println!("{message}");
         }
     }
 }
@@ -78,7 +78,7 @@ pub fn emit_debug_messages(messages: &[String], config: &LoggingConfig) {
 pub fn emit_info_messages(messages: &[String], config: &LoggingConfig) {
     if info_messages_enabled(config) {
         for message in messages {
-            eprintln!("{message}");
+            println!("{message}");
         }
     }
 }

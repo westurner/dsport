@@ -490,6 +490,49 @@ fn build_all_renders_nested_toctree_links() {
 }
 
 #[test]
+fn build_all_uses_selected_parent_in_breadcrumb_for_multiple_toctrees() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    for (docname, content) in [
+        (
+            "index",
+            "Home\n====\n\n.. toctree::\n   :maxdepth: 3\n\n   alpha\n   delta\n",
+        ),
+        (
+            "alpha",
+            "Alpha\n=====\n\n.. toctree::\n\n   bravo\n",
+        ),
+        (
+            "bravo",
+            "Bravo\n=====\n\n.. toctree::\n\n   charlie\n",
+        ),
+        (
+            "delta",
+            "Delta\n=====\n\n.. toctree::\n\n   charlie\n",
+        ),
+        ("charlie", "Charlie\n=======\n\nBody.\n"),
+    ] {
+        std::fs::write(src.path().join(format!("{docname}.rst")), content).unwrap();
+    }
+
+    let config = SphinxConfig::new_defaults();
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let mut env = BuildEnvironment::new(config, project, src.path(), doctrees.path());
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+    HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    let charlie = read_html(out.path(), "charlie");
+    assert!(
+        charlie.contains("href=\"delta.html\"") && charlie.contains(">Delta</a>"),
+        "charlie breadcrumb should use delta as its selected parent"
+    );
+}
+
+#[test]
 fn build_doc_renders_html5_section_and_external_link() {
     let out = TempDir::new().unwrap();
     HtmlBuilder::new()

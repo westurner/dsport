@@ -18,7 +18,7 @@
 //! expanded against on-disk globs here) and `:hidden:`/`:includehidden:`
 //! filtering are likewise not implemented.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::environment::BuildEnvironment;
 
@@ -39,7 +39,27 @@ pub struct TocEntry {
 /// note). A toctree that (directly or transitively) includes itself
 /// stops expanding rather than recursing forever.
 pub fn resolve(env: &BuildEnvironment, docname: &str, max_depth: usize) -> Vec<TocEntry> {
-    resolve_inner(env, docname, max_depth, &mut HashSet::new(), false)
+    resolve_with_diagnostics(env, docname, max_depth).0
+}
+
+/// Resolve `docname`'s toctree and return Sphinx-compatible warnings for
+/// circular entries omitted during expansion.
+pub fn resolve_with_diagnostics(
+    env: &BuildEnvironment,
+    docname: &str,
+    max_depth: usize,
+) -> (Vec<TocEntry>, Vec<String>) {
+    resolve_with_visibility_and_diagnostics(env, docname, max_depth, false)
+}
+
+/// Resolve `docname`'s visible and hidden toctrees and return circular-entry
+/// warnings for the combined Sphinx graph.
+pub fn resolve_with_hidden_diagnostics(
+    env: &BuildEnvironment,
+    docname: &str,
+    max_depth: usize,
+) -> (Vec<TocEntry>, Vec<String>) {
+    resolve_with_visibility_and_diagnostics(env, docname, max_depth, true)
 }
 
 pub fn resolve_with_hidden(
@@ -47,7 +67,26 @@ pub fn resolve_with_hidden(
     docname: &str,
     max_depth: usize,
 ) -> Vec<TocEntry> {
-    resolve_inner(env, docname, max_depth, &mut HashSet::new(), true)
+    resolve_with_visibility_and_diagnostics(env, docname, max_depth, true).0
+}
+
+fn resolve_with_visibility_and_diagnostics(
+    env: &BuildEnvironment,
+    docname: &str,
+    max_depth: usize,
+    include_hidden: bool,
+) -> (Vec<TocEntry>, Vec<String>) {
+    let mut ancestry = vec![docname.to_string()];
+    let mut warnings = Vec::new();
+    let entries = resolve_inner(
+        env,
+        docname,
+        max_depth,
+        &mut ancestry,
+        include_hidden,
+        &mut warnings,
+    );
+    (entries, warnings)
 }
 
 /// Like [`resolve`], but for a *specific* `.. toctree::` directive
@@ -78,7 +117,6 @@ fn resolve_from_entries_with_visibility(
     max_depth: usize,
     include_hidden: bool,
 ) -> Vec<TocEntry> {
-    let mut seen = HashSet::new();
     let mut out = Vec::new();
     for entry in entries {
         let title = env
@@ -90,12 +128,15 @@ fn resolve_from_entries_with_visibility(
         let children = if max_depth == 1 {
             Vec::new()
         } else {
+            let mut ancestry = vec![entry.clone()];
+            let mut ignored_warnings = Vec::new();
             resolve_inner(
                 env,
                 entry,
                 max_depth.saturating_sub(1),
-                &mut seen,
+                &mut ancestry,
                 include_hidden,
+                &mut ignored_warnings,
             )
         };
         out.push(TocEntry {
@@ -111,8 +152,9 @@ fn resolve_inner(
     env: &BuildEnvironment,
     docname: &str,
     max_depth: usize,
-    seen: &mut HashSet<String>,
+    ancestry: &mut Vec<String>,
     include_hidden: bool,
+    warnings: &mut Vec<String>,
 ) -> Vec<TocEntry> {
     let mut entries = env
         .toctree_includes
@@ -127,29 +169,45 @@ fn resolve_inner(
     if entries.is_empty() {
         return Vec::new();
     }
-    if !seen.insert(docname.to_string()) {
-        return Vec::new();
-    }
     let mut out = Vec::new();
     for entry in &entries {
+        if ancestry.iter().any(|ancestor| ancestor == entry) {
+            let chain = std::iter::once(entry.as_str())
+                .chain(ancestry.iter().rev().map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" <- ");
+            warnings.push(format!(
+                "{}: WARNING: circular toctree references detected, ignoring: {chain} [toc.circular]",
+                env.doc2path(entry).display()
+            ));
+            continue;
+        }
         let title = env
             .longtitles
             .get(entry)
             .or_else(|| env.titles.get(entry))
             .cloned()
             .unwrap_or_else(|| entry.clone());
+        ancestry.push(entry.clone());
         let children = if max_depth == 1 {
             Vec::new()
         } else {
-            resolve_inner(env, entry, max_depth.saturating_sub(1), seen, include_hidden)
+            resolve_inner(
+                env,
+                entry,
+                max_depth.saturating_sub(1),
+                ancestry,
+                include_hidden,
+                warnings,
+            )
         };
+        ancestry.pop();
         out.push(TocEntry {
             docname: entry.clone(),
             title,
             children,
         });
     }
-    seen.remove(docname);
     out
 }
 
@@ -264,9 +322,12 @@ mod tests {
     fn resolve_self_referencing_toctree_does_not_recurse_forever() {
         let mut env = make_env();
         env.note_toctree("index", vec!["index".to_string()]);
-        let toc = resolve(&env, "index", 0);
-        assert_eq!(toc.len(), 1);
-        assert!(toc[0].children.is_empty());
+        let (toc, warnings) = resolve_with_diagnostics(&env, "index", 0);
+        assert!(toc.is_empty());
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].ends_with(
+            "WARNING: circular toctree references detected, ignoring: index <- index [toc.circular]"
+        ));
     }
 
     #[test]
@@ -329,7 +390,28 @@ mod tests {
         env.note_toctree("guide", vec!["details".to_string()]);
         env.note_toctree("details", vec!["guide".to_string()]);
 
-        let toc = resolve(&env, "index", 0);
-        assert_eq!(toc[0].children[0].children[0].children.len(), 0);
+        let (toc, warnings) = resolve_with_diagnostics(&env, "index", 0);
+        assert!(toc[0].children[0].children.is_empty());
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].ends_with(
+            "WARNING: circular toctree references detected, ignoring: guide <- details <- guide <- index [toc.circular]"
+        ));
+    }
+
+    #[test]
+    fn reciprocal_cycle_matches_upstream_warning_chains_from_each_root() {
+        let mut env = make_env();
+        env.note_toctree("index", vec!["sub".to_string()]);
+        env.note_toctree("sub", vec!["index".to_string()]);
+
+        let (_, index_warnings) = resolve_with_diagnostics(&env, "index", 0);
+        let (_, sub_warnings) = resolve_with_diagnostics(&env, "sub", 0);
+
+        assert!(index_warnings[0].ends_with(
+            "WARNING: circular toctree references detected, ignoring: index <- sub <- index [toc.circular]"
+        ));
+        assert!(sub_warnings[0].ends_with(
+            "WARNING: circular toctree references detected, ignoring: sub <- index <- sub [toc.circular]"
+        ));
     }
 }

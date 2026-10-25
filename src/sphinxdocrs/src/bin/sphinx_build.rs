@@ -117,6 +117,7 @@ fn main() {
                 // H8a: -E/--fresh-env and -a/--write-all.
                 app.set_incremental_options(parsed.freshenv, parsed.force_all);
                 let build_result = app.build();
+                sphinxdocrs::build::logging::emit_info_messages(app.info_messages(), &logging);
                 sphinxdocrs::build::logging::emit_debug_messages(
                     app.debug_messages(),
                     &logging,

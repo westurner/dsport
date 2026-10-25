@@ -986,11 +986,19 @@ fn collect_relations(entries: &[TocEntry]) -> HashMap<String, Relation> {
             None
         };
         let next = flat.get(i + 1).map(|(d, _)| d.clone());
-        relations.entry(docname.clone()).or_insert(Relation {
-                parent: parent.clone(),
-                prev,
-                next,
-            });
+        let relation = relations.entry(docname.clone()).or_insert(Relation {
+            parent: parent.clone(),
+            prev,
+            next,
+        });
+        if parent.as_ref().is_some_and(|candidate| {
+            relation
+                .parent
+                .as_ref()
+                .is_none_or(|selected| candidate > selected)
+        }) {
+            relation.parent = parent.clone();
+        }
     }
     relations
 }
@@ -2258,6 +2266,35 @@ mod tests {
             Some("guide/extensions")
         );
         assert_eq!(relations["guide/extensions"].parent.as_deref(), Some("guide"));
+    }
+
+    #[test]
+    fn collect_relations_selects_greatest_parent_for_duplicate_documents() {
+        let entries = vec![
+            TocEntry {
+                docname: "bravo".into(),
+                title: "Bravo".into(),
+                children: vec![TocEntry {
+                    docname: "charlie".into(),
+                    title: "Charlie".into(),
+                    children: vec![],
+                }],
+            },
+            TocEntry {
+                docname: "delta".into(),
+                title: "Delta".into(),
+                children: vec![TocEntry {
+                    docname: "charlie".into(),
+                    title: "Charlie".into(),
+                    children: vec![],
+                }],
+            },
+        ];
+
+        let relations = collect_relations(&entries);
+
+        assert_eq!(relations["charlie"].parent.as_deref(), Some("delta"));
+        assert_eq!(parent_chain("charlie", &relations, "index"), vec!["delta"]);
     }
 
     #[test]

@@ -2605,6 +2605,58 @@ impl BuildEnvironment {
         warnings
     }
 
+    /// Return Sphinx-compatible info messages for documents referenced by
+    /// multiple visible or hidden toctrees.
+    pub fn multiple_toctree_parent_messages(&self) -> Vec<String> {
+        let mut parents_by_child = std::collections::BTreeMap::<String, Vec<String>>::new();
+        for toctrees in [&self.toctree_includes, &self.hidden_toctree_includes] {
+            for (parent, children) in toctrees {
+                for child in children {
+                    parents_by_child
+                        .entry(child.clone())
+                        .or_default()
+                        .push(parent.clone());
+                }
+            }
+        }
+
+        parents_by_child
+            .into_iter()
+            .filter_map(|(docname, mut parents)| {
+                if parents.len() < 2 {
+                    return None;
+                }
+                parents.sort();
+                let selected = parents.last()?;
+                let parents = parents
+                    .iter()
+                    .map(|parent| sphinx_repr(parent))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Some(format!(
+                    "document is referenced in multiple toctrees: [{parents}], selecting: {selected} <- {docname}"
+                ))
+            })
+            .collect()
+    }
+
+    /// Return Sphinx-compatible warnings for circular references in every
+    /// recorded visible or hidden toctree.
+    pub fn toctree_cycle_warnings(&self) -> Vec<String> {
+        let docnames: std::collections::BTreeSet<_> = self
+            .toctree_includes
+            .keys()
+            .chain(self.hidden_toctree_includes.keys())
+            .cloned()
+            .collect();
+        docnames
+            .iter()
+            .flat_map(|docname| {
+                crate::toctree::resolve_with_hidden_diagnostics(self, docname, 0).1
+            })
+            .collect()
+    }
+
     // ── H8a: incremental rebuild — outdated detection ─────────────────────────
 
     /// Determine which documents need (re-)reading.
@@ -5513,6 +5565,44 @@ mod tests {
                 env.doc2path("orphan").display()
             )
         );
+    }
+
+    #[test]
+    fn multiple_toctree_parents_are_sorted_and_select_the_greatest_parent() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.note_toctree("delta", vec!["charlie".to_string()]);
+        env.note_toctree("bravo", vec!["charlie".to_string()]);
+
+        assert_eq!(
+            env.multiple_toctree_parent_messages(),
+            vec!["document is referenced in multiple toctrees: ['bravo', 'delta'], selecting: delta <- charlie"]
+        );
+    }
+
+    #[test]
+    fn reciprocal_toctree_cycle_reports_both_sphinx_warning_chains() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.note_toctree("index", vec!["sub".to_string()]);
+        env.note_toctree("sub", vec!["index".to_string()]);
+
+        let warnings = env.toctree_cycle_warnings();
+
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings[0].ends_with(
+            "WARNING: circular toctree references detected, ignoring: index <- sub <- index [toc.circular]"
+        ));
+        assert!(warnings[1].ends_with(
+            "WARNING: circular toctree references detected, ignoring: sub <- index <- sub [toc.circular]"
+        ));
+    }
+
+    #[test]
+    fn toctree_cycle_diagnostics_include_hidden_edges() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.note_hidden_toctree("index", vec!["sub".to_string()]);
+        env.note_toctree("sub", vec!["index".to_string()]);
+
+        assert_eq!(env.toctree_cycle_warnings().len(), 2);
     }
 
     #[test]

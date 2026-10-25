@@ -74,6 +74,15 @@ pub fn emit_debug_messages(messages: &[String], config: &LoggingConfig) {
     }
 }
 
+/// Emit Sphinx-style info messages unless status output is suppressed.
+pub fn emit_info_messages(messages: &[String], config: &LoggingConfig) {
+    if info_messages_enabled(config) {
+        for message in messages {
+            eprintln!("{message}");
+        }
+    }
+}
+
 /// Finalize a build: print collected `warnings` to stderr (unless
 /// [`LoggingConfig::suppress_warnings`]), write an ANSI-stripped copy to
 /// [`LoggingConfig::warnfile`] if one was requested (mirrors upstream's
@@ -164,6 +173,15 @@ mod tests {
     }
 
     #[test]
+    fn info_messages_are_visible_by_default_and_suppressed_by_quiet() {
+        let normal = parse_logging(false, false, None, 0, "no");
+        let quiet = parse_logging(true, false, None, 0, "no");
+
+        assert!(info_messages_enabled(&normal));
+        assert!(!info_messages_enabled(&quiet));
+    }
+
+    #[test]
     fn finish_build_exits_zero_without_warningiserror() {
         let config = parse_logging(false, false, None, 0, "no");
         let code = finish_build(&["a warning".to_string()], &config, false);
@@ -227,4 +245,8 @@ mod tests {
 
 fn debug_messages_enabled(config: &LoggingConfig) -> bool {
     config.verbosity > 0 && !config.suppress_status
+}
+
+fn info_messages_enabled(config: &LoggingConfig) -> bool {
+    !config.suppress_status
 }

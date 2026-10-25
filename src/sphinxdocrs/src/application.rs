@@ -192,6 +192,8 @@ pub struct SphinxApp {
     pub warnings: Vec<String>,
     /// Sphinx-compatible debug messages collected during incremental reads.
     pub(crate) debug_messages: Vec<String>,
+    /// Sphinx-compatible info messages collected during environment checks.
+    pub(crate) info_messages: Vec<String>,
     /// Native event bus (**H4a**). Shared (via `Rc<RefCell<_>>`) with any
     /// [`PyAppFacade`] constructed by [`load_extension`](Self::load_extension)
     /// so Python-registered listeners fire alongside native ones.
@@ -224,6 +226,7 @@ impl std::fmt::Debug for SphinxApp {
             .field("buildername", &self.buildername)
             .field("warnings", &self.warnings)
             .field("debug_messages", &self.debug_messages)
+            .field("info_messages", &self.info_messages)
             .finish_non_exhaustive()
     }
 }
@@ -317,6 +320,7 @@ impl SphinxApp {
             buildername,
             warnings: Vec::new(),
             debug_messages: Vec::new(),
+            info_messages: Vec::new(),
             events: AppEventManager::shared(),
             extensions: HashMap::new(),
             extension_sources: HashMap::new(),
@@ -578,6 +582,7 @@ impl SphinxApp {
     /// phases.
     pub fn read(&mut self) -> Result<(), AppError> {
         self.debug_messages.clear();
+        self.info_messages.clear();
         self.env.borrow_mut().registered_roles =
             self.registry.borrow().roles.keys().cloned().collect();
         self.env.borrow_mut().find_files()?;
@@ -647,7 +652,17 @@ impl SphinxApp {
             .read_docs(docnames, Some(&self.events))?;
 
         self.events.borrow_mut().emit("env-updated", &[])?;
-        self.warnings.extend(self.env.borrow().check_consistency());
+        let (cycle_warnings, parent_messages, consistency_warnings) = {
+            let env = self.env.borrow();
+            (
+                env.toctree_cycle_warnings(),
+                env.multiple_toctree_parent_messages(),
+                env.check_consistency(),
+            )
+        };
+        self.warnings.extend(cycle_warnings);
+        self.info_messages.extend(parent_messages);
+        self.warnings.extend(consistency_warnings);
         self.events
             .borrow_mut()
             .emit("env-check-consistency", &[])?;
@@ -665,6 +680,11 @@ impl SphinxApp {
     /// Debug messages produced during the most recent incremental read.
     pub fn debug_messages(&self) -> &[String] {
         &self.debug_messages
+    }
+
+    /// Info messages produced during the most recent environment checks.
+    pub fn info_messages(&self) -> &[String] {
+        &self.info_messages
     }
 
     /// Run the build.
@@ -977,6 +997,45 @@ mod tests {
         app.read().unwrap();
 
         assert_eq!(app.debug_messages(), &["[build target] added 'guide'"]);
+    }
+
+    #[test]
+    fn read_collects_toctree_cycle_warnings_and_parent_info() {
+        let src = TempDir::new().unwrap();
+        let write_doc = |name: &str, body: &str| {
+            std::fs::write(src.path().join(format!("{name}.rst")), body).unwrap();
+        };
+        write_doc(
+            "index",
+            "Index\n=====\n\n.. toctree::\n\n   sub\n   alpha\n   delta\n",
+        );
+        write_doc("sub", "Sub\n===\n\n.. toctree::\n\n   index\n");
+        write_doc("alpha", "Alpha\n=====\n\n.. toctree::\n\n   bravo\n");
+        write_doc("bravo", "Bravo\n=====\n\n.. toctree::\n\n   charlie\n");
+        write_doc("delta", "Delta\n=====\n\n.. toctree::\n\n   charlie\n");
+        write_doc("charlie", "Charlie\n=======\n");
+
+        let base = TempDir::new().unwrap();
+        let out = base.path().join("out");
+        let doctrees = base.path().join("doctrees");
+        let mut app =
+            SphinxApp::new(src.path(), &out, &doctrees, "html", HashMap::new()).unwrap();
+        app.read().unwrap();
+
+        assert_eq!(app.info_messages(), &["document is referenced in multiple toctrees: ['bravo', 'delta'], selecting: delta <- charlie"]);
+        assert_eq!(
+            app.warnings
+                .iter()
+                .filter(|warning| warning.contains("circular toctree references detected"))
+                .count(),
+            2
+        );
+        assert!(app.warnings.iter().any(|warning| warning.ends_with(
+            "WARNING: circular toctree references detected, ignoring: index <- sub <- index [toc.circular]"
+        )));
+        assert!(app.warnings.iter().any(|warning| warning.ends_with(
+            "WARNING: circular toctree references detected, ignoring: sub <- index <- sub [toc.circular]"
+        )));
     }
 
     #[test]

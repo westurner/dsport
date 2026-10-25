@@ -5720,6 +5720,43 @@ chapters:
     }
 
     #[test]
+    fn read_one_without_heading_records_titled_toctrees_and_falls_back_to_docname() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        env.read_one_with_source(
+            "guide/index",
+            concat!(
+                ".. toctree::\n\n",
+                "   Visible page <visible>\n\n",
+                ".. toctree::\n",
+                "   :hidden:\n\n",
+                "   Hidden page <hidden>\n",
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(
+            env.titles.get("guide/index").map(String::as_str),
+            Some("index")
+        );
+        assert_eq!(
+            env.toctree_includes.get("guide/index"),
+            Some(&vec!["guide/visible".to_string()])
+        );
+        assert_eq!(
+            env.hidden_toctree_includes.get("guide/index"),
+            Some(&vec!["guide/hidden".to_string()])
+        );
+        assert_eq!(
+            env.longtitles.get("guide/visible").map(String::as_str),
+            Some("Visible page")
+        );
+        assert_eq!(
+            env.longtitles.get("guide/hidden").map(String::as_str),
+            Some("Hidden page")
+        );
+    }
+
+    #[test]
     fn read_one_with_source_root_level_toctree_entries_unqualified() {
         let (_tmp, mut env) = make_env_with_tempdir();
         env.read_one_with_source(

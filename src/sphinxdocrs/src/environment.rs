@@ -4710,6 +4710,7 @@ mod tests {
         let snapshot = env.source_snapshots.get_mut("api").unwrap();
         snapshot.provider_identity.clear();
         snapshot.request_identity.clear();
+        assert!(!env.source_snapshot_matches_request("api", &request));
         assert!(!env.source_snapshot_matches_provider(
             "api",
             &FixtureProvider {

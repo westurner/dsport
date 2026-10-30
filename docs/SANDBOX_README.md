@@ -275,7 +275,7 @@ Before going to production:
 
 **A:** Much better:
 - `rexec` was removed in Python 3.0 due to ~20 known escapes
-- jinja2rs has 0 known escapes (leverages Rust type system, not attribute whitelisting)
+- jinja2rs leverages the Rust type system, not attribute whitelisting
 - jinja2rs is for templates only (not arbitrary Python code)
 
 ---

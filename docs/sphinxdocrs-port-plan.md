@@ -279,7 +279,8 @@ Contents:
 10. [**H12: stack-safe docutilsrs renderers**](#h12-stack-safe-docutilsrs-renderers)
 11. [**H13: MyST Markdown to doctree and native HTML**](#tier-h13--myst-markdown-to-doctree-and-native-html)
 12. [**H14: Rust and Lean domains, autodoc, and apidoc**](#tier-h14--rust-and-lean-domains-autodoc-and-apidoc)
-13. [**J-phase: source-encoding hardening follow-ups**](#10-j-phase--source-encoding-hardening-follow-ups)
+13. [**H15: BibTeX, CSL, linked data, and DocIndex**](#tier-h15--bibtex-csl-linked-data-and-docindex)
+14. [**J-phase: source-encoding hardening follow-ups**](#10-j-phase--source-encoding-hardening-follow-ups)
 
 ---
 
@@ -305,6 +306,7 @@ Contents:
 | **partial** | usable subset landed; named gaps remain |
 | **stub** | scaffolded without an implementation |
 | **deferred** | still pure Python; revisit after its blocker lands |
+| **planned** | scoped work not started; linked H-item describes the implementation and gates |
 | **keep-python** | intentionally not ported |
 
 **Per-item tagging**: every ported function is tagged *exact parity*,
@@ -381,6 +383,7 @@ in the notes column of the relevant row.
 | `ext/autodoc/` | `autodoc` | P3 | **mirrored** ✅ | Python `document_module`/`document_module_auto`/`render_function`/`render_class` with a PyO3 runtime-import bridge and `ruff_python_parser` static fallback, option handling, type hints, decorators, `__all__`, and `autodoc_mock_imports` (**H9**, done). Source-neutral Rust/Lean autodoc renderers and CLI are implemented under **H14**. **Accepted Python deviations:** `:inherited-members:` parsed but not expanded; overload sets render only the last definition; `autodoc_typehints="description"` treated as `"signature"`. **Accepted source deviations:** Lean syntax-only extraction; mismatched rustdoc JSON schemas fail explicitly |
 | `ext/intersphinx/` | `intersphinx` | P3 | **partial** | `fetch_inventories`, `InvCache`, `Inventory` / `InventoryItem` / `InventoryError` (v1 + v2 `loads`, `load_file`), `dumps`. **Gap:** xref fallback — the parsed inventories are not consulted during reference resolution (→ **H5c**) |
 | `highlighting.py` | — | P3 | **partial** | `docutilsrs` code/code-block/sourcecode paths use native `pygmentsrs` with Python fallback; `automodule` output now enters that path; Sphinx aliases (`py`/`py3`/`python3`/`default`/`pycon3`), Python-console detection, and `guess` fallback are covered. Lexer-error logging, relaxed retry, and location-rich diagnostics remain (→ **H10**) |
+| `sphinxcontrib.bibtex` (new port) | `extensions::bibtex` | P3 | **planned** | Python Sphinx adapter plus Rust equivalent; BibTeX/CSL citation processing, optional Oxigraph/OxiRS linked-data enrichment, and optional DocIndex export (**H15**) |
 | `pycode/` | — | P3 | **keep-python** | superseded by `autodoc.rs` + `ruff_python_ast` |
 | `ext/*` (other) | — | P3 | **keep-python** | loaded through the `Extension` registry |
 | *(new, no upstream analogue)* | `scan` | — | **done** | `scan_requirements`, `collect_packages`, stdlib detection — probes `conf.py` extension imports |
@@ -2985,6 +2988,7 @@ native ownership before creating port work.
 | 4 | **H10** | close Sphinx-specific highlighting behavior and byte/span parity |
 | 5 | **H5a–H5c** | implement richer directive execution and the pending-xref lifecycle with H12 |
 | 6 | **H8d** | add parallel read/write only after sequential output and event contracts remain stable |
+| 7 | **H15a–H15f** | start core/dependency and adapter probes independently; activate native Sphinx integration after H5a/H5b directive and role execution is available |
 
 ### 9.3 Definition of done for the H phase
 
@@ -3024,6 +3028,218 @@ For each H-item:
   record the upstream/native test mapping and measured branch delta here.
 
 ---
+
+### Tier H15 — BibTeX, CSL, linked data, and DocIndex
+
+H15 adds a Sphinx extension compatible with the `sphinxcontrib.bibtex`
+workflow, implemented as a shared Rust bibliography engine with both a native
+`sphinxdocrs` adapter and a Python Sphinx adapter. CSL formatting is provided
+through [Zotero's citeproc-rs](https://github.com/zotero/citeproc-rs). Optional
+linked-data providers use Oxigraph or OxiRS, and an optional DocIndex
+integration publishes bibliography records for search and RDF/HDT export.
+
+This is a new extension port, not a general port of Pybtex's formatting/plugin
+API. Track unsupported upstream features as explicit scope or deviations.
+
+#### H15 design boundaries
+
+1. **One reference model.** Parse BibTeX and linked-data records into a
+   canonical bibliographic record, then map that record to CSL-JSON for
+   formatting. Retain the original fields, source location, source IRI, and
+   field-level provenance so conversion and enrichment remain diagnosable.
+2. **Global citation processing.** Store citation occurrences with key,
+   document, source order, role, prefix/suffix, and locator. Process citation
+   clusters after documents have been read so citeproc can disambiguate names,
+   sort citations, and apply style rules consistently across the project.
+3. **Backend-neutral output.** Convert formatted CSL output into Docutils
+   doctree nodes, not builder-specific HTML strings. The initial renderer gate
+   is HTML plus LaTeX; other builders follow the parity evidence and supported
+   node model.
+4. **Linked data enriches; it does not own citations.** BibTeX and explicit
+   project metadata take precedence. An RDF provider may fill missing fields
+   through declared mappings, but it does not change citation keys or silently
+   replace supplied values.
+5. **DocIndex is an optional output consumer.** Bibliographic resolution and
+   CSL formatting must work when DocIndex is disabled or absent. DocIndex must
+   not become the source of truth for citation lookup.
+
+#### H15a — dependency, licensing, and package feasibility gate
+
+Before implementing the formatter, run a small spike against the exact
+[citeproc-rs repository](https://github.com/zotero/citeproc-rs):
+
+- Pin a commit and verify it builds with the workspace toolchain. The upstream
+  repository is archived, and its `citeproc` engine crate is version `0.0.1`
+  with workspace-local path dependencies; do not assume the engine is a
+  current, independently consumable crates.io dependency. The separately
+  published `csl` crate provides CSL parsing/types, not the complete citation
+  processor.
+- Run a representative CSL test subset covering citation clusters,
+  disambiguation, locale fallback, and bibliography rendering. Record upstream
+  limitations and establish which CSL/CSL-M features are supported by the
+  pinned revision.
+- Decide between a pinned Git dependency and a maintained fork. Keep the
+  dependency revision reproducible; do not depend on a floating branch.
+- Review MPL-2.0 obligations and dependency notices before vendoring or
+  redistributing any citeproc-rs code. Prefer a normal dependency to copying
+  source.
+- Separately select and test a BibTeX parser. It must handle nested braces,
+  quoted values, concatenation, `@string`, comments, cross-references, and
+  useful source spans; avoid an ad hoc line parser.
+
+**Gate:** a locked build and fixture executable format representative CSL
+items, with a recorded dependency decision and supported-feature matrix. If
+the archived engine cannot pass this gate, stop before Sphinx integration and
+evaluate a maintained fork or another CSL engine.
+
+#### H15b — Rust bibliography and CSL core
+
+Implement a Sphinx-independent Rust core so parser and citation semantics can
+be tested without a Sphinx application:
+
+- `BibDatabase` stores normalized keys, entry types, raw fields, parsed names,
+  cross-reference relationships, and source diagnostics.
+- `ReferenceRecord` is the canonical model shared by BibTeX and linked-data
+  adapters. Its CSL-JSON conversion handles standard CSL fields and records
+  unknown or lossy fields instead of silently discarding them.
+- Citation records include ordered clusters, citation mode, locator and label,
+  prefix/suffix, and stable occurrence identifiers for anchors/backlinks.
+- CSL style and locale loading is local and deterministic in the first
+  release. A configured `bibtex_csl_style` selects CSL processing; without it,
+  preserve the documented legacy/default behavior rather than silently
+  changing existing projects to a new style.
+- BibTeX parse errors, missing keys, unsupported entry types, bad CSL XML, and
+  unsupported CSL constructs produce source-aware diagnostics.
+
+Initial behavioral scope: `:cite:` / `:cite:p:` and `:cite:t:` with multiple
+keys, standard prefixes/suffixes and locators, one project-wide bibliography,
+stable bibliography anchors, and unresolved-key warnings. Add foot citations,
+per-document and multiple bibliography behavior, advanced filtering, and the
+broader upstream role matrix as separately tested increments.
+
+#### H15c — linked-data providers
+
+Keep RDF storage behind a small `LinkedDataProvider` contract that resolves a
+configured key/identifier/IRI to zero or one normalized `ReferenceRecord` and
+returns provenance with each field. Define mappings for the supported
+vocabularies and identifiers before adding inference or custom query features.
+
+| adapter | intended role | dependency boundary |
+| --- | --- | --- |
+| Oxigraph | Baseline embedded RDF parser/store and SPARQL provider for local project graphs | Optional `linked-data-oxigraph` feature; choose default features deliberately because the Oxigraph crate defaults to RocksDB |
+| OxiRS | Adapter to `oxirs-core` RDF storage/query APIs for projects already using OxiRS | Optional `linked-data-oxirs` feature; normalize results into the extension's own record type rather than exposing OxiRS types in the public extension API |
+
+Add project configuration for local RDF source files, backend selection, and
+identifier-to-IRI/predicate mappings. Local files are the initial default.
+Remote SPARQL or identifier lookups are opt-in, bounded by timeout/result
+limits and endpoint allowlists, and cached with source provenance. A normal
+build must not contact the network. Include graph/source hashes and mapping
+configuration in environment invalidation.
+
+Keep the two OxiRS-related surfaces distinct: the existing
+`docindexrs_native::backends::OxiRsBackend` is a DocIndex named-index adapter,
+not the `oxirs-core::RdfStore` linked-data provider. The latter is the relevant
+OxiRS surface for RDF lookup. Oxigraph and OxiRS results must pass the same
+provider contract tests.
+
+**Gate:** identical RDF fixtures queried through both adapters yield the same
+normalized records and provenance for the supported query subset. Tests also
+prove offline-by-default behavior, timeout handling, bounded results, and
+deterministic merge precedence.
+
+#### H15d — Python and native Sphinx adapters
+
+- Package a Python extension with `setup(app)`, config values, role/directive
+  registration, and a thin binding to the Rust core. Keep the Sphinx extension
+  key stable where compatibility requires it.
+- Register the Rust equivalent using the Sphinx entry-point group and version
+  guard from [ADR 0005](adr/0005-plugin-discovery.md), keyed by
+  `sphinxcontrib.bibtex`. The current resolver only discovers
+  `docutilsrs.equivalents`; add explicit `sphinxdocrs.equivalents` discovery
+  (or a generic group-aware resolver) and ensure the resolver is importable
+  from installed wheels, not only the monorepo `PYTHONPATH`.
+- Decide package coexistence before publishing. A drop-in module at
+  `sphinxcontrib.bibtex` preserves existing `extensions` lists but conflicts
+  with the upstream distribution; a co-installable package needs a distinct
+  module/extension name such as `sphinxcontrib.bibtex_rs`.
+- Implement native parser-time role/directive execution and citation nodes.
+  `PyAppFacade.add_directive` and `add_role` are currently no-op stubs, and
+  `docutilsrs` structural Directive-class support is incomplete. Therefore
+  H15 depends on the relevant H5a/H5b parser/runtime work; registry entries
+  alone are not a functional native extension.
+- Collect citations and bibliography directives from all read documents,
+  resolve them at the post-read boundary, persist normalized records and
+  results, and invalidate on BibTeX/RDF/style/locale/mapping changes.
+- Implement anchors, backlinks, duplicate-key diagnostics, and unresolved
+  citation warnings. Start with `parallel_read_safe=False` and
+  `parallel_write_safe=False`; enable either only after shared processor and
+  provider state is isolated and tested.
+
+#### H15e — optional DocIndex integration
+
+Keep DocIndex integration disabled by default behind a setting such as
+`bibtex_docindex_enabled`. Define a generic DocIndex contribution hook so
+extensions can submit structured documents before the DocIndex
+`build_finished` export, without making DocIndex parse citations or making the
+bibliography extension depend on DocIndex internals.
+
+- Contribute one stable DocIndex record per bibliography entry, keyed by a
+  namespaced citation key and carrying formatted title, authors/year, abstract
+  or available summary, DOI/IRI URL, and source provenance. Add a dedicated
+  bibliography `DocumentType` and structured identifier/relationship fields
+  only with an artifact-schema migration plan.
+- Extend the RDF/HDT export deliberately. Today `NativeDocIndex::write_hdt`
+  emits only document title, content, and type, while JSON is the authoritative
+  search artifact. Add explicit bibliography-entry and citation-edge triples
+  using agreed standard vocabularies (for example Schema.org/Dublin Core and
+  CiTO where semantics fit); retain source-document-to-reference links and
+  provenance. Do not imply those relationships exist in current artifacts.
+- Preserve import compatibility for existing DocIndex JSON artifacts. If the
+  document model or serialized fields change, bump
+  `docindexrs_core::ARTIFACT_SCHEMA_VERSION` and test old-version handling.
+- Keep output order and IDs deterministic. If the contribution hook is not
+  registered or DocIndex is disabled, bibliography builds and rendered output
+  must be unchanged.
+
+Relevant existing surfaces are [the native DocIndex API](../src/docindexrs-native/src/lib.rs),
+[DocIndex backends](../src/docindexrs-native/src/backends.rs),
+[the artifact schema](../src/docindexrs-core/src/lib.rs), and
+[the Sphinx DocIndex extension](../src/sphinxdocrs/src/extensions/docindex.rs).
+
+#### H15f — parity, delivery order, and completion gate
+
+Land H15 in these reviewable slices:
+
+1. **H15a:** pinned citeproc-rs build/test and licensing decision; BibTeX
+   parser selection; public extension-name/package coexistence decision.
+2. **H15b:** parser, canonical record, BibTeX-to-CSL conversion, diagnostics,
+   and parser fixtures.
+3. **H15c:** citeproc adapter, CSL style/locale loading, citation-cluster
+   processing, and CSL regression fixtures.
+4. **H15c/H15d:** linked-data provider contract and optional Oxigraph/OxiRS
+   adapters; run shared contract tests for both.
+5. **H15d:** resolver/package changes, Python setup path, native parser
+   execution, doctree nodes, HTML/LaTeX output, persistence, and incremental
+   invalidation.
+6. **H15e:** opt-in DocIndex contribution, artifact migration/version tests,
+   RDF/HDT citation edges, and disabled-path regression tests.
+7. **H15f:** feature matrix, documentation, accepted deviations, and release
+   packaging checks.
+
+Verification must include Rust core fixtures; a representative citeproc-rs
+CSL test subset; Python Sphinx builds with the extension; native
+`sphinx-build-rs` builds using the Rust equivalent; HTML and LaTeX citation
+link/anchor checks; multi-document and incremental rebuild cases; both RDF
+provider contract suites; and DocIndex JSON/HDT schema and relationship tests.
+Reuse the strict semantic HTML comparator for text, links, and anchors where
+the Python and Rust outputs are intended to match. Do not relax global parity
+thresholds for this extension.
+
+H15 is complete when the Python and Rust Sphinx paths produce deterministic
+CSL-formatted citations and bibliographies from the same fixtures, linked-data
+enrichment is optional and offline by default, DocIndex export is independently
+optional and schema-versioned, and every unsupported upstream feature or
+citeproc-rs limitation is documented as an explicit deviation.
 
 ## 10. J-phase — source-encoding hardening follow-ups
 

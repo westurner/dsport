@@ -7,6 +7,7 @@
 use crate::application::{AppError, SphinxApp};
 
 pub mod docindex;
+pub mod bibtex;
 pub mod webmcp;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

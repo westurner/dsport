@@ -896,6 +896,18 @@ impl SphinxConfig {
 
         // General options
         add(
+            "bibtex_bibfiles",
+            List(Vec::new()),
+            Env,
+            "Local BibTeX files used by the native bibliography extension",
+        );
+        add(
+            "bibtex_csl_style",
+            Str(String::new()),
+            Env,
+            "Path to a local CSL style XML file",
+        );
+        add(
             "project",
             Str("Project name not set".into()),
             Env,

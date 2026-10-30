@@ -22,6 +22,9 @@ pub struct BuiltinMetadata {
 
 pub fn metadata(name: &str) -> Option<BuiltinMetadata> {
     match name {
+        "sphinxdocrs::extensions::bibtex" | "sphinxdocrs.extensions.bibtex" => {
+            Some(bibtex::METADATA)
+        }
         "sphinxdocrs::extensions::docindex" | "sphinxdocrs.extensions.docindex" => {
             Some(docindex::METADATA)
         }
@@ -34,6 +37,10 @@ pub fn metadata(name: &str) -> Option<BuiltinMetadata> {
 
 pub fn setup(name: &str, app: &mut SphinxApp) -> Result<bool, AppError> {
     match name {
+        "sphinxdocrs::extensions::bibtex" | "sphinxdocrs.extensions.bibtex" => {
+            bibtex::setup(app)?;
+            Ok(true)
+        }
         "sphinxdocrs::extensions::docindex" | "sphinxdocrs.extensions.docindex" => {
             docindex::setup(app)?;
             Ok(true)

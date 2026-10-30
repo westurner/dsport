@@ -8,6 +8,35 @@ use citeproc::prelude::{Cite, ClusterPosition, InitOptions, Processor, Supported
 
 use super::bibtex::Bibliography;
 
+pub const DEFAULT_STYLE: &str = r#"
+        <style version="1.0" class="in-text" default-locale="en-US">
+            <info>
+                <title>sphinxdocrs default bibliography style</title>
+                <id>https://example.test/styles/sphinxdocrs-default</id>
+                <link href="https://example.test/styles/sphinxdocrs-default" rel="self"/>
+                <updated>2024-01-01T00:00:00+00:00</updated>
+            </info>
+            <citation>
+                <layout prefix="(" suffix=")">
+                    <group delimiter=", ">
+                        <names variable="author"><name form="short"/></names>
+                        <date variable="issued"><date-part name="year"/></date>
+                        <text variable="title"/>
+                    </group>
+                </layout>
+            </citation>
+            <bibliography>
+                <layout>
+                    <group delimiter=". ">
+                        <names variable="author"><name form="short"/></names>
+                        <date variable="issued"><date-part name="year"/></date>
+                        <text variable="title"/>
+                    </group>
+                </layout>
+            </bibliography>
+        </style>
+"#;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CitationMode {
     AuthorOnly,
@@ -195,7 +224,7 @@ pub fn render(
 mod tests {
     use citeproc::prelude::SupportedFormat;
 
-    use super::{CitationCluster, CitationItem, CitationMode, CslError, render};
+    use super::{CitationCluster, CitationItem, CitationMode, CslError, DEFAULT_STYLE, render};
     use crate::extensions::bibtex::Bibliography;
 
     const STYLE: &str = r#"
@@ -372,6 +401,55 @@ mod tests {
             result.clusters[1].value.contains("1843b"),
             "rendered clusters: {:?}",
             result.clusters
+        );
+    }
+
+    #[test]
+    fn default_style_formats_names_dates_and_bibliography() {
+        let result = render(
+            &bibliography(),
+            DEFAULT_STYLE,
+            &[
+                CitationCluster {
+                    id: "intro:0".into(),
+                    citations: vec![CitationItem::new("alpha")],
+                    note_number: None,
+                },
+                CitationCluster {
+                    id: "intro:1".into(),
+                    citations: vec![CitationItem::new("beta")],
+                    note_number: None,
+                },
+            ],
+            SupportedFormat::Plain,
+        )
+        .unwrap();
+
+        assert!(
+            result.clusters[0].value.contains("Lovelace"),
+            "rendered clusters: {:?}",
+            result.clusters
+        );
+        assert!(
+            result.clusters[1].value.contains("Hopper"),
+            "rendered clusters: {:?}",
+            result.clusters
+        );
+        assert!(
+            result
+                .bibliography
+                .iter()
+                .any(|entry| entry.value.contains("Alpha")),
+            "rendered bibliography: {:?}",
+            result.bibliography
+        );
+        assert!(
+            result
+                .bibliography
+                .iter()
+                .any(|entry| entry.value.contains("Beta")),
+            "rendered bibliography: {:?}",
+            result.bibliography
         );
     }
 }

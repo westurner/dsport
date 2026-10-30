@@ -43,6 +43,47 @@ pub struct Bibliography {
     by_id: HashMap<String, usize>,
 }
 
+pub const METADATA: super::BuiltinMetadata = super::BuiltinMetadata {
+    name: "sphinxdocrs::extensions::bibtex",
+    version: "0.1.0",
+    parallel_read_safe: false,
+    parallel_write_safe: false,
+};
+
+pub fn register_parser_components() {
+    for role in ["cite", "cite:p", "cite:t"] {
+        docutilsrs::roles::register_canonical_role(role);
+        docutilsrs::plugins::register_native_role(role, |role_name, content| {
+            let mut attrs = BTreeMap::new();
+            attrs.insert(
+                "role".to_string(),
+                docutilsrs::doctree::NodeAttributeValue::String(role_name.to_string()),
+            );
+            attrs.insert(
+                "keys".to_string(),
+                docutilsrs::doctree::NodeAttributeValue::String(content.to_string()),
+            );
+            Some(docutilsrs::doctree::NodeKind::Extension {
+                class_name: "BibtexCitation".to_string(),
+                attrs,
+            })
+        });
+    }
+
+    docutilsrs::plugins::register_native_directive("bibliography", |_arguments, _content| {
+        Some(vec![docutilsrs::parser::Block::Extension {
+            class_name: "BibtexBibliography".to_string(),
+            attrs: BTreeMap::new(),
+            children: Vec::new(),
+        }])
+    });
+}
+
+pub fn setup(_app: &mut crate::application::SphinxApp) -> Result<(), crate::application::AppError> {
+    register_parser_components();
+    Ok(())
+}
+
 impl Bibliography {
     pub fn parse(source: &str) -> Result<Self, BibliographyError> {
         let parsed = biblatex::Bibliography::parse(source)
@@ -350,6 +391,47 @@ mod tests {
         assert!(Bibliography::parse("@book{unfinished").is_err());
         assert!(Bibliography::parse("").unwrap().is_empty());
     }
+
+    #[test]
+    fn native_roles_and_bibliography_directive_emit_placeholders() {
+        use docutilsrs::doctree::{NodeAttributeValue, NodeKind};
+
+        super::register_parser_components();
+        let tree = docutilsrs::parse_rst_for_sphinx(
+            ":cite:`first` :cite:p:`second` :cite:t:`third`\n\n.. bibliography::\n",
+            "index",
+            docutilsrs::TitlePromotion::Preserve,
+            true,
+        );
+        let placeholders: Vec<_> = (0..tree.nodes_len())
+            .filter_map(|id| match &tree.node(id).kind {
+                NodeKind::Extension { class_name, attrs } => Some((class_name.as_str(), attrs)),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(placeholders.len(), 4);
+        assert_eq!(placeholders[0].0, "BibtexCitation");
+        assert_eq!(
+            placeholders[0].1.get("keys"),
+            Some(&NodeAttributeValue::String("first".into()))
+        );
+        assert_eq!(placeholders[1].0, "BibtexCitation");
+        assert_eq!(
+            placeholders[1].1.get("role"),
+            Some(&NodeAttributeValue::String("cite:p".into()))
+        );
+        assert_eq!(placeholders[2].0, "BibtexCitation");
+        assert_eq!(
+            placeholders[2].1.get("role"),
+            Some(&NodeAttributeValue::String("cite:t".into()))
+        );
+        assert_eq!(placeholders[3].0, "BibtexBibliography");
+        assert!(!(0..tree.nodes_len()).any(|id| matches!(
+            tree.node(id).kind,
+            NodeKind::SystemMessage { ty: "ERROR", .. }
+        )));
+    }
 }
 
 #[cfg(all(test, feature = "csl-citeproc"))]
@@ -357,8 +439,9 @@ mod citeproc_tests {
     use citeproc::prelude::{
         Cite, ClusterPosition, InitOptions, Processor, Reference, SupportedFormat,
     };
+    use std::collections::HashMap;
 
-    use super::Bibliography;
+    use super::{Bibliography, METADATA};
 
     #[test]
     fn converts_biblatex_records_to_typed_csl_references() {
@@ -447,5 +530,96 @@ mod citeproc_tests {
         let rendered = processor.all_clusters_str();
 
         assert_eq!(rendered.get("chapter:0").unwrap().as_str(), "A test title");
+    }
+
+    #[test]
+    fn resolves_native_citations_and_bibliography_across_documents() {
+        use crate::application::SphinxApp;
+        use docutilsrs::doctree::NodeKind;
+
+        let src = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let doctrees = tempfile::tempdir().unwrap();
+        std::fs::write(
+            src.path().join("refs.bib"),
+            r#"
+                @book{alpha, author={Ada Lovelace}, title={Analytical Engine}, year={1843}}
+                @book{beta, author={Grace Hopper}, title={Compilers}, year={1952}}
+            "#,
+        )
+        .unwrap();
+        std::fs::write(
+                        src.path().join("test.csl"),
+                        r#"
+                                <style version="1.0" class="in-text">
+                                    <info>
+                                        <title>Native Sphinx integration test</title>
+                                        <id>https://example.test/styles/native-integration</id>
+                                        <link href="https://example.test/styles/native-integration" rel="self"/>
+                                        <updated>2024-01-01T00:00:00+00:00</updated>
+                                    </info>
+                                    <citation><layout><text variable="title"/></layout></citation>
+                                    <bibliography><layout><text variable="title"/></layout></bibliography>
+                                </style>
+                        "#,
+                )
+                .unwrap();
+        std::fs::write(
+            src.path().join("index.rst"),
+            "Index\n=====\n\nText :cite:`alpha`.\n\n.. bibliography::\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.path().join("chapter.rst"),
+            "Chapter\n=======\n\nAlso :cite:`beta`.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.path().join("conf.py"),
+            format!(
+                "extensions = [{:?}]\nbibtex_bibfiles = ['refs.bib']\nbibtex_csl_style = 'test.csl'\n",
+                METADATA.name
+            ),
+        )
+        .unwrap();
+        let mut app = SphinxApp::new(
+            src.path(),
+            out.path(),
+            doctrees.path(),
+            "html",
+            HashMap::new(),
+        )
+        .unwrap();
+        app.read().unwrap();
+
+        let raw_tree = app.env.borrow().get_doctree("index").unwrap();
+        assert!((0..raw_tree.nodes_len()).any(|id| matches!(
+            raw_tree.node(id).kind,
+            NodeKind::Extension { ref class_name, .. } if class_name == "BibtexCitation"
+        )));
+
+        let resolved = app.env.borrow().get_and_resolve_doctree("index").unwrap();
+        let text = (0..resolved.nodes_len())
+            .filter_map(|id| match &resolved.node(id).kind {
+                NodeKind::Text(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(text.contains("Analytical Engine"), "rendered text: {text}");
+        assert!(text.contains("Compilers"), "rendered text: {text}");
+        assert!(!(0..resolved.nodes_len()).any(|id| matches!(
+            resolved.node(id).kind,
+            NodeKind::Extension { ref class_name, .. }
+                if matches!(class_name.as_str(), "BibtexCitation" | "BibtexBibliography")
+        )));
+
+        let persisted_after_resolution = app.env.borrow().get_doctree("index").unwrap();
+        assert!(
+            (0..persisted_after_resolution.nodes_len()).any(|id| matches!(
+                persisted_after_resolution.node(id).kind,
+                NodeKind::Extension { ref class_name, .. } if class_name == "BibtexCitation"
+            ))
+        );
     }
 }

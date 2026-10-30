@@ -32,7 +32,7 @@
 //! **Deferred** (needs full Sphinx app wiring): `domains` (DomainsContainer),
 //! full `setup()` hook, `get_doctree`, `resolve_references`, search index.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub(crate) fn read_source_file(path: &Path, encoding: &str) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|err| err.to_string())?;
@@ -40,7 +40,7 @@ pub(crate) fn read_source_file(path: &Path, encoding: &str) -> Result<String, St
 }
 use std::path::{Path, PathBuf};
 
-use docutilsrs::doctree::{Doctree, NodeId, NodeKind};
+use docutilsrs::doctree::{Doctree, NodeAttributeValue, NodeId, NodeKind};
 use serde::{Deserialize, Serialize};
 
 use crate::builders::BuildError;
@@ -53,6 +53,25 @@ use crate::source_docs::{
     AnalysisError, AnalysisSnapshot, SourceAnalysisRequest, SourceLanguage,
     SourceSnapshotProvider, source_input_hash,
 };
+
+#[cfg(feature = "csl-citeproc")]
+fn is_bibtex_placeholder(kind: &NodeKind) -> bool {
+    matches!(
+        kind,
+        NodeKind::Extension { class_name, .. }
+            if matches!(class_name.as_str(), "BibtexCitation" | "BibtexBibliography")
+    )
+}
+
+fn node_attribute<'a>(
+    attrs: &'a BTreeMap<String, NodeAttributeValue>,
+    key: &str,
+) -> Option<&'a str> {
+    match attrs.get(key) {
+        Some(NodeAttributeValue::String(value)) => Some(value),
+        _ => None,
+    }
+}
 
 // ── project shim ─────────────────────────────────────────────────────────────
 
@@ -820,7 +839,191 @@ impl BuildEnvironment {
     /// this currently returns the stored doctree unchanged, which is
     /// correct as long as no domain has registered a transform.
     pub fn get_and_resolve_doctree(&self, docname: &str) -> Result<Doctree, BuildError> {
-        self.get_doctree(docname)
+        let mut tree = self.get_doctree(docname)?;
+        #[cfg(feature = "csl-citeproc")]
+        self.resolve_bibtex_doctree(docname, &mut tree)?;
+        #[cfg(not(feature = "csl-citeproc"))]
+        Self::resolve_bibtex_placeholders_without_csl(&mut tree);
+        Ok(tree)
+    }
+
+    #[cfg(feature = "csl-citeproc")]
+    fn resolve_bibtex_doctree(
+        &self,
+        docname: &str,
+        tree: &mut Doctree,
+    ) -> Result<(), BuildError> {
+        use crate::extensions::csl::{
+            CitationCluster, CitationItem, CitationMode, DEFAULT_STYLE, render,
+        };
+        use citeproc::prelude::SupportedFormat;
+
+        if !(0..tree.nodes_len()).any(|id| is_bibtex_placeholder(&tree.node(id).kind)) {
+            return Ok(());
+        }
+
+        let bibliography = self.load_bibtex_database()?;
+        let style = self.load_bibtex_style()?.unwrap_or_else(|| DEFAULT_STYLE.to_string());
+        let mut docnames: Vec<String> = self.all_docs.keys().cloned().collect();
+        if !docnames.iter().any(|name| name == docname) {
+            docnames.push(docname.to_string());
+        }
+        docnames.sort();
+
+        let mut clusters = Vec::new();
+        let mut current_cluster_ids = HashMap::new();
+        let mut bibliography_nodes = Vec::new();
+        for current_doc in docnames {
+            let source_tree = if current_doc == docname {
+                tree.clone()
+            } else {
+                self.get_doctree(&current_doc)?
+            };
+            for node_id in 0..source_tree.nodes_len() {
+                let NodeKind::Extension { class_name, attrs } = &source_tree.node(node_id).kind
+                else {
+                    continue;
+                };
+                if class_name == "BibtexBibliography" {
+                    if current_doc == docname {
+                        bibliography_nodes.push(node_id);
+                    }
+                    continue;
+                }
+                if class_name != "BibtexCitation" {
+                    continue;
+                }
+
+                let role = node_attribute(attrs, "role").unwrap_or("cite");
+                let citations: Vec<_> = node_attribute(attrs, "keys")
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|key| !key.is_empty())
+                    .map(|key| {
+                        let mut citation = CitationItem::new(key);
+                        if role == "cite:t" {
+                            citation.mode = Some(CitationMode::AuthorOnly);
+                        }
+                        citation
+                    })
+                    .collect();
+                let cluster_id = format!("{current_doc}:{node_id}");
+                if current_doc == docname {
+                    current_cluster_ids.insert(node_id, cluster_id.clone());
+                }
+                clusters.push(CitationCluster {
+                    id: cluster_id,
+                    citations,
+                    note_number: None,
+                });
+            }
+        }
+
+        if clusters.is_empty() && bibliography_nodes.is_empty() {
+            return Ok(());
+        }
+        let rendered = render(&bibliography, &style, &clusters, SupportedFormat::Plain)
+            .map_err(|error| BuildError::Other(error.to_string()))?;
+        let rendered_clusters: HashMap<_, _> = rendered
+            .clusters
+            .into_iter()
+            .map(|cluster| (cluster.id, cluster.value))
+            .collect();
+
+        for (node_id, cluster_id) in current_cluster_ids {
+            let value = rendered_clusters.get(&cluster_id).cloned().unwrap_or_default();
+            tree.set_kind(node_id, NodeKind::Text(value));
+        }
+        for node_id in bibliography_nodes {
+            tree.set_kind(node_id, NodeKind::BulletList { bullet: '*' });
+            for entry in &rendered.bibliography {
+                let item = tree.append(node_id, NodeKind::ListItem);
+                let paragraph = tree.append(item, NodeKind::Paragraph);
+                tree.append(paragraph, NodeKind::Text(entry.value.clone()));
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "csl-citeproc")]
+    fn load_bibtex_database(&self) -> Result<crate::extensions::bibtex::Bibliography, BuildError> {
+        let paths = self
+            .config
+            .get("bibtex_bibfiles")
+            .and_then(|value| value.as_list().map(|values| values.to_vec()))
+            .unwrap_or_default();
+        let mut source = String::new();
+        for value in paths {
+            let Some(path) = value.as_str() else {
+                continue;
+            };
+            let path = Path::new(path);
+            let path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                self.srcdir.join(path)
+            };
+            let content = read_source_file(&path, &self.config.source_encoding()).map_err(|error| {
+                BuildError::Other(format!("failed to read bibliography {}: {error}", path.display()))
+            })?;
+            source.push_str(&content);
+            source.push('\n');
+        }
+        crate::extensions::bibtex::Bibliography::parse(&source)
+            .map_err(|error| BuildError::Other(error.to_string()))
+    }
+
+    #[cfg(feature = "csl-citeproc")]
+    fn load_bibtex_style(&self) -> Result<Option<String>, BuildError> {
+        let Some(style_path) = self
+            .config
+            .get("bibtex_csl_style")
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .filter(|value| !value.trim().is_empty())
+        else {
+            return Ok(None);
+        };
+        let path = Path::new(&style_path);
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.srcdir.join(path)
+        };
+        read_source_file(&path, &self.config.source_encoding())
+            .map(Some)
+            .map_err(|error| {
+                BuildError::Other(format!("failed to read CSL style {}: {error}", path.display()))
+            })
+    }
+
+    #[cfg(not(feature = "csl-citeproc"))]
+    fn resolve_bibtex_placeholders_without_csl(tree: &mut Doctree) {
+        for node_id in 0..tree.nodes_len() {
+            let kind = tree.node(node_id).kind.clone();
+            match kind {
+                NodeKind::Extension {
+                    class_name,
+                    attrs,
+                } if class_name == "BibtexCitation" => {
+                    let keys = node_attribute(&attrs, "keys").unwrap_or_default();
+                    tree.set_kind(node_id, NodeKind::Text(format!("[{keys}]")));
+                }
+                NodeKind::Extension { class_name, .. } if class_name == "BibtexBibliography" => {
+                    tree.set_kind(
+                        node_id,
+                        NodeKind::SystemMessage {
+                            level: 2,
+                            line: tree.node(node_id).line,
+                            ty: "WARNING",
+                            ids: String::new(),
+                            backrefs: String::new(),
+                        },
+                    );
+                }
+                _ => {}
+            }
+        }
     }
 
     // ── H2c: read phase ───────────────────────────────────────────────────────

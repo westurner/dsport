@@ -151,8 +151,11 @@ mod tests {
     #[test]
     fn build_finished_converts_indexing_errors_to_extension_errors() {
         let (_src, out, app) = app("html");
-        std::os::unix::fs::symlink(out.path().join("missing.html"), out.path().join("broken.html"))
-            .unwrap();
+        std::os::unix::fs::symlink(
+            out.path().join("missing.html"),
+            out.path().join("broken.html"),
+        )
+        .unwrap();
 
         let error = build_finished(&app).unwrap_err();
         assert!(matches!(error, AppError::Extension(message) if !message.is_empty()));

@@ -34,6 +34,9 @@ syntax-highlighting = ["docutilsrs/syntax-highlighting"]
 # `snowballstemmer`; disable to index the lowercased surface form instead.
 search-stemming = ["dep:rust-stemmers"]
 
+# CSL citation formatting through Zotero's archived citeproc-rs engine.
+csl-citeproc = ["dep:citeproc"]
+
 # Use an in-process `reqwest` HTTP client instead of shelling out to `curl`
 # for `intersphinx` inventory downloads and `linkcheck` URI checks. Off by
 # default — `curl` needs no extra dependencies and is already hardened the
@@ -76,6 +79,7 @@ test-build-extdocs = []
 [dependencies]
 pyo3 = { workspace = true, features = ["auto-initialize"] }
 biblatex = "0.12.0"
+citeproc = { git = "https://github.com/zotero/citeproc-rs", rev = "2ab195a1e6f84f0ff284813ece61dc62096abbfe", default-features = false, optional = true }
 regex = "1.10"
 glob = "0.3"
 clap = { workspace = true }

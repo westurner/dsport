@@ -280,7 +280,7 @@ pub fn ask_user(settings: &mut QuickstartSettings, term: &dyn Terminal, fs: &dyn
         .unwrap_or_else(|_| "index".into());
         settings.master = master.clone();
 
-        let master_file = master.clone() + &settings.suffix;
+        let master_file = master.clone() + settings.suffix.as_str();
         let path = &settings.path;
         let has_master = fs.is_file(&path.join(&master_file))
             || fs.is_file(&path.join("source").join(&master_file));

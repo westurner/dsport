@@ -115,3 +115,43 @@ mod tests {
         assert!(Bibliography::parse("").unwrap().is_empty());
     }
 }
+
+#[cfg(all(test, feature = "csl-citeproc"))]
+mod citeproc_tests {
+    use citeproc::prelude::{
+        Cite, ClusterPosition, InitOptions, Processor, Reference, SupportedFormat,
+    };
+
+    #[test]
+    fn pinned_citeproc_engine_formats_a_citation() {
+        const STYLE: &str = r#"
+            <style version="1.0" class="in-text">
+              <citation><layout><text variable="title"/></layout></citation>
+            </style>
+        "#;
+        let mut processor = Processor::new(InitOptions {
+            style: STYLE,
+            format: SupportedFormat::Plain,
+            test_mode: true,
+            ..Default::default()
+        })
+        .unwrap();
+        let mut reference = Reference::empty(
+            citeproc::csl::Atom::from("smith2024"),
+            citeproc::csl::CslType::Article,
+        );
+        reference
+            .ordinary
+            .insert(citeproc::csl::Variable::Title, "A test title".into());
+        processor.reset_references(vec![reference]);
+
+        let cluster_id = processor.cluster_id("chapter:0");
+        processor.insert_cites(cluster_id, &[Cite::basic("smith2024")]);
+        processor
+            .set_cluster_order(&[ClusterPosition::in_text(cluster_id)])
+            .unwrap();
+        let rendered = processor.all_clusters_str();
+
+        assert_eq!(rendered.get("chapter:0").unwrap().as_str(), "A test title");
+    }
+}

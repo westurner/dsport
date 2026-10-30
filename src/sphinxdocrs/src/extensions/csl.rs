@@ -220,6 +220,32 @@ mod tests {
         </style>
     "#;
 
+    const AUTHOR_YEAR_STYLE: &str = r#"
+                <style version="1.0" class="in-text">
+                    <info>
+                        <title>Author year disambiguation test</title>
+                        <id>https://example.test/styles/author-year-test</id>
+                        <link href="https://example.test/styles/author-year-test" rel="self"/>
+                        <updated>2024-01-01T00:00:00+00:00</updated>
+                    </info>
+                    <citation disambiguate-add-year-suffix="true">
+                        <layout delimiter="; ">
+                            <group delimiter=" ">
+                                <names variable="author"><name form="short"/></names>
+                                <group delimiter="">
+                                    <date variable="issued"><date-part name="year"/></date>
+                                    <text variable="year-suffix"/>
+                                </group>
+                            </group>
+                        </layout>
+                    </citation>
+                    <bibliography>
+                        <sort><key variable="title"/></sort>
+                        <layout><text variable="title"/></layout>
+                    </bibliography>
+                </style>
+        "#;
+
     fn bibliography() -> Bibliography {
         Bibliography::parse(
             r#"
@@ -307,5 +333,45 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(invalid_locator, CslError::InvalidLocator(_)));
+    }
+
+    #[test]
+    fn disambiguates_same_author_and_year_across_clusters() {
+        let bibliography = Bibliography::parse(
+            r#"
+                @article{first, author={Ada Lovelace}, title={First}, year={1843}}
+                @article{second, author={Ada Lovelace}, title={Second}, year={1843}}
+            "#,
+        )
+        .unwrap();
+        let result = render(
+            &bibliography,
+            AUTHOR_YEAR_STYLE,
+            &[
+                CitationCluster {
+                    id: "intro:0".into(),
+                    citations: vec![CitationItem::new("first")],
+                    note_number: None,
+                },
+                CitationCluster {
+                    id: "intro:1".into(),
+                    citations: vec![CitationItem::new("second")],
+                    note_number: None,
+                },
+            ],
+            SupportedFormat::Plain,
+        )
+        .unwrap();
+
+        assert!(
+            result.clusters[0].value.contains("1843a"),
+            "rendered clusters: {:?}",
+            result.clusters
+        );
+        assert!(
+            result.clusters[1].value.contains("1843b"),
+            "rendered clusters: {:?}",
+            result.clusters
+        );
     }
 }

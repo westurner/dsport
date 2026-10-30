@@ -6,8 +6,10 @@
 
 use crate::application::{AppError, SphinxApp};
 
-pub mod docindex;
 pub mod bibtex;
+#[cfg(feature = "csl-citeproc")]
+pub mod csl;
+pub mod docindex;
 pub mod webmcp;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

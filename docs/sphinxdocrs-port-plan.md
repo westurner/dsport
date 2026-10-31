@@ -3241,6 +3241,49 @@ enrichment is optional and offline by default, DocIndex export is independently
 optional and schema-versioned, and every unsupported upstream feature or
 citeproc-rs limitation is documented as an explicit deviation.
 
+#### H15g — sphinxcontrib-bibtex 2.7.0 functional-parity work plan
+
+The current example tests establish only the six registered citation roles
+(`cite`, `cite:p`, `cite:t`, `footcite`, `footcite:p`, and `footcite:t`) and
+the two bibliography directives. They are not evidence of full upstream
+compatibility. Use the published `sphinxcontrib-bibtex` 2.7.0 usage/API as the
+initial reference surface and pin the upstream version in parity fixtures so
+future upstream changes do not silently redefine this target. Record each
+feature as **exact parity**, **accepted deviation**, or **pending**, with a
+Python/Rust fixture pair and the relevant output builders.
+
+The work is ordered by the shared data model and parser/runtime dependencies;
+do not implement a user-visible option as a parser-only flag if resolution,
+rendering, persistence, and invalidation do not honor it end to end.
+
+| slice | behavior to implement and verify | required evidence |
+| --- | --- | --- |
+| **H15g.1 citation grammar and roles** | Match the upstream citation-role family: aliases and modes (`cite`, `cite:p`, `cite:t`, `cite:ps`, `cite:ts`, `cite:ct`, `cite:cts`, `cite:alp`, `cite:alps`); label/year/author variants including plural, parenthetical, and capitalized forms; `cite:empty`; and the corresponding documented `footcite` variants. Parse comma-separated keys, pre-text and post-text on regular citations, locator labels, whitespace, and escaped-space behavior. Footnote citations retain upstream's no-pre/post-text limitation. | Table-driven role parser tests; single- and multi-key output snapshots; malformed/unknown key diagnostics; HTML/LaTeX references and anchors. |
+| **H15g.2 citation processing** | Process clusters in source order using citeproc, including disambiguation, author/editor fallback, full-author requests, locale/style selection, and stable occurrence identity. Implement `bibtex_reference_style`, `bibtex_foot_reference_style`, tooltip configuration, and tooltip style where the selected engine can express them. Verify repeated citations, citations across documents, no-cite registration, and footnote numbering/order/repeated `footbibliography` behavior. | Focused fixtures against citeproc-rs plus upstream-generated expected HTML/LaTeX/text for the same `.bib`/CSL inputs; deterministic clean and incremental builds. |
+| **H15g.3 bibliography selection and placement** | Support zero/one/many bibliography directives; source-relative BibTeX file arguments; manually listed keys; `:all:`, `:cited:`, `:notcited:`, and per-directive style; `:list: paragraph|bullet|enumerated`, `:enumtype:`, and `:start:`; `:keyprefix:` and `:labelprefix:`; and document-local/multi-document citation ownership. `footbibliography` includes only preceding, not-yet-emitted foot citations in that document. Define duplicate local/global citation behavior and diagnostics instead of silently choosing one bibliography. | Directive option validation; matrix tests for two documents, two bib files and multiple bibliography locations; repeated keys and listing precedence; output parity for paragraph/list forms. |
+| **H15g.4 filter semantics** | Implement a deliberately bounded, non-evaluating filter parser matching the documented safe subset: boolean `and`/`or`/`not`; equality/order comparisons; case-insensitive regex `%`; strings and set literals/operators; and the documented `type`, `key`, `cited`, `docname`, `docnames`, author/editor and entry-field identifiers. Listed keys remain included regardless of filtering. Return source-located syntax/evaluation diagnostics. Never call Python `eval` or accept arbitrary expression execution. | Parser/evaluator unit tests including malformed and adversarial expressions; differential fixture matrix against upstream 2.7.0; proof that filters cannot execute code. |
+| **H15g.5 configuration and references** | Match `bibtex_bibfiles` and `bibtex_encoding` defaults; style and reference-style names; bibliography/footbibliography headers; tooltip switches; cite/footcite/bibliography/footbibliography ID templates and sanitization; and warning categories/suppression. Include relevant configuration and external bibliography/style inputs in environment invalidation. | Configuration default/override tests; stable ID and collision tests; warnings-as-errors and suppression tests; edit-one-input incremental rebuild tests. |
+| **H15g.6 extension and builder integration** | Complete the native extension execution path and Python `setup(app)` adapter, with a documented coexistence/extension-name policy and resolver/package discovery. Persist only serializable shared citation state. Render the same semantic citations through HTML, LaTeX, text, and other supported writers; preserve cross-document links, bibliography backrefs, and deterministic anchors. Keep `bibtex_bibfiles` reading offline by default. | Installed-wheel import/setup test; Rust and Python Sphinx fixture builds; strict HTML text/link/anchor comparison; LaTeX and text output checks; parallel/incremental safety tests before advertising either safety flag. |
+| **H15g.7 optional project integrations** | After the core parity slices, add linked-data enrichment and DocIndex export as opt-in consumers. Preserve explicit BibTeX/project values over enrichment, attach provenance, and keep both integrations disabled without changing citation results. Version DocIndex schema changes and include bibliography records/citation edges only under the agreed vocabulary and schema migration. | Shared Oxigraph/OxiRS provider contracts; offline/timeout/bounds tests; DocIndex old-schema compatibility and JSON/HDT relationship checks; disabled-path byte/semantic regression. |
+
+**Compatibility boundary:** the target is the documented Sphinx extension
+workflow, not a byte-for-byte port of Pybtex's Python formatting/style/plugin
+API. User-defined Pybtex formatter, name, sorting, and label plugins, Python
+callbacks that mutate arbitrary doctree nodes, and undocumented extension
+internals remain out of scope unless a concrete consumer and a compatible
+Rust/Python contract are agreed. CSL style support is defined by the pinned
+citeproc-rs engine; unsupported CSL/CSL-M behavior must be listed as a
+specific deviation, not described as general parity.
+
+**Completion gate:** every row above has a fixture-backed status and no
+unresolved **pending** item inside the declared compatibility boundary. The
+upstream and native builds use identical source/BibTeX/CSL fixtures; check
+HTML text, links, IDs, footnote ordering, and bibliography membership, plus
+LaTeX and text output. Run clean and incremental builds, and verify that the
+existing sustainablefactory bibliography and its LaTeX/JSON-LD exports still
+work. Do not claim full functional parity based only on the current example
+roles/directives or on a successful build.
+
 ## 10. J-phase — source-encoding hardening follow-ups
 
 Origin: a 2026-08-01 security-analyst review of the `--input-encoding` /

@@ -1,3 +1,5 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 //! sphinxdocrs — Rust port of Sphinx.
 //!
 //! Phase 4 surface:

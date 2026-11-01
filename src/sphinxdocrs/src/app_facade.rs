@@ -74,6 +74,10 @@ fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<Py
 fn event_arg_to_py(py: Python<'_>, arg: &EventArg) -> PyResult<Vec<Py<PyAny>>> {
     Ok(match arg {
         EventArg::None => vec![py.None()],
+        EventArg::Exception(message) => {
+            let exception = pyo3::exceptions::PyRuntimeError::new_err(message.clone());
+            vec![exception.value(py).clone().unbind().into()]
+        }
         EventArg::Str(value) => vec![value.into_pyobject(py)?.into_any().unbind()],
         EventArg::StrList(values) => vec![PyList::new(py, values)?.into_any().unbind()],
         EventArg::Config(config) => {
@@ -376,6 +380,8 @@ fn kwargs_to_attrs(kwargs: Option<&Bound<'_, PyDict>>) -> HashMap<String, String
 pub struct PyAppFacade {
     events: SharedEvents,
     config: SharedConfig,
+    builder_name: String,
+    outdir: std::path::PathBuf,
     env: SharedEnv,
     env_attributes: SharedEnvAttributes,
     python_listeners: SharedPythonEventListeners,
@@ -387,6 +393,8 @@ impl PyAppFacade {
     pub fn new(
         events: SharedEvents,
         config: SharedConfig,
+        builder_name: String,
+        outdir: std::path::PathBuf,
         env: SharedEnv,
         env_attributes: SharedEnvAttributes,
         python_listeners: SharedPythonEventListeners,
@@ -396,12 +404,33 @@ impl PyAppFacade {
         Self {
             events,
             config,
+            builder_name,
+            outdir,
             env,
             env_attributes,
             python_listeners,
             assets,
             registry,
         }
+    }
+}
+
+#[pyclass(
+    unsendable,
+    skip_from_py_object,
+    name = "_BuilderFacade",
+    module = "sphinxdocrs"
+)]
+#[derive(Clone)]
+pub struct PyBuilderFacade {
+    name: String,
+}
+
+#[pymethods]
+impl PyBuilderFacade {
+    #[getter]
+    fn name(&self) -> String {
+        self.name.clone()
     }
 }
 
@@ -423,6 +452,8 @@ impl PyAppFacade {
         let callback_for_firstresult = callback.clone_ref(py);
         let events_for_call = self.events.clone();
         let config_for_call = self.config.clone();
+        let builder_name_for_call = self.builder_name.clone();
+        let outdir_for_call = self.outdir.clone();
         let env_for_call = self.env.clone();
         let env_attributes_for_call = self.env_attributes.clone();
         let python_listeners_for_call = self.python_listeners.clone();
@@ -432,6 +463,8 @@ impl PyAppFacade {
         let id = mgr.connect(event.to_string(), priority, move |args: &[EventArg]| {
             let events_for_call = events_for_call.clone();
             let config_for_call = config_for_call.clone();
+            let builder_name_for_call = builder_name_for_call.clone();
+            let outdir_for_call = outdir_for_call.clone();
             let env_for_call = env_for_call.clone();
             let env_attributes_for_call = env_attributes_for_call.clone();
             let python_listeners_for_call = python_listeners_for_call.clone();
@@ -443,6 +476,8 @@ impl PyAppFacade {
                     PyAppFacade::new(
                         events_for_call,
                         config_for_call,
+                        builder_name_for_call,
+                        outdir_for_call,
                         env_for_call,
                         env_attributes_for_call,
                         python_listeners_for_call,
@@ -540,6 +575,17 @@ impl PyAppFacade {
         Py::new(py, PyConfigFacade::new(self.config.clone()))
     }
 
+    /// Exposes the selected builder name as `app.builder.name`.
+    #[getter]
+    fn builder(&self, py: Python<'_>) -> PyResult<Py<PyBuilderFacade>> {
+        Py::new(
+            py,
+            PyBuilderFacade {
+                name: self.builder_name.clone(),
+            },
+        )
+    }
+
     /// Mirrors `Sphinx.env` with a shared view over the native build environment.
     #[getter]
     fn env(&self, py: Python<'_>) -> PyResult<Py<PyEnvironmentFacade>> {
@@ -556,6 +602,11 @@ impl PyAppFacade {
     #[getter]
     fn srcdir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         path_to_py(py, &self.env.borrow().srcdir)
+    }
+
+    #[getter]
+    fn outdir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        path_to_py(py, &self.outdir)
     }
 
     #[getter]
@@ -833,6 +884,8 @@ mod tests {
                 PyAppFacade::new(
                     events.clone(),
                     config.clone(),
+                    "html".to_string(),
+                    std::path::PathBuf::from("."),
                     test_environment(),
                     Rc::new(RefCell::new(HashMap::new())),
                     Rc::new(RefCell::new(HashMap::new())),
@@ -884,6 +937,8 @@ mod tests {
             let facade = PyAppFacade::new(
                 events.clone(),
                 config.clone(),
+                "html".to_string(),
+                std::path::PathBuf::from("."),
                 test_environment(),
                 Rc::new(RefCell::new(HashMap::new())),
                 Rc::new(RefCell::new(HashMap::new())),

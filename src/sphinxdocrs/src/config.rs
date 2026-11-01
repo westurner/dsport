@@ -908,6 +908,12 @@ impl SphinxConfig {
             "Path to a local CSL style XML file",
         );
         add(
+            "bibtex_include_uncited",
+            Bool(false),
+            Env,
+            "Include every configured record in bibliography directives",
+        );
+        add(
             "project",
             Str("Project name not set".into()),
             Env,

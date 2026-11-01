@@ -16,6 +16,9 @@ repository = "https://github.com/westurner/dsport"
 #   documentation = "https://www.sphinx-doc.org/"
 #   repository = "https://github.com/sphinx-doc/sphinx"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+
 [lib]
 name = "sphinxdocrs"
 crate-type = ["cdylib", "rlib"]

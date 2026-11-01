@@ -453,6 +453,8 @@ impl SphinxApp {
                 PyAppFacade::new(
                     self.events.clone(),
                     self.py_config.clone(),
+                    self.buildername.clone(),
+                    self.outdir.clone(),
                     self.env.clone(),
                     self.py_env_attributes.clone(),
                     self.py_event_listeners.clone(),
@@ -811,7 +813,13 @@ impl SphinxApp {
         if result.is_ok() {
             crate::extensions::build_finished(self)?;
         }
-        self.events.borrow_mut().emit("build-finished", &[])?;
+        let exception = match &result {
+            Ok(_) => EventArg::None,
+            Err(error) => EventArg::Exception(error.to_string()),
+        };
+        self.events
+            .borrow_mut()
+            .emit("build-finished", &[exception])?;
         result
     }
 

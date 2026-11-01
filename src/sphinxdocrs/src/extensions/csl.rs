@@ -4,7 +4,9 @@ use std::str::FromStr;
 
 use citeproc::csl::LocatorType;
 use citeproc::io::{CiteMode, Locator, Locators, NumberLike};
-use citeproc::prelude::{Cite, ClusterPosition, InitOptions, Processor, SupportedFormat};
+use citeproc::prelude::{
+    Cite, ClusterPosition, IncludeUncited, InitOptions, Processor, SupportedFormat,
+};
 
 use super::bibtex::Bibliography;
 
@@ -113,6 +115,22 @@ pub fn render(
     clusters: &[CitationCluster],
     format: SupportedFormat,
 ) -> Result<CslRender, CslError> {
+    render_with_uncited(
+        bibliography,
+        style,
+        clusters,
+        format,
+        IncludeUncited::None,
+    )
+}
+
+pub fn render_with_uncited(
+    bibliography: &Bibliography,
+    style: &str,
+    clusters: &[CitationCluster],
+    format: SupportedFormat,
+    include_uncited: IncludeUncited,
+) -> Result<CslRender, CslError> {
     use std::collections::HashSet;
 
     let mut cluster_ids = HashSet::with_capacity(clusters.len());
@@ -142,6 +160,7 @@ pub fn render(
         ..Default::default()
     })
     .map_err(|error| CslError::Style(error.to_string()))?;
+    processor.include_uncited(include_uncited);
     processor.reset_references(
         bibliography
             .records()
@@ -222,9 +241,12 @@ pub fn render(
 
 #[cfg(test)]
 mod tests {
-    use citeproc::prelude::SupportedFormat;
+    use citeproc::prelude::{IncludeUncited, SupportedFormat};
 
-    use super::{CitationCluster, CitationItem, CitationMode, CslError, DEFAULT_STYLE, render};
+    use super::{
+        CitationCluster, CitationItem, CitationMode, CslError, DEFAULT_STYLE, render,
+        render_with_uncited,
+    };
     use crate::extensions::bibtex::Bibliography;
 
     const STYLE: &str = r#"
@@ -328,6 +350,39 @@ mod tests {
 
     #[test]
     fn reports_missing_keys_and_invalid_styles() {
+        let empty_cluster_id = render(
+            &bibliography(),
+            STYLE,
+            &[CitationCluster {
+                id: "  ".into(),
+                citations: vec![CitationItem::new("alpha")],
+                note_number: None,
+            }],
+            SupportedFormat::Plain,
+        )
+        .unwrap_err();
+        assert!(matches!(empty_cluster_id, CslError::InvalidClusterId(_)));
+
+        let duplicate_cluster_id = render(
+            &bibliography(),
+            STYLE,
+            &[
+                CitationCluster {
+                    id: "same".into(),
+                    citations: vec![CitationItem::new("alpha")],
+                    note_number: None,
+                },
+                CitationCluster {
+                    id: "same".into(),
+                    citations: vec![CitationItem::new("beta")],
+                    note_number: None,
+                },
+            ],
+            SupportedFormat::Plain,
+        )
+        .unwrap_err();
+        assert!(matches!(duplicate_cluster_id, CslError::InvalidClusterId(_)));
+
         let missing = render(
             &bibliography(),
             STYLE,
@@ -362,6 +417,22 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(invalid_locator, CslError::InvalidLocator(_)));
+
+        let default_locator = render(
+            &bibliography(),
+            STYLE,
+            &[CitationCluster {
+                id: "default-locator".into(),
+                citations: vec![CitationItem {
+                    locator: Some("7".into()),
+                    ..CitationItem::new("alpha")
+                }],
+                note_number: None,
+            }],
+            SupportedFormat::Plain,
+        )
+        .unwrap();
+        assert!(default_locator.clusters[0].value.contains("7"));
     }
 
     #[test]
@@ -451,5 +522,55 @@ mod tests {
             "rendered bibliography: {:?}",
             result.bibliography
         );
+    }
+
+    #[test]
+    fn includes_uncited_references_when_requested() {
+        let result = render_with_uncited(
+            &bibliography(),
+            DEFAULT_STYLE,
+            &[],
+            SupportedFormat::Plain,
+            IncludeUncited::All,
+        )
+        .unwrap();
+
+        assert_eq!(result.bibliography.len(), 2);
+        assert!(result.bibliography.iter().any(|entry| entry.key == "alpha"));
+        assert!(result.bibliography.iter().any(|entry| entry.key == "beta"));
+    }
+
+    #[test]
+    fn renders_sustainablefactory_long_bibliography_record() {
+        let bibliography = Bibliography::parse(
+            r#"
+                @article{wan2018laser,
+                    title={Laser-reduced graphene: synthesis, properties, and applications},
+                    author={Wan, Zhengfen and Streed, Erik W and Lobino, Mirko and Wang, Shujun and Sang, Robert T and Cole, Ivan S and Thiel, David V and Li, Qin},
+                    journal={Advanced Materials Technologies},
+                    volume={3},
+                    number={4},
+                    pages={1700315},
+                    year={2018},
+                    publisher={Wiley Online Library},
+                    url={https://doi.org/10.1002/admt.201700315}
+                }
+            "#,
+        )
+        .unwrap();
+
+        let result = render_with_uncited(
+            &bibliography,
+            DEFAULT_STYLE,
+            &[],
+            SupportedFormat::Plain,
+            IncludeUncited::All,
+        )
+        .unwrap();
+
+        assert_eq!(result.bibliography.len(), 1);
+        assert!(result.bibliography[0]
+            .value
+            .contains("Laser-reduced graphene"));
     }
 }

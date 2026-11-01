@@ -5198,6 +5198,21 @@ fn preprocess_escapes(input: &str) -> Escaped {
             match chars.peek().copied() {
                 Some(nc) if nc.is_whitespace() => {
                     chars.next();
+                    let following_role = chars
+                        .clone()
+                        .take_while(|character| *character != '`')
+                        .collect::<String>();
+                    if nc == ' '
+                        && matches!(
+                            following_role.as_str(),
+                            ":footcite:" | ":footcite:p:" | ":footcite:t:"
+                        )
+                    {
+                        text.push(nc);
+                        while escaped.len() < text.len() {
+                            escaped.push(true);
+                        }
+                    }
                 }
                 Some(nc) => {
                     chars.next();
@@ -5252,7 +5267,21 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
         // Role + interpreted text: `:role:`text``.
         if let Some((role, content, end)) = try_match_role(text, &pre.escaped, cursor) {
             if cursor > text_start {
-                push_text(tree, parent, &text[text_start..cursor]);
+                let text_end = if role == "footcite" || role.starts_with("footcite:") {
+                    text[text_start..cursor]
+                        .char_indices()
+                        .next_back()
+                        .filter(|(offset, character)| {
+                            character.is_whitespace()
+                                && pre.escaped.get(text_start + offset).copied().unwrap_or(false)
+                        })
+                        .map_or(cursor, |(offset, _)| text_start + offset)
+                } else {
+                    cursor
+                };
+                if text_end > text_start {
+                    push_text(tree, parent, &text[text_start..text_end]);
+                }
             }
             emit_role(
                 tree,

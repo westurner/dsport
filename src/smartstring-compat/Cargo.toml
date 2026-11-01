@@ -1,0 +1,15 @@
+[package]
+name = "smartstring"
+version = "0.2.10"
+edition = "2024"
+license = "MPL-2.0"
+description = "Compatibility re-export of smartstring 1.x for citeproc-rs"
+publish = false
+
+[features]
+default = ["std"]
+std = ["smartstring_v1/std"]
+serde = ["smartstring_v1/serde"]
+
+[dependencies]
+smartstring_v1 = { package = "smartstring", version = "1.0.1", default-features = false }

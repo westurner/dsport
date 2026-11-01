@@ -1,6 +1,10 @@
 //! BibTeX parsing and normalized bibliography records.
 
 use std::collections::{BTreeMap, HashMap};
+#[cfg(feature = "csl-citeproc")]
+use std::fs;
+#[cfg(feature = "csl-citeproc")]
+use std::path::Path;
 
 use biblatex::ChunksExt;
 
@@ -51,7 +55,14 @@ pub const METADATA: super::BuiltinMetadata = super::BuiltinMetadata {
 };
 
 pub fn register_parser_components() {
-    for role in ["cite", "cite:p", "cite:t"] {
+    for role in [
+        "cite",
+        "cite:p",
+        "cite:t",
+        "footcite",
+        "footcite:p",
+        "footcite:t",
+    ] {
         docutilsrs::roles::register_canonical_role(role);
         docutilsrs::plugins::register_native_role(role, |role_name, content| {
             let mut attrs = BTreeMap::new();
@@ -77,11 +88,297 @@ pub fn register_parser_components() {
             children: Vec::new(),
         }])
     });
+    docutilsrs::plugins::register_native_directive("footbibliography", |_arguments, _content| {
+        Some(vec![docutilsrs::parser::Block::Extension {
+            class_name: "BibtexFootBibliography".to_string(),
+            attrs: BTreeMap::new(),
+            children: Vec::new(),
+        }])
+    });
 }
 
 pub fn setup(_app: &mut crate::application::SphinxApp) -> Result<(), crate::application::AppError> {
     register_parser_components();
     Ok(())
+}
+
+#[cfg(feature = "csl-citeproc")]
+pub fn build_finished(app: &crate::application::SphinxApp) -> Result<(), crate::application::AppError> {
+    use citeproc::prelude::{IncludeUncited, SupportedFormat};
+
+    let bibliography = load_configured_bibliography(app)?;
+    if bibliography.is_empty() {
+        return Ok(());
+    }
+    let style = load_configured_style(app)?
+        .unwrap_or_else(|| super::csl::DEFAULT_STYLE.to_string());
+    let rendered = super::csl::render_with_uncited(
+        &bibliography,
+        &style,
+        &[],
+        SupportedFormat::Plain,
+        IncludeUncited::All,
+    )
+    .map_err(|error| crate::application::AppError::Extension(error.to_string()))?;
+    let tex = bibliography_tex(&rendered.bibliography);
+    let jsonld = serde_json::to_string_pretty(&bibliography_jsonld(&bibliography))
+        .map_err(|error| crate::application::AppError::Extension(error.to_string()))?;
+
+    fs::write(app.outdir.join("bibliography.tex"), tex)?;
+    fs::write(app.outdir.join("bibliography.jsonld"), jsonld)?;
+    Ok(())
+}
+
+#[cfg(feature = "csl-citeproc")]
+fn load_configured_bibliography(
+    app: &crate::application::SphinxApp,
+) -> Result<Bibliography, crate::application::AppError> {
+    let paths = app
+        .config
+        .get("bibtex_bibfiles")
+        .and_then(|value| value.as_list().map(|values| values.to_vec()))
+        .unwrap_or_default();
+    let mut source = String::new();
+    for value in paths {
+        let Some(configured_path) = value.as_str() else {
+            continue;
+        };
+        let configured_path = Path::new(configured_path);
+        let path = if configured_path.is_absolute() {
+            configured_path.to_path_buf()
+        } else {
+            app.srcdir.join(configured_path)
+        };
+        let content = crate::environment::read_source_file(
+            &path,
+            &app.config.source_encoding(),
+        )
+        .map_err(|error| {
+            crate::application::AppError::Extension(format!(
+                "failed to read bibliography {}: {error}",
+                path.display()
+            ))
+        })?;
+        source.push_str(&content);
+        source.push('\n');
+    }
+    Bibliography::parse(&source)
+        .map_err(|error| crate::application::AppError::Extension(error.to_string()))
+}
+
+#[cfg(feature = "csl-citeproc")]
+fn load_configured_style(
+    app: &crate::application::SphinxApp,
+) -> Result<Option<String>, crate::application::AppError> {
+    let Some(configured_path) = app
+        .config
+        .get("bibtex_csl_style")
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    let configured_path = Path::new(&configured_path);
+    let path = if configured_path.is_absolute() {
+        configured_path.to_path_buf()
+    } else {
+        app.srcdir.join(configured_path)
+    };
+    crate::environment::read_source_file(&path, &app.config.source_encoding())
+        .map(Some)
+        .map_err(|error| {
+            crate::application::AppError::Extension(format!(
+                "failed to read CSL style {}: {error}",
+                path.display()
+            ))
+        })
+}
+
+#[cfg(feature = "csl-citeproc")]
+fn bibliography_tex(entries: &[super::csl::RenderedBibliographyEntry]) -> String {
+    let width = entries.len().max(1).to_string();
+    let mut output = format!(
+        "\\documentclass{{article}}\n\\begin{{document}}\n\\begin{{thebibliography}}{{{width}}}\n"
+    );
+    let mut labels = std::collections::HashSet::new();
+    for (index, entry) in entries.iter().enumerate() {
+        let label = if !entry.key.is_empty()
+            && entry
+                .key
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || "-_.:".contains(character))
+            && labels.insert(entry.key.clone())
+        {
+            entry.key.clone()
+        } else {
+            let mut fallback = format!("sfref{}", index + 1);
+            while !labels.insert(fallback.clone()) {
+                fallback.push('_');
+            }
+            fallback
+        };
+        output.push_str(&format!(
+            "\\bibitem{{{label}}} {}\n",
+            latex_escape(&entry.value)
+        ));
+    }
+    output.push_str("\\end{thebibliography}\n\\end{document}\n");
+    output
+}
+
+#[cfg(feature = "csl-citeproc")]
+fn latex_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        escaped.push_str(match character {
+            '&' => r"\&",
+            '%' => r"\%",
+            '$' => r"\$",
+            '#' => r"\#",
+            '_' => r"\_",
+            '{' => r"\{",
+            '}' => r"\}",
+            '~' => r"\textasciitilde{}",
+            '^' => r"\textasciicircum{}",
+            '\\' => r"\textbackslash{}",
+            _ => {
+                escaped.push(character);
+                continue;
+            }
+        });
+    }
+    escaped
+}
+
+#[cfg(feature = "csl-citeproc")]
+fn bibliography_jsonld(bibliography: &Bibliography) -> serde_json::Value {
+    let graph: Vec<_> = bibliography.records().iter().map(record_jsonld).collect();
+    serde_json::json!({
+        "@context": { "@vocab": "https://schema.org/" },
+        "@graph": graph,
+    })
+}
+
+#[cfg(feature = "csl-citeproc")]
+fn record_jsonld(record: &CitationRecord) -> serde_json::Value {
+    let mut value = serde_json::Map::new();
+    let doi = record.fields.get("doi").map(|doi| {
+        if doi.starts_with("http://") || doi.starts_with("https://") {
+            doi.clone()
+        } else {
+            format!("https://doi.org/{doi}")
+        }
+    });
+    let record_url = doi
+        .clone()
+        .or_else(|| record.fields.get("url").cloned())
+        .unwrap_or_else(|| format!("urn:bibtex:{}", record.id.replace(' ', "%20")));
+    value.insert("@id".into(), serde_json::Value::String(record_url.clone()));
+    value.insert(
+        "@type".into(),
+        serde_json::Value::String(jsonld_type(&record.entry_type).into()),
+    );
+    value.insert("url".into(), serde_json::Value::String(record_url));
+
+    for (field, property) in [
+        ("title", "name"),
+        ("abstract", "abstract"),
+        ("year", "datePublished"),
+        ("date", "datePublished"),
+        ("volume", "volumeNumber"),
+        ("number", "issueNumber"),
+        ("pages", "pagination"),
+        ("keywords", "keywords"),
+    ] {
+        if let Some(text) = record
+            .fields
+            .get(field)
+            .map(String::as_str)
+            .filter(|text| !text.trim().is_empty())
+        {
+            value.insert(property.into(), serde_json::Value::String(text.into()));
+        }
+    }
+
+    if let Some(journal) = record
+        .fields
+        .get("journal")
+        .or_else(|| record.fields.get("journaltitle"))
+    {
+        value.insert(
+            "isPartOf".into(),
+            serde_json::json!({ "@type": "Periodical", "name": journal }),
+        );
+    } else if let Some(booktitle) = record.fields.get("booktitle") {
+        value.insert(
+            "isPartOf".into(),
+            serde_json::json!({ "@type": "Book", "name": booktitle }),
+        );
+    }
+    if let Some(publisher) = record.fields.get("publisher") {
+        value.insert(
+            "publisher".into(),
+            serde_json::json!({ "@type": "Organization", "name": publisher }),
+        );
+    }
+    if !record.authors.is_empty() {
+        value.insert(
+            "author".into(),
+            serde_json::Value::Array(record.authors.iter().map(person_jsonld).collect()),
+        );
+    }
+    if !record.editors.is_empty() {
+        value.insert(
+            "editor".into(),
+            serde_json::Value::Array(record.editors.iter().map(person_jsonld).collect()),
+        );
+    }
+    if let Some(doi) = doi {
+        value.insert("sameAs".into(), serde_json::Value::String(doi));
+        value.insert(
+            "identifier".into(),
+            serde_json::json!({ "@type": "PropertyValue", "propertyID": "DOI", "value": record.fields.get("doi").unwrap() }),
+        );
+    }
+    serde_json::Value::Object(value)
+}
+
+#[cfg(feature = "csl-citeproc")]
+fn person_jsonld(person: &CitationName) -> serde_json::Value {
+    let mut name = Vec::new();
+    for part in [&person.given, &person.prefix, &person.family, &person.suffix] {
+        if !part.trim().is_empty() {
+            name.push(part.trim());
+        }
+    }
+    let mut value = serde_json::Map::new();
+    value.insert("@type".into(), serde_json::Value::String("Person".into()));
+    value.insert("name".into(), serde_json::Value::String(name.join(" ")));
+    if !person.given.is_empty() {
+        value.insert(
+            "givenName".into(),
+            serde_json::Value::String(person.given.clone()),
+        );
+    }
+    if !person.family.is_empty() {
+        value.insert(
+            "familyName".into(),
+            serde_json::Value::String(person.family.clone()),
+        );
+    }
+    serde_json::Value::Object(value)
+}
+
+#[cfg(feature = "csl-citeproc")]
+fn jsonld_type(entry_type: &str) -> &'static str {
+    match entry_type {
+        "article" => "ScholarlyArticle",
+        "book" | "collection" | "proceedings" => "Book",
+        "inbook" | "incollection" | "inproceedings" => "Chapter",
+        "mastersthesis" | "phdthesis" | "thesis" => "Thesis",
+        "techreport" => "Report",
+        _ => "CreativeWork",
+    }
 }
 
 impl Bibliography {
@@ -164,7 +461,7 @@ fn parse_people(
 #[cfg(feature = "csl-citeproc")]
 impl CitationRecord {
     pub fn to_csl_reference(&self) -> citeproc::io::Reference {
-        use citeproc::csl::{DateVariable, NameVariable, NumberVariable, Variable};
+        use citeproc::csl::{DateVariable, NameVariable};
         use citeproc::io::{NumberLike, Reference};
 
         let mut reference = Reference::empty(
@@ -179,15 +476,11 @@ impl CitationRecord {
             }
 
             if let Some(variable) = ordinary_variable(field) {
-                if let Ok(variable) = Variable::from_str(variable) {
-                    reference.ordinary.insert(variable, value.into());
-                }
+                reference.ordinary.insert(variable, value.into());
             } else if let Some(variable) = number_variable(field) {
-                if let Ok(variable) = NumberVariable::from_str(variable) {
-                    reference
-                        .number
-                        .insert(variable, NumberLike::Str(value.into()));
-                }
+                reference
+                    .number
+                    .insert(variable, NumberLike::Str(value.into()));
             }
         }
 
@@ -256,34 +549,38 @@ fn csl_type(entry_type: &str) -> citeproc::csl::CslType {
 }
 
 #[cfg(feature = "csl-citeproc")]
-fn ordinary_variable(field: &str) -> Option<&'static str> {
+fn ordinary_variable(field: &str) -> Option<citeproc::csl::Variable> {
+    use citeproc::csl::Variable;
+
     Some(match field {
-        "abstract" => "abstract",
-        "booktitle" | "journal" | "journaltitle" => "container-title",
-        "doi" => "DOI",
-        "isbn" => "ISBN",
-        "issn" => "ISSN",
-        "keywords" => "keyword",
-        "language" | "langid" => "language",
-        "location" | "address" => "publisher-place",
-        "note" => "note",
-        "publisher" => "publisher",
-        "series" => "collection-title",
-        "title" => "title",
-        "url" => "URL",
+        "abstract" => Variable::Abstract,
+        "booktitle" | "journal" | "journaltitle" => Variable::ContainerTitle,
+        "doi" => Variable::DOI,
+        "isbn" => Variable::ISBN,
+        "issn" => Variable::ISSN,
+        "keywords" => Variable::Keyword,
+        "language" | "langid" => Variable::Language,
+        "location" | "address" => Variable::PublisherPlace,
+        "note" => Variable::Note,
+        "publisher" => Variable::Publisher,
+        "series" => Variable::CollectionTitle,
+        "title" => Variable::Title,
+        "url" => Variable::URL,
         _ => return None,
     })
 }
 
 #[cfg(feature = "csl-citeproc")]
-fn number_variable(field: &str) -> Option<&'static str> {
+fn number_variable(field: &str) -> Option<citeproc::csl::NumberVariable> {
+    use citeproc::csl::NumberVariable;
+
     Some(match field {
-        "chapter" => "chapter-number",
-        "edition" => "edition",
-        "issue" => "issue",
-        "number" => "number",
-        "pages" => "page",
-        "volume" => "volume",
+        "chapter" => NumberVariable::ChapterNumber,
+        "edition" => NumberVariable::Edition,
+        "issue" => NumberVariable::Issue,
+        "number" => NumberVariable::Number,
+        "pages" => NumberVariable::Page,
+        "volume" => NumberVariable::Volume,
         _ => return None,
     })
 }
@@ -337,6 +634,7 @@ fn bibtex_month(month: &str) -> Option<u32> {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(test)]
 mod tests {
     use super::{Bibliography, BibliographyError};
@@ -392,13 +690,179 @@ mod tests {
         assert!(Bibliography::parse("").unwrap().is_empty());
     }
 
+    #[cfg(feature = "csl-citeproc")]
+    #[test]
+    fn tex_export_escapes_specials_and_resolves_invalid_or_duplicate_labels() {
+        use crate::extensions::csl::RenderedBibliographyEntry;
+
+        let entries = [
+            RenderedBibliographyEntry {
+                key: "sfref2".into(),
+                value: "&%$#_{}~^\\ é".into(),
+            },
+            RenderedBibliographyEntry {
+                key: "bad key".into(),
+                value: "invalid label".into(),
+            },
+            RenderedBibliographyEntry {
+                key: "same".into(),
+                value: "first copy".into(),
+            },
+            RenderedBibliographyEntry {
+                key: "same".into(),
+                value: "duplicate copy".into(),
+            },
+            RenderedBibliographyEntry {
+                key: String::new(),
+                value: "empty label".into(),
+            },
+        ];
+        let tex = super::bibliography_tex(&entries);
+
+        assert!(tex.contains(r"\bibitem{sfref2} \&\%\$\#\_\{\}\textasciitilde{}\textasciicircum{}\textbackslash{} é"));
+        assert!(tex.contains(r"\bibitem{sfref2_} invalid label"));
+        assert!(tex.contains(r"\bibitem{same} first copy"));
+        assert!(tex.contains(r"\bibitem{sfref4} duplicate copy"));
+        assert!(tex.contains(r"\bibitem{sfref5} empty label"));
+        assert!(tex.contains(r"\begin{thebibliography}{5}"));
+    }
+
+    #[cfg(feature = "csl-citeproc")]
+    #[test]
+    fn jsonld_export_maps_fields_names_and_fallback_urls() {
+        let bibliography = Bibliography::parse(
+            r#"
+                @article{journal,
+                    author = {Ada Lovelace},
+                    editor = {Grace Hopper},
+                    title = {Journal Article},
+                    abstract = {A short abstract},
+                    year = {1843},
+                    volume = {8},
+                    number = {2},
+                    pages = {10--24},
+                    keywords = {math, computing},
+                    journal = {Journal of Tests},
+                    publisher = {Test Press},
+                    doi = {https://doi.org/10.1000/journal}
+                }
+                @book{book,
+                    author = {Madonna},
+                    title = {Collected Work},
+                    booktitle = {Collected Works},
+                    url = {https://example.test/book}
+                }
+                @techreport{report,
+                    title = {Research Report},
+                    doi = {http://doi.org/10.1000/report}
+                }
+                @misc{rawdoi,
+                    title = {Raw DOI},
+                    doi = {10.1000/raw}
+                }
+                @misc{urn,
+                    title = {Unlinked Work}
+                }
+            "#,
+        )
+        .unwrap();
+        let jsonld = super::bibliography_jsonld(&bibliography);
+        let graph = jsonld["@graph"].as_array().unwrap();
+        let by_name = |name: &str| {
+            graph
+                .iter()
+                .find(|entry| entry["name"] == name)
+                .unwrap()
+        };
+
+        assert_eq!(jsonld["@context"]["@vocab"], "https://schema.org/");
+        let journal = by_name("Journal Article");
+        assert_eq!(journal["@type"], "ScholarlyArticle");
+        assert_eq!(journal["url"], "https://doi.org/10.1000/journal");
+        assert_eq!(journal["sameAs"], "https://doi.org/10.1000/journal");
+        assert_eq!(journal["identifier"]["value"], "https://doi.org/10.1000/journal");
+        assert_eq!(journal["isPartOf"]["@type"], "Periodical");
+        assert_eq!(journal["isPartOf"]["name"], "Journal of Tests");
+        assert_eq!(journal["publisher"]["name"], "Test Press");
+        assert_eq!(journal["author"][0]["name"], "Ada Lovelace");
+        assert_eq!(journal["editor"][0]["name"], "Grace Hopper");
+        assert_eq!(journal["datePublished"], "1843");
+        assert_eq!(journal["volumeNumber"], "8");
+        assert_eq!(journal["issueNumber"], "2");
+        assert_eq!(journal["pagination"], "10–24");
+        assert_eq!(journal["keywords"], "math, computing");
+        assert_eq!(journal["abstract"], "A short abstract");
+
+        let book = by_name("Collected Work");
+        assert_eq!(book["url"], "https://example.test/book");
+        assert_eq!(book["isPartOf"]["@type"], "Book");
+        assert_eq!(book["author"][0]["familyName"], "Madonna");
+        assert!(book["author"][0].get("givenName").is_none());
+
+        assert_eq!(by_name("Research Report")["sameAs"], "http://doi.org/10.1000/report");
+        assert_eq!(by_name("Raw DOI")["url"], "https://doi.org/10.1000/raw");
+        let unlinked = by_name("Unlinked Work");
+        assert_eq!(unlinked["url"], "urn:bibtex:urn");
+        assert!(unlinked.get("author").is_none());
+        assert!(unlinked.get("editor").is_none());
+        assert!(unlinked.get("isPartOf").is_none());
+        assert!(unlinked.get("publisher").is_none());
+        assert!(unlinked.get("sameAs").is_none());
+    }
+
+    #[cfg(feature = "csl-citeproc")]
+    #[test]
+    fn jsonld_type_covers_known_bibtex_entry_types() {
+        for (bibtex, schema) in [
+            ("article", "ScholarlyArticle"),
+            ("book", "Book"),
+            ("collection", "Book"),
+            ("proceedings", "Book"),
+            ("inbook", "Chapter"),
+            ("incollection", "Chapter"),
+            ("inproceedings", "Chapter"),
+            ("mastersthesis", "Thesis"),
+            ("phdthesis", "Thesis"),
+            ("thesis", "Thesis"),
+            ("techreport", "Report"),
+            ("misc", "CreativeWork"),
+        ] {
+            assert_eq!(super::jsonld_type(bibtex), schema, "BibTeX type: {bibtex}");
+        }
+    }
+
+    #[cfg(feature = "csl-citeproc")]
+    #[test]
+    fn jsonld_person_handles_missing_name_parts() {
+        let person = super::person_jsonld(&super::CitationName {
+            family: String::new(),
+            given: "Ada".into(),
+            prefix: " ".into(),
+            suffix: String::new(),
+            use_prefix: None,
+        });
+
+        assert_eq!(person["name"], "Ada");
+        assert_eq!(person["givenName"], "Ada");
+        assert!(person.get("familyName").is_none());
+    }
+
     #[test]
     fn native_roles_and_bibliography_directive_emit_placeholders() {
         use docutilsrs::doctree::{NodeAttributeValue, NodeKind};
 
         super::register_parser_components();
         let tree = docutilsrs::parse_rst_for_sphinx(
-            ":cite:`first` :cite:p:`second` :cite:t:`third`\n\n.. bibliography::\n",
+            r#"See :cite:t:`1987:nelson` for an introduction to non-standard analysis.
+Non-standard analysis is fun :cite:p:`1987:nelson`.
+Escaped\ whitespace stays joined.
+
+.. bibliography::
+
+See :footcite:t:`1987:nelson` for an introduction to non-standard analysis.
+Non-standard analysis is fun\ :footcite:p:`1987:nelson`.
+
+.. footbibliography::"#,
             "index",
             docutilsrs::TitlePromotion::Preserve,
             true,
@@ -410,23 +874,36 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(placeholders.len(), 4);
+        assert_eq!(placeholders.len(), 6, "placeholders: {placeholders:?}");
+            let parsed_text = (0..tree.nodes_len())
+                .filter_map(|id| match &tree.node(id).kind {
+                    NodeKind::Text(value) => Some(value.as_str()),
+                    _ => None,
+                })
+                .collect::<String>();
+            assert!(parsed_text.contains("Escapedwhitespace stays joined."));
         assert_eq!(placeholders[0].0, "BibtexCitation");
         assert_eq!(
             placeholders[0].1.get("keys"),
-            Some(&NodeAttributeValue::String("first".into()))
+            Some(&NodeAttributeValue::String("1987:nelson".into()))
         );
         assert_eq!(placeholders[1].0, "BibtexCitation");
         assert_eq!(
             placeholders[1].1.get("role"),
             Some(&NodeAttributeValue::String("cite:p".into()))
         );
-        assert_eq!(placeholders[2].0, "BibtexCitation");
+        assert_eq!(placeholders[2].0, "BibtexBibliography");
+        assert_eq!(placeholders[3].0, "BibtexCitation");
         assert_eq!(
-            placeholders[2].1.get("role"),
-            Some(&NodeAttributeValue::String("cite:t".into()))
+            placeholders[3].1.get("role"),
+            Some(&NodeAttributeValue::String("footcite:t".into()))
         );
-        assert_eq!(placeholders[3].0, "BibtexBibliography");
+        assert_eq!(placeholders[4].0, "BibtexCitation");
+        assert_eq!(
+            placeholders[4].1.get("role"),
+            Some(&NodeAttributeValue::String("footcite:p".into()))
+        );
+        assert_eq!(placeholders[5].0, "BibtexFootBibliography");
         assert!(!(0..tree.nodes_len()).any(|id| matches!(
             tree.node(id).kind,
             NodeKind::SystemMessage { ty: "ERROR", .. }
@@ -434,14 +911,38 @@ mod tests {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(test, feature = "csl-citeproc"))]
 mod citeproc_tests {
     use citeproc::prelude::{
         Cite, ClusterPosition, InitOptions, Processor, Reference, SupportedFormat,
     };
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
+    use std::path::Path;
 
-    use super::{Bibliography, METADATA};
+    use super::{Bibliography, CitationName, METADATA};
+
+    fn app_with_config(
+        root: &Path,
+        name: &str,
+        configuration: &str,
+    ) -> crate::application::SphinxApp {
+        let src = root.join(format!("{name}-src"));
+        let out = root.join(format!("{name}-out"));
+        let doctrees = root.join(format!("{name}-doctrees"));
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::create_dir_all(&doctrees).unwrap();
+        std::fs::write(src.join("conf.py"), configuration).unwrap();
+        crate::application::SphinxApp::new(
+            &src,
+            &out,
+            &doctrees,
+            "html",
+            HashMap::new(),
+        )
+        .unwrap()
+    }
 
     #[test]
     fn converts_biblatex_records_to_typed_csl_references() {
@@ -500,6 +1001,245 @@ mod citeproc_tests {
     }
 
     #[test]
+    fn bibtex_conversion_helpers_cover_aliases_and_fallbacks() {
+        use citeproc::csl::{CslType, NameVariable, NumberVariable, Variable};
+        use citeproc::io::{DateOrRange, Name};
+        use std::collections::BTreeMap;
+
+        for (bibtex, expected) in [
+            ("article", CslType::ArticleJournal),
+            ("book", CslType::Book),
+            ("collection", CslType::Book),
+            ("proceedings", CslType::Book),
+            ("inbook", CslType::Chapter),
+            ("incollection", CslType::Chapter),
+            ("inproceedings", CslType::Chapter),
+            ("manual", CslType::Webpage),
+            ("misc", CslType::Webpage),
+            ("online", CslType::Webpage),
+            ("www", CslType::Webpage),
+            ("mastersthesis", CslType::Thesis),
+            ("phdthesis", CslType::Thesis),
+            ("thesis", CslType::Thesis),
+            ("techreport", CslType::Report),
+            ("unpublished", CslType::Manuscript),
+            ("conference", CslType::PaperConference),
+            ("booklet", CslType::Pamphlet),
+            ("unknown", CslType::Article),
+        ] {
+            assert_eq!(super::csl_type(bibtex), expected, "BibTeX type: {bibtex}");
+        }
+
+        for (field, variable) in [
+            ("abstract", Variable::Abstract),
+            ("booktitle", Variable::ContainerTitle),
+            ("journal", Variable::ContainerTitle),
+            ("journaltitle", Variable::ContainerTitle),
+            ("doi", Variable::DOI),
+            ("isbn", Variable::ISBN),
+            ("issn", Variable::ISSN),
+            ("keywords", Variable::Keyword),
+            ("language", Variable::Language),
+            ("langid", Variable::Language),
+            ("location", Variable::PublisherPlace),
+            ("address", Variable::PublisherPlace),
+            ("note", Variable::Note),
+            ("publisher", Variable::Publisher),
+            ("series", Variable::CollectionTitle),
+            ("title", Variable::Title),
+            ("url", Variable::URL),
+        ] {
+            assert_eq!(super::ordinary_variable(field), Some(variable), "field: {field}");
+        }
+        assert_eq!(super::ordinary_variable("custom"), None);
+
+        for (field, variable) in [
+            ("chapter", NumberVariable::ChapterNumber),
+            ("edition", NumberVariable::Edition),
+            ("issue", NumberVariable::Issue),
+            ("number", NumberVariable::Number),
+            ("pages", NumberVariable::Page),
+            ("volume", NumberVariable::Volume),
+        ] {
+            assert_eq!(super::number_variable(field), Some(variable), "field: {field}");
+        }
+        assert_eq!(super::number_variable("custom"), None);
+
+        for (month, number) in [
+            ("jan", 1),
+            ("february", 2),
+            ("mar", 3),
+            ("april", 4),
+            ("may", 5),
+            ("jun", 6),
+            ("july", 7),
+            ("aug", 8),
+            ("september", 9),
+            ("oct", 10),
+            ("november", 11),
+            ("dec", 12),
+            ("7", 7),
+        ] {
+            assert_eq!(super::bibtex_month(month), Some(number), "month: {month}");
+        }
+        assert_eq!(super::bibtex_month("0"), None);
+        assert_eq!(super::bibtex_month("not-a-month"), None);
+
+        let mut date_fields = BTreeMap::new();
+        date_fields.insert("year".into(), "2024".into());
+        date_fields.insert("month".into(), "jan".into());
+        date_fields.insert("day".into(), "17".into());
+        assert_eq!(
+            super::issued_date(&date_fields),
+            Some(DateOrRange::new(2024, 1, 17))
+        );
+        date_fields.insert("date".into(), "2025-02-03".into());
+        assert_eq!(
+            super::issued_date(&date_fields),
+            Some(DateOrRange::new(2025, 2, 3))
+        );
+        date_fields.insert("date".into(), "not-a-date".into());
+        date_fields.insert("month".into(), "13".into());
+        date_fields.insert("day".into(), "not-a-day".into());
+        assert_eq!(
+            super::issued_date(&date_fields),
+            Some(DateOrRange::new(2024, 0, 0))
+        );
+        date_fields.insert("year".into(), "not-a-year".into());
+        assert_eq!(super::issued_date(&date_fields), None);
+        date_fields.remove("year");
+        assert_eq!(super::issued_date(&date_fields), None);
+
+        let empty_field = super::CitationRecord {
+            id: "empty-field".into(),
+            entry_type: "book".into(),
+            fields: BTreeMap::from([
+                ("title".into(), "  ".into()),
+                ("custom".into(), "ignored".into()),
+            ]),
+            authors: Vec::new(),
+            editors: Vec::new(),
+        };
+        assert!(empty_field.to_csl_reference().ordinary.is_empty());
+
+        let record = Bibliography::parse(
+            "@book{editors, editor={Grace Hopper}, title={Compiler Design}}",
+        )
+        .unwrap();
+        let reference = record.get("editors").unwrap().to_csl_reference();
+        assert!(reference.name.contains_key(&NameVariable::Editor));
+        assert!(reference.date.is_empty());
+
+        let dropping_particle = super::csl_name(&CitationName {
+            family: "Beethoven".into(),
+            given: "Ludwig".into(),
+            prefix: "van".into(),
+            suffix: "Jr.".into(),
+            use_prefix: Some(false),
+        });
+        let Name::Person(dropping_particle) = dropping_particle else {
+            panic!("expected a structured person name");
+        };
+        assert!(dropping_particle.non_dropping_particle.is_none());
+        assert_eq!(dropping_particle.dropping_particle.as_deref(), Some("van"));
+
+        let no_particle = super::csl_name(&CitationName {
+            family: "Lovelace".into(),
+            given: "Ada".into(),
+            prefix: String::new(),
+            suffix: String::new(),
+            use_prefix: None,
+        });
+        let Name::Person(no_particle) = no_particle else {
+            panic!("expected a structured person name");
+        };
+        assert!(no_particle.non_dropping_particle.is_none());
+        assert!(no_particle.dropping_particle.is_none());
+
+    }
+
+    #[test]
+    fn build_finished_handles_empty_configs_absolute_paths_and_failures() {
+        let root = tempfile::tempdir().unwrap();
+
+        let empty = app_with_config(root.path(), "empty", "bibtex_bibfiles = [7]\n");
+        super::build_finished(&empty).unwrap();
+        assert!(!empty.outdir.join("bibliography.tex").exists());
+
+        let missing_bib = app_with_config(
+            root.path(),
+            "missing-bib",
+            "bibtex_bibfiles = ['missing.bib']\nbibtex_csl_style = ''\n",
+        );
+        let error = super::build_finished(&missing_bib).unwrap_err().to_string();
+        assert!(error.contains("failed to read bibliography"));
+
+        let malformed_bib_path = root.path().join("malformed.bib");
+        std::fs::write(&malformed_bib_path, "@book{unfinished").unwrap();
+        let malformed_bib = app_with_config(
+            root.path(),
+            "malformed-bib",
+            &format!("bibtex_bibfiles = [{:?}]\n", malformed_bib_path),
+        );
+        assert!(super::build_finished(&malformed_bib).is_err());
+
+        let bibliography_path = root.path().join("absolute.bib");
+        std::fs::write(
+            &bibliography_path,
+            "@book{absolute, author={Ada Lovelace}, title={Absolute Paths}, year={1843}}",
+        )
+        .unwrap();
+        let style_path = root.path().join("absolute.csl");
+        std::fs::write(&style_path, crate::extensions::csl::DEFAULT_STYLE).unwrap();
+        let absolute = app_with_config(
+            root.path(),
+            "absolute",
+            &format!(
+                "bibtex_bibfiles = [{:?}]\nbibtex_csl_style = {:?}\n",
+                bibliography_path,
+                style_path
+            ),
+        );
+        super::build_finished(&absolute).unwrap();
+        assert!(absolute.outdir.join("bibliography.tex").exists());
+
+        let default_style = app_with_config(
+            root.path(),
+            "default-style",
+            &format!(
+                "bibtex_bibfiles = [{:?}]\nbibtex_csl_style = ''\n",
+                bibliography_path
+            ),
+        );
+        super::build_finished(&default_style).unwrap();
+        assert!(default_style.outdir.join("bibliography.tex").exists());
+
+        let missing_style = app_with_config(
+            root.path(),
+            "missing-style",
+            &format!(
+                "bibtex_bibfiles = [{:?}]\nbibtex_csl_style = 'missing.csl'\n",
+                bibliography_path
+            ),
+        );
+        let error = super::build_finished(&missing_style).unwrap_err().to_string();
+        assert!(error.contains("failed to read CSL style"));
+
+        let invalid_style_path = root.path().join("invalid.csl");
+        std::fs::write(&invalid_style_path, "<style").unwrap();
+        let invalid_style = app_with_config(
+            root.path(),
+            "invalid-style",
+            &format!(
+                "bibtex_bibfiles = [{:?}]\nbibtex_csl_style = {:?}\n",
+                bibliography_path,
+                invalid_style_path
+            ),
+        );
+        assert!(super::build_finished(&invalid_style).is_err());
+    }
+
+    #[test]
     fn pinned_citeproc_engine_formats_a_citation() {
         const STYLE: &str = r#"
             <style version="1.0" class="in-text">
@@ -541,7 +1281,7 @@ mod citeproc_tests {
         let out = tempfile::tempdir().unwrap();
         let doctrees = tempfile::tempdir().unwrap();
         std::fs::write(
-            src.path().join("refs.bib"),
+            src.path().join("refs-a.bib"),
             r#"
                 @book{alpha, author={Ada Lovelace}, title={Analytical Engine}, year={1843}}
                 @book{beta, author={Grace Hopper}, title={Compilers}, year={1952}}
@@ -549,21 +1289,28 @@ mod citeproc_tests {
         )
         .unwrap();
         std::fs::write(
-                        src.path().join("test.csl"),
-                        r#"
-                                <style version="1.0" class="in-text">
-                                    <info>
-                                        <title>Native Sphinx integration test</title>
-                                        <id>https://example.test/styles/native-integration</id>
-                                        <link href="https://example.test/styles/native-integration" rel="self"/>
-                                        <updated>2024-01-01T00:00:00+00:00</updated>
-                                    </info>
-                                    <citation><layout><text variable="title"/></layout></citation>
-                                    <bibliography><layout><text variable="title"/></layout></bibliography>
-                                </style>
-                        "#,
-                )
-                .unwrap();
+            src.path().join("refs-b.bib"),
+            r#"
+                @article{gamma, author={Katherine Johnson}, title={Laser-safe & efficient}, year={2021}, doi={10.1000/example}}
+            "#,
+        )
+        .unwrap();
+        std::fs::write(
+            src.path().join("test.csl"),
+            r#"
+                <style version="1.0" class="in-text">
+                  <info>
+                    <title>Native Sphinx integration test</title>
+                    <id>https://example.test/styles/native-integration</id>
+                    <link href="https://example.test/styles/native-integration" rel="self"/>
+                    <updated>2024-01-01T00:00:00+00:00</updated>
+                  </info>
+                  <citation><layout><text variable="title"/></layout></citation>
+                  <bibliography><layout><text variable="title"/></layout></bibliography>
+                </style>
+            "#,
+        )
+        .unwrap();
         std::fs::write(
             src.path().join("index.rst"),
             "Index\n=====\n\nText :cite:`alpha`.\n\n.. bibliography::\n",
@@ -577,7 +1324,7 @@ mod citeproc_tests {
         std::fs::write(
             src.path().join("conf.py"),
             format!(
-                "extensions = [{:?}]\nbibtex_bibfiles = ['refs.bib']\nbibtex_csl_style = 'test.csl'\n",
+                "extensions = [{:?}]\nbibtex_bibfiles = ['refs-a.bib', 'refs-b.bib']\nbibtex_csl_style = 'test.csl'\nbibtex_include_uncited = True\n",
                 METADATA.name
             ),
         )
@@ -590,7 +1337,7 @@ mod citeproc_tests {
             HashMap::new(),
         )
         .unwrap();
-        app.read().unwrap();
+        app.build().unwrap();
 
         let raw_tree = app.env.borrow().get_doctree("index").unwrap();
         assert!((0..raw_tree.nodes_len()).any(|id| matches!(
@@ -608,6 +1355,7 @@ mod citeproc_tests {
             .join(" ");
         assert!(text.contains("Analytical Engine"), "rendered text: {text}");
         assert!(text.contains("Compilers"), "rendered text: {text}");
+        assert!(text.contains("Laser-safe & efficient"), "rendered text: {text}");
         assert!(!(0..resolved.nodes_len()).any(|id| matches!(
             resolved.node(id).kind,
             NodeKind::Extension { ref class_name, .. }
@@ -621,5 +1369,164 @@ mod citeproc_tests {
                 NodeKind::Extension { ref class_name, .. } if class_name == "BibtexCitation"
             ))
         );
+
+        let tex = std::fs::read_to_string(out.path().join("bibliography.tex")).unwrap();
+        assert!(tex.contains("\\begin{thebibliography}"));
+        assert!(tex.contains("\\bibitem{alpha}"));
+        assert!(tex.contains("\\bibitem{gamma}"));
+        assert!(tex.contains("Laser-safe \\& efficient"));
+
+        let jsonld: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(out.path().join("bibliography.jsonld")).unwrap(),
+        )
+        .unwrap();
+        let graph = jsonld["@graph"].as_array().unwrap();
+        assert_eq!(graph.len(), 3);
+        assert!(graph.iter().any(|entry| entry["name"] == "Laser-safe & efficient"));
+        assert!(graph
+            .iter()
+            .any(|entry| entry["sameAs"] == "https://doi.org/10.1000/example"));
+        let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+        assert!(html.contains("Laser-safe &amp; efficient"));
+    }
+
+    #[test]
+    fn supports_parenthetical_textual_and_footnote_citation_roles() {
+        use crate::application::SphinxApp;
+        use docutilsrs::doctree::{NodeAttributeValue, NodeKind};
+
+        let src = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let doctrees = tempfile::tempdir().unwrap();
+        std::fs::write(
+            src.path().join("refs.bib"),
+            "@book{1987:nelson, author={Edward Nelson}, title={Internal Set Theory}, year={1987}}",
+        )
+        .unwrap();
+        std::fs::write(
+            src.path().join("author-year.csl"),
+            r#"
+                <style version="1.0" class="in-text">
+                  <info>
+                    <title>Footnote role test</title>
+                    <id>https://example.test/styles/footnote-role-test</id>
+                    <link href="https://example.test/styles/footnote-role-test" rel="self"/>
+                    <updated>2024-01-01T00:00:00+00:00</updated>
+                  </info>
+                  <citation>
+                    <layout prefix="(" suffix=")">
+                      <group delimiter=", ">
+                        <names variable="author"><name form="short"/></names>
+                        <date variable="issued"><date-part name="year"/></date>
+                      </group>
+                    </layout>
+                  </citation>
+                  <bibliography>
+                    <layout><text variable="title"/></layout>
+                  </bibliography>
+                </style>
+            "#,
+        )
+        .unwrap();
+        std::fs::write(
+            src.path().join("index.rst"),
+            "Index\n=====\n\nSee :cite:t:`1987:nelson` for an introduction.\n\
+             Non-standard analysis is fun :cite:p:`1987:nelson`.\n\n\
+             .. bibliography::\n\n\
+             See :footcite:t:`1987:nelson` for an introduction.\n\
+             Non-standard analysis is fun\\ :footcite:p:`1987:nelson`.\n\n\
+             .. footbibliography::\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.path().join("conf.py"),
+            format!(
+                "extensions = [{:?}]\nbibtex_bibfiles = ['refs.bib']\nbibtex_csl_style = 'author-year.csl'\n",
+                METADATA.name
+            ),
+        )
+        .unwrap();
+
+        let mut app = SphinxApp::new(
+            src.path(),
+            out.path(),
+            doctrees.path(),
+            "html",
+            HashMap::new(),
+        )
+        .unwrap();
+        app.build().unwrap();
+
+        let raw = app.env.borrow().get_doctree("index").unwrap();
+        let roles: HashMap<_, _> = (0..raw.nodes_len())
+            .filter_map(|id| match &raw.node(id).kind {
+                NodeKind::Extension { class_name, attrs } if class_name == "BibtexCitation" => {
+                    let Some(NodeAttributeValue::String(role)) = attrs.get("role") else {
+                        return None;
+                    };
+                    Some((role.as_str(), id))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(roles.len(), 4);
+
+        let resolved = app.env.borrow().get_and_resolve_doctree("index").unwrap();
+        let textual = &resolved.node(roles["cite:t"]).kind;
+        assert!(matches!(textual, NodeKind::Text(value) if value == "Nelson (1987)"));
+        let parenthetical = &resolved.node(roles["cite:p"]).kind;
+        assert!(matches!(parenthetical, NodeKind::Text(value) if value == "(Nelson, 1987)"));
+        assert!(matches!(
+            resolved.node(roles["footcite:t"]).kind,
+            NodeKind::Inline { .. }
+        ));
+        let footcite_text = resolved
+            .node(roles["footcite:t"])
+            .children
+            .iter()
+            .filter_map(|&id| match &resolved.node(id).kind {
+                NodeKind::Text(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(footcite_text, "Nelson (1987)");
+        assert!(matches!(
+            resolved.node(roles["footcite:p"]).kind,
+            NodeKind::Inline { .. }
+        ));
+        let footcite_parent = resolved.node(roles["footcite:p"]).parent.unwrap();
+        let footcite_siblings = &resolved.node(footcite_parent).children;
+        let footcite_position = footcite_siblings
+            .iter()
+            .position(|&id| id == roles["footcite:p"])
+            .unwrap();
+        assert!(matches!(
+            &resolved.node(footcite_siblings[footcite_position - 1]).kind,
+            NodeKind::Text(value) if value.ends_with("Non-standard analysis is fun")
+        ));
+        assert_eq!(
+            (0..resolved.nodes_len())
+                .filter(|&id| matches!(resolved.node(id).kind, NodeKind::Footnote { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            (0..resolved.nodes_len())
+                .filter(|&id| matches!(resolved.node(id).kind, NodeKind::FootnoteReference { .. }))
+                .count(),
+            2
+        );
+        let reference_ids: HashSet<_> = (0..resolved.nodes_len())
+            .filter_map(|id| match &resolved.node(id).kind {
+                NodeKind::FootnoteReference { ids, .. } => Some(ids.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(reference_ids.len(), 2);
+
+        let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+        assert!(html.contains("href=\"#bibtex-footnote-1\""));
+        assert!(html.contains("id=\"bibtex-footnote-1\""));
+        assert!(reference_ids.iter().all(|id| html.contains(&format!("id=\"{id}\""))));
     }
 }

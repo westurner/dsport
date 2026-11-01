@@ -123,8 +123,14 @@ def setup(app):
     def on_builder_inited(app):
         called.append(app.env.srcdir.is_absolute())
 
+    def on_build_finished(app, exception):
+        called.append(exception is None)
+        called.append(app.builder.name == 'html')
+        called.append(app.outdir.is_absolute())
+
     app.connect("config-inited", on_config_inited)
     app.connect("builder-inited", on_builder_inited)
+    app.connect("build-finished", on_build_finished)
     return {"version": "0.1", "parallel_read_safe": True}
 "#,
     )
@@ -173,7 +179,7 @@ def setup(app):
         let called: Vec<bool> = module.getattr("called").unwrap().extract().unwrap();
         assert_eq!(
             called,
-            vec![true, true],
+            vec![true, true, true, true, true],
             "application event listener did not fire"
         );
     });

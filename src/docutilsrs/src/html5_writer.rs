@@ -678,11 +678,11 @@ fn emit_enter(
             let _ = write!(out, "<aside class=\"footnote\" id=\"{ids}\">");
             schedule(node, "</aside>", tasks);
         }
-        NodeKind::FootnoteReference { refid, .. } => {
+        NodeKind::FootnoteReference { ids, refid, .. } => {
             let style = options.footnote_references.as_deref().unwrap_or("brackets");
             let _ = write!(
                 out,
-                "<a class=\"{style}\" href=\"#{refid}\" id=\"footnote-reference-1\" role=\"doc-noteref\">"
+                "<a class=\"{style}\" href=\"#{refid}\" id=\"{ids}\" role=\"doc-noteref\">"
             );
             if style == "brackets" {
                 out.push_str("<span class=\"fn-bracket\">[</span>");

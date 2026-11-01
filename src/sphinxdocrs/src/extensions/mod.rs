@@ -54,6 +54,13 @@ pub fn setup(name: &str, app: &mut SphinxApp) -> Result<bool, AppError> {
 }
 
 pub fn build_finished(app: &SphinxApp) -> Result<(), AppError> {
+    #[cfg(feature = "csl-citeproc")]
+    if app
+        .native_extensions
+        .contains("sphinxdocrs::extensions::bibtex")
+    {
+        bibtex::build_finished(app)?;
+    }
     if app
         .native_extensions
         .contains("sphinxdocrs::extensions::docindex")

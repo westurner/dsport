@@ -95,6 +95,8 @@ pub const CORE_EVENTS: &[&str] = &[
 #[derive(Debug, Clone)]
 pub enum EventArg {
     None,
+    /// A native build failure exposed to Python as a `RuntimeError` event argument.
+    Exception(String),
     Str(String),
     StrList(Vec<String>),
     /// Shared Python-facing Sphinx config passed as `config-inited`'s second argument.

@@ -1,0 +1,219 @@
+
+@software{docutils,
+  author = {David Goodger},
+  title = {Docutils 0.23rc2.dev},
+  url = {https://docutils.sourceforge.io/},
+  note = {Software license: public domain dedication, with BSD-2-Clause exceptions.}
+}
+
+@software{sphinx,
+  author = {Georg Brandl and contributors},
+  title = {Sphinx: Python Documentation Generator},
+  year = {2007},
+  url = {https://www.sphinx-doc.org/},
+  note = {Software license: BSD-2-Clause. Source: \url{https://github.com/sphinx-doc/sphinx}. Sphinx uses Jinja2 as its HTML theme template engine.}
+}
+
+@software{myst_parser,
+  title = {MyST-Parser},
+  url = {https://github.com/executablebooks/MyST-Parser},
+  note = {Software license: MIT. Reference implementation of MyST Markdown.}
+}
+
+@software{pygments,
+  author = {Georg Brandl and contributors},
+  title = {Pygments: Generic syntax highlighter written in Python},
+  url = {https://pygments.org/},
+  note = {Software license: BSD-2-Clause.}
+}
+
+@software{jinja2,
+  author = {Armin Ronacher and contributors},
+  title = {Jinja2: A Full-Featured Template Engine for Python},
+  year = {2008},
+  url = {https://jinja.palletsprojects.com/},
+  note = {Software license: BSD-3-Clause. Source: \url{https://github.com/pallets/jinja}.}
+}
+
+@software{markupsafe,
+  author = {Armin Ronacher and contributors},
+  title = {MarkupSafe: Safely Convert Markup to Bytes},
+  year = {2010},
+  url = {https://markupsafe.palletsprojects.com/},
+  note = {Software license: BSD-3-Clause. Source: \url{https://github.com/pallets/markupsafe}. Provides safe HTML string handling and auto-escaping. jinja2rs includes \texttt{markupsafers}, a Rust port of MarkupSafe.}
+}
+
+@software{django,
+  author = {{Django Software Foundation}},
+  title = {Django: The Web Framework for Perfectionists with Deadlines},
+  year = {2005},
+  howpublished = {\url{https://www.djangoproject.com/}},
+  url = {https://www.djangoproject.com/},
+  note = {Software license: BSD-3-Clause. Source: \url{https://github.com/django/django}.}
+}
+
+@software{minijinja,
+  author = {Armin Ronacher},
+  title = {MiniJinja: Jinja2 Template Engine for Rust},
+  year = {2021},
+  url = {https://github.com/mitsuhiko/minijinja},
+  note = {Software license: Apache-2.0. jinja2rs is built on minijinja and minijinja python compat.}
+}
+
+@software{docker_compose,
+  author = {{Docker, Inc.}},
+  title = {Docker Compose: Defining and Running Multi-Container Applications},
+  year = {2020},
+  url = {https://docs.docker.com/compose/},
+  note = {Software license: Apache-2.0.
+                  Source: \url{https://github.com/docker/compose}.
+                  Docker Compose uses environment variable substitution and
+                  template-like expressions in compose.yml files for service
+                  configuration.
+                  jinja2rs provides a \texttt{CompatMode::Docker} (via general
+                  environment support) for pre-processing and rendering
+                  compose.yml files with full Jinja2 template power, enabling
+                  dynamic service definitions, conditional blocks, and
+                  macro-based composition before passing to Docker.}
+}
+
+@software{ansible,
+  author = {Michael DeHaan and {Red Hat, Inc.} and contributors},
+  title = {Ansible: Radically Simple IT Automation},
+  year = {2012},
+  url = {https://www.ansible.com/},
+  note = {Software license: GPL-3.0.
+                  Source: \url{https://github.com/ansible/ansible}.
+                  Ansible uses Jinja2 as its template engine for playbooks,
+                  roles, and inventory files.
+                  jinja2rs provides \texttt{CompatMode::Ansible} for rendering
+                  Ansible-compatible templates with standard filters and
+                  inventory variable support.}
+}
+
+@software{kubernetes,
+  author = {{The Kubernetes Authors}},
+  title = {Kubernetes: Production-Grade Container Orchestration},
+  year = {2014},
+  url = {https://kubernetes.io/},
+  note = {Software license: Apache-2.0.
+                  Source: \url{https://github.com/kubernetes/kubernetes}.
+                  Helm charts, Kustomize, and many Kubernetes deployment tools
+                  use Jinja2-style templating for manifest generation.
+                  jinja2rs provides \texttt{CompatMode::Kubernetes} for rendering
+                  Kubernetes manifests with resource filters and inventory
+                  support.}
+}
+
+
+@software{docutilsrs,
+  author = {Wes Turner},
+  title = {docutilsrs: a Rust port of docutils},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/docutilsrs},
+  note = {Software license: public domain dedication, with BSD-2-Clause exceptions.}
+}
+
+@software{docindexrs-core,
+  author = {Wes Turner},
+  title = {docindexrs-core: Portable document indexing and search primitives},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/docindexrs-core},
+  note = {Software license: BSD-2-Clause.}
+}
+
+@software{docindexrs-native,
+  author = {Wes Turner},
+  title = {docindexrs-native: Native filesystem and artifact adapters},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/docindexrs-native},
+  note = {Software license: BSD-2-Clause.}
+}
+
+@software{docindexrs-cli,
+  author = {Wes Turner},
+  title = {docindexrs-cli: DocIndex command-line interface},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/docindexrs-cli},
+  note = {Software license: BSD-2-Clause.}
+}
+
+@software{docindexrs-wasm,
+  author = {Wes Turner},
+  title = {docindexrs-wasm: WebAssembly bindings for local DocIndex artifacts},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/docindexrs-wasm},
+  note = {Software license: BSD-2-Clause.}
+}
+
+@software{nbconvertrs,
+  author = {Wes Turner},
+  title = {nbconvertrs: Markdown and notebook transforms for DocIndex},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/sustainablefactory/src/transform_md},
+  note = {Software license: BSD-3-Clause.}
+}
+
+@software{jinja2rs,
+  author = {Wes Turner},
+  title = {jinja2rs: Rust port of Jinja2 with a Sphinx-compatible API},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/jinja2rs},
+  note = {Software license: BSD-3-Clause AND Apache-2.0.}
+}
+
+@software{markupsafers,
+  author = {Wes Turner},
+  title = {markupsafers: Safe HTML and XML markup strings for Rust},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/markupsafers},
+  note = {Software license: BSD-3-Clause.}
+}
+
+@software{mathrenderrs,
+  author = {Wes Turner},
+  title = {mathrenderrs: Math rendering backend selector},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/mathrenderrs},
+  note = {Software license: BSD-2-Clause.}
+}
+
+@software{myst-md-rs,
+  author = {Wes Turner},
+  title = {myst-md-rs: a Rust port of MyST-Parser},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/myst-md-rs},
+  note = {Software license: MIT.}
+}
+
+@software{pygmentsrs,
+  author = {Wes Turner},
+  title = {pygmentsrs: a Rust port of Pygments},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/pygmentsrs},
+  note = {Software license: BSD-2-Clause.}
+}
+
+@software{rdfhdt,
+  author = {Wes Turner},
+  title = {rdfhdt: RDF and HDT artifact adapters in Rust},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/rdfhdt},
+  note = {Software license: BSD-2-Clause.}
+}
+
+@software{sphinxdocrs,
+  author = {Wes Turner and contributors},
+  title = {sphinxdocrs: a Rust port of Sphinxdoc},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/sphinxdocrs},
+  note = {Software license: BSD-2-Clause.}
+}
+
+@software{smartstring-compat,
+  author = {Wes Turner},
+  title = {smartstring compatibility re-export 0.2.10 for citeproc-rs},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/smartstring-compat},
+  note = {Software license: MPL-2.0.}
+}

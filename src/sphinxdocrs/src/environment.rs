@@ -59,7 +59,10 @@ fn is_bibtex_placeholder(kind: &NodeKind) -> bool {
     matches!(
         kind,
         NodeKind::Extension { class_name, .. }
-            if matches!(class_name.as_str(), "BibtexCitation" | "BibtexBibliography")
+            if matches!(
+                class_name.as_str(),
+                "BibtexCitation" | "BibtexBibliography" | "BibtexFootBibliography"
+            )
     )
 }
 
@@ -854,9 +857,9 @@ impl BuildEnvironment {
         tree: &mut Doctree,
     ) -> Result<(), BuildError> {
         use crate::extensions::csl::{
-            CitationCluster, CitationItem, CitationMode, DEFAULT_STYLE, render,
+            CitationCluster, CitationItem, CitationMode, DEFAULT_STYLE, render_with_uncited,
         };
-        use citeproc::prelude::SupportedFormat;
+        use citeproc::prelude::{IncludeUncited, SupportedFormat};
 
         if !(0..tree.nodes_len()).any(|id| is_bibtex_placeholder(&tree.node(id).kind)) {
             return Ok(());
@@ -872,13 +875,20 @@ impl BuildEnvironment {
 
         let mut clusters = Vec::new();
         let mut current_cluster_ids = HashMap::new();
+        let mut current_citation_roles = HashMap::new();
+        let mut current_citation_keys = HashMap::new();
+        let mut current_footcite_refs = HashMap::new();
         let mut bibliography_nodes = Vec::new();
+        let mut footbibliography_nodes = Vec::new();
         for current_doc in docnames {
             let source_tree = if current_doc == docname {
                 tree.clone()
             } else {
                 self.get_doctree(&current_doc)?
             };
+            let mut footnote_ids_by_key = HashMap::new();
+            let mut pending_footnotes = Vec::new();
+            let mut emitted_footnotes = HashSet::new();
             for node_id in 0..source_tree.nodes_len() {
                 let NodeKind::Extension { class_name, attrs } = &source_tree.node(node_id).kind
                 else {
@@ -890,20 +900,57 @@ impl BuildEnvironment {
                     }
                     continue;
                 }
+                if class_name == "BibtexFootBibliography" {
+                    if current_doc == docname {
+                        footbibliography_nodes.push((node_id, pending_footnotes.clone()));
+                    }
+                    emitted_footnotes.extend(
+                        pending_footnotes
+                            .iter()
+                            .map(|(key, _, _): &(String, u32, String)| key.clone()),
+                    );
+                    pending_footnotes.clear();
+                    continue;
+                }
                 if class_name != "BibtexCitation" {
                     continue;
                 }
 
-                let role = node_attribute(attrs, "role").unwrap_or("cite");
-                let citations: Vec<_> = node_attribute(attrs, "keys")
+                let role = node_attribute(attrs, "role").unwrap_or("cite").to_string();
+                let keys: Vec<_> = node_attribute(attrs, "keys")
                     .unwrap_or_default()
                     .split(',')
                     .map(str::trim)
                     .filter(|key| !key.is_empty())
+                    .map(str::to_string)
+                    .collect();
+                let footcite = role == "footcite" || role.starts_with("footcite:");
+                let mut footcite_refs = Vec::new();
+                let citations: Vec<_> = keys
+                    .iter()
                     .map(|key| {
                         let mut citation = CitationItem::new(key);
-                        if role == "cite:t" {
-                            citation.mode = Some(CitationMode::AuthorOnly);
+                        citation.mode = match role.as_str() {
+                            "cite:t" | "footcite:t" => Some(CitationMode::AuthorOnly),
+                            "cite" | "cite:p" | "footcite" | "footcite:p" => None,
+                            _ => None,
+                        };
+                        if footcite {
+                            let next_number = footnote_ids_by_key.len() as u32 + 1;
+                            let (number, footnote_id) = footnote_ids_by_key
+                                .entry(key.clone())
+                                .or_insert_with(|| (next_number, format!("bibtex-footnote-{next_number}")))
+                                .clone();
+                            let reference_id = format!(
+                                "bibtex-footnote-reference-{node_id}-{}",
+                                footcite_refs.len() + 1
+                            );
+                            footcite_refs.push((number.to_string(), footnote_id.clone(), reference_id));
+                            if !emitted_footnotes.contains(key)
+                                && !pending_footnotes.iter().any(|(pending, _, _)| pending == key)
+                            {
+                                pending_footnotes.push((key.clone(), number, footnote_id));
+                            }
                         }
                         citation
                     })
@@ -911,6 +958,11 @@ impl BuildEnvironment {
                 let cluster_id = format!("{current_doc}:{node_id}");
                 if current_doc == docname {
                     current_cluster_ids.insert(node_id, cluster_id.clone());
+                    current_citation_roles.insert(node_id, role);
+                    current_citation_keys.insert(node_id, keys);
+                    if footcite {
+                        current_footcite_refs.insert(node_id, footcite_refs);
+                    }
                 }
                 clusters.push(CitationCluster {
                     id: cluster_id,
@@ -920,20 +972,94 @@ impl BuildEnvironment {
             }
         }
 
-        if clusters.is_empty() && bibliography_nodes.is_empty() {
+        if clusters.is_empty() && bibliography_nodes.is_empty() && footbibliography_nodes.is_empty() {
             return Ok(());
         }
-        let rendered = render(&bibliography, &style, &clusters, SupportedFormat::Plain)
-            .map_err(|error| BuildError::Other(error.to_string()))?;
+        let include_uncited = if self
+            .config
+            .get("bibtex_include_uncited")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+        {
+            IncludeUncited::All
+        } else {
+            IncludeUncited::None
+        };
+        let rendered = render_with_uncited(
+            &bibliography,
+            &style,
+            &clusters,
+            SupportedFormat::Plain,
+            include_uncited,
+        )
+        .map_err(|error| BuildError::Other(error.to_string()))?;
         let rendered_clusters: HashMap<_, _> = rendered
             .clusters
             .into_iter()
             .map(|cluster| (cluster.id, cluster.value))
             .collect();
+        let bibliography_by_key: HashMap<_, _> = rendered
+            .bibliography
+            .iter()
+            .map(|entry| (entry.key.as_str(), entry.value.as_str()))
+            .collect();
+        let mut footnote_backrefs: HashMap<String, Vec<String>> = HashMap::new();
 
         for (node_id, cluster_id) in current_cluster_ids {
-            let value = rendered_clusters.get(&cluster_id).cloned().unwrap_or_default();
-            tree.set_kind(node_id, NodeKind::Text(value));
+            let mut value = rendered_clusters.get(&cluster_id).cloned().unwrap_or_default();
+            let role = current_citation_roles.get(&node_id).map(String::as_str).unwrap_or("cite");
+            if role == "cite:t" || role == "footcite:t" {
+                let years: Vec<_> = current_citation_keys
+                    .remove(&node_id)
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(|key| bibliography.get(key))
+                    .filter_map(|record| {
+                        record.fields.get("year").map(String::as_str).or_else(|| {
+                            record
+                                .fields
+                                .get("date")
+                                .map(|date| date.split('-').next().unwrap_or(date))
+                        })
+                    })
+                    .map(str::trim)
+                    .filter(|year| !year.is_empty())
+                    .map(str::to_string)
+                    .collect();
+                if !years.is_empty() {
+                    value.push_str(&format!(" ({})", years.join(", ")));
+                }
+            }
+            if role == "footcite" || role.starts_with("footcite:") {
+                tree.set_kind(
+                    node_id,
+                    NodeKind::Inline {
+                        classes: "footcite".into(),
+                    },
+                );
+                if role == "footcite:t" {
+                    tree.append(node_id, NodeKind::Text(value));
+                }
+                for (number, footnote_id, reference_id) in
+                    current_footcite_refs.remove(&node_id).unwrap_or_default()
+                {
+                    let reference = tree.append(
+                        node_id,
+                        NodeKind::FootnoteReference {
+                            ids: reference_id.clone(),
+                            refid: footnote_id.clone(),
+                            auto: None,
+                        },
+                    );
+                    tree.append(reference, NodeKind::Text(number));
+                    footnote_backrefs
+                        .entry(footnote_id)
+                        .or_default()
+                        .push(reference_id);
+                }
+            } else {
+                tree.set_kind(node_id, NodeKind::Text(value));
+            }
         }
         for node_id in bibliography_nodes {
             tree.set_kind(node_id, NodeKind::BulletList { bullet: '*' });
@@ -941,6 +1067,36 @@ impl BuildEnvironment {
                 let item = tree.append(node_id, NodeKind::ListItem);
                 let paragraph = tree.append(item, NodeKind::Paragraph);
                 tree.append(paragraph, NodeKind::Text(entry.value.clone()));
+            }
+        }
+        for (node_id, entries) in footbibliography_nodes {
+            tree.set_kind(
+                node_id,
+                NodeKind::Container {
+                    classes: "footbibliography".into(),
+                },
+            );
+            for (key, number, footnote_id) in entries {
+                let Some(value) = bibliography_by_key.get(key.as_str()) else {
+                    continue;
+                };
+                let backrefs = footnote_backrefs
+                    .get(&footnote_id)
+                    .map(|references| references.join(" "))
+                    .unwrap_or_default();
+                let footnote = tree.append(
+                    node_id,
+                    NodeKind::Footnote {
+                        ids: footnote_id,
+                        names: number.to_string(),
+                        backrefs,
+                        auto: None,
+                    },
+                );
+                let label = tree.append(footnote, NodeKind::Label);
+                tree.append(label, NodeKind::Text(number.to_string()));
+                let paragraph = tree.append(footnote, NodeKind::Paragraph);
+                tree.append(paragraph, NodeKind::Text((*value).to_string()));
             }
         }
         Ok(())
@@ -1009,7 +1165,9 @@ impl BuildEnvironment {
                     let keys = node_attribute(&attrs, "keys").unwrap_or_default();
                     tree.set_kind(node_id, NodeKind::Text(format!("[{keys}]")));
                 }
-                NodeKind::Extension { class_name, .. } if class_name == "BibtexBibliography" => {
+                NodeKind::Extension { class_name, .. }
+                    if matches!(class_name.as_str(), "BibtexBibliography" | "BibtexFootBibliography") =>
+                {
                     tree.set_kind(
                         node_id,
                         NodeKind::SystemMessage {
@@ -4507,6 +4665,30 @@ mod tests {
         let config = SphinxConfig::new_defaults();
         let project = EnvProject::new("/tmp/src", &[(".rst", "restructuredtext")]);
         BuildEnvironment::new(config, project, "/tmp/src", "/tmp/doctrees")
+    }
+
+    #[cfg(not(feature = "csl-citeproc"))]
+    #[test]
+    fn no_csl_fallback_resolves_footbibliography_placeholder() {
+        crate::extensions::bibtex::register_parser_components();
+        let mut tree = docutilsrs::parse_rst_for_sphinx(
+            "See :footcite:t:`1987:nelson`.\n\n.. footbibliography::\n",
+            "index",
+            docutilsrs::TitlePromotion::Preserve,
+            true,
+        );
+
+        BuildEnvironment::resolve_bibtex_placeholders_without_csl(&mut tree);
+
+        assert!(!(0..tree.nodes_len()).any(|id| matches!(
+            &tree.node(id).kind,
+            NodeKind::Extension { class_name, .. }
+                if matches!(class_name.as_str(), "BibtexCitation" | "BibtexFootBibliography")
+        )));
+        assert!((0..tree.nodes_len()).any(|id| matches!(
+            tree.node(id).kind,
+            NodeKind::SystemMessage { ty: "WARNING", .. }
+        )));
     }
 
     #[test]

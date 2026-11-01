@@ -53,3 +53,34 @@ src/myst-md-rs/
 └── tests/
     └── snapshot.rs
 ```
+
+
+## Citation
+
+Suggested citation for the original MyST-Parser project:
+
+```bibtex
+@software{myst_parser,
+  title = {MyST-Parser},
+  url = {https://github.com/executablebooks/MyST-Parser},
+  note = {Software license: MIT. Reference implementation of MyST Markdown in Python.}
+}
+```
+
+Suggested citation for myst-md-rs:
+
+```bibtex
+@software{myst-md-rs,
+  author = {Wes Turner and contributors},
+  title = {myst-md-rs: a Rust port of MyST-Parser},
+  year = {2026},
+  url = {https://github.com/westurner/dsport/tree/main/src/myst-md-rs},
+  note = {Software license: MIT.}
+}
+```
+
+## License
+
+MIT (same as MyST-Parser)
+
+See [LICENSE.pygments](../../LICENSE.MyST-Parser) for details.

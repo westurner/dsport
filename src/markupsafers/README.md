@@ -141,6 +141,35 @@ Matches the Python MarkupSafe escaping table exactly:
 | `"`  | `&#34;` |
 | `'`  | `&#39;` |
 
+
+## Citation
+
+Suggested citation for the original MarkupSafe project:
+
+```bibtex
+@software{markupsafe,
+    author = {Armin Ronacher and contributors},
+    title = {MarkupSafe: Safely Convert Markup to Bytes},
+    year = {2010},
+    url = {https://markupsafe.palletsprojects.com/},
+    note = {Software license: BSD-3-Clause. Source: https://github.com/pallets/markupsafe}
+}
+```
+
+Suggested citation for the Rust port:
+
+```bibtex
+@software{markupsafers,
+    author = {Wes Turner and contributors},
+    title = {markupsafers: Safe HTML and XML markup strings for Rust},
+    year = {2026},
+    url = {https://github.com/westurner/dsport/tree/main/src/markupsafers},
+    note = {Software license: BSD-3-Clause.}
+}
+```
+
 ## License
 
 BSD-3-Clause — same license as the upstream Python `MarkupSafe` package.
+
+See [LICENSE.MarkupSafe](../../LICENSE.MarkupSafe) for details.

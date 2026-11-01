@@ -292,6 +292,32 @@ See the `/examples` directory for complete working examples:
 - `pyo3` — Python bridge (feature: `python-bridge`)
 - `ratex-*` — LaTeX rendering (features: `ratex-svg`, `ratex-png`, `ratex-pdf`, `ratex-fonts`)
 
+
+## Citation
+
+Suggested citation for the original Pygments project:
+
+```bibtex
+@software{pygments,
+    author = {Georg Brandl and contributors},
+    title = {Pygments: Generic syntax highlighter written in Python},
+    url = {https://pygments.org/},
+    note = {Software license: BSD-2-Clause.}
+}
+```
+
+Suggested citation for the Rust port:
+
+```bibtex
+@software{pygmentsrs,
+    author = {Wes Turner and contributors},
+    title = {pygmentsrs: a Rust port of Pygments},
+    year = {2026},
+    url = {https://github.com/westurner/dsport/tree/main/src/pygmentsrs},
+    note = {Software license: BSD-2-Clause.}
+}
+```
+
 ## License
 
 BSD-2-Clause (same as upstream Pygments)

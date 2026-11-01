@@ -152,11 +152,11 @@ For jinja2rs:
 
 ```
 @software{jinja2rs,
-  author       = {Westurner},
+  author       = {Wes Turner and contributors},
   title        = {jinja2rs: Rust port of Jinja2 with Django compatibility},
   year         = {2026},
   url          = {https://github.com/westurner/dsport/tree/main/src/jinja2rs},
-  note         = {Powered by minijinja. BSD-3-Clause AND Apache-2.0.},
+  note         = {Software license: BSD-3-Clause, Apache-2.0.},
 }
 ```
 
@@ -168,7 +168,7 @@ For Sphinxdoc, Docker Compose, Ansible, Kubernetes (template-engine consumers):
   title        = {Sphinx: Python Documentation Generator},
   year         = {2007},
   url          = {https://www.sphinx-doc.org/},
-  note         = {BSD-2-Clause license.
+  note         = {Software license: BSD-2-Clause license.
                   Source: \url{https://github.com/sphinx-doc/sphinx}.
                   Sphinx uses Jinja2 as its HTML theme template engine.},
 }
@@ -178,7 +178,7 @@ For Sphinxdoc, Docker Compose, Ansible, Kubernetes (template-engine consumers):
   title        = {Docker Compose: Defining and Running Multi-Container Applications},
   year         = {2020},
   url          = {https://docs.docker.com/compose/},
-  note         = {Apache-2.0 license.
+  note         = {Software license: Apache-2.0 license.
                   Source: \url{https://github.com/docker/compose}.
                   Docker Compose uses environment variable substitution and
                   template-like expressions in compose.yml files for service
@@ -217,6 +217,12 @@ For Sphinxdoc, Docker Compose, Ansible, Kubernetes (template-engine consumers):
                   Kubernetes manifests with resource filters and inventory support.},
 }
 ```
+
+## License
+
+BSD-3-Clause (same as upstream jinja2rs)
+
+See [LICENSE.jinja2rs](../../LICENSE.jinja2rs) for details.
 
 
 ## See also

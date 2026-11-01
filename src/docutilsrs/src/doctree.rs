@@ -179,11 +179,13 @@ pub enum NodeKind {
     Bibliographic {
         tag: &'static str,
     },
+    /// Extended quotation set apart from the surrounding text.
     BlockQuote,
+    /// Unordered list; `bullet` records the marker used in the source.
     BulletList {
         bullet: char,
     },
-    /// First paragraph of a figure body.
+    /// Caption text associated with a figure.
     Caption,
     /// `<citation>` element. Mirrors `Footnote` but for citations (no `auto`).
     Citation {
@@ -191,26 +193,34 @@ pub enum NodeKind {
         names: String,
         backrefs: String,
     },
+    /// Inline reference to a citation entry.
     /// `<citation_reference>` element.
     CitationReference {
         ids: String,
         refid: String,
     },
+    /// Qualifier attached to a term in a definition list.
     Classifier,
+    /// Specification for a column in a table group.
     Colspec {
         colwidth: u32,
     },
+    /// Author note retained in the tree but hidden from output.
     Comment,
     /// `.. container:: classes` — generic named container `<div>`.
     Container {
         classes: String,
     },
+    /// Definition body associated with a term in a definition list.
     Definition,
+    /// List of terms and their definitions, as in a glossary or dictionary.
     DefinitionList,
+    /// Entry containing a term, optional classifiers, and its definition.
     DefinitionListItem,
     /// Bibliographic info container (field list at the top of a document
     /// containing recognized bibliographic fields).
     Docinfo,
+    /// Root element for a parsed document.
     Document {
         source: String,
         /// Promoted title (if first block is a lone section). Empty otherwise.
@@ -218,6 +228,7 @@ pub enum NodeKind {
         names: String,
         title: String,
     },
+    /// Inline text marked for emphasis.
     Emphasis,
     /// Table cell. `morecols` is the extra number of columns this entry
     /// spans (0 for a regular single-column cell); colspan support is
@@ -229,7 +240,7 @@ pub enum NodeKind {
         /// Space-separated table-cell classes such as `text-center`.
         classes: String,
     },
-    /// Ordered list. `enumtype` is one of `arabic`, `loweralpha`,
+    /// Ordered list of items. `enumtype` is one of `arabic`, `loweralpha`,
     /// `upperalpha`, `lowerroman`, `upperroman`; `prefix`/`suffix` bracket
     /// each enumerator (e.g. `(` / `)` or `` / `.`).
     EnumeratedList {
@@ -259,10 +270,15 @@ pub enum NodeKind {
         class_name: String,
         attrs: BTreeMap<String, NodeAttributeValue>,
     },
+    /// One named field containing a name and a body.
     Field,
+    /// Content value of a field.
     FieldBody,
+    /// Sequence of named fields, typically rendered as label/data pairs.
     FieldList,
+    /// Name or label of a field.
     FieldName,
+    /// Formal figure grouping an image, caption, and optional legend.
     Figure {
         ids: String,
         classes: String,
@@ -293,6 +309,7 @@ pub enum NodeKind {
         title: String,
         classes: String,
     },
+    /// Reference to an image resource; may occur inline or as a block.
     Image {
         uri: String,
         alt: Option<String>,
@@ -300,17 +317,21 @@ pub enum NodeKind {
         height: Option<String>,
         classes: String,
     },
+    /// Generic inline element used by roles and directives.
     /// `<inline classes="...">` element used by some roles/directives.
     Inline {
         classes: String,
     },
+    /// Inline keyboard input text produced by `:kbd:`.
     /// `<keyboard>` element produced by `:kbd:`.
     Keyboard,
     /// `<label>` element used inside footnote/citation.
     Label,
     /// Remaining content of a figure body, after the caption.
     Legend,
+    /// One item in a bullet or enumerated list.
     ListItem,
+    /// Inline literal text, typically rendered in a monospace font.
     Literal,
     /// Pre-formatted block. `classes` is space-separated (e.g. "code python").
     LiteralBlock {
@@ -329,6 +350,7 @@ pub enum NodeKind {
     MathBlock {
         latex: String,
     },
+    /// Sphinx object description containing signatures and shared content.
     /// A generic Sphinx domain "object description" block, e.g.
     /// `.. rst:directive::`/`.. rst:role::` (Tier **H3c**), reusable for
     /// other domains' description directives later. Renders as
@@ -347,7 +369,10 @@ pub enum NodeKind {
         /// Optional viewcode source-page link rendered beside `sig_text`.
         source_link: Option<String>,
     },
+    /// Block of prose containing inline content.
     Paragraph,
+    /// Sphinx cross-reference that cannot be resolved until project documents
+    /// are known; it is resolved before output is written.
     /// Cross-reference node to be resolved during post-read reference resolution.
     PendingXref {
         reftype: String,
@@ -379,23 +404,30 @@ pub enum NodeKind {
         /// (`sphinxdocrs::environment::BuildEnvironment::resolve_xref_nodes`).
         classes: String,
     },
+    /// Row of table cells.
     Row,
+    /// Standalone heading that does not create a section.
     /// `<rubric>` element produced by `.. rubric::`.
     Rubric,
+    /// Hierarchical document section with a title and optional subsections.
     Section {
         ids: String,
         names: String,
         classes: String,
     },
+    /// Inline text marked as strongly emphasized.
     Strong,
     /// `<subscript>` element produced by `:sub:` / `:subscript:`.
     Subscript,
+    /// Definition of reusable substitution content.
     SubstitutionDefinition {
         names: String,
     },
+    /// Inline use of a named substitution.
     SubstitutionReference {
         refname: String,
     },
+    /// Subtitle following a title in a document or section.
     Subtitle {
         ids: String,
         names: String,
@@ -411,6 +443,7 @@ pub enum NodeKind {
         ids: String,
         backrefs: String,
     },
+    /// Tabular data organized into groups of columns and rows.
     Table,
     /// Explicit hyperlink target. `ids` is the normalized identifier,
     /// `names` is the human-readable name (space-separated).
@@ -420,13 +453,19 @@ pub enum NodeKind {
         refuri: String,
         anonymous: bool,
     },
+    /// Body rows within a table group.
     Tbody,
+    /// Term described by a definition-list item.
     Term,
+    /// Plain text leaf node in the document tree.
     Text(String),
+    /// Table group defining columns, an optional head, and a body.
     Tgroup {
         cols: u32,
     },
+    /// Header rows within a table group.
     Thead,
+    /// Title of a document, section, or titled body element.
     Title,
     /// `<title_reference>` element (role `:title:` / `:t:`).
     TitleReference,
@@ -443,7 +482,9 @@ pub enum NodeKind {
         hidden: bool,
         entries: Vec<String>,
     },
+    /// Semantic break between adjacent document elements.
     Transition,
+    /// Sphinx version-change entry produced by version-related directives.
     /// `<versionmodified>` element produced by `.. versionadded::`, `.. versionchanged::`, etc.
     VersionModified {
         kind: &'static str,

@@ -20,8 +20,9 @@ src/pytest-results.xml
 src/pygmentsrs/fuzz/target/
 /target/
 
-/tmp/
+/tmp
 /pytest-results.xml
 docs/_build
-/reports/
-src/sphinxdocrs/docs/lsp-rust-report/_build/
+/reports
+src/sphinxdocrs/docs/_build
+src/sphinxdocrs/docs/lsp-rust-report/_build

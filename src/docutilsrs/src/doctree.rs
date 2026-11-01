@@ -718,49 +718,54 @@ struct NodeData {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 enum NodeKindData {
+    Abbreviation {
+        explanation: String,
+    },
+    Admonition {
+        kind: String,
+    },
+    Attribution,
+    Bibliographic {
+        tag: String,
+    },
+    BlockQuote,
+    BulletList {
+        bullet: char,
+    },
+    Caption,
+    Citation {
+        ids: String,
+        names: String,
+        backrefs: String,
+    },
+    CitationReference {
+        ids: String,
+        refid: String,
+    },
+    Classifier,
+    Colspec {
+        colwidth: u32,
+    },
+    Comment,
+    Container {
+        classes: String,
+    },
+    Definition,
+    DefinitionList,
+    DefinitionListItem,
+    Docinfo,
     Document {
         source: String,
         ids: String,
         names: String,
         title: String,
     },
-    Section {
-        ids: String,
-        names: String,
-        classes: String,
-    },
-    Title,
-    Subtitle {
-        ids: String,
-        names: String,
-    },
-    Transition,
-    Paragraph,
-    Text(String),
     Emphasis,
-    Strong,
-    Literal,
-    TitleReference,
-    Inline {
+    Entry {
+        morecols: u32,
+        morerows: u32,
+        #[serde(default)]
         classes: String,
-    },
-    Math {
-        latex: String,
-    },
-    MathBlock {
-        latex: String,
-    },
-    LiteralBlock {
-        #[serde(default)]
-        ids: Option<String>,
-        classes: String,
-        #[serde(default)]
-        caption: Option<String>,
-        #[serde(default)]
-        source: Option<String>,
-    },
-    BulletList {
-        bullet: char,
     },
     EnumeratedList {
         enumtype: String,
@@ -768,96 +773,23 @@ enum NodeKindData {
         suffix: String,
         start: Option<u32>,
     },
-    ListItem,
-    DefinitionList,
-    DefinitionListItem,
-    Term,
-    Classifier,
-    Definition,
-    FieldList,
-    Field,
-    FieldName,
-    FieldBody,
-    Docinfo,
-    Bibliographic {
-        tag: String,
-    },
-    BlockQuote,
-    Admonition {
-        kind: String,
-    },
-    Container {
-        classes: String,
-    },
-    GenericAdmonition {
-        title: String,
-        classes: String,
-    },
     Epigraph {
         classes: String,
     },
-    Toctree {
-        caption: Option<String>,
-        maxdepth: i32,
-        hidden: bool,
-        entries: Vec<String>,
+    Extension {
+        class_name: String,
+        attrs: BTreeMap<String, NodeAttributeValue>,
     },
-    Image {
-        uri: String,
-        alt: Option<String>,
-        width: Option<String>,
-        height: Option<String>,
-        #[serde(default)]
-        classes: String,
-    },
+    Field,
+    FieldBody,
+    FieldList,
+    FieldName,
     Figure {
         #[serde(default)]
         ids: String,
         #[serde(default)]
         classes: String,
     },
-    Raw {
-        format: String,
-    },
-    Comment,
-    Reference {
-        name: String,
-        refuri: String,
-        anonymous: bool,
-        #[serde(default)]
-        classes: String,
-    },
-    Target {
-        ids: String,
-        names: String,
-        refuri: String,
-        anonymous: bool,
-    },
-    SubstitutionDefinition {
-        names: String,
-    },
-    SubstitutionReference {
-        refname: String,
-    },
-    Table,
-    Tgroup {
-        cols: u32,
-    },
-    Colspec {
-        colwidth: u32,
-    },
-    Thead,
-    Tbody,
-    Row,
-    Entry {
-        morecols: u32,
-        morerows: u32,
-        #[serde(default)]
-        classes: String,
-    },
-    Attribution,
-    Caption,
-    Legend,
     Footnote {
         ids: String,
         names: String,
@@ -869,49 +801,40 @@ enum NodeKindData {
         refid: String,
         auto: Option<String>,
     },
-    Citation {
-        ids: String,
-        names: String,
-        backrefs: String,
+    GenericAdmonition {
+        title: String,
+        classes: String,
     },
-    CitationReference {
-        ids: String,
-        refid: String,
+    Image {
+        uri: String,
+        alt: Option<String>,
+        width: Option<String>,
+        height: Option<String>,
+        #[serde(default)]
+        classes: String,
     },
-    Label,
-    Problematic {
-        ids: String,
-        refid: String,
+    Inline {
+        classes: String,
     },
-    SystemMessage {
-        level: u32,
-        line: Option<u32>,
-        ty: String,
-        ids: String,
-        backrefs: String,
-    },
-    Extension {
-        class_name: String,
-        attrs: BTreeMap<String, NodeAttributeValue>,
-    },
-    Abbreviation {
-        explanation: String,
-    },
-    Subscript,
-    Superscript,
     Keyboard,
-    Rubric,
-    VersionModified {
-        kind: String,
-        version: String,
+    Label,
+    Legend,
+    ListItem,
+    Literal,
+    LiteralBlock {
+        #[serde(default)]
+        ids: Option<String>,
+        classes: String,
+        #[serde(default)]
+        caption: Option<String>,
+        #[serde(default)]
+        source: Option<String>,
     },
-    PendingXref {
-        reftype: String,
-        reftarget: String,
-        refdoc: String,
-        refdomain: String,
-        refexplicit: bool,
-        warn_missing: bool,
+    Math {
+        latex: String,
+    },
+    MathBlock {
+        latex: String,
     },
     ObjectDescription {
         classes: String,
@@ -921,6 +844,83 @@ enum NodeKindData {
         signature_references: Vec<SignatureReference>,
         #[serde(default)]
         source_link: Option<String>,
+    },
+    Paragraph,
+    PendingXref {
+        reftype: String,
+        reftarget: String,
+        refdoc: String,
+        refdomain: String,
+        refexplicit: bool,
+        warn_missing: bool,
+    },
+    Problematic {
+        ids: String,
+        refid: String,
+    },
+    Rubric,
+    Raw {
+        format: String,
+    },
+    Reference {
+        name: String,
+        refuri: String,
+        anonymous: bool,
+        #[serde(default)]
+        classes: String,
+    },
+    Row,
+    Section {
+        ids: String,
+        names: String,
+        classes: String,
+    },
+    Strong,
+    Subtitle {
+        ids: String,
+        names: String,
+    },
+    Table,
+    Target {
+        ids: String,
+        names: String,
+        refuri: String,
+        anonymous: bool,
+    },
+    Tbody,
+    Term,
+    Text(String),
+    Tgroup {
+        cols: u32,
+    },
+    Thead,
+    Title,
+    TitleReference,
+    Toctree {
+        caption: Option<String>,
+        maxdepth: i32,
+        hidden: bool,
+        entries: Vec<String>,
+    },
+    Transition,
+    Subscript,
+    SubstitutionDefinition {
+        names: String,
+    },
+    SubstitutionReference {
+        refname: String,
+    },
+    Superscript,
+    SystemMessage {
+        level: u32,
+        line: Option<u32>,
+        ty: String,
+        ids: String,
+        backrefs: String,
+    },
+    VersionModified {
+        kind: String,
+        version: String,
     },
 }
 

@@ -164,6 +164,53 @@ impl fmt::Display for NodeAttributeValue {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {
+    /// `<abbreviation explanation="...">` element produced by `:abbr:` / `:abbreviation:`.
+    Abbreviation {
+        explanation: String,
+    },
+    /// Admonition with a fixed kind (`note`, `warning`, `tip`, etc.).
+    Admonition {
+        kind: &'static str,
+    },
+    /// Attribution line within a block_quote (`-- Author`).
+    Attribution,
+    /// A recognized bibliographic field (e.g. `<author>`, `<date>`). `tag`
+    /// is the docutils element name (lower-case).
+    Bibliographic {
+        tag: &'static str,
+    },
+    BlockQuote,
+    BulletList {
+        bullet: char,
+    },
+    /// First paragraph of a figure body.
+    Caption,
+    /// `<citation>` element. Mirrors `Footnote` but for citations (no `auto`).
+    Citation {
+        ids: String,
+        names: String,
+        backrefs: String,
+    },
+    /// `<citation_reference>` element.
+    CitationReference {
+        ids: String,
+        refid: String,
+    },
+    Classifier,
+    Colspec {
+        colwidth: u32,
+    },
+    Comment,
+    /// `.. container:: classes` — generic named container `<div>`.
+    Container {
+        classes: String,
+    },
+    Definition,
+    DefinitionList,
+    DefinitionListItem,
+    /// Bibliographic info container (field list at the top of a document
+    /// containing recognized bibliographic fields).
+    Docinfo,
     Document {
         source: String,
         /// Promoted title (if first block is a lone section). Empty otherwise.
@@ -171,162 +218,7 @@ pub enum NodeKind {
         names: String,
         title: String,
     },
-    Section {
-        ids: String,
-        names: String,
-        classes: String,
-    },
-    Title,
-    Subtitle {
-        ids: String,
-        names: String,
-    },
-    Transition,
-    Paragraph,
-    Text(String),
     Emphasis,
-    Strong,
-    Literal,
-    /// `<title_reference>` element (role `:title:` / `:t:`).
-    TitleReference,
-    /// `<inline classes="...">` element used by some roles/directives.
-    Inline {
-        classes: String,
-    },
-    /// `<math>` inline element produced by the `:math:` role. `latex` is
-    /// the raw LaTeX source.
-    Math {
-        latex: String,
-    },
-    /// `<math_block>` element produced by the `.. math::` directive.
-    /// `latex` is the raw LaTeX source.
-    MathBlock {
-        latex: String,
-    },
-    /// Pre-formatted block. `classes` is space-separated (e.g. "code python").
-    LiteralBlock {
-        ids: Option<String>,
-        classes: String,
-        caption: Option<String>,
-        source: Option<String>,
-    },
-    BulletList {
-        bullet: char,
-    },
-    /// Ordered list. `enumtype` is one of `arabic`, `loweralpha`,
-    /// `upperalpha`, `lowerroman`, `upperroman`; `prefix`/`suffix` bracket
-    /// each enumerator (e.g. `(` / `)` or `` / `.`).
-    EnumeratedList {
-        enumtype: &'static str,
-        prefix: String,
-        suffix: String,
-        start: Option<u32>,
-    },
-    ListItem,
-    DefinitionList,
-    DefinitionListItem,
-    Term,
-    Classifier,
-    Definition,
-    FieldList,
-    Field,
-    FieldName,
-    FieldBody,
-    /// Bibliographic info container (field list at the top of a document
-    /// containing recognized bibliographic fields).
-    Docinfo,
-    /// A recognized bibliographic field (e.g. `<author>`, `<date>`). `tag`
-    /// is the docutils element name (lower-case).
-    Bibliographic {
-        tag: &'static str,
-    },
-    BlockQuote,
-    /// Admonition with a fixed kind (`note`, `warning`, `tip`, etc.).
-    Admonition {
-        kind: &'static str,
-    },
-    /// `.. container:: classes` — generic named container `<div>`.
-    Container {
-        classes: String,
-    },
-    /// `.. admonition:: Title` — generic admonition with an arbitrary
-    /// title (as opposed to the fixed-kind `Admonition` variant).
-    /// `classes` holds the optional `:class:` option value.
-    GenericAdmonition {
-        title: String,
-        classes: String,
-    },
-    /// `.. epigraph::` — a blockquote rendered with an `epigraph` class,
-    /// plus any extra classes propagated from a preceding `.. class::`/
-    /// `.. cssclass::` directive.
-    Epigraph {
-        classes: String,
-    },
-    /// `.. toctree::` — placeholder marker carrying the directive's raw
-    /// options/entries, resolved into a real `<div class="toctree-wrapper
-    /// compound">` subtree (caption + nested bullet list of
-    /// [`NodeKind::Reference`]s) by
-    /// `sphinxdocrs::environment::BuildEnvironment::resolve_toctree_nodes`,
-    /// which has the multi-document project data (`env.titles`,
-    /// `env.toctree_includes`) docutilsrs itself has no notion of.
-    Toctree {
-        caption: Option<String>,
-        maxdepth: i32,
-        hidden: bool,
-        entries: Vec<String>,
-    },
-    Image {
-        uri: String,
-        alt: Option<String>,
-        width: Option<String>,
-        height: Option<String>,
-        classes: String,
-    },
-    Figure {
-        ids: String,
-        classes: String,
-    },
-    /// Raw passthrough (`.. raw:: format`).
-    Raw {
-        format: String,
-    },
-    Comment,
-    /// Hyperlink reference. `refuri` is empty until resolved.
-    Reference {
-        name: String,
-        refuri: String,
-        anonymous: bool,
-        /// Docutils-style `classes` attribute (space-separated), e.g.
-        /// `"reference internal"` / `"reference external"`. Empty for
-        /// plain docutils hyperlink references (whose class is left to
-        /// the writer); populated by Sphinx xref-role resolution
-        /// (`sphinxdocrs::environment::BuildEnvironment::resolve_xref_nodes`).
-        classes: String,
-    },
-    /// Explicit hyperlink target. `ids` is the normalized identifier,
-    /// `names` is the human-readable name (space-separated).
-    Target {
-        ids: String,
-        names: String,
-        refuri: String,
-        anonymous: bool,
-    },
-    SubstitutionDefinition {
-        names: String,
-    },
-    SubstitutionReference {
-        refname: String,
-    },
-    Table,
-    Tgroup {
-        cols: u32,
-    },
-    Colspec {
-        colwidth: u32,
-    },
-    Thead,
-    Tbody,
-    Row,
     /// Table cell. `morecols` is the extra number of columns this entry
     /// spans (0 for a regular single-column cell); colspan support is
     /// limited to grid tables. `morerows` (rowspan) is currently always
@@ -337,13 +229,44 @@ pub enum NodeKind {
         /// Space-separated table-cell classes such as `text-center`.
         classes: String,
     },
-    // ── phase 2 deferrals ───────────────────────────────────────────────
-    /// Attribution line within a block_quote (`-- Author`).
-    Attribution,
-    /// First paragraph of a figure body.
-    Caption,
-    /// Remaining content of a figure body, after the caption.
-    Legend,
+    /// Ordered list. `enumtype` is one of `arabic`, `loweralpha`,
+    /// `upperalpha`, `lowerroman`, `upperroman`; `prefix`/`suffix` bracket
+    /// each enumerator (e.g. `(` / `)` or `` / `.`).
+    EnumeratedList {
+        enumtype: &'static str,
+        prefix: String,
+        suffix: String,
+        start: Option<u32>,
+    },
+    /// `.. epigraph::` — a blockquote rendered with an `epigraph` class,
+    /// plus any extra classes propagated from a preceding `.. class::`/
+    /// `.. cssclass::` directive.
+    Epigraph {
+        classes: String,
+    },
+    /// An extension-defined node registered via upstream `Sphinx.add_node`
+    /// (see `docs/adr/0006-extension-nodes.md`). `class_name` is the
+    /// registering Python class's `__name__`, used to key the per-
+    /// `(class_name, builder_format)` visit/depart callable registry in
+    /// [`crate::plugins`]. `attrs` is a deterministic typed representation of
+    /// the node's real `docutils.nodes.Element` attribute dict. Unsupported
+    /// Python values are retained as informational `Opaque` values and are
+    /// never executed.
+    /// Every writer falls back to rendering children only (no wrapper
+    /// markup) when no visit/depart pair is registered for its own
+    /// builder format, mirroring upstream's `unknown_visit` fallback.
+    Extension {
+        class_name: String,
+        attrs: BTreeMap<String, NodeAttributeValue>,
+    },
+    Field,
+    FieldBody,
+    FieldList,
+    FieldName,
+    Figure {
+        ids: String,
+        classes: String,
+    },
     /// `<footnote>` element. `ids` is the auto-assigned identifier,
     /// `names` is the visible label (digit or `*`/`#`), `backrefs` is the
     /// space-separated list of inline-reference ids that resolve here, and
@@ -363,66 +286,68 @@ pub enum NodeKind {
         refid: String,
         auto: Option<&'static str>,
     },
-    /// `<citation>` element. Mirrors `Footnote` but for citations (no `auto`).
-    Citation {
-        ids: String,
-        names: String,
-        backrefs: String,
+    /// `.. admonition:: Title` — generic admonition with an arbitrary
+    /// title (as opposed to the fixed-kind `Admonition` variant).
+    /// `classes` holds the optional `:class:` option value.
+    GenericAdmonition {
+        title: String,
+        classes: String,
     },
-    /// `<citation_reference>` element.
-    CitationReference {
-        ids: String,
-        refid: String,
+    Image {
+        uri: String,
+        alt: Option<String>,
+        width: Option<String>,
+        height: Option<String>,
+        classes: String,
     },
-    /// `<label>` element used inside footnote/citation.
-    Label,
-    /// `<problematic>` element. Produced as a placeholder for unresolved
-    /// references; `refid` points to the matching `<system_message>`.
-    Problematic {
-        ids: String,
-        refid: String,
+    /// `<inline classes="...">` element used by some roles/directives.
+    Inline {
+        classes: String,
     },
-    /// `<system_message>` element produced by the parser for error and
-    /// warning conditions (e.g. unresolved references).
-    SystemMessage {
-        level: u32,
-        line: Option<u32>,
-        ty: &'static str,
-        ids: String,
-        backrefs: String,
-    },
-    /// An extension-defined node registered via upstream `Sphinx.add_node`
-    /// (see `docs/adr/0006-extension-nodes.md`). `class_name` is the
-    /// registering Python class's `__name__`, used to key the per-
-    /// `(class_name, builder_format)` visit/depart callable registry in
-    /// [`crate::plugins`]. `attrs` is a deterministic typed representation of
-    /// the node's real `docutils.nodes.Element` attribute dict. Unsupported
-    /// Python values are retained as informational `Opaque` values and are
-    /// never executed.
-    /// Every writer falls back to rendering children only (no wrapper
-    /// markup) when no visit/depart pair is registered for its own
-    /// builder format, mirroring upstream's `unknown_visit` fallback.
-    Extension {
-        class_name: String,
-        attrs: BTreeMap<String, NodeAttributeValue>,
-    },
-    /// `<abbreviation explanation="...">` element produced by `:abbr:` / `:abbreviation:`.
-    Abbreviation {
-        explanation: String,
-    },
-    /// `<subscript>` element produced by `:sub:` / `:subscript:`.
-    Subscript,
-    /// `<superscript>` element produced by `:sup:` / `:superscript:`.
-    Superscript,
     /// `<keyboard>` element produced by `:kbd:`.
     Keyboard,
-    /// `<rubric>` element produced by `.. rubric::`.
-    Rubric,
-    /// `<versionmodified>` element produced by `.. versionadded::`, `.. versionchanged::`, etc.
-    VersionModified {
-        kind: &'static str,
-        version: String,
+    /// `<label>` element used inside footnote/citation.
+    Label,
+    /// Remaining content of a figure body, after the caption.
+    Legend,
+    ListItem,
+    Literal,
+    /// Pre-formatted block. `classes` is space-separated (e.g. "code python").
+    LiteralBlock {
+        ids: Option<String>,
+        classes: String,
+        caption: Option<String>,
+        source: Option<String>,
     },
+    /// `<math>` inline element produced by the `:math:` role. `latex` is
+    /// the raw LaTeX source.
+    Math {
+        latex: String,
+    },
+    /// `<math_block>` element produced by the `.. math::` directive.
+    /// `latex` is the raw LaTeX source.
+    MathBlock {
+        latex: String,
+    },
+    /// A generic Sphinx domain "object description" block, e.g.
+    /// `.. rst:directive::`/`.. rst:role::` (Tier **H3c**), reusable for
+    /// other domains' description directives later. Renders as
+    /// `<dl class="{classes}"><dt id="{ids}">{sig_text}</dt><dd>
+    /// {children}</dd></dl>`; `children` (via the arena) are the `<dd>`
+    /// body content blocks.
+    ObjectDescription {
+        /// Space-separated `<dl>`/`<dt>` classes, e.g. "rst directive".
+        classes: String,
+        /// The `<dt id="...">` anchor id (empty = no id).
+        ids: String,
+        /// The rendered signature text, e.g. ".. toctree::" or ":ref:".
+        sig_text: String,
+        /// Optional resolved references in `sig_text`, rendered by HTML writers.
+        signature_references: Vec<SignatureReference>,
+        /// Optional viewcode source-page link rendered beside `sig_text`.
+        source_link: Option<String>,
+    },
+    Paragraph,
     /// Cross-reference node to be resolved during post-read reference resolution.
     PendingXref {
         reftype: String,
@@ -432,23 +357,97 @@ pub enum NodeKind {
         refexplicit: bool,
         warn_missing: bool,
     },
-    /// A generic Sphinx domain "object description" block, e.g.
-    /// `.. rst:directive::`/`.. rst:role::` (Tier **H3c**), reusable for
-    /// other domains' description directives later. Renders as
-    /// `<dl class="{classes}"><dt id="{ids}">{sig_text}</dt><dd>
-    /// {children}</dd></dl>`; `children` (via the arena) are the `<dd>`
-    /// body content blocks.
-    ObjectDescription {
-        /// Space-separated `<dl>`/`<dt>` classes, e.g. `"rst directive"`.
-        classes: String,
-        /// The `<dt id="...">` anchor id (empty = no id).
+    /// `<problematic>` element. Produced as a placeholder for unresolved
+    /// references; `refid` points to the matching `<system_message>`.
+    Problematic {
         ids: String,
-        /// The rendered signature text, e.g. `".. toctree::"` or `":ref:"`.
-        sig_text: String,
-        /// Optional resolved references in `sig_text`, rendered by HTML writers.
-        signature_references: Vec<SignatureReference>,
-        /// Optional viewcode source-page link rendered beside `sig_text`.
-        source_link: Option<String>,
+        refid: String,
+    },
+    /// Raw passthrough (`.. raw:: format`).
+    Raw {
+        format: String,
+    },
+    /// Hyperlink reference. `refuri` is empty until resolved.
+    Reference {
+        name: String,
+        refuri: String,
+        anonymous: bool,
+        /// Docutils-style `classes` attribute (space-separated), e.g.
+        /// `"reference internal"` / `"reference external"`. Empty for
+        /// plain docutils hyperlink references (whose class is left to
+        /// the writer); populated by Sphinx xref-role resolution
+        /// (`sphinxdocrs::environment::BuildEnvironment::resolve_xref_nodes`).
+        classes: String,
+    },
+    Row,
+    /// `<rubric>` element produced by `.. rubric::`.
+    Rubric,
+    Section {
+        ids: String,
+        names: String,
+        classes: String,
+    },
+    Strong,
+    /// `<subscript>` element produced by `:sub:` / `:subscript:`.
+    Subscript,
+    SubstitutionDefinition {
+        names: String,
+    },
+    SubstitutionReference {
+        refname: String,
+    },
+    Subtitle {
+        ids: String,
+        names: String,
+    },
+    /// `<superscript>` element produced by `:sup:` / `:superscript:`.
+    Superscript,
+    /// `<system_message>` element produced by the parser for error and
+    /// warning conditions (e.g. unresolved references).
+    SystemMessage {
+        level: u32,
+        line: Option<u32>,
+        ty: &'static str,
+        ids: String,
+        backrefs: String,
+    },
+    Table,
+    /// Explicit hyperlink target. `ids` is the normalized identifier,
+    /// `names` is the human-readable name (space-separated).
+    Target {
+        ids: String,
+        names: String,
+        refuri: String,
+        anonymous: bool,
+    },
+    Tbody,
+    Term,
+    Text(String),
+    Tgroup {
+        cols: u32,
+    },
+    Thead,
+    Title,
+    /// `<title_reference>` element (role `:title:` / `:t:`).
+    TitleReference,
+    /// `.. toctree::` — placeholder marker carrying the directive's raw
+    /// options/entries, resolved into a real `<div class="toctree-wrapper
+    /// compound">` subtree (caption + nested bullet list of
+    /// [`NodeKind::Reference`]s) by
+    /// `sphinxdocrs::environment::BuildEnvironment::resolve_toctree_nodes`,
+    /// which has the multi-document project data (`env.titles`,
+    /// `env.toctree_includes`) docutilsrs itself has no notion of.
+    Toctree {
+        caption: Option<String>,
+        maxdepth: i32,
+        hidden: bool,
+        entries: Vec<String>,
+    },
+    Transition,
+    /// `<versionmodified>` element produced by `.. versionadded::`, `.. versionchanged::`, etc.
+    VersionModified {
+        kind: &'static str,
+        version: String,
     },
 }
 

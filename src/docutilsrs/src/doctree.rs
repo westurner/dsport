@@ -712,7 +712,6 @@ struct NodeData {
     kind: NodeKindData,
     parent: Option<NodeId>,
     children: Vec<NodeId>,
-    #[serde(default)]
     line: Option<u32>,
 }
 
@@ -822,12 +821,9 @@ enum NodeKindData {
     ListItem,
     Literal,
     LiteralBlock {
-        #[serde(default)]
         ids: Option<String>,
         classes: String,
-        #[serde(default)]
         caption: Option<String>,
-        #[serde(default)]
         source: Option<String>,
     },
     Math {
@@ -842,7 +838,6 @@ enum NodeKindData {
         sig_text: String,
         #[serde(default)]
         signature_references: Vec<SignatureReference>,
-        #[serde(default)]
         source_link: Option<String>,
     },
     Paragraph,

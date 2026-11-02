@@ -26,3 +26,4 @@ docs/_build
 /reports
 src/sphinxdocrs/docs/_build
 src/sphinxdocrs/docs/lsp-rust-report/_build
+otherdocs-sphinx-py-rs.diff

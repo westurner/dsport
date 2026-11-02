@@ -967,6 +967,37 @@ impl From<NodeData> for Node {
 impl From<&NodeKind> for NodeKindData {
     fn from(kind: &NodeKind) -> Self {
         match kind.clone() {
+            NodeKind::Abbreviation { explanation } => NodeKindData::Abbreviation { explanation },
+            NodeKind::Admonition { kind } => NodeKindData::Admonition {
+                kind: kind.to_string(),
+            },
+            NodeKind::Attribution => NodeKindData::Attribution,
+            NodeKind::Bibliographic { tag } => NodeKindData::Bibliographic {
+                tag: tag.to_string(),
+            },
+            NodeKind::BlockQuote => NodeKindData::BlockQuote,
+            NodeKind::BulletList { bullet } => NodeKindData::BulletList { bullet },
+            NodeKind::Caption => NodeKindData::Caption,
+            NodeKind::Citation {
+                ids,
+                names,
+                backrefs,
+            } => NodeKindData::Citation {
+                ids,
+                names,
+                backrefs,
+            },
+            NodeKind::CitationReference { ids, refid } => {
+                NodeKindData::CitationReference { ids, refid }
+            },
+            NodeKind::Classifier => NodeKindData::Classifier,
+            NodeKind::Colspec { colwidth } => NodeKindData::Colspec { colwidth },
+            NodeKind::Comment => NodeKindData::Comment,
+            NodeKind::Container { classes } => NodeKindData::Container { classes },
+            NodeKind::Definition => NodeKindData::Definition,
+            NodeKind::DefinitionList => NodeKindData::DefinitionList,
+            NodeKind::DefinitionListItem => NodeKindData::DefinitionListItem,
+            NodeKind::Docinfo => NodeKindData::Docinfo,
             NodeKind::Document {
                 source,
                 ids,
@@ -978,39 +1009,16 @@ impl From<&NodeKind> for NodeKindData {
                 names,
                 title,
             },
-            NodeKind::Section {
-                ids,
-                names,
-                classes,
-            } => NodeKindData::Section {
-                ids,
-                names,
-                classes,
-            },
-            NodeKind::Title => NodeKindData::Title,
-            NodeKind::Subtitle { ids, names } => NodeKindData::Subtitle { ids, names },
-            NodeKind::Transition => NodeKindData::Transition,
-            NodeKind::Paragraph => NodeKindData::Paragraph,
-            NodeKind::Text(s) => NodeKindData::Text(s),
             NodeKind::Emphasis => NodeKindData::Emphasis,
-            NodeKind::Strong => NodeKindData::Strong,
-            NodeKind::Literal => NodeKindData::Literal,
-            NodeKind::TitleReference => NodeKindData::TitleReference,
-            NodeKind::Inline { classes } => NodeKindData::Inline { classes },
-            NodeKind::Math { latex } => NodeKindData::Math { latex },
-            NodeKind::MathBlock { latex } => NodeKindData::MathBlock { latex },
-            NodeKind::LiteralBlock {
-                ids,
+            NodeKind::Entry {
+                morecols,
+                morerows,
                 classes,
-                caption,
-                source,
-            } => NodeKindData::LiteralBlock {
-                ids,
+            } => NodeKindData::Entry {
+                morecols,
+                morerows,
                 classes,
-                caption,
-                source,
             },
-            NodeKind::BulletList { bullet } => NodeKindData::BulletList { bullet },
             NodeKind::EnumeratedList {
                 enumtype,
                 prefix,
@@ -1022,102 +1030,15 @@ impl From<&NodeKind> for NodeKindData {
                 suffix,
                 start,
             },
-            NodeKind::ListItem => NodeKindData::ListItem,
-            NodeKind::DefinitionList => NodeKindData::DefinitionList,
-            NodeKind::DefinitionListItem => NodeKindData::DefinitionListItem,
-            NodeKind::Term => NodeKindData::Term,
-            NodeKind::Classifier => NodeKindData::Classifier,
-            NodeKind::Definition => NodeKindData::Definition,
-            NodeKind::FieldList => NodeKindData::FieldList,
-            NodeKind::Field => NodeKindData::Field,
-            NodeKind::FieldName => NodeKindData::FieldName,
-            NodeKind::FieldBody => NodeKindData::FieldBody,
-            NodeKind::Docinfo => NodeKindData::Docinfo,
-            NodeKind::Bibliographic { tag } => NodeKindData::Bibliographic {
-                tag: tag.to_string(),
-            },
-            NodeKind::BlockQuote => NodeKindData::BlockQuote,
-            NodeKind::Admonition { kind } => NodeKindData::Admonition {
-                kind: kind.to_string(),
-            },
-            NodeKind::Container { classes } => NodeKindData::Container { classes },
-            NodeKind::GenericAdmonition { title, classes } => {
-                NodeKindData::GenericAdmonition { title, classes }
-            }
             NodeKind::Epigraph { classes } => NodeKindData::Epigraph { classes },
-            NodeKind::Toctree {
-                caption,
-                maxdepth,
-                hidden,
-                entries,
-            } => NodeKindData::Toctree {
-                caption,
-                maxdepth,
-                hidden,
-                entries,
+            NodeKind::Extension { class_name, attrs } => {
+                NodeKindData::Extension { class_name, attrs }
             },
-            NodeKind::Image {
-                uri,
-                alt,
-                width,
-                height,
-                classes,
-            } => NodeKindData::Image {
-                uri,
-                alt,
-                width,
-                height,
-                classes,
-            },
-            NodeKind::Raw { format } => NodeKindData::Raw { format },
-            NodeKind::Comment => NodeKindData::Comment,
-            NodeKind::Reference {
-                name,
-                refuri,
-                anonymous,
-                classes,
-            } => NodeKindData::Reference {
-                name,
-                refuri,
-                anonymous,
-                classes,
-            },
-            NodeKind::Target {
-                ids,
-                names,
-                refuri,
-                anonymous,
-            } => NodeKindData::Target {
-                ids,
-                names,
-                refuri,
-                anonymous,
-            },
-            NodeKind::SubstitutionDefinition { names } => {
-                NodeKindData::SubstitutionDefinition { names }
-            }
-            NodeKind::SubstitutionReference { refname } => {
-                NodeKindData::SubstitutionReference { refname }
-            }
-            NodeKind::Table => NodeKindData::Table,
-            NodeKind::Tgroup { cols } => NodeKindData::Tgroup { cols },
-            NodeKind::Colspec { colwidth } => NodeKindData::Colspec { colwidth },
-            NodeKind::Thead => NodeKindData::Thead,
-            NodeKind::Tbody => NodeKindData::Tbody,
-            NodeKind::Row => NodeKindData::Row,
-            NodeKind::Entry {
-                morecols,
-                morerows,
-                classes,
-            } => NodeKindData::Entry {
-                morecols,
-                morerows,
-                classes,
-            },
-            NodeKind::Attribution => NodeKindData::Attribution,
+            NodeKind::Field => NodeKindData::Field,
+            NodeKind::FieldBody => NodeKindData::FieldBody,
+            NodeKind::FieldList => NodeKindData::FieldList,
+            NodeKind::FieldName => NodeKindData::FieldName,
             NodeKind::Figure { ids, classes } => NodeKindData::Figure { ids, classes },
-            NodeKind::Caption => NodeKindData::Caption,
-            NodeKind::Legend => NodeKindData::Legend,
             NodeKind::Footnote {
                 ids,
                 names,
@@ -1134,45 +1055,55 @@ impl From<&NodeKind> for NodeKindData {
                 refid,
                 auto: auto.map(str::to_string),
             },
-            NodeKind::Citation {
-                ids,
-                names,
-                backrefs,
-            } => NodeKindData::Citation {
-                ids,
-                names,
-                backrefs,
+            NodeKind::GenericAdmonition { title, classes } => {
+                NodeKindData::GenericAdmonition { title, classes }
             },
-            NodeKind::CitationReference { ids, refid } => {
-                NodeKindData::CitationReference { ids, refid }
-            }
-            NodeKind::Label => NodeKindData::Label,
-            NodeKind::Problematic { ids, refid } => NodeKindData::Problematic { ids, refid },
-            NodeKind::SystemMessage {
-                level,
-                line,
-                ty,
-                ids,
-                backrefs,
-            } => NodeKindData::SystemMessage {
-                level,
-                line,
-                ty: ty.to_string(),
-                ids,
-                backrefs,
+            NodeKind::Image {
+                uri,
+                alt,
+                width,
+                height,
+                classes,
+            } => NodeKindData::Image {
+                uri,
+                alt,
+                width,
+                height,
+                classes,
             },
-            NodeKind::Extension { class_name, attrs } => {
-                NodeKindData::Extension { class_name, attrs }
-            }
-            NodeKind::Abbreviation { explanation } => NodeKindData::Abbreviation { explanation },
-            NodeKind::Subscript => NodeKindData::Subscript,
-            NodeKind::Superscript => NodeKindData::Superscript,
+            NodeKind::Inline { classes } => NodeKindData::Inline { classes },
             NodeKind::Keyboard => NodeKindData::Keyboard,
-            NodeKind::Rubric => NodeKindData::Rubric,
-            NodeKind::VersionModified { kind, version } => NodeKindData::VersionModified {
-                kind: kind.to_string(),
-                version,
+            NodeKind::Label => NodeKindData::Label,
+            NodeKind::Legend => NodeKindData::Legend,
+            NodeKind::ListItem => NodeKindData::ListItem,
+            NodeKind::Literal => NodeKindData::Literal,
+            NodeKind::LiteralBlock {
+                ids,
+                classes,
+                caption,
+                source,
+            } => NodeKindData::LiteralBlock {
+                ids,
+                classes,
+                caption,
+                source,
             },
+            NodeKind::Math { latex } => NodeKindData::Math { latex },
+            NodeKind::MathBlock { latex } => NodeKindData::MathBlock { latex },
+            NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                signature_references,
+                source_link,
+            } => NodeKindData::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                signature_references,
+                source_link,
+            },
+            NodeKind::Paragraph => NodeKindData::Paragraph,
             NodeKind::PendingXref {
                 reftype,
                 reftarget,
@@ -1188,18 +1119,87 @@ impl From<&NodeKind> for NodeKindData {
                 refexplicit,
                 warn_missing,
             },
-            NodeKind::ObjectDescription {
+            NodeKind::Problematic { ids, refid } => NodeKindData::Problematic { ids, refid },
+            NodeKind::Raw { format } => NodeKindData::Raw { format },
+            NodeKind::Row => NodeKindData::Row,
+            NodeKind::Reference {
+                name,
+                refuri,
+                anonymous,
                 classes,
-                ids,
-                sig_text,
-                signature_references,
-                source_link,
-            } => NodeKindData::ObjectDescription {
+            } => NodeKindData::Reference {
+                name,
+                refuri,
+                anonymous,
                 classes,
+            },
+            NodeKind::Rubric => NodeKindData::Rubric,
+            NodeKind::Section {
                 ids,
-                sig_text,
-                signature_references,
-                source_link,
+                names,
+                classes,
+            } => NodeKindData::Section {
+                ids,
+                names,
+                classes,
+            },
+            NodeKind::Strong => NodeKindData::Strong,
+            NodeKind::Subscript => NodeKindData::Subscript,
+            NodeKind::Subtitle { ids, names } => NodeKindData::Subtitle { ids, names },
+            NodeKind::Superscript => NodeKindData::Superscript,
+            NodeKind::Table => NodeKindData::Table,
+            NodeKind::Tbody => NodeKindData::Tbody,
+            NodeKind::Tgroup { cols } => NodeKindData::Tgroup { cols },
+            NodeKind::Thead => NodeKindData::Thead,
+            NodeKind::Target {
+                ids,
+                names,
+                refuri,
+                anonymous,
+            } => NodeKindData::Target {
+                ids,
+                names,
+                refuri,
+                anonymous,
+            },
+            NodeKind::Term => NodeKindData::Term,
+            NodeKind::Text(s) => NodeKindData::Text(s),
+            NodeKind::Title => NodeKindData::Title,
+            NodeKind::TitleReference => NodeKindData::TitleReference,
+            NodeKind::Toctree {
+                caption,
+                maxdepth,
+                hidden,
+                entries,
+            } => NodeKindData::Toctree {
+                caption,
+                maxdepth,
+                hidden,
+                entries,
+            },
+            NodeKind::Transition => NodeKindData::Transition,
+            NodeKind::SubstitutionDefinition { names } => {
+                NodeKindData::SubstitutionDefinition { names }
+            }
+            NodeKind::SubstitutionReference { refname } => {
+                NodeKindData::SubstitutionReference { refname }
+            }
+            NodeKind::SystemMessage {
+                level,
+                line,
+                ty,
+                ids,
+                backrefs,
+            } => NodeKindData::SystemMessage {
+                level,
+                line,
+                ty: ty.to_string(),
+                ids,
+                backrefs,
+            },
+            NodeKind::VersionModified { kind, version } => NodeKindData::VersionModified {
+                kind: kind.to_string(),
+                version,
             },
         }
     }
@@ -1208,6 +1208,33 @@ impl From<&NodeKind> for NodeKindData {
 impl From<NodeKindData> for NodeKind {
     fn from(data: NodeKindData) -> Self {
         match data {
+            NodeKindData::Abbreviation { explanation } => NodeKind::Abbreviation { explanation },
+            NodeKindData::Admonition { kind } => NodeKind::Admonition { kind: intern(kind) },
+            NodeKindData::Attribution => NodeKind::Attribution,
+            NodeKindData::Bibliographic { tag } => NodeKind::Bibliographic { tag: intern(tag) },
+            NodeKindData::BlockQuote => NodeKind::BlockQuote,
+            NodeKindData::BulletList { bullet } => NodeKind::BulletList { bullet },
+            NodeKindData::Caption => NodeKind::Caption,
+            NodeKindData::Citation {
+                ids,
+                names,
+                backrefs,
+            } => NodeKind::Citation {
+                ids,
+                names,
+                backrefs,
+            },
+            NodeKindData::CitationReference { ids, refid } => {
+                NodeKind::CitationReference { ids, refid }
+            }
+            NodeKindData::Classifier => NodeKind::Classifier,
+            NodeKindData::Colspec { colwidth } => NodeKind::Colspec { colwidth },
+            NodeKindData::Comment => NodeKind::Comment,
+            NodeKindData::Container { classes } => NodeKind::Container { classes },
+            NodeKindData::Definition => NodeKind::Definition,
+            NodeKindData::DefinitionList => NodeKind::DefinitionList,
+            NodeKindData::DefinitionListItem => NodeKind::DefinitionListItem,
+            NodeKindData::Docinfo => NodeKind::Docinfo,
             NodeKindData::Document {
                 source,
                 ids,
@@ -1219,39 +1246,16 @@ impl From<NodeKindData> for NodeKind {
                 names,
                 title,
             },
-            NodeKindData::Section {
-                ids,
-                names,
-                classes,
-            } => NodeKind::Section {
-                ids,
-                names,
-                classes,
-            },
-            NodeKindData::Title => NodeKind::Title,
-            NodeKindData::Subtitle { ids, names } => NodeKind::Subtitle { ids, names },
-            NodeKindData::Transition => NodeKind::Transition,
-            NodeKindData::Paragraph => NodeKind::Paragraph,
-            NodeKindData::Text(s) => NodeKind::Text(s),
             NodeKindData::Emphasis => NodeKind::Emphasis,
-            NodeKindData::Strong => NodeKind::Strong,
-            NodeKindData::Literal => NodeKind::Literal,
-            NodeKindData::TitleReference => NodeKind::TitleReference,
-            NodeKindData::Inline { classes } => NodeKind::Inline { classes },
-            NodeKindData::Math { latex } => NodeKind::Math { latex },
-            NodeKindData::MathBlock { latex } => NodeKind::MathBlock { latex },
-            NodeKindData::LiteralBlock {
-                ids,
+            NodeKindData::Entry {
+                morecols,
+                morerows,
                 classes,
-                caption,
-                source,
-            } => NodeKind::LiteralBlock {
-                ids,
+            } => NodeKind::Entry {
+                morecols,
+                morerows,
                 classes,
-                caption,
-                source,
             },
-            NodeKindData::BulletList { bullet } => NodeKind::BulletList { bullet },
             NodeKindData::EnumeratedList {
                 enumtype,
                 prefix,
@@ -1263,98 +1267,7 @@ impl From<NodeKindData> for NodeKind {
                 suffix,
                 start,
             },
-            NodeKindData::ListItem => NodeKind::ListItem,
-            NodeKindData::DefinitionList => NodeKind::DefinitionList,
-            NodeKindData::DefinitionListItem => NodeKind::DefinitionListItem,
-            NodeKindData::Term => NodeKind::Term,
-            NodeKindData::Classifier => NodeKind::Classifier,
-            NodeKindData::Definition => NodeKind::Definition,
-            NodeKindData::FieldList => NodeKind::FieldList,
-            NodeKindData::Field => NodeKind::Field,
-            NodeKindData::FieldName => NodeKind::FieldName,
-            NodeKindData::FieldBody => NodeKind::FieldBody,
-            NodeKindData::Docinfo => NodeKind::Docinfo,
-            NodeKindData::Bibliographic { tag } => NodeKind::Bibliographic { tag: intern(tag) },
-            NodeKindData::BlockQuote => NodeKind::BlockQuote,
-            NodeKindData::Admonition { kind } => NodeKind::Admonition { kind: intern(kind) },
-            NodeKindData::Container { classes } => NodeKind::Container { classes },
-            NodeKindData::GenericAdmonition { title, classes } => {
-                NodeKind::GenericAdmonition { title, classes }
-            }
-            NodeKindData::Epigraph { classes } => NodeKind::Epigraph { classes },
-            NodeKindData::Toctree {
-                caption,
-                maxdepth,
-                hidden,
-                entries,
-            } => NodeKind::Toctree {
-                caption,
-                maxdepth,
-                hidden,
-                entries,
-            },
-            NodeKindData::Image {
-                uri,
-                alt,
-                width,
-                height,
-                classes,
-            } => NodeKind::Image {
-                uri,
-                alt,
-                width,
-                height,
-                classes,
-            },
-            NodeKindData::Raw { format } => NodeKind::Raw { format },
-            NodeKindData::Comment => NodeKind::Comment,
-            NodeKindData::Reference {
-                name,
-                refuri,
-                anonymous,
-                classes,
-            } => NodeKind::Reference {
-                name,
-                refuri,
-                anonymous,
-                classes,
-            },
-            NodeKindData::Target {
-                ids,
-                names,
-                refuri,
-                anonymous,
-            } => NodeKind::Target {
-                ids,
-                names,
-                refuri,
-                anonymous,
-            },
-            NodeKindData::SubstitutionDefinition { names } => {
-                NodeKind::SubstitutionDefinition { names }
-            }
-            NodeKindData::SubstitutionReference { refname } => {
-                NodeKind::SubstitutionReference { refname }
-            }
-            NodeKindData::Table => NodeKind::Table,
-            NodeKindData::Tgroup { cols } => NodeKind::Tgroup { cols },
-            NodeKindData::Colspec { colwidth } => NodeKind::Colspec { colwidth },
-            NodeKindData::Thead => NodeKind::Thead,
-            NodeKindData::Tbody => NodeKind::Tbody,
-            NodeKindData::Row => NodeKind::Row,
-            NodeKindData::Entry {
-                morecols,
-                morerows,
-                classes,
-            } => NodeKind::Entry {
-                morecols,
-                morerows,
-                classes,
-            },
-            NodeKindData::Attribution => NodeKind::Attribution,
             NodeKindData::Figure { ids, classes } => NodeKind::Figure { ids, classes },
-            NodeKindData::Caption => NodeKind::Caption,
-            NodeKindData::Legend => NodeKind::Legend,
             NodeKindData::Footnote {
                 ids,
                 names,
@@ -1371,45 +1284,63 @@ impl From<NodeKindData> for NodeKind {
                 refid,
                 auto: auto.map(intern),
             },
-            NodeKindData::Citation {
-                ids,
-                names,
-                backrefs,
-            } => NodeKind::Citation {
-                ids,
-                names,
-                backrefs,
-            },
-            NodeKindData::CitationReference { ids, refid } => {
-                NodeKind::CitationReference { ids, refid }
-            }
-            NodeKindData::Label => NodeKind::Label,
-            NodeKindData::Problematic { ids, refid } => NodeKind::Problematic { ids, refid },
-            NodeKindData::SystemMessage {
-                level,
-                line,
-                ty,
-                ids,
-                backrefs,
-            } => NodeKind::SystemMessage {
-                level,
-                line,
-                ty: intern(ty),
-                ids,
-                backrefs,
-            },
+            NodeKindData::Epigraph { classes } => NodeKind::Epigraph { classes },
             NodeKindData::Extension { class_name, attrs } => {
                 NodeKind::Extension { class_name, attrs }
             }
-            NodeKindData::Abbreviation { explanation } => NodeKind::Abbreviation { explanation },
-            NodeKindData::Subscript => NodeKind::Subscript,
-            NodeKindData::Superscript => NodeKind::Superscript,
-            NodeKindData::Keyboard => NodeKind::Keyboard,
-            NodeKindData::Rubric => NodeKind::Rubric,
-            NodeKindData::VersionModified { kind, version } => NodeKind::VersionModified {
-                kind: intern(kind),
-                version,
+            NodeKindData::Field => NodeKind::Field,
+            NodeKindData::FieldBody => NodeKind::FieldBody,
+            NodeKindData::FieldList => NodeKind::FieldList,
+            NodeKindData::FieldName => NodeKind::FieldName,
+            NodeKindData::GenericAdmonition { title, classes } => {
+                NodeKind::GenericAdmonition { title, classes }
+            }
+            NodeKindData::Image {
+                uri,
+                alt,
+                width,
+                height,
+                classes,
+            } => NodeKind::Image {
+                uri,
+                alt,
+                width,
+                height,
+                classes,
             },
+            NodeKindData::Inline { classes } => NodeKind::Inline { classes },
+            NodeKindData::Keyboard => NodeKind::Keyboard,
+            NodeKindData::Label => NodeKind::Label,
+            NodeKindData::Legend => NodeKind::Legend,
+            NodeKindData::ListItem => NodeKind::ListItem,
+            NodeKindData::Literal => NodeKind::Literal,
+            NodeKindData::LiteralBlock {
+                ids,
+                classes,
+                caption,
+                source,
+            } => NodeKind::LiteralBlock {
+                ids,
+                classes,
+                caption,
+                source,
+            },
+            NodeKindData::Math { latex } => NodeKind::Math { latex },
+            NodeKindData::MathBlock { latex } => NodeKind::MathBlock { latex },
+            NodeKindData::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                signature_references,
+                source_link,
+            } => NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                signature_references,
+                source_link,
+            },
+            NodeKindData::Paragraph => NodeKind::Paragraph,
             NodeKindData::PendingXref {
                 reftype,
                 reftarget,
@@ -1425,18 +1356,87 @@ impl From<NodeKindData> for NodeKind {
                 refexplicit,
                 warn_missing,
             },
-            NodeKindData::ObjectDescription {
+            NodeKindData::Problematic { ids, refid } => NodeKind::Problematic { ids, refid },
+            NodeKindData::Raw { format } => NodeKind::Raw { format },
+            NodeKindData::Reference {
+                name,
+                refuri,
+                anonymous,
                 classes,
-                ids,
-                sig_text,
-                signature_references,
-                source_link,
-            } => NodeKind::ObjectDescription {
+            } => NodeKind::Reference {
+                name,
+                refuri,
+                anonymous,
                 classes,
+            },
+            NodeKindData::Row => NodeKind::Row,
+            NodeKindData::Rubric => NodeKind::Rubric,
+            NodeKindData::Section {
                 ids,
-                sig_text,
-                signature_references,
-                source_link,
+                names,
+                classes,
+            } => NodeKind::Section {
+                ids,
+                names,
+                classes,
+            },
+            NodeKindData::Strong => NodeKind::Strong,
+            NodeKindData::Subscript => NodeKind::Subscript,
+            NodeKindData::Subtitle { ids, names } => NodeKind::Subtitle { ids, names },
+            NodeKindData::Superscript => NodeKind::Superscript,
+            NodeKindData::Table => NodeKind::Table,
+            NodeKindData::Tbody => NodeKind::Tbody,
+            NodeKindData::Tgroup { cols } => NodeKind::Tgroup { cols },
+            NodeKindData::Thead => NodeKind::Thead,
+            NodeKindData::Target {
+                ids,
+                names,
+                refuri,
+                anonymous,
+            } => NodeKind::Target {
+                ids,
+                names,
+                refuri,
+                anonymous,
+            },
+            NodeKindData::Term => NodeKind::Term,
+            NodeKindData::Text(s) => NodeKind::Text(s),
+            NodeKindData::Title => NodeKind::Title,
+            NodeKindData::TitleReference => NodeKind::TitleReference,
+            NodeKindData::Transition => NodeKind::Transition,
+            NodeKindData::Toctree {
+                caption,
+                maxdepth,
+                hidden,
+                entries,
+            } => NodeKind::Toctree {
+                caption,
+                maxdepth,
+                hidden,
+                entries,
+            },
+            NodeKindData::SubstitutionDefinition { names } => {
+                NodeKind::SubstitutionDefinition { names }
+            }
+            NodeKindData::SubstitutionReference { refname } => {
+                NodeKind::SubstitutionReference { refname }
+            }
+            NodeKindData::SystemMessage {
+                level,
+                line,
+                ty,
+                ids,
+                backrefs,
+            } => NodeKind::SystemMessage {
+                level,
+                line,
+                ty: intern(ty),
+                ids,
+                backrefs,
+            },
+            NodeKindData::VersionModified { kind, version } => NodeKind::VersionModified {
+                kind: intern(kind),
+                version,
             },
         }
     }

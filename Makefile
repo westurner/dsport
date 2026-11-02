@@ -662,15 +662,26 @@ SPHINXBUILDRS='cargo run --bin sphinx-build-rs --'
 otherdocs-sphinx: otherdocs-sphinx-py otherdocs-sphinx-rs otherdocs-sphinx-diff
 
 otherdocs-sphinx-diff: otherdocs-sphinx-py otherdocs-sphinx-rs
-	python3 tools/sphinx_html_diff.py --python-html src/sphinx/doc/_build_py/html --rust-html src/sphinx/doc/_build_rs/html --source src/sphinx/doc > otherdocs-sphinx-py-rs.diff; status=$$?; \
-	ls -al otherdocs-sphinx-py-rs.diff; \
+	python3 tools/sphinx_html_diff.py --python-html src/sphinx/doc/_build_py/html --rust-html src/sphinx/doc/_build_rs/html --source src/sphinx/doc > otherdocs-sphinx-py-rs.diffreport.txt; status=$$?; \
+	ls -al otherdocs-sphinx-py-rs.diffreport.txt ; \
 	if test $$status -ne 0; then echo "Sphinx semantic parity check failed"; fi; \
+	#$(MAKE) otherdocs-sphinx-diff-bytes
+	$(MAKE) otherdocs-sphinx-text-diff
+	set -x; ls -al otherdocs-sphinx-py-rs.diff*
 	exit $$status
 
-otherdocs-sphinx-byte-diff: otherdocs-sphinx-py otherdocs-sphinx-rs
+otherdocs-sphinx-diff-bytes: otherdocs-sphinx-byte-diff
+
+otherdocs-sphinx-byte-diff:
 	diff -Naur -x .doctrees -x .buildinfo src/sphinx/doc/_build_py/html src/sphinx/doc/_build_rs/html > otherdocs-sphinx-py-rs-byte.diff; status=$$?; \
 	ls -al otherdocs-sphinx-py-rs-byte.diff; \
 	if test $$status -eq 1; then echo "Sphinx byte-level output differs"; fi; \
+	exit $$status
+
+otherdocs-sphinx-text-diff:
+	diff -Nur -x .doctrees -x .buildinfo src/sphinx/doc/_build_py/html src/sphinx/doc/_build_rs/html > otherdocs-sphinx-py-rs-text.diff; status=$$?; \
+	ls -al otherdocs-sphinx-py-rs-text.diff; \
+	if test $$status -eq 1; then echo "Sphinx text-level output differs"; fi; \
 	exit $$status
 
 otherdocs-sphinx-py:

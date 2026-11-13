@@ -3065,10 +3065,16 @@ diagnostic tooling only; its current report is not a parity pass, and the
 workspace has uncommitted generated diffs and Makefile edits that are not
 treated as committed verification evidence.
 
-**Next scoped slice:** implement upstream `cite:empty` behavior end to end:
-register the role, include its keys in CSL citation processing so they appear
-in the bibliography, render no inline citation text, and assert both effects
-in a native build/doctree test. Keep the remaining H15g role family pending.
+**Completed slice (2026-11-13):** `cite:empty` is registered, its keys take
+part in cross-document CSL processing and therefore enter the bibliography
+without `bibtex_include_uncited`, and the resolved inline node is empty. A
+build without `csl-citeproc` keeps the role invisible but emits a warning that
+the key could not be registered. The feature-gated native integration test,
+the no-CSL fallback test, and all seven CSL-enabled bibliography tests pass.
+
+**Next scoped slice:** continue H15g.1 with the remaining role aliases and
+modes, with table-driven parser coverage before expanding formatting behavior.
+The rest of the H15g matrix remains pending.
 
 #### H15 design boundaries
 

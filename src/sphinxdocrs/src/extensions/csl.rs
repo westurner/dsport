@@ -68,6 +68,74 @@ impl CitationItem {
     }
 }
 
+/// Parse the target grammar used by sphinxcontrib-bibtex citation roles.
+/// Each target may have optional `{pre-text}` and `{post-text}` around a key.
+pub fn parse_citation_targets(source: &str) -> Result<Vec<CitationItem>, CslError> {
+    let mut remaining = source;
+    let mut citations = Vec::new();
+
+    loop {
+        let mut target = remaining.trim_start();
+        let prefix = if let Some(after_open) = target.strip_prefix('{') {
+            let Some(end) = after_open.find('}') else {
+                return Err(CslError::MalformedCitationTarget(source.to_string()));
+            };
+            let prefix = &after_open[..end];
+            if prefix.is_empty() || prefix.contains('{') {
+                return Err(CslError::MalformedCitationTarget(source.to_string()));
+            }
+            target = &after_open[end + 1..];
+            Some(prefix.to_string())
+        } else {
+            None
+        };
+
+        target = target.trim_start();
+        let key_end = target
+            .char_indices()
+            .find(|(_, character)| {
+                character.is_whitespace() || matches!(character, ',' | '{' | '}')
+            })
+            .map_or(target.len(), |(index, _)| index);
+        if key_end == 0 {
+            return Err(CslError::MalformedCitationTarget(source.to_string()));
+        }
+        let key = &target[..key_end];
+        target = target[key_end..].trim_start();
+
+        let suffix = if let Some(after_open) = target.strip_prefix('{') {
+            let Some(end) = after_open.find('}') else {
+                return Err(CslError::MalformedCitationTarget(source.to_string()));
+            };
+            let suffix = &after_open[..end];
+            if suffix.is_empty() || suffix.contains('{') {
+                return Err(CslError::MalformedCitationTarget(source.to_string()));
+            }
+            target = &after_open[end + 1..];
+            Some(suffix.to_string())
+        } else {
+            None
+        };
+
+        let mut citation = CitationItem::new(key);
+        citation.prefix = prefix;
+        citation.suffix = suffix;
+        citations.push(citation);
+
+        target = target.trim_start();
+        if target.is_empty() {
+            return Ok(citations);
+        }
+        let Some(next) = target.strip_prefix(',') else {
+            return Err(CslError::MalformedCitationTarget(source.to_string()));
+        };
+        if next.trim().is_empty() {
+            return Err(CslError::MalformedCitationTarget(source.to_string()));
+        }
+        remaining = next;
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CitationCluster {
     pub id: String,
@@ -107,6 +175,8 @@ pub enum CslError {
     MissingClusterOutput(String),
     #[error("failed to order citation clusters: {0}")]
     ClusterOrder(String),
+    #[error("malformed citation target: {0}")]
+    MalformedCitationTarget(String),
 }
 
 pub fn render(
@@ -238,8 +308,8 @@ mod tests {
     use citeproc::prelude::{IncludeUncited, SupportedFormat};
 
     use super::{
-        CitationCluster, CitationItem, CitationMode, CslError, DEFAULT_STYLE, render,
-        render_with_uncited,
+        CitationCluster, CitationItem, CitationMode, CslError, DEFAULT_STYLE,
+        parse_citation_targets, render, render_with_uncited,
     };
     use crate::extensions::bibtex::Bibliography;
 
@@ -299,6 +369,69 @@ mod tests {
             "#,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn parses_upstream_citation_target_grammar() {
+        let citations =
+            parse_citation_targets(" {see }alpha{, page 4}, beta, {compare}gamma").unwrap();
+        assert_eq!(citations.len(), 3);
+        assert_eq!(citations[0].key, "alpha");
+        assert_eq!(citations[0].prefix.as_deref(), Some("see "));
+        assert_eq!(citations[0].suffix.as_deref(), Some(", page 4"));
+        assert_eq!(citations[1].key, "beta");
+        assert_eq!(citations[1].prefix, None);
+        assert_eq!(citations[1].suffix, None);
+        assert_eq!(citations[2].key, "gamma");
+        assert_eq!(citations[2].prefix.as_deref(), Some("compare"));
+
+        for malformed in [
+            "",
+            ",alpha",
+            "alpha,",
+            "alpha,,beta",
+            "alpha beta",
+            "{}alpha",
+            "{nested {pre}alpha",
+            "alpha{nested {post}}",
+        ] {
+            assert!(
+                parse_citation_targets(malformed).is_err(),
+                "accepted malformed target {malformed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn renders_unformatted_prefix_and_suffix_around_citation() {
+        let style = r#"
+            <style version="1.0" class="in-text">
+              <info>
+                <title>Citation prefix suffix test</title>
+                <id>https://example.test/styles/prefix-suffix</id>
+                <link href="https://example.test/styles/prefix-suffix" rel="self"/>
+                <updated>2024-01-01T00:00:00+00:00</updated>
+              </info>
+              <citation><layout><text variable="title"/></layout></citation>
+              <bibliography><layout><text variable="title"/></layout></bibliography>
+            </style>
+        "#;
+        let citation = parse_citation_targets("{see }alpha{ after}")
+            .unwrap()
+            .remove(0);
+        let result = render(
+            &bibliography(),
+            style,
+            &[CitationCluster {
+                id: "intro:0".into(),
+                citations: vec![citation],
+                note_number: None,
+            }],
+            SupportedFormat::Plain,
+        )
+        .unwrap();
+
+        assert_eq!(result.clusters[0].value, "see Alpha after");
     }
 
     #[test]

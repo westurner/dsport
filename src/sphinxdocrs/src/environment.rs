@@ -857,7 +857,8 @@ impl BuildEnvironment {
     #[cfg(feature = "csl-citeproc")]
     fn resolve_bibtex_doctree(&self, docname: &str, tree: &mut Doctree) -> Result<(), BuildError> {
         use crate::extensions::csl::{
-            CitationCluster, CitationItem, CitationMode, DEFAULT_STYLE, render_with_uncited,
+            CitationCluster, CitationMode, DEFAULT_STYLE, parse_citation_targets,
+            render_with_uncited,
         };
         use citeproc::prelude::{IncludeUncited, SupportedFormat};
 
@@ -919,25 +920,27 @@ impl BuildEnvironment {
                 }
 
                 let role = node_attribute(attrs, "role").unwrap_or("cite").to_string();
-                let keys: Vec<_> = node_attribute(attrs, "keys")
-                    .unwrap_or_default()
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|key| !key.is_empty())
-                    .map(str::to_string)
-                    .collect();
+                let targets =
+                    parse_citation_targets(node_attribute(attrs, "keys").unwrap_or_default())
+                        .map_err(|error| BuildError::Other(error.to_string()))?;
+                let keys: Vec<_> = targets.iter().map(|target| target.key.clone()).collect();
                 let footcite = role == "footcite" || role.starts_with("footcite:");
                 let mut footcite_refs = Vec::new();
-                let citations: Vec<_> = keys
+                let citations: Vec<_> = targets
                     .iter()
-                    .map(|key| {
-                        let mut citation = CitationItem::new(key);
+                    .map(|target| {
+                        let mut citation = target.clone();
                         citation.mode = match role.as_str() {
                             "cite:t" | "footcite:t" => Some(CitationMode::AuthorOnly),
                             "cite" | "cite:p" | "footcite" | "footcite:p" => None,
                             _ => None,
                         };
                         if footcite {
+                            citation.prefix = None;
+                            citation.suffix = None;
+                        }
+                        if footcite {
+                            let key = &target.key;
                             let next_number = footnote_ids_by_key.len() as u32 + 1;
                             let (number, footnote_id) = footnote_ids_by_key
                                 .entry(key.clone())

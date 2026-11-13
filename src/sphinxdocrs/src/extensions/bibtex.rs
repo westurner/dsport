@@ -1512,7 +1512,7 @@ mod citeproc_tests {
         std::fs::write(
             src.path().join("index.rst"),
             "Index\n=====\n\nSee :cite:t:`1987:nelson` for an introduction.\n\
-             Non-standard analysis is fun :cite:p:`1987:nelson`.\n\n\
+             Non-standard analysis is fun :cite:p:`{see }1987:nelson{, page 6}`.\n\n\
              .. bibliography::\n\n\
              See :footcite:t:`1987:nelson` for an introduction.\n\
              Non-standard analysis is fun\\ :footcite:p:`1987:nelson`.\n\n\
@@ -1556,7 +1556,13 @@ mod citeproc_tests {
         let textual = &resolved.node(roles["cite:t"]).kind;
         assert!(matches!(textual, NodeKind::Text(value) if value == "Nelson (1987)"));
         let parenthetical = &resolved.node(roles["cite:p"]).kind;
-        assert!(matches!(parenthetical, NodeKind::Text(value) if value == "(Nelson, 1987)"));
+        assert!(
+            matches!(
+                parenthetical,
+                NodeKind::Text(value) if value == "(see Nelson, 1987, page 6)"
+            ),
+            "resolved parenthetical citation: {parenthetical:?}"
+        );
         assert!(matches!(
             resolved.node(roles["footcite:t"]).kind,
             NodeKind::Inline { .. }

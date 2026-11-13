@@ -3047,8 +3047,8 @@ cross-document citation-cluster processing, bibliography/footnote doctree
 resolution, `bibtex_include_uncited`, and standalone `bibliography.tex` and
 `bibliography.jsonld` exports. The native extension is enabled as
 `sphinxdocrs::extensions::bibtex` and requires the `csl-citeproc` feature for
-formatting. The parser currently registers six citation roles (`cite`,
-`cite:p`, `cite:t`, `footcite`, `footcite:p`, `footcite:t`) and two directives;
+formatting. The parser currently registers seven citation roles (`cite`,
+`cite:p`, `cite:t`, `cite:empty`, `footcite`, `footcite:p`, `footcite:t`) and two directives;
 this is a functioning native subset, not `sphinxcontrib-bibtex` parity. There
 is no Python adapter or `sphinxdocrs.equivalents` resolver/package path yet.
 The JSON-LD file is a standalone export, not linked-data enrichment or a
@@ -3072,8 +3072,16 @@ build without `csl-citeproc` keeps the role invisible but emits a warning that
 the key could not be registered. The feature-gated native integration test,
 the no-CSL fallback test, and all seven CSL-enabled bibliography tests pass.
 
-**Next scoped slice:** continue H15g.1 with the remaining role aliases and
-modes, with table-driven parser coverage before expanding formatting behavior.
+**Completed slice (2026-11-13):** citation targets now follow the pinned
+upstream grammar for comma-separated keys with optional `{pre-text}` and
+`{post-text}`. The CSL resolver forwards that text for regular citations;
+footnote citations discard pre/post text, matching their documented boundary.
+Malformed separators, empty text, and nested braces are rejected. Table tests,
+direct citeproc rendering, the native Sphinx resolution test, all eight CSL
+tests, and all seven bibliography integration tests pass.
+
+**Next scoped slice:** continue H15g.1 with the upstream role aliases and
+formatting modes (full-author, capitalized, unbracketed, label/year/author).
 The rest of the H15g matrix remains pending.
 
 #### H15 design boundaries

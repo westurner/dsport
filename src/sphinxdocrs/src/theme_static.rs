@@ -525,8 +525,7 @@ pub fn copy_theme_static_files_for_builder(
         &theme_path_dirs,
         config.registered_themes(),
         pygments_style.as_deref(),
-    )
-    else {
+    ) else {
         // No Python/Sphinx — skip theme assets silently.
         return Ok(());
     };

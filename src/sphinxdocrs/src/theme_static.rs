@@ -586,6 +586,56 @@ pub fn copy_theme_static_files_for_builder(
     Ok(())
 }
 
+/// Return Sphinx's console log messages for the rendered theme template assets.
+pub fn rendered_template_asset_log_messages(
+    config: &SphinxConfig,
+    outdir: &Path,
+    confdir: &Path,
+) -> Vec<String> {
+    let theme_name = config.html_theme();
+    let theme_path_dirs = resolve_theme_path_dirs(confdir, &config.html_theme_path());
+    let pygments_style = config
+        .get("pygments_style")
+        .and_then(|value| value.as_str().map(str::to_owned));
+    let Some(theme) = resolve_theme(
+        &theme_name,
+        &theme_path_dirs,
+        config.registered_themes(),
+        pygments_style.as_deref(),
+    ) else {
+        return Vec::new();
+    };
+
+    let mut messages = Vec::new();
+    let static_out = outdir.join("_static");
+    for layer in &theme.layers {
+        collect_template_asset_log_messages(
+            Path::new(&layer.static_dir),
+            &static_out,
+            &mut messages,
+        );
+    }
+    messages
+}
+
+fn collect_template_asset_log_messages(src: &Path, dst: &Path, messages: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(src) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let from = entry.path();
+        if from.is_dir() {
+            collect_template_asset_log_messages(&from, &dst.join(&name), messages);
+        } else if is_template_asset(&name) {
+            let destination = dst.join(strip_template_suffix(&name));
+            let mut message = crate::locale::tr_console("Writing evaluated template result to %s");
+            message = message.replacen("%s", &destination.to_string_lossy(), 1);
+            messages.push(message);
+        }
+    }
+}
+
 /// Recursively copy a theme `static/` directory into `dst`, rendering template
 /// assets through `renderer`.
 fn copy_static_dir(

@@ -90,9 +90,6 @@ fn main() {
             &parsed.color,
         );
 
-        if !logging.suppress_status {
-            println!("sphinxdocrs: running SphinxApp::new");
-        }
         match SphinxApp::new(&srcdir, &outdir, &doctreedir, &parsed.builder, overrides) {
             Err(e) => {
                 record_error_log(
@@ -117,13 +114,13 @@ fn main() {
                 // H8a: -E/--fresh-env and -a/--write-all.
                 app.set_incremental_options(parsed.freshenv, parsed.force_all);
                 let build_result = app.build();
-                sphinxdocrs::build::logging::emit_info_messages(app.info_messages(), &logging);
-                sphinxdocrs::build::logging::emit_debug_messages(
-                    app.debug_messages(),
-                    &logging,
-                );
+                let mut info_messages = app.startup_messages().to_vec();
+                info_messages.extend(app.status_messages().iter().cloned());
+                info_messages.extend(app.info_messages().iter().cloned());
+                sphinxdocrs::build::logging::emit_info_messages(&info_messages, &logging);
+                sphinxdocrs::build::logging::emit_debug_messages(app.debug_messages(), &logging);
                 match build_result {
-                    Ok(result) => {
+                    Ok(_result) => {
                         record_error_log(
                             &parsed,
                             &command,
@@ -132,10 +129,24 @@ fn main() {
                             None,
                         );
                         if !logging.suppress_status {
+                            let summary =
+                                sphinxdocrs::build::logging::format_build_summary(
+                                    app.warnings.len(),
+                                    parsed.warningiserror,
+                                );
                             println!(
                                 "{}",
-                                sphinxdocrs::util_display::build_succeeded(result.written)
+                                sphinxdocrs::build::logging::format_status_message(
+                                    &summary,
+                                    logging.color,
+                                )
                             );
+                            if let Some(epilog) = sphinxdocrs::build::logging::format_build_epilog(
+                                &parsed.builder,
+                                &app.outdir,
+                            ) {
+                                println!("{epilog}");
+                            }
                         }
                         let code = finish_build(&app.warnings, &logging, parsed.warningiserror);
                         std::process::exit(code);

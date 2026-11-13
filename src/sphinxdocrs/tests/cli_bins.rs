@@ -413,7 +413,7 @@ fn build_routes_status_and_warnings_to_sphinx_cli_streams() {
     let normal_stdout = String::from_utf8_lossy(&normal.stdout);
     let normal_stderr = String::from_utf8_lossy(&normal.stderr);
     assert!(
-        normal_stdout.contains("Build succeeded"),
+        normal_stdout.contains("build succeeded"),
         "stdout: {normal_stdout}"
     );
     assert!(

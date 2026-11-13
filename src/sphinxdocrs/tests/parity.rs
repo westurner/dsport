@@ -93,6 +93,16 @@ impl Drop for SemPermit<'_> {
 /// prevent OOM when many tests run in parallel.  The permit is held via
 /// an RAII guard so it is always released, even when the call panics.
 fn run(program: &str, args: &[&str], cwd: &Path) -> (i32, String, String) {
+    let (code, stdout, stderr) = run_raw_with_env(program, args, cwd, &[]);
+    (code, strip_ansi(&stdout), strip_ansi(&stderr))
+}
+
+fn run_raw_with_env(
+    program: &str,
+    args: &[&str],
+    cwd: &Path,
+    env: &[(&str, Option<&str>)],
+) -> (i32, String, String) {
     let sem = PY_SEM.get_or_init(|| Semaphore::new(MAX_PY_PROCS));
     let _permit = if is_heavy_process(program) {
         sem.acquire();
@@ -100,15 +110,37 @@ fn run(program: &str, args: &[&str], cwd: &Path) -> (i32, String, String) {
     } else {
         None
     };
-    let out = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
+    let mut command = Command::new(program);
+    command.args(args).current_dir(cwd);
+    for key in ["NO_COLOR", "NO_COLOUR", "FORCE_COLOR", "FORCE_COLOUR", "CI"] {
+        command.env_remove(key);
+    }
+    for (key, value) in env {
+        if let Some(value) = value {
+            command.env(key, value);
+        } else {
+            command.env_remove(key);
+        }
+    }
+    let out = command
         .output()
         .unwrap_or_else(|e| panic!("failed to run {program}: {e}"));
     let code = out.status.code().unwrap_or(1);
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    (code, strip_ansi(&stdout), strip_ansi(&stderr))
+    (code, stdout, stderr)
+}
+
+fn contains_ansi(s: &str) -> bool {
+    !ansi_sgr_codes(s).is_empty()
+}
+
+fn ansi_sgr_codes(s: &str) -> std::collections::BTreeSet<String> {
+    regex::Regex::new(r"\x1b\[([0-9;]*)m")
+        .unwrap()
+        .captures_iter(s)
+        .filter_map(|capture| capture.get(1).map(|code| code.as_str().to_owned()))
+        .collect()
 }
 
 /// Pre-canned build output for testing log message *format* without spawning
@@ -123,7 +155,7 @@ impl MockBuildOutput {
     fn rs_success() -> Self {
         MockBuildOutput {
             exit: 0,
-            stdout: "Build succeeded: 2 file(s) written.\n".into(),
+            stdout: "build succeeded, 1 warning.\n".into(),
         }
     }
 }
@@ -1695,7 +1727,7 @@ fn make_html_both_contain_rst_body_text(make_html_shared: &MakeHtmlShared, #[cas
 
 // ── log message parity ────────────────────────────────────────────────────────
 
-/// `sphinx-build-rs -M html` must emit "Build succeeded" to stdout on success.
+/// `sphinx-build-rs -M html` must use Sphinx's success summary and HTML epilog.
 #[rstest]
 fn make_html_rs_emits_build_succeeded(make_html_shared: &MakeHtmlShared) {
     assert_eq!(
@@ -1704,16 +1736,15 @@ fn make_html_rs_emits_build_succeeded(make_html_shared: &MakeHtmlShared) {
         make_html_shared.rs_stderr
     );
     assert!(
-        make_html_shared.rs_stdout.contains("Build succeeded"),
-        "expected 'Build succeeded' in stdout; got:\n{}",
+        make_html_shared.rs_stdout.contains("build succeeded"),
+        "expected Sphinx's success summary in stdout; got:\n{}",
         make_html_shared.rs_stdout
     );
-    // A file count must appear alongside the success message.
     assert!(
-        regex::Regex::new(r"\d+ file")
-            .unwrap()
-            .is_match(&make_html_shared.rs_stdout),
-        "expected file count in 'Build succeeded' message; got:\n{}",
+        make_html_shared
+            .rs_stdout
+            .contains("The HTML pages are in "),
+        "expected the HTML output epilog in stdout; got:\n{}",
         make_html_shared.rs_stdout
     );
 }
@@ -2705,6 +2736,74 @@ fn log_make_help_snapshot(log_make_help_shared: &LogMakeHelpShared) {
 
 // ── sphinx-build -M html success messages ────────────────────────────────────
 
+fn sphinx_build_lifecycle_messages(output: &str) -> Vec<String> {
+    const MESSAGE_TEMPLATES: &[&str] = &[
+        "Running Sphinx v%s",
+        "loading translations [%s]... ",
+        "making output directory",
+        "building [mo]: ",
+        "building [%s]: ",
+        "updating environment: ",
+        "reading sources... ",
+        "looking for now-outdated files... ",
+        "pickling environment",
+        "checking consistency",
+        "preparing documents",
+        "copying assets",
+        "copying static files",
+        "copying extra files",
+        "writing output... ",
+        "generating indices",
+        "writing additional pages",
+        "dumping search index in %s (code: %s)... done",
+        "dumping object inventory",
+        "build succeeded, 1 warning.",
+        "Writing evaluated template result to %s",
+        "The HTML pages are in %(outdir)s.",
+    ];
+    let locale_dirs = sphinxdocrs::locale::builtin_locale_dir()
+        .into_iter()
+        .collect::<Vec<_>>();
+    sphinxdocrs::locale::init_chain(&locale_dirs, None, "console");
+    let prefixes = MESSAGE_TEMPLATES
+        .iter()
+        .map(|template| {
+            let translated = sphinxdocrs::locale::tr_console(template);
+            let placeholder = ["%s", "%d", "%("]
+                .iter()
+                .filter_map(|placeholder| translated.find(placeholder))
+                .min()
+                .unwrap_or(translated.len());
+            translated[..placeholder].to_owned()
+        })
+        .collect::<Vec<_>>();
+    let template_log_index = MESSAGE_TEMPLATES
+        .iter()
+        .position(|template| *template == "Writing evaluated template result to %s")
+        .unwrap();
+    let template_log_prefix = &prefixes[template_log_index];
+
+    output
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim_end_matches('\r').trim_end();
+            if line.starts_with(&prefixes[0]) {
+                Some("Running Sphinx v<VERSION>".to_owned())
+            } else if line.starts_with(prefixes.last().unwrap()) {
+                Some("HTML epilog: <OUT>".to_owned())
+            } else if let Some(asset_path) = line.strip_prefix(template_log_prefix.as_str()) {
+                let asset_path = asset_path.trim();
+                let asset_path = asset_path.rsplit("_static/").next().unwrap_or(asset_path);
+                Some(format!("Writing evaluated template result to <STATIC>/{asset_path}"))
+            } else if prefixes.iter().any(|prefix| line.starts_with(prefix)) {
+                Some(line.to_owned())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// Compare the stdout/stderr contract of native builds with upstream Sphinx.
 #[test]
 fn log_build_stream_modes_match_upstream() {
@@ -2814,10 +2913,6 @@ fn log_build_stream_modes_match_upstream() {
             );
             let (rust_exit, rust_stdout, rust_stderr) =
                 run_build(rust_binary, &rust_out, &rust_options, fresh, use_make_mode);
-            if build_mode == "direct" && mode == "normal" {
-                eprintln!("PYTHON STDOUT:\n{python_stdout}\nPYTHON STDERR:\n{python_stderr}");
-                eprintln!("RUST STDOUT:\n{rust_stdout}\nRUST STDERR:\n{rust_stderr}");
-            }
             let expected_exit = if mode == "warning-error" { 1 } else { 0 };
             let label = format!("{build_mode}/{mode}");
 
@@ -2839,6 +2934,24 @@ fn log_build_stream_modes_match_upstream() {
                 rust_stderr.is_empty(),
                 "`{label}` stderr routing differs\nPython:\n{python_stderr}\nRust:\n{rust_stderr}"
             );
+
+            if build_mode == "direct" && mode == "normal" {
+                assert_eq!(
+                    sphinx_build_lifecycle_messages(&rust_stdout),
+                    sphinx_build_lifecycle_messages(&python_stdout),
+                    "direct/normal Sphinx lifecycle stdout differs\nPython:\n{python_stdout}\nRust:\n{rust_stdout}"
+                );
+                let paths = [
+                    source.to_str().unwrap(),
+                    python_out.to_str().unwrap(),
+                    rust_out.to_str().unwrap(),
+                ];
+                assert_eq!(
+                    normalise_output(&rust_stderr, &paths),
+                    normalise_output(&python_stderr, &paths),
+                    "direct/normal warning stderr differs\nPython:\n{python_stderr}\nRust:\n{rust_stderr}"
+                );
+            }
 
             if mode == "silent" {
                 continue;
@@ -2882,17 +2995,107 @@ fn log_build_stream_modes_match_upstream() {
     }
 }
 
-/// On a successful HTML build the Rust binary must emit to stdout:
-/// - a "make mode: running SphinxApp" banner
-/// - a "Build succeeded" summary with a file count
+#[test]
+fn log_cli_color_output_matches_upstream() {
+    let cases: &[(&str, Option<&str>, &[(&str, Option<&str>)], bool)] = &[
+        ("piped auto", None, &[], false),
+        ("forced", None, &[("FORCE_COLOR", Some("1"))], true),
+        (
+            "no color takes precedence",
+            None,
+            &[("NO_COLOR", Some("1")), ("FORCE_COLOR", Some("1"))],
+            false,
+        ),
+        (
+            "color flag takes precedence",
+            Some("--color"),
+            &[("NO_COLOR", Some("1"))],
+            true,
+        ),
+        (
+            "no-color flag takes precedence",
+            Some("--no-color"),
+            &[("FORCE_COLOR", Some("1"))],
+            false,
+        ),
+    ];
+    let rust_binary = env!("CARGO_BIN_EXE_sphinx-build-rs");
+
+    for (label, color_flag, env, expected_color) in cases {
+        let project = TempDir::new().unwrap();
+        let source = project.path().join("src");
+        let python_out = project.path().join("python-out");
+        let rust_out = project.path().join("rust-out");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("conf.py"), "project = 'CLI color parity'\n").unwrap();
+        std::fs::write(source.join("index.rst"), "Home\n====\n\nBody.\n").unwrap();
+        std::fs::write(source.join("orphan.rst"), "Orphan\n======\n\nBody.\n").unwrap();
+
+        let mut python_args = vec!["-b", "html"];
+        if let Some(flag) = color_flag {
+            python_args.push(flag);
+        }
+        python_args.extend([
+            source.to_str().unwrap(),
+            python_out.to_str().unwrap(),
+        ]);
+        let mut rust_args = vec!["-b", "html"];
+        if let Some(flag) = color_flag {
+            rust_args.push(flag);
+        }
+        rust_args.extend([
+            source.to_str().unwrap(),
+            rust_out.to_str().unwrap(),
+        ]);
+
+        let (python_exit, python_stdout, python_stderr) =
+            run_raw_with_env("sphinx-build", &python_args, &source, env);
+        let (rust_exit, rust_stdout, rust_stderr) =
+            run_raw_with_env(rust_binary, &rust_args, &source, env);
+        assert_eq!(python_exit, 0, "Python {label}: {python_stderr}");
+        assert_eq!(rust_exit, 0, "Rust {label}: {rust_stderr}");
+
+        let python_stdout_colored = contains_ansi(&python_stdout);
+        let rust_stdout_colored = contains_ansi(&rust_stdout);
+        assert_eq!(
+            python_stdout_colored, *expected_color,
+            "Python {label} stdout unexpectedly colored:\n{python_stdout}"
+        );
+        assert_eq!(
+            rust_stdout_colored, python_stdout_colored,
+            "Rust {label} stdout color differs from Python:\n{rust_stdout}"
+        );
+        assert_eq!(
+            ansi_sgr_codes(&rust_stdout),
+            ansi_sgr_codes(&python_stdout),
+            "Rust {label} stdout color codes differ from Python:\nPython:\n{python_stdout}\nRust:\n{rust_stdout}"
+        );
+        let python_stderr_colored = contains_ansi(&python_stderr);
+        let rust_stderr_colored = contains_ansi(&rust_stderr);
+        assert_eq!(
+            python_stderr_colored, *expected_color,
+            "Python {label} stderr unexpectedly colored:\n{python_stderr}"
+        );
+        assert_eq!(
+            rust_stderr_colored, python_stderr_colored,
+            "Rust {label} stderr color differs from Python:\n{rust_stderr}"
+        );
+        assert_eq!(
+            ansi_sgr_codes(&rust_stderr),
+            ansi_sgr_codes(&python_stderr),
+            "Rust {label} stderr color codes differ from Python:\nPython:\n{python_stderr}\nRust:\n{rust_stderr}"
+        );
+    }
+}
+
+/// On a successful HTML build the Rust binary must emit Sphinx's summary and
+/// HTML output epilog to stdout.
 #[test]
 fn log_html_build_success_keywords() {
     let src = TempDir::new().unwrap();
     let out = TempDir::new().unwrap();
     setup_html_parity_project(src.path());
 
-    // Check exit + "Build succeeded" via snapbox; regex file-count check needs
-    // the raw output so we use .output() and assert afterwards.
     let output = snapbox::cmd::Command::new(env!("CARGO_BIN_EXE_sphinx-build-rs"))
         .args([
             "-M",
@@ -2912,12 +3115,12 @@ fn log_html_build_success_keywords() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        stdout.contains("Build succeeded"),
-        "expected 'Build succeeded' in stdout; got:\n{stdout}"
+        stdout.contains("build succeeded"),
+        "expected Sphinx's success summary in stdout; got:\n{stdout}"
     );
     assert!(
-        regex::Regex::new(r"\d+ file").unwrap().is_match(&stdout),
-        "expected file count in stdout; got:\n{stdout}"
+        stdout.contains("The HTML pages are in "),
+        "expected the HTML output epilog in stdout; got:\n{stdout}"
     );
 }
 
@@ -2980,15 +3183,10 @@ fn log_html_build_stderr_snapshot(html_parity_shared: &HtmlParityShared) {
 /// Verify the mock build output struct produces the expected format without
 /// spawning a real subprocess.
 #[test]
-fn log_format_build_succeeded_contains_file_count() {
+fn log_format_build_succeeded_matches_upstream() {
     let mock = MockBuildOutput::rs_success();
     assert_eq!(mock.exit, 0);
-    assert!(mock.stdout.contains("Build succeeded"));
-    assert!(
-        regex::Regex::new(r"\d+ file")
-            .unwrap()
-            .is_match(&mock.stdout)
-    );
+    assert!(mock.stdout.contains("build succeeded, 1 warning."));
 }
 
 /// Both tools must exit non-zero when given a missing source directory.

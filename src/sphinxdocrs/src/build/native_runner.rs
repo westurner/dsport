@@ -123,10 +123,13 @@ impl Runner for NativeMakeRunner {
                 // H8a: -E/--fresh-env and -a/--write-all.
                 app.set_incremental_options(parsed.freshenv, parsed.force_all);
                 let build_result = app.build();
-                crate::build::logging::emit_info_messages(app.info_messages(), &logging);
+                let mut info_messages = app.startup_messages().to_vec();
+                info_messages.extend(app.status_messages().iter().cloned());
+                info_messages.extend(app.info_messages().iter().cloned());
+                crate::build::logging::emit_info_messages(&info_messages, &logging);
                 crate::build::logging::emit_debug_messages(app.debug_messages(), &logging);
                 match build_result {
-                    Ok(result) => {
+                    Ok(_result) => {
                         record_error_log(
                             &parsed,
                             &command,
@@ -135,7 +138,23 @@ impl Runner for NativeMakeRunner {
                             None,
                         );
                         if !logging.suppress_status {
-                            println!("{}", crate::util_display::build_succeeded(result.written));
+                            let summary = crate::build::logging::format_build_summary(
+                                app.warnings.len(),
+                                parsed.warningiserror,
+                            );
+                            println!(
+                                "{}",
+                                crate::build::logging::format_status_message(
+                                    &summary,
+                                    logging.color,
+                                )
+                            );
+                            if let Some(epilog) = crate::build::logging::format_build_epilog(
+                                &parsed.builder,
+                                &app.outdir,
+                            ) {
+                                println!("{epilog}");
+                            }
                         }
                         Ok(crate::build::logging::finish_build(
                             &app.warnings,

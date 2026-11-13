@@ -51,6 +51,7 @@ use crate::environment::{
     BuildEnvironment, CONFIG_CHANGED, CONFIG_NEW, CONFIG_OK, EnvProject, SharedEnv,
 };
 use crate::extension::Extension;
+use crate::locale::{builtin_locale_dir, init_chain, is_translator_registered, tr_console};
 use crate::registry::{SharedRegistry, SphinxComponentRegistry};
 
 // ── AppError ──────────────────────────────────────────────────────────────────
@@ -194,6 +195,10 @@ pub struct SphinxApp {
     pub(crate) debug_messages: Vec<String>,
     /// Sphinx-compatible info messages collected during environment checks.
     pub(crate) info_messages: Vec<String>,
+    /// Sphinx-compatible messages emitted during application initialization.
+    pub(crate) startup_messages: Vec<String>,
+    /// Ordered Sphinx CLI status messages collected during the build.
+    pub(crate) status_messages: Vec<String>,
     /// Native event bus (**H4a**). Shared (via `Rc<RefCell<_>>`) with any
     /// [`PyAppFacade`] constructed by [`load_extension`](Self::load_extension)
     /// so Python-registered listeners fire alongside native ones.
@@ -227,6 +232,8 @@ impl std::fmt::Debug for SphinxApp {
             .field("warnings", &self.warnings)
             .field("debug_messages", &self.debug_messages)
             .field("info_messages", &self.info_messages)
+            .field("startup_messages", &self.startup_messages)
+            .field("status_messages", &self.status_messages)
             .finish_non_exhaustive()
     }
 }
@@ -256,6 +263,7 @@ impl SphinxApp {
         })?;
 
         let outdir = outdir.as_ref().to_path_buf();
+        let output_dir_missing = !outdir.exists();
         // Create outdir if it doesn't exist.
         if !outdir.exists() {
             std::fs::create_dir_all(&outdir)?;
@@ -289,6 +297,30 @@ impl SphinxApp {
         // Read config. If `conf.py` exists in srcdir, read it via PyO3;
         // otherwise use defaults + overrides.
         let config = build_config(&srcdir, overrides);
+        if !is_translator_registered("sphinx", "console")
+            || !is_translator_registered("sphinxdocrs", "console")
+        {
+            let console_locale_dirs = builtin_locale_dir().into_iter().collect::<Vec<_>>();
+            init_chain(&console_locale_dirs, None, "console");
+        }
+        let language = config.language();
+        let locale_dirs = builtin_locale_dir().into_iter().collect::<Vec<_>>();
+        let has_translation = init_chain(&locale_dirs, Some(&language), "general");
+        let translation_status = if has_translation || language == "en" {
+            tr_console("done")
+        } else {
+            tr_console("not available for built-in messages")
+        };
+        let mut loading_translations =
+            console_format("loading translations [%s]... ", &[&language]);
+        loading_translations.push_str(&translation_status);
+        let mut startup_messages = vec![
+            console_format("Running Sphinx v%s", &[&display_sphinx_version()]),
+            loading_translations,
+        ];
+        if output_dir_missing {
+            startup_messages.push(console_progress_done("making output directory"));
+        }
 
         // Register every native builder under its implementing type.
         let mut reg = SphinxComponentRegistry::new();
@@ -321,6 +353,8 @@ impl SphinxApp {
             warnings: Vec::new(),
             debug_messages: Vec::new(),
             info_messages: Vec::new(),
+            startup_messages,
+            status_messages: Vec::new(),
             events: AppEventManager::shared(),
             extensions: HashMap::new(),
             extension_sources: HashMap::new(),
@@ -585,6 +619,16 @@ impl SphinxApp {
     pub fn read(&mut self) -> Result<(), AppError> {
         self.debug_messages.clear();
         self.info_messages.clear();
+        self.status_messages.clear();
+        if self.buildername == "html" {
+            self.status_messages.push(format!(
+                "{}{}",
+                tr_console("building [mo]: "),
+                console_format("targets for %d po files that are out of date", &["0"])
+            ));
+            self.status_messages
+                .push(tr_console("writing output... ").trim_end().to_owned());
+        }
         self.env.borrow_mut().registered_roles =
             self.registry.borrow().roles.keys().cloned().collect();
         self.env.borrow_mut().find_files()?;
@@ -621,6 +665,9 @@ impl SphinxApp {
             .borrow()
             .get_outdated_with_debug_logs(config_changed);
         self.debug_messages.extend(debug_messages);
+        let added_count = added.len();
+        let changed_count = changed.len();
+        let removed_count = removed.len();
         for docname in &removed {
             self.env.borrow_mut().remove_doc(docname);
         }
@@ -636,6 +683,38 @@ impl SphinxApp {
             added
         };
         docnames.sort();
+        let target_count = added_count + changed_count;
+        self.status_messages.push(format!(
+            "{}{}",
+            console_format("building [%s]: ", &[&self.buildername]),
+            console_format(
+                "targets for %d source files that are out of date",
+                &[&target_count.to_string(),]
+            )
+        ));
+        self.status_messages.push(format!(
+            "{}{}{}",
+            tr_console("updating environment: "),
+            if config_changed {
+                format!("[{}] ", tr_console(self.env.borrow().config_status_label()))
+            } else {
+                String::new()
+            },
+            console_format(
+                "%s added, %s changed, %s removed",
+                &[
+                    &added_count.to_string(),
+                    &changed_count.to_string(),
+                    &removed_count.to_string(),
+                ]
+            )
+        ));
+        let reading_prefix = tr_console("reading sources... ");
+        for (index, docname) in docnames.iter().enumerate() {
+            let percent = ((index + 1) * 100) / docnames.len();
+            self.status_messages
+                .push(format!("{reading_prefix}[{percent:>3}%] {docname}"));
+        }
         self.events.borrow_mut().emit(
             "env-get-outdated",
             &[
@@ -654,6 +733,11 @@ impl SphinxApp {
             .read_docs(docnames, Some(&self.events))?;
 
         self.events.borrow_mut().emit("env-updated", &[])?;
+        self.status_messages.push(format!(
+            "{}{}",
+            tr_console("looking for now-outdated files... "),
+            tr_console("none found")
+        ));
         let (cycle_warnings, parent_messages, consistency_warnings) = {
             let env = self.env.borrow();
             (
@@ -669,6 +753,10 @@ impl SphinxApp {
             .borrow_mut()
             .emit("env-check-consistency", &[])?;
         self.env.borrow().save_persisted()?;
+        self.status_messages
+            .push(console_progress_done("pickling environment"));
+        self.status_messages
+            .push(console_progress_done("checking consistency"));
         Ok(())
     }
 
@@ -687,6 +775,16 @@ impl SphinxApp {
     /// Info messages produced during the most recent environment checks.
     pub fn info_messages(&self) -> &[String] {
         &self.info_messages
+    }
+
+    /// Messages emitted while constructing the application.
+    pub fn startup_messages(&self) -> &[String] {
+        &self.startup_messages
+    }
+
+    /// Ordered CLI status messages collected during the most recent build.
+    pub fn status_messages(&self) -> &[String] {
+        &self.status_messages
     }
 
     /// Run the build.
@@ -713,6 +811,43 @@ impl SphinxApp {
             let mut js_files = assets.js_files.clone();
             js_files.extend(registry.js_files.clone());
             env.set_added_assets(css_files, js_files);
+        }
+        if self.buildername == "html" {
+            let mut docnames = self
+                .env
+                .borrow()
+                .all_docs
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            docnames.sort();
+            let template_asset_messages =
+                crate::theme_static::rendered_template_asset_log_messages(
+                    &self.config,
+                    &self.outdir,
+                    &self.srcdir,
+                );
+            self.status_messages
+                .push(console_progress_done("preparing documents"));
+            self.status_messages
+                .push(format!("{}...", tr_console("copying assets")));
+            self.status_messages
+                .push(format!("{}...", tr_console("copying static files")));
+            self.status_messages.extend(template_asset_messages);
+            self.status_messages
+                .push(tr_console("copying static files: done"));
+            self.status_messages
+                .push(format!("{}...", tr_console("copying extra files")));
+            self.status_messages
+                .push(tr_console("copying extra files: done"));
+            self.status_messages
+                .push(tr_console("copying assets: done"));
+            let writing_prefix = tr_console("writing output... ");
+            for (index, docname) in docnames.iter().enumerate() {
+                let percent = ((index + 1) * 100) / docnames.len();
+                self.status_messages
+                    .push(format!("{writing_prefix}[{percent:>3}%] {docname}"));
+            }
         }
         let result = match self.buildername.as_str() {
             "html" => {
@@ -810,6 +945,33 @@ impl SphinxApp {
             other => Err(AppError::UnknownBuilder(other.into())),
         };
 
+        if self.buildername == "html" && result.is_ok() {
+            let language = self.config.language();
+            let language_name = if language == "en" {
+                "English"
+            } else {
+                language.as_str()
+            };
+            self.status_messages.extend([
+                format!(
+                    "{}{} {}",
+                    tr_console("generating indices"),
+                    "...",
+                    console_format("%s %s", &["genindex", &tr_console("done")])
+                ),
+                format!(
+                    "{}{} {}",
+                    tr_console("writing additional pages"),
+                    "...",
+                    console_format("%s %s", &["search", &tr_console("done")])
+                ),
+                console_format(
+                    "dumping search index in %s (code: %s)... done",
+                    &[language_name, &language],
+                ),
+                console_progress_done("dumping object inventory"),
+            ]);
+        }
         if result.is_ok() {
             crate::extensions::build_finished(self)?;
         }
@@ -844,6 +1006,32 @@ fn build_config(srcdir: &Path, overrides: HashMap<String, String>) -> SphinxConf
         }
     }
     SphinxConfig::new(std::collections::HashMap::new(), overrides)
+}
+
+fn console_format(template: &str, values: &[&str]) -> String {
+    let mut message = tr_console(template);
+    for value in values {
+        for placeholder in ["%s", "%d"] {
+            if message.contains(placeholder) {
+                message = message.replacen(placeholder, value, 1);
+                break;
+            }
+        }
+    }
+    message
+}
+
+fn console_progress_done(message: &str) -> String {
+    format!("{}... {}", tr_console(message), tr_console("done"))
+}
+
+fn display_sphinx_version() -> String {
+    Python::attach(|py| -> PyResult<String> {
+        py.import("sphinx")?
+            .getattr("__display_version__")?
+            .extract()
+    })
+    .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_owned())
 }
 
 // ── plugin-discovery resolver (ADR 0005) ──────────────────────────────────────

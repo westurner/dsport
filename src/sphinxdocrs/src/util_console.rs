@@ -13,6 +13,7 @@
 //!   `bold`, `reset`, …), `disable_colour`, `enable_colour`,
 //!   `terminal_supports_colour`.
 
+use std::io::IsTerminal;
 use std::sync::Mutex;
 
 use pyo3::exceptions::PyValueError;
@@ -106,18 +107,20 @@ pub fn terminal_safe(s: &str) -> String {
     out
 }
 
-/// Mirror upstream's `terminal_supports_colour` env logic. The
-/// `isatty` check upstream does on `sys.stdout` is **not** performed
-/// here — callers that need that can do it on the Python side; the
-/// Rust port answers purely from the environment so it is
-/// deterministic in tests.
+/// Mirror upstream's `terminal_supports_colour` environment and stdout checks.
 pub fn terminal_supports_colour_from_env<F: Fn(&str) -> Option<String>>(getenv: F) -> bool {
-    terminal_supports_colour_from_env_impl(&getenv)
+    terminal_supports_colour_from_env_impl(&getenv, std::io::stdout().is_terminal())
 }
 
-fn terminal_supports_colour_from_env_impl(getenv: &dyn Fn(&str) -> Option<String>) -> bool {
+fn terminal_supports_colour_from_env_impl(
+    getenv: &dyn Fn(&str) -> Option<String>,
+    stdout_is_terminal: bool,
+) -> bool {
     if getenv("NO_COLOUR").is_some() || getenv("NO_COLOR").is_some() {
         return false;
+    }
+    if cfg!(windows) {
+        return true;
     }
     if getenv("FORCE_COLOUR").is_some() || getenv("FORCE_COLOR").is_some() {
         return true;
@@ -127,6 +130,9 @@ fn terminal_supports_colour_from_env_impl(getenv: &dyn Fn(&str) -> Option<String
         if v == "true" || v == "1" {
             return true;
         }
+    }
+    if !stdout_is_terminal {
+        return false;
     }
     let term = getenv("TERM").unwrap_or_else(|| "unknown".to_string());
     !matches!(term.to_lowercase().as_str(), "dumb" | "unknown")
@@ -258,7 +264,17 @@ mod tests {
         assert!(!terminal_supports_colour_from_env(ci_false));
 
         let colour_terminal = |k: &str| (k == "TERM").then(|| "xterm-256color".to_string());
-        assert!(terminal_supports_colour_from_env(colour_terminal));
+        assert!(!terminal_supports_colour_from_env_impl(&colour_terminal, false));
+        assert!(terminal_supports_colour_from_env_impl(&colour_terminal, true));
+    }
+
+    #[test]
+    fn env_logic_color_variables_follow_sphinx_presence_semantics() {
+        let empty_no_color = |key: &str| (key == "NO_COLOR").then(String::new);
+        assert!(!terminal_supports_colour_from_env_impl(&empty_no_color, true));
+
+        let empty_force_color = |key: &str| (key == "FORCE_COLOR").then(String::new);
+        assert!(terminal_supports_colour_from_env_impl(&empty_force_color, false));
     }
 
     #[test]

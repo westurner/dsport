@@ -61,7 +61,7 @@ use std::sync::{Arc, Mutex};
 
 use jinja2rs::Environment;
 use markupsafers::Markup;
-use minijinja::value::{from_args, Kwargs, Object, ObjectRepr, Value};
+use minijinja::value::{Kwargs, Object, ObjectRepr, Value, from_args};
 use minijinja::{Error, ErrorKind, State};
 
 use crate::app_events::EventArg;
@@ -754,89 +754,85 @@ fn local_toc_from_doctree(
                 continue;
             }
             let entry = match &node.kind {
-                    docutilsrs::doctree::NodeKind::Section { ids, .. } => {
-                        let Some(title) = node.children.iter().find_map(|&child| {
-                            let title_node = tree.node(child);
-                            matches!(title_node.kind, docutilsrs::doctree::NodeKind::Title)
-                                .then(|| text_content(tree, child))
-                        }) else {
-                            continue;
-                        };
-                        Some(TocEntry {
-                            docname: if level == 0
-                                && index == 0
-                                && (document_title.is_empty() || title == document_title)
-                            {
-                                format!("{docname}#")
-                            } else {
-                                format!("{docname}#{ids}")
-                            },
-                            title,
-                            children: sections(tree, id, docname, level + 1, document_title),
-                        })
-                    }
-                    docutilsrs::doctree::NodeKind::ObjectDescription {
-                        classes,
-                        ids,
-                        sig_text,
-                        ..
-                    } if classes.split_whitespace().any(|class| class == "confval") => {
-                        let title = sig_text
-                            .strip_prefix("confval ")
-                            .unwrap_or(sig_text)
-                            .trim();
-                        Some(TocEntry {
-                            docname: format!("{docname}#{ids}"),
-                            title: title.to_string(),
-                            children: Vec::new(),
-                        })
-                    }
-                    docutilsrs::doctree::NodeKind::ObjectDescription {
-                        classes,
-                        ids,
-                        sig_text,
-                        ..
-                    } if !ids.is_empty()
-                        && classes != "std option"
-                        && !classes
-                            .split_whitespace()
-                            .any(|class| class == "module") =>
+                docutilsrs::doctree::NodeKind::Section { ids, .. } => {
+                    let Some(title) = node.children.iter().find_map(|&child| {
+                        let title_node = tree.node(child);
+                        matches!(title_node.kind, docutilsrs::doctree::NodeKind::Title)
+                            .then(|| text_content(tree, child))
+                    }) else {
+                        continue;
+                    };
+                    Some(TocEntry {
+                        docname: if level == 0
+                            && index == 0
+                            && (document_title.is_empty() || title == document_title)
+                        {
+                            format!("{docname}#")
+                        } else {
+                            format!("{docname}#{ids}")
+                        },
+                        title,
+                        children: sections(tree, id, docname, level + 1, document_title),
+                    })
+                }
+                docutilsrs::doctree::NodeKind::ObjectDescription {
+                    classes,
+                    ids,
+                    sig_text,
+                    ..
+                } if classes.split_whitespace().any(|class| class == "confval") => {
+                    let title = sig_text.strip_prefix("confval ").unwrap_or(sig_text).trim();
+                    Some(TocEntry {
+                        docname: format!("{docname}#{ids}"),
+                        title: title.to_string(),
+                        children: Vec::new(),
+                    })
+                }
+                docutilsrs::doctree::NodeKind::ObjectDescription {
+                    classes,
+                    ids,
+                    sig_text,
+                    ..
+                } if !ids.is_empty()
+                    && classes != "std option"
+                    && !classes.split_whitespace().any(|class| class == "module") =>
+                {
+                    let title = if classes
+                        .split_whitespace()
+                        .any(|class| class == "autoattribute")
                     {
-                        let title = if classes
-                            .split_whitespace()
-                            .any(|class| class == "autoattribute")
-                        {
-                            current_module
-                                .as_deref()
-                                .and_then(|module| ids.strip_prefix(&format!("{module}.")))
-                                .unwrap_or(ids)
-                                .to_string()
-                        } else if classes.split_whitespace().any(|class| class == "py")
-                            && sig_text.starts_with("class ")
-                        {
-                            sig_text
-                                .strip_prefix("class ")
-                                .unwrap_or(sig_text)
-                                .split_once('(')
-                                .map(|(name, _)| name)
-                                .unwrap_or_else(|| sig_text.strip_prefix("class ").unwrap_or(sig_text))
-                                .rsplit('.')
-                                .next()
-                                .unwrap_or(sig_text)
-                                .to_string()
-                        } else if classes.split_whitespace().any(|class| class == "py") {
-                            let name = sig_text
-                                .split_once('(')
-                                .map(|(name, _)| name.trim())
-                                .unwrap_or_else(|| {
-                                    sig_text
-                                        .split_once('=')
-                                        .map(|(name, _)| name.trim())
-                                        .unwrap_or(sig_text.trim())
-                                });
-                            let short_name = name.rsplit('.').next().unwrap_or(name);
-                            let parent_class = node.parent.and_then(|parent_id| {
-                                match &tree.node(parent_id).kind {
+                        current_module
+                            .as_deref()
+                            .and_then(|module| ids.strip_prefix(&format!("{module}.")))
+                            .unwrap_or(ids)
+                            .to_string()
+                    } else if classes.split_whitespace().any(|class| class == "py")
+                        && sig_text.starts_with("class ")
+                    {
+                        sig_text
+                            .strip_prefix("class ")
+                            .unwrap_or(sig_text)
+                            .split_once('(')
+                            .map(|(name, _)| name)
+                            .unwrap_or_else(|| sig_text.strip_prefix("class ").unwrap_or(sig_text))
+                            .rsplit('.')
+                            .next()
+                            .unwrap_or(sig_text)
+                            .to_string()
+                    } else if classes.split_whitespace().any(|class| class == "py") {
+                        let name = sig_text
+                            .split_once('(')
+                            .map(|(name, _)| name.trim())
+                            .unwrap_or_else(|| {
+                                sig_text
+                                    .split_once('=')
+                                    .map(|(name, _)| name.trim())
+                                    .unwrap_or(sig_text.trim())
+                            });
+                        let short_name = name.rsplit('.').next().unwrap_or(name);
+                        let parent_class =
+                            node.parent
+                                .and_then(|parent_id| match &tree.node(parent_id).kind {
                                     docutilsrs::doctree::NodeKind::ObjectDescription {
                                         classes,
                                         sig_text,
@@ -851,7 +847,9 @@ fn local_toc_from_doctree(
                                                 .split_once('(')
                                                 .map(|(name, _)| name)
                                                 .unwrap_or_else(|| {
-                                                    sig_text.strip_prefix("class ").unwrap_or(sig_text)
+                                                    sig_text
+                                                        .strip_prefix("class ")
+                                                        .unwrap_or(sig_text)
                                                 })
                                                 .rsplit('.')
                                                 .next()
@@ -860,63 +858,65 @@ fn local_toc_from_doctree(
                                         )
                                     }
                                     _ => None,
-                                }
-                            });
-                            let member = if sig_text.contains('(') {
-                                format!("{short_name}()")
-                            } else {
-                                short_name.to_string()
-                            };
-                            parent_class
-                                .map(|class_name| format!("{class_name}.{member}"))
-                                .unwrap_or(member)
-                        } else if classes == "rst directive" {
-                            if ids == "directive-rst-directive" {
-                                ".. rst:directive::".to_string()
-                            } else if sig_text.starts_with(".. ") {
-                                sig_text
-                                    .split_once("::")
-                                    .map(|(signature, _)| format!("{signature}::"))
-                                    .unwrap_or_else(|| sig_text.to_string())
-                            } else {
-                                format!(".. {sig_text}::")
-                            }
-                        } else if classes == "rst directive:option" {
-                            if ids == "directive-rst-directive-option" {
-                                ".. rst:directive:option::".to_string()
-                            } else {
-                                sig_text
-                                    .split_whitespace()
-                                    .next()
-                                    .unwrap_or(sig_text)
-                                    .to_string()
-                            }
+                                });
+                        let member = if sig_text.contains('(') {
+                            format!("{short_name}()")
+                        } else {
+                            short_name.to_string()
+                        };
+                        parent_class
+                            .map(|class_name| format!("{class_name}.{member}"))
+                            .unwrap_or(member)
+                    } else if classes == "rst directive" {
+                        if ids == "directive-rst-directive" {
+                            ".. rst:directive::".to_string()
+                        } else if sig_text.starts_with(".. ") {
+                            sig_text
+                                .split_once("::")
+                                .map(|(signature, _)| format!("{signature}::"))
+                                .unwrap_or_else(|| sig_text.to_string())
+                        } else {
+                            format!(".. {sig_text}::")
+                        }
+                    } else if classes == "rst directive:option" {
+                        if ids == "directive-rst-directive-option" {
+                            ".. rst:directive:option::".to_string()
                         } else {
                             sig_text
-                                .split_once(' ')
-                                .map(|(_, signature)| signature.trim())
+                                .split_whitespace()
+                                .next()
                                 .unwrap_or(sig_text)
                                 .to_string()
-                        };
-                        Some(TocEntry {
-                            docname: format!("{docname}#{ids}"),
-                            title,
-                            children: sections(tree, id, docname, level, document_title),
-                        })
-                    }
-                    docutilsrs::doctree::NodeKind::Container { classes }
-                        if classes.chars().next().is_some_and(char::is_uppercase)
-                            && current_module.is_some() =>
-                    {
-                        let class_name = classes.split_whitespace().next().unwrap_or(classes);
-                        Some(TocEntry {
-                            docname: format!("{docname}#{}.{class_name}", current_module.as_deref().unwrap_or_default()),
-                            title: class_name.to_string(),
-                            children: sections(tree, id, docname, level + 1, document_title),
-                        })
-                    }
-                    _ => None,
-                };
+                        }
+                    } else {
+                        sig_text
+                            .split_once(' ')
+                            .map(|(_, signature)| signature.trim())
+                            .unwrap_or(sig_text)
+                            .to_string()
+                    };
+                    Some(TocEntry {
+                        docname: format!("{docname}#{ids}"),
+                        title,
+                        children: sections(tree, id, docname, level, document_title),
+                    })
+                }
+                docutilsrs::doctree::NodeKind::Container { classes }
+                    if classes.chars().next().is_some_and(char::is_uppercase)
+                        && current_module.is_some() =>
+                {
+                    let class_name = classes.split_whitespace().next().unwrap_or(classes);
+                    Some(TocEntry {
+                        docname: format!(
+                            "{docname}#{}.{class_name}",
+                            current_module.as_deref().unwrap_or_default()
+                        ),
+                        title: class_name.to_string(),
+                        children: sections(tree, id, docname, level + 1, document_title),
+                    })
+                }
+                _ => None,
+            };
             if let Some(entry) = entry {
                 entries.push(entry);
             }
@@ -936,9 +936,11 @@ fn local_toc_from_doctree(
                 .children
                 .iter()
                 .find_map(|&id| match &tree.node(id).kind {
-                    docutilsrs::doctree::NodeKind::Section { classes, .. } => {
-                        Some(classes.split_whitespace().any(|class| class == "hide-header"))
-                    }
+                    docutilsrs::doctree::NodeKind::Section { classes, .. } => Some(
+                        classes
+                            .split_whitespace()
+                            .any(|class| class == "hide-header"),
+                    ),
                     _ => None,
                 })
                 .unwrap_or(false);
@@ -1177,9 +1179,7 @@ impl ThemeRenderer {
         let jinja_env = Environment::with_loader_paths(loader_chain);
 
         let mut all_docs: HashSet<String> = all_docs.into_iter().cloned().collect();
-        if env.config.html_domain_indices()
-            && !crate::genindex::build_modindex(env).is_empty()
-        {
+        if env.config.html_domain_indices() && !crate::genindex::build_modindex(env).is_empty() {
             all_docs.insert("py-modindex".to_string());
         }
         let toc_entries = toctree::global_toctree_for_doc(env, 0);
@@ -1191,13 +1191,14 @@ impl ThemeRenderer {
                 max_depth: 0,
             }]
         });
-        let mut toc_groups_with_hidden = global_toc_groups(env, &root_doc, true).unwrap_or_else(|| {
-            vec![TocGroup {
-                caption: None,
-                entries: toc_entries.clone(),
-                max_depth: 0,
-            }]
-        });
+        let mut toc_groups_with_hidden =
+            global_toc_groups(env, &root_doc, true).unwrap_or_else(|| {
+                vec![TocGroup {
+                    caption: None,
+                    entries: toc_entries.clone(),
+                    max_depth: 0,
+                }]
+            });
         for group in &mut toc_groups {
             enrich_toc_entries_with_sections(env, &mut group.entries);
         }
@@ -1669,10 +1670,7 @@ fn build_global_context(
     ctx.insert("file_suffix".into(), file_suffix.into());
     ctx.insert("link_suffix".into(), link_suffix.into());
     ctx.insert("language".into(), config.language().into());
-    ctx.insert(
-        "sphinx_version".into(),
-        config.release().into(),
-    );
+    ctx.insert("sphinx_version".into(), config.release().into());
     ctx.insert("builder".into(), builder.into());
     ctx.insert("html5_doctype".into(), true.into());
     ctx.insert("html_tag".into(), serde_json::Value::Null);
@@ -1955,11 +1953,7 @@ mod tests {
             children: Vec::new(),
         }];
 
-        let html = render_toc_html(
-            &entries,
-            "usage/extensions/autodoc.html",
-            PathStyle::Flat,
-        );
+        let html = render_toc_html(&entries, "usage/extensions/autodoc.html", PathStyle::Flat);
 
         assert!(html.contains("href=\"#\">Current page</a>"), "got: {html}");
     }
@@ -2125,12 +2119,21 @@ mod tests {
         assert_eq!(confval.docname, "usage/configuration#confval-project");
         let aliases = &entries[0].children[0].children[1..];
         assert_eq!(
-            aliases.iter().map(|entry| entry.title.as_str()).collect::<Vec<_>>(),
+            aliases
+                .iter()
+                .map(|entry| entry.title.as_str())
+                .collect::<Vec<_>>(),
             vec!["copyright", "project_copyright"]
         );
-        assert_eq!(aliases[1].docname, "usage/configuration#confval-project_copyright");
+        assert_eq!(
+            aliases[1].docname,
+            "usage/configuration#confval-project_copyright"
+        );
         let html = render_toc_html(&entries, "usage/configuration.html", PathStyle::Flat);
-        assert!(html.contains("href=\"#confval-project\">project</a>"), "got: {html}");
+        assert!(
+            html.contains("href=\"#confval-project\">project</a>"),
+            "got: {html}"
+        );
         assert!(
             html.contains("href=\"#confval-project_copyright\">project_copyright</a>"),
             "got: {html}"
@@ -2186,8 +2189,14 @@ mod tests {
         assert_eq!(entries.len(), 1, "got: {entries:?}");
         assert_eq!(entries[0].title, "Event Manager API");
         assert_eq!(entries[0].children[0].title, "EventManager");
-        assert_eq!(entries[0].children[0].children[0].title, "EventManager.add()");
-        assert_eq!(entries[0].children[0].children[0].docname, "extdev/eventapi#add");
+        assert_eq!(
+            entries[0].children[0].children[0].title,
+            "EventManager.add()"
+        );
+        assert_eq!(
+            entries[0].children[0].children[0].docname,
+            "extdev/eventapi#add"
+        );
     }
 
     #[test]
@@ -2265,7 +2274,10 @@ mod tests {
             relations["guide/extensions/autodoc"].parent.as_deref(),
             Some("guide/extensions")
         );
-        assert_eq!(relations["guide/extensions"].parent.as_deref(), Some("guide"));
+        assert_eq!(
+            relations["guide/extensions"].parent.as_deref(),
+            Some("guide")
+        );
     }
 
     #[test]
@@ -2382,8 +2394,14 @@ mod tests {
 
     #[test]
     fn path_and_asset_helpers_cover_flat_dir_fragments_and_checksums() {
-        assert_eq!(target_uri(PathStyle::Flat, "guide/page#intro"), "guide/page.html#intro");
-        assert_eq!(target_uri(PathStyle::Dir, "guide/page#intro"), "guide/page/#intro");
+        assert_eq!(
+            target_uri(PathStyle::Flat, "guide/page#intro"),
+            "guide/page.html#intro"
+        );
+        assert_eq!(
+            target_uri(PathStyle::Dir, "guide/page#intro"),
+            "guide/page/#intro"
+        );
         assert_eq!(content_root(PathStyle::Flat, "index"), "./");
         assert_eq!(content_root(PathStyle::Flat, "guide/page"), "../");
         assert_eq!(content_root(PathStyle::Flat, "guide/api/page"), "../../");
@@ -2391,7 +2409,11 @@ mod tests {
         assert_eq!(content_root(PathStyle::Dir, "guide/index"), "../");
         assert_eq!(content_root(PathStyle::Dir, "guide/page"), "../../");
         assert_eq!(
-            page_relative_asset_url(PathStyle::Flat, "usage/configuration", "_static/favicon.svg"),
+            page_relative_asset_url(
+                PathStyle::Flat,
+                "usage/configuration",
+                "_static/favicon.svg"
+            ),
             "../_static/favicon.svg"
         );
         assert_eq!(
@@ -2399,10 +2421,17 @@ mod tests {
             "_static/favicon.svg"
         );
         assert_eq!(
-            page_relative_asset_url(PathStyle::Flat, "usage/configuration", "https://example.test/favicon.svg"),
+            page_relative_asset_url(
+                PathStyle::Flat,
+                "usage/configuration",
+                "https://example.test/favicon.svg"
+            ),
             "https://example.test/favicon.svg"
         );
-        assert_eq!(append_checksum("asset.js".into(), Some("abc")), "asset.js?v=abc");
+        assert_eq!(
+            append_checksum("asset.js".into(), Some("abc")),
+            "asset.js?v=abc"
+        );
         assert_eq!(append_checksum("asset.js".into(), None), "asset.js");
 
         let outdir = tempfile::TempDir::new().unwrap();
@@ -2432,11 +2461,23 @@ mod tests {
     fn context_and_static_asset_conversion_cover_all_value_families() {
         let mut ctx = serde_json::Map::new();
         ctx.insert("body".into(), "<p>body</p>".into());
-        ctx.insert("next".into(), serde_json::json!({"link": "next.html", "title": "Next"}));
+        ctx.insert(
+            "next".into(),
+            serde_json::json!({"link": "next.html", "title": "Next"}),
+        );
         ctx.insert("prev".into(), serde_json::Value::Null);
-        ctx.insert("parents".into(), serde_json::json!([{"link": "../", "title": "Root"}]));
-        ctx.insert("project_links".into(), serde_json::json!([{"url": "https://example.test", "title": "Docs"}, "bad"]));
-        ctx.insert("css_files".into(), serde_json::json!(["_static/site.css", 42]));
+        ctx.insert(
+            "parents".into(),
+            serde_json::json!([{"link": "../", "title": "Root"}]),
+        );
+        ctx.insert(
+            "project_links".into(),
+            serde_json::json!([{"url": "https://example.test", "title": "Docs"}, "bad"]),
+        );
+        ctx.insert(
+            "css_files".into(),
+            serde_json::json!(["_static/site.css", 42]),
+        );
         ctx.insert("script_files".into(), serde_json::json!("not-a-list"));
         let converted = to_minijinja_context(ctx);
         assert!(converted.contains_key("body"));
@@ -2475,7 +2516,8 @@ mod tests {
         ] {
             std::fs::write(static_dir.join(name), "x").unwrap();
         }
-        let (css, js) = discover_static_assets(outdir.path(), &["theme.css".into(), "missing.css".into()]);
+        let (css, js) =
+            discover_static_assets(outdir.path(), &["theme.css".into(), "missing.css".into()]);
         assert_eq!(css, vec!["_static/theme.css"]);
         assert_eq!(
             js,
@@ -2489,10 +2531,18 @@ mod tests {
 
     #[test]
     fn theme_renderer_returns_none_for_unresolvable_theme() {
-        let mut env = make_test_env("/tmp/theme-render-missing-src", "/tmp/theme-render-missing-doctrees");
-        env.config.set("html_theme", crate::config::ConfigVal::Str("definitely_missing_theme".into()));
+        let mut env = make_test_env(
+            "/tmp/theme-render-missing-src",
+            "/tmp/theme-render-missing-doctrees",
+        );
+        env.config.set(
+            "html_theme",
+            crate::config::ConfigVal::Str("definitely_missing_theme".into()),
+        );
         let outdir = tempfile::TempDir::new().unwrap();
-        assert!(ThemeRenderer::new(&env, outdir.path(), std::iter::empty(), PathStyle::Flat).is_none());
+        assert!(
+            ThemeRenderer::new(&env, outdir.path(), std::iter::empty(), PathStyle::Flat).is_none()
+        );
     }
 
     #[test]
@@ -2713,10 +2763,7 @@ mod tests {
         let ctx =
             build_global_context(&env, outdir, &Default::default(), &[], &[], PathStyle::Flat);
 
-        assert_eq!(
-            ctx["sphinx_version"],
-            env.config.release()
-        );
+        assert_eq!(ctx["sphinx_version"], env.config.release());
     }
 
     /// Regression test: real `DirectoryHTMLBuilder` never overrides

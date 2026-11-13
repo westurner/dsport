@@ -2642,8 +2642,14 @@ imgmath_dvisvgm = 'dvisvgm-custom'
             ConfigVal::List(vec![ConfigVal::Str("docs/**".into()), ConfigVal::Int(1)]),
         );
         raw.insert("highlight_language".into(), ConfigVal::Str("rust".into()));
-        raw.insert("html_add_external_link_class".into(), ConfigVal::Bool(false));
-        raw.insert("html_highlight_object_signatures".into(), ConfigVal::Bool(true));
+        raw.insert(
+            "html_add_external_link_class".into(),
+            ConfigVal::Bool(false),
+        );
+        raw.insert(
+            "html_highlight_object_signatures".into(),
+            ConfigVal::Bool(true),
+        );
         raw.insert("numfig".into(), ConfigVal::Bool(true));
         raw.insert("nitpicky".into(), ConfigVal::Bool(true));
         raw.insert("smartquotes".into(), ConfigVal::Bool(false));
@@ -2682,7 +2688,10 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         ] {
             raw.insert(name.into(), ConfigVal::Bool(false));
         }
-        raw.insert("html_sourcelink_suffix".into(), ConfigVal::Str(".rst".into()));
+        raw.insert(
+            "html_sourcelink_suffix".into(),
+            ConfigVal::Str(".rst".into()),
+        );
         raw.insert(
             "html_use_opensearch".into(),
             ConfigVal::Str("https://docs.example.test".into()),
@@ -2699,7 +2708,10 @@ imgmath_dvisvgm = 'dvisvgm-custom'
             ConfigVal::Map(vec![
                 (
                     "index".into(),
-                    ConfigVal::List(vec![ConfigVal::Str("localtoc.html".into()), ConfigVal::Int(1)]),
+                    ConfigVal::List(vec![
+                        ConfigVal::Str("localtoc.html".into()),
+                        ConfigVal::Int(1),
+                    ]),
                 ),
                 ("guide/*".into(), ConfigVal::Str("not-a-list".into())),
             ]),
@@ -2819,7 +2831,10 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         assert!(cfg.html_static_path().is_empty());
         assert!(cfg.html_theme_path().is_empty());
         assert_eq!(cfg.html_title(), "Project name not set  documentation");
-        assert_eq!(cfg.html_short_title(), "Project name not set  documentation");
+        assert_eq!(
+            cfg.html_short_title(),
+            "Project name not set  documentation"
+        );
         assert!(cfg.html_context().is_empty());
         assert!(cfg.html_theme_options().is_empty());
         assert!(cfg.html_show_copyright());
@@ -2866,7 +2881,10 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         );
         raw.insert(
             "linkcheck_ignore".into(),
-            ConfigVal::List(vec![ConfigVal::Str("^https://skip".into()), ConfigVal::Int(1)]),
+            ConfigVal::List(vec![
+                ConfigVal::Str("^https://skip".into()),
+                ConfigVal::Int(1),
+            ]),
         );
         raw.insert(
             "linkcheck_allowed_redirects".into(),
@@ -2914,7 +2932,10 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         let mut raw = HashMap::new();
         raw.insert("linkcheck_timeout".into(), ConfigVal::Int(-1));
         raw.insert("linkcheck_retries".into(), ConfigVal::Int(-1));
-        raw.insert("linkcheck_rate_limit_timeout".into(), ConfigVal::Float(-1.0));
+        raw.insert(
+            "linkcheck_rate_limit_timeout".into(),
+            ConfigVal::Float(-1.0),
+        );
         raw.insert("html_domain_indices".into(), ConfigVal::List(vec![]));
         let cfg = SphinxConfig::new(raw, HashMap::new());
         assert_eq!(cfg.linkcheck_timeout(), 30);
@@ -2944,19 +2965,28 @@ imgmath_dvisvgm = 'dvisvgm-custom'
         overrides.insert("linkcheck_timeout".into(), "not-a-number".into());
         let cfg = SphinxConfig::new(raw, overrides);
 
-        assert_eq!(cfg.get("master_doc"), Some(ConfigVal::Str("contents".into())));
+        assert_eq!(
+            cfg.get("master_doc"),
+            Some(ConfigVal::Str("contents".into()))
+        );
         assert_eq!(
             cfg.get("project_copyright"),
             Some(ConfigVal::Str("2026, Docs".into()))
         );
         assert_eq!(cfg.linkcheck_timeout(), 7);
-        assert_eq!(cfg.source_suffix().get(".rst").map(String::as_str), Some("restructuredtext"));
+        assert_eq!(
+            cfg.source_suffix().get(".rst").map(String::as_str),
+            Some("restructuredtext")
+        );
         assert!(cfg.linkcheck_allowed_redirects().is_empty());
         assert_eq!(cfg.linkcheck_anchors_ignore(), vec!["^!"]);
 
         let mut cfg = SphinxConfig::new_defaults();
         cfg.set("copyright", ConfigVal::Str("2027, Docs".into()));
-        assert_eq!(cfg.get("project_copyright"), Some(ConfigVal::Str("2027, Docs".into())));
+        assert_eq!(
+            cfg.get("project_copyright"),
+            Some(ConfigVal::Str("2027, Docs".into()))
+        );
         cfg.set("project_copyright", ConfigVal::Str("2028, Docs".into()));
         assert_eq!(
             cfg.raw_config().get("copyright"),
@@ -3018,7 +3048,10 @@ mod raw_config_from_conf_py_tests {
         )
         .unwrap();
         std::fs::write(
-            sphinx_package.parent().unwrap().join("sphinx_conf_probe.py"),
+            sphinx_package
+                .parent()
+                .unwrap()
+                .join("sphinx_conf_probe.py"),
             "PROJECT_NAME = 'vendored-sphinx'\n",
         )
         .unwrap();
@@ -3183,14 +3216,17 @@ intersphinx_mapping = {
 
     #[test]
     fn source_suffix_dict_form() {
-        let (_dir, path) = write_conf(r#"source_suffix = {".rst": "restructuredtext", ".md": "markdown"}"#);
+        let (_dir, path) =
+            write_conf(r#"source_suffix = {".rst": "restructuredtext", ".md": "markdown"}"#);
         let raw = raw_config_from_conf_py(&path).unwrap();
         let ConfigVal::Map(pairs) = &raw["source_suffix"] else {
             panic!("expected Map");
         };
-        assert!(pairs
-            .iter()
-            .any(|(k, v)| k == ".rst" && v.as_str() == Some("restructuredtext")));
+        assert!(
+            pairs
+                .iter()
+                .any(|(k, v)| k == ".rst" && v.as_str() == Some("restructuredtext"))
+        );
     }
 
     #[test]
@@ -3206,7 +3242,10 @@ intersphinx_mapping = {
         let raw = raw_config_from_conf_py(&path).unwrap();
         assert_eq!(
             raw["source_suffix"],
-            ConfigVal::List(vec![ConfigVal::Str(".rst".into()), ConfigVal::Str(".md".into())])
+            ConfigVal::List(vec![
+                ConfigVal::Str(".rst".into()),
+                ConfigVal::Str(".md".into())
+            ])
         );
     }
 
@@ -3217,7 +3256,13 @@ intersphinx_mapping = {
         let ConfigVal::Map(pairs) = &raw["needs_extensions"] else {
             panic!("expected Map");
         };
-        assert_eq!(pairs[0], ("sphinx.ext.autodoc".to_string(), ConfigVal::Str("1.0".into())));
+        assert_eq!(
+            pairs[0],
+            (
+                "sphinx.ext.autodoc".to_string(),
+                ConfigVal::Str("1.0".into())
+            )
+        );
     }
 
     #[test]
@@ -3272,10 +3317,16 @@ html_context = {"links": [Link("Home", "https://example.org")]}
         let ConfigVal::Map(link) = &links[0] else {
             panic!("expected Map for Link named-tuple-like object");
         };
-        assert_eq!(link[0], ("title".to_string(), ConfigVal::Str("Home".into())));
+        assert_eq!(
+            link[0],
+            ("title".to_string(), ConfigVal::Str("Home".into()))
+        );
         assert_eq!(
             link[1],
-            ("url".to_string(), ConfigVal::Str("https://example.org".into()))
+            (
+                "url".to_string(),
+                ConfigVal::Str("https://example.org".into())
+            )
         );
     }
 
@@ -3330,7 +3381,10 @@ def setup(app):
         use std::str::FromStr;
         assert_eq!(RebuildKind::from_str("env").unwrap(), RebuildKind::Env);
         assert_eq!(RebuildKind::from_str("epub").unwrap(), RebuildKind::Epub);
-        assert_eq!(RebuildKind::from_str("gettext").unwrap(), RebuildKind::Gettext);
+        assert_eq!(
+            RebuildKind::from_str("gettext").unwrap(),
+            RebuildKind::Gettext
+        );
         assert_eq!(RebuildKind::from_str("html").unwrap(), RebuildKind::Html);
         assert_eq!(RebuildKind::from_str("unknown").unwrap(), RebuildKind::None);
         assert_eq!(RebuildKind::from_str("").unwrap(), RebuildKind::None);
@@ -3367,7 +3421,10 @@ fallback_dict = {1: "bad-key"}
 "#,
         );
         let raw = raw_config_from_conf_py(&path).unwrap();
-        assert_eq!(raw.get("extensions"), Some(&ConfigVal::Str("not-a-list".into())));
+        assert_eq!(
+            raw.get("extensions"),
+            Some(&ConfigVal::Str("not-a-list".into()))
+        );
         assert!(!raw.contains_key("project"));
         assert_eq!(
             raw.get("html_static_path"),
@@ -3375,7 +3432,10 @@ fallback_dict = {1: "bad-key"}
         );
         assert!(!raw.contains_key("latex_documents"));
         assert!(!raw.contains_key("man_pages"));
-        assert!(matches!(raw.get("intersphinx_mapping"), Some(ConfigVal::Map(_))));
+        assert!(matches!(
+            raw.get("intersphinx_mapping"),
+            Some(ConfigVal::Map(_))
+        ));
         assert!(matches!(raw.get("source_suffix"), Some(ConfigVal::Int(42))));
         assert_eq!(raw.get("needs_extensions"), Some(&ConfigVal::List(vec![])));
         assert!(!raw.contains_key("fallback_list"));
@@ -3390,9 +3450,24 @@ fallback_dict = {1: "bad-key"}
         Python::attach(|py| -> PyResult<()> {
             let result = py_read_conf_py(py, path.to_str().unwrap())?;
             let dict = result.bind(py);
-            assert_eq!(dict.get_item("effective_math_renderer")?.unwrap().extract::<String>()?, "imgmath");
-            assert_eq!(dict.get_item("mathjax_path")?.unwrap().extract::<String>()?, "custom.js");
-            assert_eq!(dict.get_item("imgmath_image_format")?.unwrap().extract::<String>()?, "svg");
+            assert_eq!(
+                dict.get_item("effective_math_renderer")?
+                    .unwrap()
+                    .extract::<String>()?,
+                "imgmath"
+            );
+            assert_eq!(
+                dict.get_item("mathjax_path")?
+                    .unwrap()
+                    .extract::<String>()?,
+                "custom.js"
+            );
+            assert_eq!(
+                dict.get_item("imgmath_image_format")?
+                    .unwrap()
+                    .extract::<String>()?,
+                "svg"
+            );
             assert!(dict.get_item("mathjax_options")?.is_some());
             Ok(())
         })

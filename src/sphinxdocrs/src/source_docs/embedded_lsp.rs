@@ -7,9 +7,9 @@ use std::io::{BufReader, Read, Write};
 use ruff_python_ast::{Expr, Stmt, StmtClassDef, StmtFunctionDef};
 use ruff_python_parser::parse_module;
 use ruff_text_size::Ranged;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::lsp_backend::{read_frame, write_frame, LspServerConfig, LspSnapshotProvider};
+use super::lsp_backend::{LspServerConfig, LspSnapshotProvider, read_frame, write_frame};
 use super::model::{
     AnalysisError, AnalysisSnapshot, DeclarationKind, SourceAnalysisRequest, SourceDeclaration,
     SourceLanguage,
@@ -237,10 +237,8 @@ fn python_class_symbol(class: &StmtClassDef, index: &LineColIndex<'_>) -> Value 
             }
             Stmt::AnnAssign(ann) => {
                 if let Expr::Name(target_name) = ann.target.as_ref() {
-                    let field_range = index.lsp_range(
-                        ann.range().start().to_usize(),
-                        ann.range().end().to_usize(),
-                    );
+                    let field_range = index
+                        .lsp_range(ann.range().start().to_usize(), ann.range().end().to_usize());
                     let sel_range = index.lsp_range(
                         target_name.range().start().to_usize(),
                         target_name.range().end().to_usize(),
@@ -320,8 +318,9 @@ fn parse_rust_block(
                 recognize_rust_declaration(trimmed, in_impl_or_trait)
             {
                 let is_test = (sym_kind == 12 || sym_kind == 6) && pending_test_attr;
-                let child_in_test_mod =
-                    in_test_mod || (block_kind == Some(RustBlockKind::Module) && (pending_cfg_test || name == "tests"));
+                let child_in_test_mod = in_test_mod
+                    || (block_kind == Some(RustBlockKind::Module)
+                        && (pending_cfg_test || name == "tests"));
                 pending_test_attr = false;
                 pending_cfg_test = false;
 
@@ -456,7 +455,11 @@ fn recognize_rust_declaration(
     }
     let rest = strip_rust_qualifiers(trimmed);
     for (kw, kind, block_kind) in [
-        ("fn ", if in_impl_or_trait { 6u64 } else { 12u64 }, Some(RustBlockKind::Other)),
+        (
+            "fn ",
+            if in_impl_or_trait { 6u64 } else { 12u64 },
+            Some(RustBlockKind::Other),
+        ),
         ("struct ", 23u64, Some(RustBlockKind::Other)),
         ("enum ", 10u64, Some(RustBlockKind::Other)),
         ("trait ", 11u64, Some(RustBlockKind::Trait)),
@@ -509,7 +512,10 @@ fn strip_rust_qualifiers(mut s: &str) -> &str {
         for kw in ["default ", "const ", "async ", "unsafe "] {
             if let Some(rest) = s.strip_prefix(kw) {
                 // Keep `const ` if it's `const NAME: Type` rather than `const fn`
-                if kw == "const " && !rest.trim_start().starts_with("fn ") && !rest.trim_start().starts_with("unsafe ") {
+                if kw == "const "
+                    && !rest.trim_start().starts_with("fn ")
+                    && !rest.trim_start().starts_with("unsafe ")
+                {
                     continue;
                 }
                 s = rest.trim_start();
@@ -791,7 +797,9 @@ impl LspComparisonReport {
 
     pub fn render_markdown(&self) -> String {
         let mut out = String::new();
-        out.push_str("# Sphinx (`sphinxdoc`) vs. `sphinxdocrs` LSP API & Test Comparison Report\n\n");
+        out.push_str(
+            "# Sphinx (`sphinxdoc`) vs. `sphinxdocrs` LSP API & Test Comparison Report\n\n",
+        );
         out.push_str(
             "Generated via `sphinxdocrs` LSP `textDocument/documentSymbol` analysis (`sphinx-source-status --compare-tests`).\n\n",
         );
@@ -801,9 +809,18 @@ impl LspComparisonReport {
         for (label, summary) in [
             ("`sphinx` API (`src/sphinx/sphinx`)", &self.sphinx_api),
             ("`sphinx` tests (`src/sphinx/tests`)", &self.sphinx_tests),
-            ("`sphinxdocrs` crate (`src/sphinxdocrs/src`, incl. inline `#[cfg(test)]`)", &self.sphinxdocrs_src),
-            ("`sphinxdocrs` Rust integration tests (`src/sphinxdocrs/tests`)", &self.sphinxdocrs_integration_tests),
-            ("`sphinxdocrs` Python bridge tests (`src/tests/test_sphinx*`)", &self.sphinxdocrs_py_tests),
+            (
+                "`sphinxdocrs` crate (`src/sphinxdocrs/src`, incl. inline `#[cfg(test)]`)",
+                &self.sphinxdocrs_src,
+            ),
+            (
+                "`sphinxdocrs` Rust integration tests (`src/sphinxdocrs/tests`)",
+                &self.sphinxdocrs_integration_tests,
+            ),
+            (
+                "`sphinxdocrs` Python bridge tests (`src/tests/test_sphinx*`)",
+                &self.sphinxdocrs_py_tests,
+            ),
         ] {
             out.push_str(&format!(
                 "| {} | {} | {} | {} | {} | {} |\n",
@@ -895,8 +912,8 @@ pub fn summarize_declarations(
             .attributes
             .get("lsp:is_test")
             .is_some_and(|v| v == "true");
-        let in_test_mod = decl.qualified_name.contains("::tests::")
-            || decl.qualified_name.starts_with("tests::");
+        let in_test_mod =
+            decl.qualified_name.contains("::tests::") || decl.qualified_name.starts_with("tests::");
         match decl.kind {
             DeclarationKind::Function | DeclarationKind::Method => {
                 if is_test {
@@ -995,8 +1012,7 @@ pub fn build_repository_comparison_report(
     let sphinxdocrs_src = summarize_declarations(rs_src_files.len(), &rs_src_refs, false);
     let sphinxdocrs_integration_tests =
         summarize_declarations(rs_test_files.len(), &rs_tests_refs, true);
-    let sphinxdocrs_py_tests =
-        summarize_declarations(py_bridge_files.len(), &py_bridge_refs, true);
+    let sphinxdocrs_py_tests = summarize_declarations(py_bridge_files.len(), &py_bridge_refs, true);
 
     let subsystems = build_subsystem_rows(
         &sphinx_api_snap.declarations,
@@ -1072,7 +1088,12 @@ const SUBSYSTEM_SPECS: &[SubsystemSpec] = &[
         name: "errors",
         sphinx_api_prefixes: &["errors.py"],
         sphinx_test_prefixes: &["test_errors.py"],
-        rs_api_prefixes: &["errors.rs", "error_log.rs", "error_log_disabled.rs", "bin/sphinx_errors.rs"],
+        rs_api_prefixes: &[
+            "errors.rs",
+            "error_log.rs",
+            "error_log_disabled.rs",
+            "bin/sphinx_errors.rs",
+        ],
         rs_test_prefixes: &[],
         py_bridge_prefixes: &["test_sphinxdocrs_errors.py"],
     },
@@ -1090,7 +1111,10 @@ const SUBSYSTEM_SPECS: &[SubsystemSpec] = &[
         sphinx_test_prefixes: &["test_project.py"],
         rs_api_prefixes: &["project.rs"],
         rs_test_prefixes: &[],
-        py_bridge_prefixes: &["test_sphinxdocrs_project.py", "test_sphinxdocrs_project_discover.py"],
+        py_bridge_prefixes: &[
+            "test_sphinxdocrs_project.py",
+            "test_sphinxdocrs_project_discover.py",
+        ],
     },
     SubsystemSpec {
         name: "addnodes",
@@ -1112,9 +1136,18 @@ const SUBSYSTEM_SPECS: &[SubsystemSpec] = &[
         name: "extension & registry",
         sphinx_api_prefixes: &["extension.py", "registry.py"],
         sphinx_test_prefixes: &["test_extensions/"],
-        rs_api_prefixes: &["extension.rs", "extensions/", "registry.rs", "app_facade.rs", "scan.rs"],
+        rs_api_prefixes: &[
+            "extension.rs",
+            "extensions/",
+            "registry.rs",
+            "app_facade.rs",
+            "scan.rs",
+        ],
         rs_test_prefixes: &["registry.rs", "scan_requirements.rs"],
-        py_bridge_prefixes: &["test_sphinxdocrs_extension.py", "test_sphinxdocrs_hybrid.py"],
+        py_bridge_prefixes: &[
+            "test_sphinxdocrs_extension.py",
+            "test_sphinxdocrs_hybrid.py",
+        ],
     },
     SubsystemSpec {
         name: "versioning",
@@ -1143,7 +1176,10 @@ const SUBSYSTEM_SPECS: &[SubsystemSpec] = &[
             "http_client.rs",
         ],
         rs_test_prefixes: &["util_rst_osutil.rs", "util_extra.rs", "assets.rs"],
-        py_bridge_prefixes: &["test_sphinxdocrs_util_console.py", "test_sphinxdocrs_util_matching.py"],
+        py_bridge_prefixes: &[
+            "test_sphinxdocrs_util_console.py",
+            "test_sphinxdocrs_util_matching.py",
+        ],
     },
     SubsystemSpec {
         name: "locale & intl",
@@ -1198,7 +1234,12 @@ const SUBSYSTEM_SPECS: &[SubsystemSpec] = &[
         sphinx_api_prefixes: &["environment/"],
         sphinx_test_prefixes: &["test_environment/"],
         rs_api_prefixes: &["environment.rs", "toctree.rs", "genindex.rs"],
-        rs_test_prefixes: &["environment.rs", "toctree.rs", "genindex.rs", "incremental.rs"],
+        rs_test_prefixes: &[
+            "environment.rs",
+            "toctree.rs",
+            "genindex.rs",
+            "incremental.rs",
+        ],
         py_bridge_prefixes: &[],
     },
     SubsystemSpec {
@@ -1290,11 +1331,7 @@ const SUBSYSTEM_SPECS: &[SubsystemSpec] = &[
     SubsystemSpec {
         name: "highlighting & transforms & other ext",
         sphinx_api_prefixes: &["highlighting.py", "transforms/", "ext/"],
-        sphinx_test_prefixes: &[
-            "test_highlighting.py",
-            "test_transforms/",
-            "test_ext_",
-        ],
+        sphinx_test_prefixes: &["test_highlighting.py", "test_transforms/", "test_ext_"],
         rs_api_prefixes: &["lib.rs"],
         rs_test_prefixes: &[],
         py_bridge_prefixes: &[],
@@ -1302,10 +1339,15 @@ const SUBSYSTEM_SPECS: &[SubsystemSpec] = &[
 ];
 
 fn matches_any_prefix(path: &str, prefixes: &[&str], exclude_prefixes: &[&str]) -> bool {
-    if exclude_prefixes.iter().any(|ex| path == *ex || path.starts_with(ex)) {
+    if exclude_prefixes
+        .iter()
+        .any(|ex| path == *ex || path.starts_with(ex))
+    {
         return false;
     }
-    prefixes.iter().any(|prefix| path == *prefix || path.starts_with(prefix))
+    prefixes
+        .iter()
+        .any(|prefix| path == *prefix || path.starts_with(prefix))
 }
 
 fn build_subsystem_rows(
@@ -1315,7 +1357,12 @@ fn build_subsystem_rows(
     rs_tests: &[SourceDeclaration],
     py_bridge: &[SourceDeclaration],
 ) -> Vec<SubsystemComparisonRow> {
-    let specific_ext_api = &["ext/apidoc/", "ext/autosummary/", "ext/autodoc/", "ext/intersphinx/"];
+    let specific_ext_api = &[
+        "ext/apidoc/",
+        "ext/autosummary/",
+        "ext/autodoc/",
+        "ext/intersphinx/",
+    ];
     let specific_ext_tests = &[
         "test_ext_apidoc/",
         "test_ext_autosummary/",
@@ -1344,7 +1391,9 @@ fn build_subsystem_rows(
             .collect();
         let sp_tst: Vec<&SourceDeclaration> = sphinx_tests
             .iter()
-            .filter(|d| matches_any_prefix(&d.source.path, spec.sphinx_test_prefixes, exclude_tests))
+            .filter(|d| {
+                matches_any_prefix(&d.source.path, spec.sphinx_test_prefixes, exclude_tests)
+            })
             .collect();
         let rs_api_decls: Vec<&SourceDeclaration> = rs_src
             .iter()
@@ -1366,7 +1415,8 @@ fn build_subsystem_rows(
         let sp_api_sum = summarize_declarations(sp_api_files, &sp_api, false);
         let sp_tst_sum = summarize_declarations(sp_tst_files, &sp_tst, true);
         let rs_src_sum = summarize_declarations(rs_api_files, &rs_api_decls, false);
-        let rs_int_sum = summarize_declarations(unique_file_count(&rs_int_decls), &rs_int_decls, true);
+        let rs_int_sum =
+            summarize_declarations(unique_file_count(&rs_int_decls), &rs_int_decls, true);
         let py_br_sum = summarize_declarations(unique_file_count(&py_br_decls), &py_br_decls, true);
 
         let inline_test_files = rs_api_decls
@@ -1571,7 +1621,9 @@ mod tests {
                 None,
             ),
         );
-        py_fn.attributes.insert("lsp:uri".into(), "file:///x".into());
+        py_fn
+            .attributes
+            .insert("lsp:uri".into(), "file:///x".into());
 
         let mut py_test = SourceDeclaration::new(
             SourceLanguage::Python,
@@ -1593,7 +1645,9 @@ mod tests {
                 None,
             ),
         );
-        py_test.attributes.insert("lsp:is_test".into(), "true".into());
+        py_test
+            .attributes
+            .insert("lsp:is_test".into(), "true".into());
 
         let rs_type = SourceDeclaration::new(
             SourceLanguage::Rust,
@@ -1635,7 +1689,9 @@ mod tests {
                 None,
             ),
         );
-        rs_test.attributes.insert("lsp:is_test".into(), "true".into());
+        rs_test
+            .attributes
+            .insert("lsp:is_test".into(), "true".into());
 
         let rows = build_subsystem_rows(&[py_fn], &[py_test], &[rs_type], &[rs_test], &[]);
         let builders_row = rows

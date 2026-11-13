@@ -321,7 +321,12 @@ mod tests {
     fn resolves_confval_objects() {
         let env = make_env();
         let mut domain = StdDomain::new();
-        domain.note_object("confval", "root_doc", "usage/configuration", "confval-root_doc");
+        domain.note_object(
+            "confval",
+            "root_doc",
+            "usage/configuration",
+            "confval-root_doc",
+        );
 
         let target = domain
             .resolve_xref(&env, "usage/theming", "confval", "root_doc")

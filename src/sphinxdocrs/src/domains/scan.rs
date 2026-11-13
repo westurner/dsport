@@ -286,10 +286,7 @@ pub fn scan_event_names(source: &str) -> Vec<String> {
     source
         .lines()
         .filter_map(|line| {
-            let rest = line
-                .trim_start()
-                .strip_prefix(".. event::")?
-                .trim();
+            let rest = line.trim_start().strip_prefix(".. event::")?.trim();
             let name = rest.split('(').next()?.split_whitespace().next()?;
             (!name.is_empty()).then(|| name.to_string())
         })
@@ -833,7 +830,8 @@ mod tests {
 
     #[test]
     fn scan_confval_signatures_and_aliases() {
-        let src = ".. confval:: master_doc\n             root_doc\n   :type: str\n\n   Description.\n";
+        let src =
+            ".. confval:: master_doc\n             root_doc\n   :type: str\n\n   Description.\n";
         assert_eq!(
             scan_confval_names(src),
             vec!["master_doc".to_string(), "root_doc".to_string()]
@@ -1127,10 +1125,7 @@ mod tests {
 
         assert!(scan_glossary_terms(".. glossary::\nnot indented\n").is_empty());
         assert!(scan_rst_domain_objects(".. rst:directive::\n.. rst:role::\n").is_empty());
-        assert_eq!(
-            split_phrase("<target>"),
-            ("<target>".to_string(), None)
-        );
+        assert_eq!(split_phrase("<target>"), ("<target>".to_string(), None));
 
         let xrefs = scan_xref_roles(
             "bad :ref:`unterminated\n:unknown:role:`skip`\n:rst:dir:`ok`\n:js:func:`f()`\n",

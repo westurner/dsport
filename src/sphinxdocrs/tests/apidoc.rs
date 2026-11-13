@@ -233,8 +233,7 @@ fn recurse_tree_include_private(templates: &ApidocTemplates) {
 #[rstest]
 fn source_fixtures_generate_native_entry_points(templates: &ApidocTemplates) {
     let output = TempDir::new().unwrap();
-    let rust_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/h14/rust");
+    let rust_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/rust");
     let rust_output = output.path().join("rust");
     std::fs::create_dir_all(&rust_output).unwrap();
     let mut rust_options = ApidocOptions::new(rust_root.clone(), rust_output.clone());
@@ -253,8 +252,7 @@ fn source_fixtures_generate_native_entry_points(templates: &ApidocTemplates) {
     assert!(rust_entry.contains(".. rust:module:: h14_fixture::api"));
     assert!(rust_entry.contains(":source:"));
 
-    let lean_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/h14/lean");
+    let lean_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/h14/lean");
     let lean_output = output.path().join("lean");
     std::fs::create_dir_all(&lean_output).unwrap();
     let mut lean_options = ApidocOptions::new(lean_root.clone(), lean_output.clone());

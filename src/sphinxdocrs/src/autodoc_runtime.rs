@@ -356,9 +356,7 @@ pub fn introspect_function(
                         .call_method1("for_module", (module_name,))
                         .ok()?;
                     let docs = analyzer.call_method0("find_attr_docs").ok()?;
-                    let lines = docs
-                        .call_method1("get", (("", function_name),))
-                        .ok()?;
+                    let lines = docs.call_method1("get", (("", function_name),)).ok()?;
                     lines
                         .extract::<Vec<String>>()
                         .ok()
@@ -387,10 +385,8 @@ pub fn analyze_python_source_file(
         crate::config::add_vendored_import_paths(py, &cwd)?;
         with_python_runtime_lock(py, || {
             let analyzer_type = py.import("sphinx.pycode")?.getattr("ModuleAnalyzer")?;
-            let analyzer = analyzer_type.call_method1(
-                "for_file",
-                (path.to_string_lossy().as_ref(), module_name),
-            )?;
+            let analyzer = analyzer_type
+                .call_method1("for_file", (path.to_string_lossy().as_ref(), module_name))?;
             let source = analyzer.getattr("code")?.extract::<String>()?;
             let tags = analyzer
                 .call_method0("find_tags")?
@@ -491,8 +487,7 @@ pub fn attribute_doc(
                 let base = base?;
                 let base_module: String = base.getattr("__module__")?.extract()?;
                 let base_name: String = base.getattr("__name__")?.extract()?;
-                let Ok(analyzer) = analyzer_type.call_method1("for_module", (&base_module,))
-                else {
+                let Ok(analyzer) = analyzer_type.call_method1("for_module", (&base_module,)) else {
                     continue;
                 };
                 let docs = analyzer.call_method0("find_attr_docs")?;
@@ -656,13 +651,8 @@ mod tests {
 
     #[test]
     fn finds_inherited_attribute_source_documentation() {
-        let result = attribute_doc(
-            "sphinx.builders.html",
-            "StandaloneHTMLBuilder",
-            "name",
-            &[],
-        )
-        .expect("attribute documentation lookup should succeed");
+        let result = attribute_doc("sphinx.builders.html", "StandaloneHTMLBuilder", "name", &[])
+            .expect("attribute documentation lookup should succeed");
 
         assert!(result.is_some_and(|text| text.contains("select builders on the command line")));
     }
@@ -683,13 +673,8 @@ mod tests {
             &[],
         )
         .unwrap();
-        let option_spec = attribute_value(
-            "docutils.parsers.rst",
-            "Directive",
-            "option_spec",
-            &[],
-        )
-        .unwrap();
+        let option_spec =
+            attribute_value("docutils.parsers.rst", "Directive", "option_spec", &[]).unwrap();
 
         assert_eq!(required.as_deref(), Some("0"));
         assert_eq!(whitespace.as_deref(), Some("False"));

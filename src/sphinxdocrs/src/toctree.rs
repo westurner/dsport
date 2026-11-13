@@ -292,8 +292,7 @@ mod tests {
         env.set_title("hidden", "Hidden");
 
         let visible = resolve_from_entries(&env, &["index".to_string()], 0);
-        let including_hidden =
-            resolve_from_entries_with_hidden(&env, &["index".to_string()], 0);
+        let including_hidden = resolve_from_entries_with_hidden(&env, &["index".to_string()], 0);
 
         assert_eq!(visible[0].children.len(), 1);
         assert_eq!(visible[0].children[0].docname, "visible");

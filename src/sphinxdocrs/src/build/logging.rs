@@ -127,10 +127,7 @@ pub fn format_status_message(message: &str, color: bool) -> String {
         }
     }
 
-    for (msgid, item_color) in [
-        ("reading sources... ", "35"),
-        ("writing output... ", "32"),
-    ] {
+    for (msgid, item_color) in [("reading sources... ", "35"), ("writing output... ", "32")] {
         let prefix = crate::locale::tr_console(msgid);
         if let Some(rest) = message.strip_prefix(&prefix)
             && let Some((percent, item)) = rest.split_once("] ")
@@ -345,7 +342,10 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let missing_parent = tmp.path().join("missing").join("warnings.txt");
         let config = parse_logging(true, true, Some(missing_parent), 0, "no");
-        assert_eq!(finish_build(&["hidden warning".to_string()], &config, true), 1);
+        assert_eq!(
+            finish_build(&["hidden warning".to_string()], &config, true),
+            1
+        );
     }
 
     #[test]
@@ -359,7 +359,10 @@ mod tests {
 
     #[test]
     fn warning_format_preserves_existing_warning_prefixes() {
-        assert_eq!(format_warning("WARNING: already formatted", false), "WARNING: already formatted");
+        assert_eq!(
+            format_warning("WARNING: already formatted", false),
+            "WARNING: already formatted"
+        );
         assert_eq!(
             format_warning("index.rst: WARNING: located warning", false),
             "index.rst: WARNING: located warning"

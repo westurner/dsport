@@ -115,13 +115,7 @@ pub fn render(
     clusters: &[CitationCluster],
     format: SupportedFormat,
 ) -> Result<CslRender, CslError> {
-    render_with_uncited(
-        bibliography,
-        style,
-        clusters,
-        format,
-        IncludeUncited::None,
-    )
+    render_with_uncited(bibliography, style, clusters, format, IncludeUncited::None)
 }
 
 pub fn render_with_uncited(
@@ -381,7 +375,10 @@ mod tests {
             SupportedFormat::Plain,
         )
         .unwrap_err();
-        assert!(matches!(duplicate_cluster_id, CslError::InvalidClusterId(_)));
+        assert!(matches!(
+            duplicate_cluster_id,
+            CslError::InvalidClusterId(_)
+        ));
 
         let missing = render(
             &bibliography(),
@@ -569,8 +566,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.bibliography.len(), 1);
-        assert!(result.bibliography[0]
-            .value
-            .contains("Laser-reduced graphene"));
+        assert!(
+            result.bibliography[0]
+                .value
+                .contains("Laser-reduced graphene")
+        );
     }
 }

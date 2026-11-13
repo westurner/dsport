@@ -23,7 +23,11 @@ fn renders_rust_fixture_to_native_directives() {
             source_root.to_str().unwrap(),
         ],
     );
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let rst = String::from_utf8(output.stdout).unwrap();
     assert!(rst.contains(".. rust:struct:: fixture::api::Component"));
     assert!(rst.contains(".. rust:function:: fixture::api::answer"));
@@ -46,7 +50,11 @@ fn renders_lean_fixture_and_supports_output_file() {
             source_root.to_str().unwrap(),
         ],
     );
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let rst = std::fs::read_to_string(output_path).unwrap();
     assert!(rst.contains(".. lean:theorem:: Demo.Arithmetic.add_zero"));
     assert!(rst.contains("A proposition about addition."));

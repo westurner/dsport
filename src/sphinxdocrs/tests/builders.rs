@@ -372,7 +372,10 @@ fn build_all_writes_viewcode_pages_and_links_python_objects() {
 
     let html = read_html(out.path(), "index");
     assert!(html.contains("href=\"_modules/pkg.html#Widget\""), "{html}");
-    assert!(html.contains("href=\"_modules/pkg.html#Widget.run\""), "{html}");
+    assert!(
+        html.contains("href=\"_modules/pkg.html#Widget.run\""),
+        "{html}"
+    );
     let source = std::fs::read_to_string(out.path().join("_modules/pkg.html")).unwrap();
     assert!(source.contains("id=\"Widget\""));
     assert!(source.contains("id=\"Widget.run\""));
@@ -499,18 +502,9 @@ fn build_all_uses_selected_parent_in_breadcrumb_for_multiple_toctrees() {
             "index",
             "Home\n====\n\n.. toctree::\n   :maxdepth: 3\n\n   alpha\n   delta\n",
         ),
-        (
-            "alpha",
-            "Alpha\n=====\n\n.. toctree::\n\n   bravo\n",
-        ),
-        (
-            "bravo",
-            "Bravo\n=====\n\n.. toctree::\n\n   charlie\n",
-        ),
-        (
-            "delta",
-            "Delta\n=====\n\n.. toctree::\n\n   charlie\n",
-        ),
+        ("alpha", "Alpha\n=====\n\n.. toctree::\n\n   bravo\n"),
+        ("bravo", "Bravo\n=====\n\n.. toctree::\n\n   charlie\n"),
+        ("delta", "Delta\n=====\n\n.. toctree::\n\n   charlie\n"),
         ("charlie", "Charlie\n=======\n\nBody.\n"),
     ] {
         std::fs::write(src.path().join(format!("{docname}.rst")), content).unwrap();

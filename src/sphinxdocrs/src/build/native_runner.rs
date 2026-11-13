@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 
-use crate::application::{is_native_builder, SphinxApp};
+use crate::application::{SphinxApp, is_native_builder};
 use crate::build::args::parse_args;
 use crate::cli::io::Runner;
 

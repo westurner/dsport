@@ -113,8 +113,10 @@ mod tests {
             "Custom page"
         );
         assert!(!templates.has_custom("missing.jinja"));
-        assert!(QuickstartTemplates::vendored()
-            .render("missing.jinja", &context)
-            .is_err());
+        assert!(
+            QuickstartTemplates::vendored()
+                .render("missing.jinja", &context)
+                .is_err()
+        );
     }
 }

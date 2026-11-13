@@ -4,35 +4,35 @@
 //! should use it only for trusted local language-server commands. Protected
 //! modes remain unavailable until an audited OS sandbox provider exists.
 
+use std::collections::HashSet;
 #[cfg(all(
     feature = "source-sandbox",
     any(target_os = "linux", target_os = "macos")
 ))]
 use std::collections::{BTreeMap, HashMap};
-use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Mutex;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
+use super::config::{
+    MxcLspConfig, SourceDocsSettings, SourceSandboxEngine, SourceSandboxMode,
+    sandboxing_disabled_by_env,
+};
 #[cfg(all(
     feature = "source-sandbox",
     any(target_os = "linux", target_os = "macos")
 ))]
 use super::config::{MxcLspContainment, MxcNetworkAction};
-use super::config::{
-    sandboxing_disabled_by_env, MxcLspConfig, SourceDocsSettings, SourceSandboxEngine,
-    SourceSandboxMode,
-};
 use super::model::{
-    normalize_path, normalize_text, AnalysisDiagnostic, AnalysisError, AnalysisSnapshot,
-    DeclarationKind, DiagnosticSeverity, SourceAnalysisRequest, SourceBackendKind,
-    SourceDeclaration, SourceLanguage, SourcePosition, SourceSpan, Visibility,
+    AnalysisDiagnostic, AnalysisError, AnalysisSnapshot, DeclarationKind, DiagnosticSeverity,
+    SourceAnalysisRequest, SourceBackendKind, SourceDeclaration, SourceLanguage, SourcePosition,
+    SourceSpan, Visibility, normalize_path, normalize_text,
 };
 use super::provider::SourceSnapshotProvider;
 
@@ -134,10 +134,10 @@ impl MxcSandboxProvider {
         environment: &[(String, String)],
         mxc_config: &MxcLspConfig,
     ) -> Result<mxc_sdk::v1::ContainerRequest, AnalysisError> {
+        use mxc_sdk::v1::UiPolicy;
         use mxc_sdk::v1::policy::{
             FilesystemPolicy, NetworkEgressPolicy, NetworkIngressPolicy, NetworkPolicy,
         };
-        use mxc_sdk::v1::UiPolicy;
 
         let workspace_root =
             config
@@ -506,9 +506,9 @@ impl WindowsJob {
         use std::ptr::null;
         use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
         use windows_sys::Win32::System::JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-            SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-            JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JobObjectExtendedLimitInformation, SetInformationJobObject,
         };
 
         unsafe {
@@ -2038,8 +2038,18 @@ impl LspSnapshotProvider {
                 SourceSpan::new(&span_path, start, Some(end)),
             );
             declaration.attributes.insert("lsp:uri".into(), uri.clone());
-            if symbol_is_test_function(&item, name, parent.as_deref(), &text, start, end, self.config.language) {
-                declaration.attributes.insert("lsp:is_test".into(), "true".into());
+            if symbol_is_test_function(
+                &item,
+                name,
+                parent.as_deref(),
+                &text,
+                start,
+                end,
+                self.config.language,
+            ) {
+                declaration
+                    .attributes
+                    .insert("lsp:is_test".into(), "true".into());
             }
             if let Some(span) = definition_span {
                 declaration
@@ -2381,11 +2391,7 @@ fn symbol_is_test_function(
     end: SourcePosition,
     language: SourceLanguage,
 ) -> bool {
-    if item
-        .get("isTest")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
+    if item.get("isTest").and_then(Value::as_bool).unwrap_or(false) {
         return true;
     }
     let Some(kind) = item.get("kind").and_then(Value::as_u64).and_then(lsp_kind) else {
@@ -2398,7 +2404,8 @@ fn symbol_is_test_function(
         SourceLanguage::Python => {
             name.starts_with("test_")
                 || (name == "test"
-                    && parent.is_some_and(|p| p.rsplit('.').next().unwrap_or(p).starts_with("Test")))
+                    && parent
+                        .is_some_and(|p| p.rsplit('.').next().unwrap_or(p).starts_with("Test")))
         }
         SourceLanguage::Rust => {
             let lines: Vec<&str> = text.lines().collect();
@@ -2716,10 +2723,12 @@ mod tests {
 
         let snapshot = provider.analyze(&request).unwrap();
 
-        assert!(snapshot
-            .declarations
-            .iter()
-            .any(|declaration| { declaration.qualified_name.ends_with("lsp_live_probe") }));
+        assert!(
+            snapshot
+                .declarations
+                .iter()
+                .any(|declaration| { declaration.qualified_name.ends_with("lsp_live_probe") })
+        );
     }
 
     #[cfg(unix)]
@@ -2752,10 +2761,12 @@ mod tests {
 
         let snapshot = provider.analyze(&request).unwrap();
 
-        assert!(snapshot
-            .declarations
-            .iter()
-            .any(|declaration| { declaration.qualified_name.ends_with("lspLiveProbe") }));
+        assert!(
+            snapshot
+                .declarations
+                .iter()
+                .any(|declaration| { declaration.qualified_name.ends_with("lspLiveProbe") })
+        );
     }
 
     #[cfg(unix)]
@@ -2800,11 +2811,13 @@ mod tests {
         let provider = LspSnapshotProvider::new(config);
         let mut request = SourceAnalysisRequest::new(workspace.path());
         request.selected.push(source);
-        assert!(provider
-            .analyze(&request)
-            .unwrap_err()
-            .to_string()
-            .contains("timed out"));
+        assert!(
+            provider
+                .analyze(&request)
+                .unwrap_err()
+                .to_string()
+                .contains("timed out")
+        );
         thread::sleep(Duration::from_millis(700));
         assert!(
             !marker.exists(),
@@ -2998,11 +3011,13 @@ mod tests {
         assert_eq!(span.start.column, 4);
         assert_eq!(span.end.unwrap().column, 6);
         assert!(definition_span_from_response(&location_link, workspace.path()).is_some());
-        assert!(definition_span_from_response(
-            &json!({"uri": file_uri(&external).unwrap(), "range": {}}),
-            workspace.path()
-        )
-        .is_none());
+        assert!(
+            definition_span_from_response(
+                &json!({"uri": file_uri(&external).unwrap(), "range": {}}),
+                workspace.path()
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -3161,17 +3176,32 @@ mod tests {
         .unwrap();
 
         assert_eq!(request.sandbox, ai_sandbox::SandboxType::LinuxSeccomp);
-        assert_eq!(request.network_policy, ai_sandbox::NetworkSandboxPolicy::NoAccess);
+        assert_eq!(
+            request.network_policy,
+            ai_sandbox::NetworkSandboxPolicy::NoAccess
+        );
         assert!(matches!(
             request.file_system_policy,
             ai_sandbox::FileSystemSandboxPolicy::ReadOnlyWithRoots { .. }
         ));
-        assert!(!request
-            .command
-            .windows(2)
-            .any(|pair| pair == ["--proc", "/proc"]));
-        assert!(request.command.iter().any(|argument| argument == "print('ok')"));
-        assert!(request.command.iter().any(|argument| argument == "/usr/bin/python3"));
+        assert!(
+            !request
+                .command
+                .windows(2)
+                .any(|pair| pair == ["--proc", "/proc"])
+        );
+        assert!(
+            request
+                .command
+                .iter()
+                .any(|argument| argument == "print('ok')")
+        );
+        assert!(
+            request
+                .command
+                .iter()
+                .any(|argument| argument == "/usr/bin/python3")
+        );
     }
 
     #[cfg(all(feature = "source-sandbox", target_os = "linux"))]
@@ -3246,10 +3276,9 @@ mod tests {
         settings
             .lsp_sandbox_environment
             .insert("LANG".into(), "C".into());
-        settings.lsp_sandbox_environment.insert(
-            "PATH".into(),
-            "/usr/local/bin:/usr/bin:/bin".into(),
-        );
+        settings
+            .lsp_sandbox_environment
+            .insert("PATH".into(), "/usr/local/bin:/usr/bin:/bin".into());
         let provider =
             LspSnapshotProvider::from_settings(&settings, SourceLanguage::Rust, workspace.path())
                 .unwrap();
@@ -3319,9 +3348,11 @@ mod tests {
             Ok(_) => panic!("protected provider accepted an empty toolchain root list"),
             Err(error) => error,
         };
-        assert!(error
-            .to_string()
-            .contains("explicit read-only toolchain roots"));
+        assert!(
+            error
+                .to_string()
+                .contains("explicit read-only toolchain roots")
+        );
     }
 
     #[cfg(unix)]
@@ -3391,7 +3422,10 @@ mod tests {
 
         let error = provider.analyze(&request).unwrap_err();
         assert!(error.to_string().contains("outside workspace root"));
-        assert!(!counter.exists(), "LSP server started for replaced source path");
+        assert!(
+            !counter.exists(),
+            "LSP server started for replaced source path"
+        );
     }
 
     #[cfg(unix)]
@@ -3454,7 +3488,11 @@ mod tests {
         let pkg = workspace.path().join("pkg");
         std::fs::create_dir_all(&pkg).unwrap();
         let py_file = pkg.join("test_demo.py");
-        std::fs::write(&py_file, "def test_alpha():\n    pass\n\ndef helper():\n    pass\n").unwrap();
+        std::fs::write(
+            &py_file,
+            "def test_alpha():\n    pass\n\ndef helper():\n    pass\n",
+        )
+        .unwrap();
         let mut config = fake_server_config(workspace.path(), "symbols");
         config.language = SourceLanguage::Python;
         let provider = LspSnapshotProvider::new(config);
@@ -3462,7 +3500,11 @@ mod tests {
         let paths = provider.source_paths(&request).unwrap();
         assert_eq!(paths, [py_file.canonicalize().unwrap()]);
 
-        let pos = SourcePosition { byte: 0, line: 1, column: 0 };
+        let pos = SourcePosition {
+            byte: 0,
+            line: 1,
+            column: 0,
+        };
         let fn_item = json!({"kind": 12});
         assert!(symbol_is_test_function(
             &fn_item,
@@ -3488,8 +3530,16 @@ mod tests {
     fn rust_test_classification_recognizes_test_and_rstest_attributes() {
         let rust_source = "#[rstest]\n#[case(1)]\nfn check_case(#[case] x: i32) {\n    assert_eq!(x, 1);\n}\n\npub fn api_fn() {}\n";
         let fn_item = json!({"kind": 12});
-        let test_start = SourcePosition { byte: 21, line: 3, column: 0 };
-        let test_end = SourcePosition { byte: 75, line: 5, column: 1 };
+        let test_start = SourcePosition {
+            byte: 21,
+            line: 3,
+            column: 0,
+        };
+        let test_end = SourcePosition {
+            byte: 75,
+            line: 5,
+            column: 1,
+        };
         assert!(symbol_is_test_function(
             &fn_item,
             "check_case",
@@ -3499,7 +3549,11 @@ mod tests {
             test_end,
             SourceLanguage::Rust,
         ));
-        let api_start = SourcePosition { byte: 77, line: 7, column: 0 };
+        let api_start = SourcePosition {
+            byte: 77,
+            line: 7,
+            column: 0,
+        };
         assert!(!symbol_is_test_function(
             &fn_item,
             "api_fn",

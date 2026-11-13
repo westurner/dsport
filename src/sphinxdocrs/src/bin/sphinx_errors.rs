@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, ValueEnum};
 use sphinxdocrs::cli::io::RealTerminal;
 use sphinxdocrs::error_log::{
-    import_file, run_interactive, ErrorDatabase, ErrorLogError, ErrorMessage, InputFormat,
-    RealEditor,
+    ErrorDatabase, ErrorLogError, ErrorMessage, InputFormat, RealEditor, import_file,
+    run_interactive,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

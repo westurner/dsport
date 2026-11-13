@@ -512,19 +512,27 @@ mod tests {
         assert_eq!(rs_symbols.len(), 3);
         let _ = current_exe;
 
-        let report_path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/SPHINX_LSP_API_TEST_COMPARISON.md");
+        let report_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/SPHINX_LSP_API_TEST_COMPARISON.md");
         let report_text = std::fs::read_to_string(report_path).unwrap();
-        assert!(report_text.contains("Sphinx (`sphinxdoc`) vs. `sphinxdocrs` LSP API & Test Comparison Report"));
+        assert!(
+            report_text.contains(
+                "Sphinx (`sphinxdoc`) vs. `sphinxdocrs` LSP API & Test Comparison Report"
+            )
+        );
         assert!(report_text.contains("| `sphinx` API (`src/sphinx/sphinx`) | 245 |"));
         assert!(report_text.contains("| `sphinx` tests (`src/sphinx/tests`) | 143 |"));
-        assert!(report_text.contains("| **`sphinxdocrs` combined** | **161** | **4672** | **1554** | **526** | **2001** |"));
+        assert!(report_text.contains(
+            "| **`sphinxdocrs` combined** | **161** | **4672** | **1554** | **526** | **2001** |"
+        ));
 
         let plan_path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/sphinxdocrs-port-plan.md");
         let plan_text = std::fs::read_to_string(plan_path).unwrap();
         assert!(plan_text.contains("### LSP API & test function comparison"));
-        assert!(plan_text.contains("| **`sphinxdocrs` combined** | **161** | **4,672** | **1,554** | **526** | **2,001** |"));
+        assert!(plan_text.contains(
+            "| **`sphinxdocrs` combined** | **161** | **4,672** | **1,554** | **526** | **2,001** |"
+        ));
     }
 
     #[test]

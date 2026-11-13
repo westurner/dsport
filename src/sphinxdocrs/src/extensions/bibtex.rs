@@ -104,15 +104,17 @@ pub fn setup(_app: &mut crate::application::SphinxApp) -> Result<(), crate::appl
 }
 
 #[cfg(feature = "csl-citeproc")]
-pub fn build_finished(app: &crate::application::SphinxApp) -> Result<(), crate::application::AppError> {
+pub fn build_finished(
+    app: &crate::application::SphinxApp,
+) -> Result<(), crate::application::AppError> {
     use citeproc::prelude::{IncludeUncited, SupportedFormat};
 
     let bibliography = load_configured_bibliography(app)?;
     if bibliography.is_empty() {
         return Ok(());
     }
-    let style = load_configured_style(app)?
-        .unwrap_or_else(|| super::csl::DEFAULT_STYLE.to_string());
+    let style =
+        load_configured_style(app)?.unwrap_or_else(|| super::csl::DEFAULT_STYLE.to_string());
     let rendered = super::csl::render_with_uncited(
         &bibliography,
         &style,
@@ -150,16 +152,13 @@ fn load_configured_bibliography(
         } else {
             app.srcdir.join(configured_path)
         };
-        let content = crate::environment::read_source_file(
-            &path,
-            &app.config.source_encoding(),
-        )
-        .map_err(|error| {
-            crate::application::AppError::Extension(format!(
-                "failed to read bibliography {}: {error}",
-                path.display()
-            ))
-        })?;
+        let content = crate::environment::read_source_file(&path, &app.config.source_encoding())
+            .map_err(|error| {
+                crate::application::AppError::Extension(format!(
+                    "failed to read bibliography {}: {error}",
+                    path.display()
+                ))
+            })?;
         source.push_str(&content);
         source.push('\n');
     }
@@ -347,7 +346,12 @@ fn record_jsonld(record: &CitationRecord) -> serde_json::Value {
 #[cfg(feature = "csl-citeproc")]
 fn person_jsonld(person: &CitationName) -> serde_json::Value {
     let mut name = Vec::new();
-    for part in [&person.given, &person.prefix, &person.family, &person.suffix] {
+    for part in [
+        &person.given,
+        &person.prefix,
+        &person.family,
+        &person.suffix,
+    ] {
         if !part.trim().is_empty() {
             name.push(part.trim());
         }
@@ -720,7 +724,9 @@ mod tests {
         ];
         let tex = super::bibliography_tex(&entries);
 
-        assert!(tex.contains(r"\bibitem{sfref2} \&\%\$\#\_\{\}\textasciitilde{}\textasciicircum{}\textbackslash{} é"));
+        assert!(tex.contains(
+            r"\bibitem{sfref2} \&\%\$\#\_\{\}\textasciitilde{}\textasciicircum{}\textbackslash{} é"
+        ));
         assert!(tex.contains(r"\bibitem{sfref2_} invalid label"));
         assert!(tex.contains(r"\bibitem{same} first copy"));
         assert!(tex.contains(r"\bibitem{sfref4} duplicate copy"));
@@ -769,19 +775,17 @@ mod tests {
         .unwrap();
         let jsonld = super::bibliography_jsonld(&bibliography);
         let graph = jsonld["@graph"].as_array().unwrap();
-        let by_name = |name: &str| {
-            graph
-                .iter()
-                .find(|entry| entry["name"] == name)
-                .unwrap()
-        };
+        let by_name = |name: &str| graph.iter().find(|entry| entry["name"] == name).unwrap();
 
         assert_eq!(jsonld["@context"]["@vocab"], "https://schema.org/");
         let journal = by_name("Journal Article");
         assert_eq!(journal["@type"], "ScholarlyArticle");
         assert_eq!(journal["url"], "https://doi.org/10.1000/journal");
         assert_eq!(journal["sameAs"], "https://doi.org/10.1000/journal");
-        assert_eq!(journal["identifier"]["value"], "https://doi.org/10.1000/journal");
+        assert_eq!(
+            journal["identifier"]["value"],
+            "https://doi.org/10.1000/journal"
+        );
         assert_eq!(journal["isPartOf"]["@type"], "Periodical");
         assert_eq!(journal["isPartOf"]["name"], "Journal of Tests");
         assert_eq!(journal["publisher"]["name"], "Test Press");
@@ -800,7 +804,10 @@ mod tests {
         assert_eq!(book["author"][0]["familyName"], "Madonna");
         assert!(book["author"][0].get("givenName").is_none());
 
-        assert_eq!(by_name("Research Report")["sameAs"], "http://doi.org/10.1000/report");
+        assert_eq!(
+            by_name("Research Report")["sameAs"],
+            "http://doi.org/10.1000/report"
+        );
         assert_eq!(by_name("Raw DOI")["url"], "https://doi.org/10.1000/raw");
         let unlinked = by_name("Unlinked Work");
         assert_eq!(unlinked["url"], "urn:bibtex:urn");
@@ -876,13 +883,13 @@ Non-standard analysis is fun\ :footcite:p:`1987:nelson`.
             .collect();
 
         assert_eq!(placeholders.len(), 6, "placeholders: {placeholders:?}");
-            let parsed_text = (0..tree.nodes_len())
-                .filter_map(|id| match &tree.node(id).kind {
-                    NodeKind::Text(value) => Some(value.as_str()),
-                    _ => None,
-                })
-                .collect::<String>();
-            assert!(parsed_text.contains("Escapedwhitespace stays joined."));
+        let parsed_text = (0..tree.nodes_len())
+            .filter_map(|id| match &tree.node(id).kind {
+                NodeKind::Text(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(parsed_text.contains("Escapedwhitespace stays joined."));
         assert_eq!(placeholders[0].0, "BibtexCitation");
         assert_eq!(
             placeholders[0].1.get("keys"),
@@ -935,14 +942,7 @@ mod citeproc_tests {
         std::fs::create_dir_all(&out).unwrap();
         std::fs::create_dir_all(&doctrees).unwrap();
         std::fs::write(src.join("conf.py"), configuration).unwrap();
-        crate::application::SphinxApp::new(
-            &src,
-            &out,
-            &doctrees,
-            "html",
-            HashMap::new(),
-        )
-        .unwrap()
+        crate::application::SphinxApp::new(&src, &out, &doctrees, "html", HashMap::new()).unwrap()
     }
 
     #[test]
@@ -1050,7 +1050,11 @@ mod citeproc_tests {
             ("title", Variable::Title),
             ("url", Variable::URL),
         ] {
-            assert_eq!(super::ordinary_variable(field), Some(variable), "field: {field}");
+            assert_eq!(
+                super::ordinary_variable(field),
+                Some(variable),
+                "field: {field}"
+            );
         }
         assert_eq!(super::ordinary_variable("custom"), None);
 
@@ -1062,7 +1066,11 @@ mod citeproc_tests {
             ("pages", NumberVariable::Page),
             ("volume", NumberVariable::Volume),
         ] {
-            assert_eq!(super::number_variable(field), Some(variable), "field: {field}");
+            assert_eq!(
+                super::number_variable(field),
+                Some(variable),
+                "field: {field}"
+            );
         }
         assert_eq!(super::number_variable("custom"), None);
 
@@ -1123,10 +1131,9 @@ mod citeproc_tests {
         };
         assert!(empty_field.to_csl_reference().ordinary.is_empty());
 
-        let record = Bibliography::parse(
-            "@book{editors, editor={Grace Hopper}, title={Compiler Design}}",
-        )
-        .unwrap();
+        let record =
+            Bibliography::parse("@book{editors, editor={Grace Hopper}, title={Compiler Design}}")
+                .unwrap();
         let reference = record.get("editors").unwrap().to_csl_reference();
         assert!(reference.name.contains_key(&NameVariable::Editor));
         assert!(reference.date.is_empty());
@@ -1156,7 +1163,6 @@ mod citeproc_tests {
         };
         assert!(no_particle.non_dropping_particle.is_none());
         assert!(no_particle.dropping_particle.is_none());
-
     }
 
     #[test]
@@ -1197,8 +1203,7 @@ mod citeproc_tests {
             "absolute",
             &format!(
                 "bibtex_bibfiles = [{:?}]\nbibtex_csl_style = {:?}\n",
-                bibliography_path,
-                style_path
+                bibliography_path, style_path
             ),
         );
         super::build_finished(&absolute).unwrap();
@@ -1223,7 +1228,9 @@ mod citeproc_tests {
                 bibliography_path
             ),
         );
-        let error = super::build_finished(&missing_style).unwrap_err().to_string();
+        let error = super::build_finished(&missing_style)
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("failed to read CSL style"));
 
         let invalid_style_path = root.path().join("invalid.csl");
@@ -1233,8 +1240,7 @@ mod citeproc_tests {
             "invalid-style",
             &format!(
                 "bibtex_bibfiles = [{:?}]\nbibtex_csl_style = {:?}\n",
-                bibliography_path,
-                invalid_style_path
+                bibliography_path, invalid_style_path
             ),
         );
         assert!(super::build_finished(&invalid_style).is_err());
@@ -1356,7 +1362,10 @@ mod citeproc_tests {
             .join(" ");
         assert!(text.contains("Analytical Engine"), "rendered text: {text}");
         assert!(text.contains("Compilers"), "rendered text: {text}");
-        assert!(text.contains("Laser-safe & efficient"), "rendered text: {text}");
+        assert!(
+            text.contains("Laser-safe & efficient"),
+            "rendered text: {text}"
+        );
         assert!(!(0..resolved.nodes_len()).any(|id| matches!(
             resolved.node(id).kind,
             NodeKind::Extension { ref class_name, .. }
@@ -1377,16 +1386,21 @@ mod citeproc_tests {
         assert!(tex.contains("\\bibitem{gamma}"));
         assert!(tex.contains("Laser-safe \\& efficient"));
 
-        let jsonld: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(out.path().join("bibliography.jsonld")).unwrap(),
-        )
-        .unwrap();
+        let jsonld: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(out.path().join("bibliography.jsonld")).unwrap())
+                .unwrap();
         let graph = jsonld["@graph"].as_array().unwrap();
         assert_eq!(graph.len(), 3);
-        assert!(graph.iter().any(|entry| entry["name"] == "Laser-safe & efficient"));
-        assert!(graph
-            .iter()
-            .any(|entry| entry["sameAs"] == "https://doi.org/10.1000/example"));
+        assert!(
+            graph
+                .iter()
+                .any(|entry| entry["name"] == "Laser-safe & efficient")
+        );
+        assert!(
+            graph
+                .iter()
+                .any(|entry| entry["sameAs"] == "https://doi.org/10.1000/example")
+        );
         let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
         assert!(html.contains("Laser-safe &amp; efficient"));
     }
@@ -1594,6 +1608,10 @@ mod citeproc_tests {
         let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
         assert!(html.contains("href=\"#bibtex-footnote-1\""));
         assert!(html.contains("id=\"bibtex-footnote-1\""));
-        assert!(reference_ids.iter().all(|id| html.contains(&format!("id=\"{id}\""))));
+        assert!(
+            reference_ids
+                .iter()
+                .all(|id| html.contains(&format!("id=\"{id}\"")))
+        );
     }
 }

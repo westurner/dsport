@@ -823,10 +823,8 @@ impl SearchIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source_docs::{DeclarationKind, SourceLanguage, SourcePosition, SourceSpan};
     use docutilsrs::parse_rst_with_source;
-    use crate::source_docs::{
-        DeclarationKind, SourceLanguage, SourcePosition, SourceSpan,
-    };
 
     #[test]
     fn split_words_basic() {
@@ -1030,7 +1028,11 @@ The widget handles rendering and layout.\n";
             signature: Some("struct Thing".to_owned()),
             source: SourceSpan::new(
                 "src/lib.rs",
-                SourcePosition { byte: 3, line: 1, column: 3 },
+                SourcePosition {
+                    byte: 3,
+                    line: 1,
+                    column: 3,
+                },
                 None,
             ),
             deprecated: false,
@@ -1049,7 +1051,11 @@ The widget handles rendering and layout.\n";
             signature: None,
             source: SourceSpan::new(
                 "Demo.lean",
-                SourcePosition { byte: 0, line: 1, column: 0 },
+                SourcePosition {
+                    byte: 0,
+                    line: 1,
+                    column: 0,
+                },
                 None,
             ),
             deprecated: false,
@@ -1057,7 +1063,10 @@ The widget handles rendering and layout.\n";
 
         let mut idx = SearchIndex::new();
         for (docname, title) in [("rust-api", "Rust API"), ("lean-api", "Lean API")] {
-            idx.feed(docname, &parse_rst_with_source(&format!("{title}\n=====\n"), docname));
+            idx.feed(
+                docname,
+                &parse_rst_with_source(&format!("{title}\n=====\n"), docname),
+            );
         }
         idx.set_source_objects(vec![rust, lean]);
         let json = idx.to_json();

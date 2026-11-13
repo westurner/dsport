@@ -711,10 +711,8 @@ impl Builder for HtmlBuilder {
             if viewcode_enabled {
                 self.attach_viewcode_links(env, &mut tree, docname, &mut viewcode_modules);
             }
-            let image_prefix = crate::util_osutil::relative_uri(
-                &self.get_target_uri(docname),
-                "_images",
-            );
+            let image_prefix =
+                crate::util_osutil::relative_uri(&self.get_target_uri(docname), "_images");
             copy_image_assets(&mut tree, srcdir, outdir, docname, &image_prefix)?;
             match &real_theme {
                 Some(renderer) => {
@@ -766,12 +764,8 @@ impl Builder for HtmlBuilder {
                 ));
             }
             body.push_str("</ul>\n");
-            let page = Self::render_embedded_or_wrap(
-                index_docname,
-                "Overview: module code",
-                &body,
-                &meta,
-            );
+            let page =
+                Self::render_embedded_or_wrap(index_docname, "Overview: module code", &body, &meta);
             self.write_page(index_docname, &page, outdir)?;
         }
 
@@ -810,7 +804,6 @@ impl Builder for HtmlBuilder {
 
         Ok(result)
     }
-
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -863,23 +856,20 @@ impl HtmlBuilder {
             }
 
             let components = ids.split('.').collect::<Vec<_>>();
-            let Some((module_name, object_name, source_path)) = (1..components.len())
-                .rev()
-                .find_map(|count| {
+            let Some((module_name, object_name, source_path)) =
+                (1..components.len()).rev().find_map(|count| {
                     let module_name = components[..count].join(".");
-                    env.resolve_python_module(&module_name).map(|path| {
-                        (module_name, components[count..].join("."), path)
-                    })
+                    env.resolve_python_module(&module_name)
+                        .map(|path| (module_name, components[count..].join("."), path))
                 })
             else {
                 continue;
             };
 
             if !modules.contains_key(&module_name) {
-                let Ok((source, tags)) = crate::autodoc_runtime::analyze_python_source_file(
-                    &module_name,
-                    &source_path,
-                ) else {
+                let Ok((source, tags)) =
+                    crate::autodoc_runtime::analyze_python_source_file(&module_name, &source_path)
+                else {
                     continue;
                 };
                 if !tags.contains_key(&object_name) {
@@ -894,7 +884,9 @@ impl HtmlBuilder {
                     },
                 );
             }
-            let module = modules.get_mut(&module_name).expect("module inserted above");
+            let module = modules
+                .get_mut(&module_name)
+                .expect("module inserted above");
             if !module.tags.contains_key(&object_name) {
                 continue;
             }
@@ -902,7 +894,9 @@ impl HtmlBuilder {
             let target_uri = self.get_target_uri(&page_docname);
             let href = relative_uri(&source_uri, &target_uri);
             let href = format!("{href}#{object_name}");
-            module.used.insert(object_name, (docname.to_string(), ids.clone()));
+            module
+                .used
+                .insert(object_name, (docname.to_string(), ids.clone()));
             if let NodeKind::ObjectDescription { source_link, .. } =
                 &mut tree.node_mut(node_id).kind
             {
@@ -950,11 +944,11 @@ impl HtmlBuilder {
         )
         .or_else(|| pygmentsrs::highlight(&module.source, lexer, "html"))
         .unwrap_or_else(|| {
-                format!(
-                    "<div class=\"highlight\"><pre>{}</pre></div>\n",
-                    crate::util_strypes::html_escape_text(&module.source)
-                )
-            });
+            format!(
+                "<div class=\"highlight\"><pre>{}</pre></div>\n",
+                crate::util_strypes::html_escape_text(&module.source)
+            )
+        });
         let mut lines = highlighted.lines().map(str::to_owned).collect::<Vec<_>>();
         if let Some(first_line) = lines.first().cloned()
             && let Some((before_pre, after_pre)) = first_line.split_once("<pre>")
@@ -1002,7 +996,9 @@ impl HtmlBuilder {
             match renderer.render_page(env, page_docname, module_name, &body, "", None) {
                 Ok(page) => page,
                 Err(error) => {
-                    eprintln!("Warning: real theme render failed for {page_docname:?}: {error}; using embedded fallback");
+                    eprintln!(
+                        "Warning: real theme render failed for {page_docname:?}: {error}; using embedded fallback"
+                    );
                     Self::render_embedded_or_wrap(page_docname, &title, &body, meta)
                 }
             }

@@ -176,7 +176,10 @@ impl SourceDomain {
             SourceLanguage::Rust => match reftype {
                 "associatedconst" => &[DeclarationKind::AssociatedConstant],
                 "associatedtype" => &[DeclarationKind::AssociatedType],
-                "const" => &[DeclarationKind::Constant, DeclarationKind::AssociatedConstant],
+                "const" => &[
+                    DeclarationKind::Constant,
+                    DeclarationKind::AssociatedConstant,
+                ],
                 "enum" => &[DeclarationKind::Enum],
                 "field" => &[DeclarationKind::Field],
                 "func" => &[DeclarationKind::Function],
@@ -247,7 +250,9 @@ impl SourceDomain {
                 names.push(format!("{parent}{separator}{rest}"));
             }
         } else {
-            if let Some(context) = context && !normalized.contains(separator) {
+            if let Some(context) = context
+                && !normalized.contains(separator)
+            {
                 names.push(format!("{context}{separator}{normalized}"));
             }
             names.push(normalized.to_string());
@@ -257,12 +262,7 @@ impl SourceDomain {
         names
     }
 
-    fn lookup(
-        &self,
-        env: &BuildEnvironment,
-        reftype: &str,
-        target: &str,
-    ) -> Option<&SourceRecord> {
+    fn lookup(&self, env: &BuildEnvironment, reftype: &str, target: &str) -> Option<&SourceRecord> {
         let mut matches = Vec::new();
         for name in self.resolve_name(env, target) {
             if let Some(indices) = self.aliases.get(&name) {
@@ -350,7 +350,9 @@ impl Default for RustDomain {
 }
 
 impl RustDomain {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn note_snapshot(&mut self, docname: &str, declarations: &[SourceDeclaration]) {
         self.0.note_snapshot(docname, declarations);
     }
@@ -360,12 +362,24 @@ impl RustDomain {
 }
 
 impl Domain for RustDomain {
-    fn name(&self) -> &'static str { "rust" }
-    fn resolve_xref(&self, env: &BuildEnvironment, fromdocname: &str, reftype: &str, target: &str) -> Option<XrefTarget> {
+    fn name(&self) -> &'static str {
+        "rust"
+    }
+    fn resolve_xref(
+        &self,
+        env: &BuildEnvironment,
+        fromdocname: &str,
+        reftype: &str,
+        target: &str,
+    ) -> Option<XrefTarget> {
         self.0.resolve_xref(env, fromdocname, reftype, target)
     }
-    fn get_objects(&self) -> Vec<ObjectEntry> { self.0.get_objects() }
-    fn clear_doc(&mut self, docname: &str) { self.0.clear_doc(docname); }
+    fn get_objects(&self) -> Vec<ObjectEntry> {
+        self.0.get_objects()
+    }
+    fn clear_doc(&mut self, docname: &str) {
+        self.0.clear_doc(docname);
+    }
 }
 
 /// Lean source declarations registered by the build environment.
@@ -379,7 +393,9 @@ impl Default for LeanDomain {
 }
 
 impl LeanDomain {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn note_snapshot(&mut self, docname: &str, declarations: &[SourceDeclaration]) {
         self.0.note_snapshot(docname, declarations);
     }
@@ -389,12 +405,24 @@ impl LeanDomain {
 }
 
 impl Domain for LeanDomain {
-    fn name(&self) -> &'static str { "lean" }
-    fn resolve_xref(&self, env: &BuildEnvironment, fromdocname: &str, reftype: &str, target: &str) -> Option<XrefTarget> {
+    fn name(&self) -> &'static str {
+        "lean"
+    }
+    fn resolve_xref(
+        &self,
+        env: &BuildEnvironment,
+        fromdocname: &str,
+        reftype: &str,
+        target: &str,
+    ) -> Option<XrefTarget> {
         self.0.resolve_xref(env, fromdocname, reftype, target)
     }
-    fn get_objects(&self) -> Vec<ObjectEntry> { self.0.get_objects() }
-    fn clear_doc(&mut self, docname: &str) { self.0.clear_doc(docname); }
+    fn get_objects(&self) -> Vec<ObjectEntry> {
+        self.0.get_objects()
+    }
+    fn clear_doc(&mut self, docname: &str) {
+        self.0.clear_doc(docname);
+    }
 }
 
 #[cfg(test)]
@@ -413,7 +441,11 @@ mod tests {
         )
     }
 
-    fn declaration(language: SourceLanguage, name: &str, kind: DeclarationKind) -> SourceDeclaration {
+    fn declaration(
+        language: SourceLanguage,
+        name: &str,
+        kind: DeclarationKind,
+    ) -> SourceDeclaration {
         SourceDeclaration::new(
             language,
             "test",
@@ -426,7 +458,11 @@ mod tests {
             Visibility::Public,
             SourceSpan::new(
                 "src/lib.rs",
-                SourcePosition { byte: 0, line: 1, column: 0 },
+                SourcePosition {
+                    byte: 0,
+                    line: 1,
+                    column: 0,
+                },
                 None,
             ),
         )
@@ -435,27 +471,58 @@ mod tests {
     #[test]
     fn canonical_and_alias_lookup_use_language_namespaces() {
         let mut domain = RustDomain::new();
-        let mut item = declaration(SourceLanguage::Rust, "crate::api::Thing", DeclarationKind::Struct);
+        let mut item = declaration(
+            SourceLanguage::Rust,
+            "crate::api::Thing",
+            DeclarationKind::Struct,
+        );
         item.add_alias("crate::api::ThingAlias");
         domain.note_snapshot("api", &[item]);
         let environment = env();
 
         let canonical = domain.resolve_xref(&environment, "index", "struct", "crate::api::Thing");
         let alias = domain.resolve_xref(&environment, "index", "struct", "crate::api::ThingAlias");
-        assert_eq!(canonical.as_ref().map(|target| target.docname.as_str()), Some("api"));
-        assert_eq!(alias.as_ref().map(|target| target.title.as_str()), Some("crate::api::Thing"));
-        assert!(canonical.unwrap().anchor.contains("rust-struct-crate-api-thing"));
+        assert_eq!(
+            canonical.as_ref().map(|target| target.docname.as_str()),
+            Some("api")
+        );
+        assert_eq!(
+            alias.as_ref().map(|target| target.title.as_str()),
+            Some("crate::api::Thing")
+        );
+        assert!(
+            canonical
+                .unwrap()
+                .anchor
+                .contains("rust-struct-crate-api-thing")
+        );
     }
 
     #[test]
     fn short_name_is_rejected_when_two_namespaces_match() {
         let mut domain = LeanDomain::new();
-        let first = declaration(SourceLanguage::Lean, "Alpha.Widget", DeclarationKind::Structure);
-        let second = declaration(SourceLanguage::Lean, "Beta.Widget", DeclarationKind::Structure);
+        let first = declaration(
+            SourceLanguage::Lean,
+            "Alpha.Widget",
+            DeclarationKind::Structure,
+        );
+        let second = declaration(
+            SourceLanguage::Lean,
+            "Beta.Widget",
+            DeclarationKind::Structure,
+        );
         domain.note_snapshot("alpha", &[first]);
         domain.note_snapshot("beta", &[second]);
-        assert!(domain.resolve_xref(&env(), "index", "structure", "Widget").is_none());
-        assert!(domain.resolve_xref(&env(), "index", "structure", "Alpha.Widget").is_some());
+        assert!(
+            domain
+                .resolve_xref(&env(), "index", "structure", "Widget")
+                .is_none()
+        );
+        assert!(
+            domain
+                .resolve_xref(&env(), "index", "structure", "Alpha.Widget")
+                .is_some()
+        );
     }
 
     #[test]
@@ -463,20 +530,38 @@ mod tests {
         let mut rust = RustDomain::new();
         rust.note_snapshot(
             "rust",
-            &[declaration(SourceLanguage::Rust, "crate::api::Thing", DeclarationKind::Struct)],
+            &[declaration(
+                SourceLanguage::Rust,
+                "crate::api::Thing",
+                DeclarationKind::Struct,
+            )],
         );
         let mut rust_env = env();
-        rust_env.ref_context.insert("rust:module".into(), "crate::api".into());
-        assert!(rust.resolve_xref(&rust_env, "index", "struct", "self::Thing").is_some());
+        rust_env
+            .ref_context
+            .insert("rust:module".into(), "crate::api".into());
+        assert!(
+            rust.resolve_xref(&rust_env, "index", "struct", "self::Thing")
+                .is_some()
+        );
 
         let mut lean = LeanDomain::new();
         lean.note_snapshot(
             "lean",
-            &[declaration(SourceLanguage::Lean, "Demo.Widget", DeclarationKind::Structure)],
+            &[declaration(
+                SourceLanguage::Lean,
+                "Demo.Widget",
+                DeclarationKind::Structure,
+            )],
         );
         let mut lean_env = env();
-        lean_env.ref_context.insert("lean:namespace".into(), "Demo".into());
-        assert!(lean.resolve_xref(&lean_env, "index", "structure", "self.Widget").is_some());
+        lean_env
+            .ref_context
+            .insert("lean:namespace".into(), "Demo".into());
+        assert!(
+            lean.resolve_xref(&lean_env, "index", "structure", "self.Widget")
+                .is_some()
+        );
     }
 
     #[test]
@@ -491,20 +576,30 @@ mod tests {
             )],
         );
         let environment = env();
-        assert!(lean
-            .resolve_xref(&environment, "index", "thm", "Demo.answer")
-            .is_some());
-        assert!(lean
-            .resolve_xref(&environment, "index", "theorem", "Demo.answer")
-            .is_some());
+        assert!(
+            lean.resolve_xref(&environment, "index", "thm", "Demo.answer")
+                .is_some()
+        );
+        assert!(
+            lean.resolve_xref(&environment, "index", "theorem", "Demo.answer")
+                .is_some()
+        );
     }
 
     #[test]
     fn clear_doc_rebuilds_aliases_and_source_objects_skip_noindex() {
         let mut domain = RustDomain::new();
-        let mut hidden = declaration(SourceLanguage::Rust, "crate::Hidden", DeclarationKind::Struct);
+        let mut hidden = declaration(
+            SourceLanguage::Rust,
+            "crate::Hidden",
+            DeclarationKind::Struct,
+        );
         hidden.noindex = true;
-        let visible = declaration(SourceLanguage::Rust, "crate::Visible", DeclarationKind::Struct);
+        let visible = declaration(
+            SourceLanguage::Rust,
+            "crate::Visible",
+            DeclarationKind::Struct,
+        );
         domain.note_snapshot("first", &[hidden, visible]);
         assert_eq!(domain.source_objects().len(), 1);
         domain.clear_doc("first");

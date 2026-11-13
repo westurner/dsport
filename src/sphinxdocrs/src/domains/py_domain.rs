@@ -329,7 +329,10 @@ mod tests {
             ))
             .expect("autoclass target should be registered");
         assert_eq!(docname, "extdev/utils");
-        assert_eq!(anchor, "sphinx.transforms.post_transforms.SphinxPostTransform");
+        assert_eq!(
+            anchor,
+            "sphinx.transforms.post_transforms.SphinxPostTransform"
+        );
     }
 
     #[test]
@@ -461,9 +464,11 @@ mod tests {
             "other.application.Sphinx.add_role",
             "",
         );
-        assert!(domain
-            .resolve_xref(&env, "markupapi", "meth", "Sphinx.add_role")
-            .is_none());
+        assert!(
+            domain
+                .resolve_xref(&env, "markupapi", "meth", "Sphinx.add_role")
+                .is_none()
+        );
     }
 
     #[test]

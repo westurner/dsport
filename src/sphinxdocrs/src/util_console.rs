@@ -264,17 +264,29 @@ mod tests {
         assert!(!terminal_supports_colour_from_env(ci_false));
 
         let colour_terminal = |k: &str| (k == "TERM").then(|| "xterm-256color".to_string());
-        assert!(!terminal_supports_colour_from_env_impl(&colour_terminal, false));
-        assert!(terminal_supports_colour_from_env_impl(&colour_terminal, true));
+        assert!(!terminal_supports_colour_from_env_impl(
+            &colour_terminal,
+            false
+        ));
+        assert!(terminal_supports_colour_from_env_impl(
+            &colour_terminal,
+            true
+        ));
     }
 
     #[test]
     fn env_logic_color_variables_follow_sphinx_presence_semantics() {
         let empty_no_color = |key: &str| (key == "NO_COLOR").then(String::new);
-        assert!(!terminal_supports_colour_from_env_impl(&empty_no_color, true));
+        assert!(!terminal_supports_colour_from_env_impl(
+            &empty_no_color,
+            true
+        ));
 
         let empty_force_color = |key: &str| (key == "FORCE_COLOR").then(String::new);
-        assert!(terminal_supports_colour_from_env_impl(&empty_force_color, false));
+        assert!(terminal_supports_colour_from_env_impl(
+            &empty_force_color,
+            false
+        ));
     }
 
     #[test]

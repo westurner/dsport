@@ -46,12 +46,12 @@ use serde::{Deserialize, Serialize};
 use crate::builders::BuildError;
 use crate::config::{ConfigVal, SphinxConfig};
 use crate::domains::{
-    IndexEntry, ObjectEntry, PendingXref, StdDomain, JsDomain, LeanDomain,  PyDomain, RstDomain, RustDomain,
-    SourceObjectEntry, XrefResolution, scan,
+    IndexEntry, JsDomain, LeanDomain, ObjectEntry, PendingXref, PyDomain, RstDomain, RustDomain,
+    SourceObjectEntry, StdDomain, XrefResolution, scan,
 };
 use crate::source_docs::{
-    AnalysisError, AnalysisSnapshot, SourceAnalysisRequest, SourceLanguage,
-    SourceSnapshotProvider, source_input_hash,
+    AnalysisError, AnalysisSnapshot, SourceAnalysisRequest, SourceLanguage, SourceSnapshotProvider,
+    source_input_hash,
 };
 
 #[cfg(feature = "csl-citeproc")]
@@ -421,13 +421,19 @@ impl BuildEnvironment {
                 ));
             }
         }
-        let metadata = self.domaindata.entry(snapshot.language.to_string()).or_default();
+        let metadata = self
+            .domaindata
+            .entry(snapshot.language.to_string())
+            .or_default();
         metadata.insert("backend".to_string(), snapshot.backend.clone());
         metadata.insert(
             "backend_kind".to_string(),
             format!("{:?}", snapshot.backend_kind).to_lowercase(),
         );
-        metadata.insert("backend_version".to_string(), snapshot.backend_version.clone());
+        metadata.insert(
+            "backend_version".to_string(),
+            snapshot.backend_version.clone(),
+        );
         metadata.insert("source_root".to_string(), snapshot.source_root.clone());
         metadata.insert("source_hash".to_string(), snapshot.source_hash.clone());
         metadata.insert(
@@ -474,14 +480,12 @@ impl BuildEnvironment {
         docname: &str,
         request: &SourceAnalysisRequest,
     ) -> bool {
-        self.source_snapshots
-            .get(docname)
-            .is_some_and(|snapshot| {
-                !snapshot.request_identity.is_empty()
-                    && snapshot.request_identity == request.cache_identity()
-                    && source_input_hash(request, snapshot.language)
-                        .is_ok_and(|hash| hash == snapshot.source_hash)
-            })
+        self.source_snapshots.get(docname).is_some_and(|snapshot| {
+            !snapshot.request_identity.is_empty()
+                && snapshot.request_identity == request.cache_identity()
+                && source_input_hash(request, snapshot.language)
+                    .is_ok_and(|hash| hash == snapshot.source_hash)
+        })
     }
 
     /// Return whether a cached snapshot matches both request inputs and the
@@ -851,11 +855,7 @@ impl BuildEnvironment {
     }
 
     #[cfg(feature = "csl-citeproc")]
-    fn resolve_bibtex_doctree(
-        &self,
-        docname: &str,
-        tree: &mut Doctree,
-    ) -> Result<(), BuildError> {
+    fn resolve_bibtex_doctree(&self, docname: &str, tree: &mut Doctree) -> Result<(), BuildError> {
         use crate::extensions::csl::{
             CitationCluster, CitationItem, CitationMode, DEFAULT_STYLE, render_with_uncited,
         };
@@ -866,7 +866,9 @@ impl BuildEnvironment {
         }
 
         let bibliography = self.load_bibtex_database()?;
-        let style = self.load_bibtex_style()?.unwrap_or_else(|| DEFAULT_STYLE.to_string());
+        let style = self
+            .load_bibtex_style()?
+            .unwrap_or_else(|| DEFAULT_STYLE.to_string());
         let mut docnames: Vec<String> = self.all_docs.keys().cloned().collect();
         if !docnames.iter().any(|name| name == docname) {
             docnames.push(docname.to_string());
@@ -939,15 +941,23 @@ impl BuildEnvironment {
                             let next_number = footnote_ids_by_key.len() as u32 + 1;
                             let (number, footnote_id) = footnote_ids_by_key
                                 .entry(key.clone())
-                                .or_insert_with(|| (next_number, format!("bibtex-footnote-{next_number}")))
+                                .or_insert_with(|| {
+                                    (next_number, format!("bibtex-footnote-{next_number}"))
+                                })
                                 .clone();
                             let reference_id = format!(
                                 "bibtex-footnote-reference-{node_id}-{}",
                                 footcite_refs.len() + 1
                             );
-                            footcite_refs.push((number.to_string(), footnote_id.clone(), reference_id));
+                            footcite_refs.push((
+                                number.to_string(),
+                                footnote_id.clone(),
+                                reference_id,
+                            ));
                             if !emitted_footnotes.contains(key)
-                                && !pending_footnotes.iter().any(|(pending, _, _)| pending == key)
+                                && !pending_footnotes
+                                    .iter()
+                                    .any(|(pending, _, _)| pending == key)
                             {
                                 pending_footnotes.push((key.clone(), number, footnote_id));
                             }
@@ -972,7 +982,8 @@ impl BuildEnvironment {
             }
         }
 
-        if clusters.is_empty() && bibliography_nodes.is_empty() && footbibliography_nodes.is_empty() {
+        if clusters.is_empty() && bibliography_nodes.is_empty() && footbibliography_nodes.is_empty()
+        {
             return Ok(());
         }
         let include_uncited = if self
@@ -1006,8 +1017,14 @@ impl BuildEnvironment {
         let mut footnote_backrefs: HashMap<String, Vec<String>> = HashMap::new();
 
         for (node_id, cluster_id) in current_cluster_ids {
-            let mut value = rendered_clusters.get(&cluster_id).cloned().unwrap_or_default();
-            let role = current_citation_roles.get(&node_id).map(String::as_str).unwrap_or("cite");
+            let mut value = rendered_clusters
+                .get(&cluster_id)
+                .cloned()
+                .unwrap_or_default();
+            let role = current_citation_roles
+                .get(&node_id)
+                .map(String::as_str)
+                .unwrap_or("cite");
             if role == "cite:empty" {
                 tree.set_kind(node_id, NodeKind::Text(String::new()));
                 continue;
@@ -1124,9 +1141,13 @@ impl BuildEnvironment {
             } else {
                 self.srcdir.join(path)
             };
-            let content = read_source_file(&path, &self.config.source_encoding()).map_err(|error| {
-                BuildError::Other(format!("failed to read bibliography {}: {error}", path.display()))
-            })?;
+            let content =
+                read_source_file(&path, &self.config.source_encoding()).map_err(|error| {
+                    BuildError::Other(format!(
+                        "failed to read bibliography {}: {error}",
+                        path.display()
+                    ))
+                })?;
             source.push_str(&content);
             source.push('\n');
         }
@@ -1153,7 +1174,10 @@ impl BuildEnvironment {
         read_source_file(&path, &self.config.source_encoding())
             .map(Some)
             .map_err(|error| {
-                BuildError::Other(format!("failed to read CSL style {}: {error}", path.display()))
+                BuildError::Other(format!(
+                    "failed to read CSL style {}: {error}",
+                    path.display()
+                ))
             })
     }
 
@@ -1162,10 +1186,7 @@ impl BuildEnvironment {
         for node_id in 0..tree.nodes_len() {
             let kind = tree.node(node_id).kind.clone();
             match kind {
-                NodeKind::Extension {
-                    class_name,
-                    attrs,
-                } if class_name == "BibtexCitation" => {
+                NodeKind::Extension { class_name, attrs } if class_name == "BibtexCitation" => {
                     let keys = node_attribute(&attrs, "keys").unwrap_or_default();
                     let text = if node_attribute(&attrs, "role") == Some("cite:empty") {
                         eprintln!(
@@ -1178,7 +1199,10 @@ impl BuildEnvironment {
                     tree.set_kind(node_id, NodeKind::Text(text));
                 }
                 NodeKind::Extension { class_name, .. }
-                    if matches!(class_name.as_str(), "BibtexBibliography" | "BibtexFootBibliography") =>
+                    if matches!(
+                        class_name.as_str(),
+                        "BibtexBibliography" | "BibtexFootBibliography"
+                    ) =>
                 {
                     tree.set_kind(
                         node_id,
@@ -1343,7 +1367,8 @@ impl BuildEnvironment {
         let yaml_source = expand_yaml_toctree_directives(source, &self.srcdir)?;
         let included_source = expand_rst_includes(
             &yaml_source,
-            &self.doc2path(docname)
+            &self
+                .doc2path(docname)
                 .parent()
                 .unwrap_or(self.srcdir.as_path())
                 .to_path_buf(),
@@ -1364,9 +1389,7 @@ impl BuildEnvironment {
         let expanded_source = self.expand_autodoc(source);
         let autodoc_source = expanded_source.as_deref().unwrap_or(source);
         let expanded_attribute_docs = self.expand_autoattribute_docs(autodoc_source);
-        let source = expanded_attribute_docs
-            .as_deref()
-            .unwrap_or(autodoc_source);
+        let source = expanded_attribute_docs.as_deref().unwrap_or(autodoc_source);
         let highlighted_source = self.apply_highlight_language(source);
         let parse_source = highlighted_source.as_deref().unwrap_or(source);
         let tree = self.parse_source(docname, parse_source)?;
@@ -1398,7 +1421,8 @@ impl BuildEnvironment {
         let hidden_entries = scan_hidden_toctree_entries_with_titles_mode(&scan_source, true);
         for (entry, title) in &hidden_entries {
             if let Some(title) = title {
-                self.longtitles.insert(docname_join(docname, entry), title.clone());
+                self.longtitles
+                    .insert(docname_join(docname, entry), title.clone());
             }
         }
         for (entry, title) in scan_toctree_entries_with_titles(&scan_source) {
@@ -1684,18 +1708,28 @@ impl BuildEnvironment {
                 class_context = None;
             }
 
-            if [".. code-block::", ".. code::", ".. sourcecode::", ".. raw::"]
-                .iter()
-                .any(|prefix| trimmed.starts_with(prefix))
+            if [
+                ".. code-block::",
+                ".. code::",
+                ".. sourcecode::",
+                ".. raw::",
+            ]
+            .iter()
+            .any(|prefix| trimmed.starts_with(prefix))
             {
                 literal_block_indent = Some(indent);
                 output.push((*line).to_string());
                 continue;
             }
 
-            let module_directive = [".. module::", ".. currentmodule::", ".. py:module::", ".. py:currentmodule::"]
-                .iter()
-                .find_map(|prefix| trimmed.strip_prefix(prefix));
+            let module_directive = [
+                ".. module::",
+                ".. currentmodule::",
+                ".. py:module::",
+                ".. py:currentmodule::",
+            ]
+            .iter()
+            .find_map(|prefix| trimmed.strip_prefix(prefix));
             if let Some(name) = module_directive {
                 module_name = name.trim().to_string();
                 class_context = None;
@@ -1730,7 +1764,11 @@ impl BuildEnvironment {
                 (".. attribute::", "attribute"),
             ]
             .iter()
-            .find_map(|(prefix, kind)| trimmed.strip_prefix(prefix).map(|name| (*kind, name.trim())));
+            .find_map(|(prefix, kind)| {
+                trimmed
+                    .strip_prefix(prefix)
+                    .map(|name| (*kind, name.trim()))
+            });
             if let Some((kind, signature)) = class_member {
                 let has_class_context = class_context.is_some();
                 let (class_name, member_signature) = if let Some((_, class_name)) = &class_context {
@@ -1766,7 +1804,9 @@ impl BuildEnvironment {
                         .ok()
                         .and_then(|class| {
                             class.members.into_iter().find_map(|member| {
-                                (member.name == member_name).then_some(member.signature).flatten()
+                                (member.name == member_name)
+                                    .then_some(member.signature)
+                                    .flatten()
                             })
                         })
                         .as_deref()
@@ -1804,7 +1844,9 @@ impl BuildEnvironment {
                     let qualified_prefix = format!("{class_name}.");
                     (
                         class_name.as_str(),
-                        attribute.strip_prefix(&qualified_prefix).unwrap_or(attribute),
+                        attribute
+                            .strip_prefix(&qualified_prefix)
+                            .unwrap_or(attribute),
                     )
                 })
                 .or_else(|| attribute.rsplit_once('.'))
@@ -1836,9 +1878,7 @@ impl BuildEnvironment {
                 format!("{module_name}.{class_name}")
             };
             let qualified_name = format!("{qualified_class}.{attribute_name}");
-            let signature_value = value
-                .map(|value| format!(" = {value}"))
-                .unwrap_or_default();
+            let signature_value = value.map(|value| format!(" = {value}")).unwrap_or_default();
             let displayed_name = if class_context.is_some() {
                 attribute_name
             } else {
@@ -1871,7 +1911,11 @@ impl BuildEnvironment {
 
     pub(crate) fn resolve_python_module(&self, module_name: &str) -> Option<PathBuf> {
         let relative = module_name.replace('.', "/");
-        let mut roots = self.srcdir.ancestors().map(Path::to_path_buf).collect::<Vec<_>>();
+        let mut roots = self
+            .srcdir
+            .ancestors()
+            .map(Path::to_path_buf)
+            .collect::<Vec<_>>();
         roots.extend(crate::config::vendored_python_paths(&self.srcdir));
         for root in roots {
             let module = root.join(format!("{relative}.py"));
@@ -1980,7 +2024,8 @@ impl BuildEnvironment {
 
         for event in scan::scan_event_names(source) {
             let labelid = crate::domains::normalize_id(&event);
-            self.std_domain.note_object("event", event, docname, labelid);
+            self.std_domain
+                .note_object("event", event, docname, labelid);
         }
 
         for (objtype, name) in scan::scan_rst_domain_objects(source) {
@@ -2085,12 +2130,14 @@ impl BuildEnvironment {
                     "js" => self
                         .js_domain
                         .resolve_xref(self, docname, &xref.reftype, &xref.target),
-                    "rust" => self
-                        .rust_domain
-                        .resolve_xref(self, docname, &xref.reftype, &xref.target),
-                    "lean" => self
-                        .lean_domain
-                        .resolve_xref(self, docname, &xref.reftype, &xref.target),
+                    "rust" => {
+                        self.rust_domain
+                            .resolve_xref(self, docname, &xref.reftype, &xref.target)
+                    }
+                    "lean" => {
+                        self.lean_domain
+                            .resolve_xref(self, docname, &xref.reftype, &xref.target)
+                    }
                     _ => None,
                 };
                 match resolved {
@@ -2266,10 +2313,14 @@ impl BuildEnvironment {
             _ => &["class", "exception", "data"],
         };
         let short_name = target.rsplit('.').next().unwrap_or(target);
-        let mut matches = self.py_domain.objects.iter().filter(|((object_type, name), _)| {
-            object_types.contains(&object_type.as_str())
-                && name.rsplit('.').next() == Some(short_name)
-        });
+        let mut matches = self
+            .py_domain
+            .objects
+            .iter()
+            .filter(|((object_type, name), _)| {
+                object_types.contains(&object_type.as_str())
+                    && name.rsplit('.').next() == Some(short_name)
+            });
         let ((_, _), (resolved_docname, anchor, _)) = matches.next()?;
         if matches.next().is_some() {
             return None;
@@ -2291,9 +2342,7 @@ impl BuildEnvironment {
         let candidates = (0..tree.nodes_len())
             .filter_map(|node_id| match &tree.node(node_id).kind {
                 NodeKind::ObjectDescription {
-                    classes,
-                    sig_text,
-                    ..
+                    classes, sig_text, ..
                 } if classes.split_whitespace().any(|class| class == "py") => {
                     Some((node_id, sig_text.clone()))
                 }
@@ -2323,11 +2372,9 @@ impl BuildEnvironment {
                             }
                         };
                         (href, "reference internal".to_string())
-                    } else if let Some(target) = self.resolve_external_xref(
-                        "py",
-                        &reference.reftype,
-                        &reference.target,
-                    ) {
+                    } else if let Some(target) =
+                        self.resolve_external_xref("py", &reference.reftype, &reference.target)
+                    {
                         (target.uri.clone(), "reference external".to_string())
                     } else {
                         return None;
@@ -2356,8 +2403,9 @@ impl BuildEnvironment {
         use crate::domains::Domain as _;
         use crate::util_osutil::relative_uri;
 
-        const KNOWN_STD_REFTYPES: &[&str] =
-            &["ref", "doc", "term", "numref", "keyword", "confval", "event"];
+        const KNOWN_STD_REFTYPES: &[&str] = &[
+            "ref", "doc", "term", "numref", "keyword", "confval", "event",
+        ];
         const KNOWN_RST_REFTYPES: &[&str] = &["dir", "role"];
 
         // `sphinx.ext.extlinks`' `extlinks = {name: (url_template, caption_template), ...}`
@@ -2561,11 +2609,14 @@ impl BuildEnvironment {
                 None => (raw_target.clone(), false),
             };
             let contextual_target = (domain == "py"
-                && matches!(reftype.as_str(), "meth" | "classmethod" | "staticmethod" | "attr")
+                && matches!(
+                    reftype.as_str(),
+                    "meth" | "classmethod" | "staticmethod" | "attr"
+                )
                 && !target.starts_with('.')
                 && !target.contains('.'))
-                .then(|| python_class_context(tree, id).map(|class| format!("{class}.{target}")))
-                .flatten();
+            .then(|| python_class_context(tree, id).map(|class| format!("{class}.{target}")))
+            .flatten();
             let resolve_target = contextual_target.as_deref().unwrap_or(&target);
 
             let resolved = match domain.as_str() {
@@ -2671,26 +2722,26 @@ impl BuildEnvironment {
             } else {
                 let resolved = resolved.as_ref().expect("local xref resolution exists");
                 let target_uri = builder.get_target_uri(&resolved.docname);
-            // Mirrors `sphinx.util.nodes.make_refnode`: a same-document
-            // reference with a target id becomes a bare `#targetid`
-            // fragment (docutils resolves `refid` this way at write
-            // time), bypassing `relative_uri` entirely — which would
-            // otherwise collapse a same-page `to` down to `''`,
-            // silently dropping the fragment (see its own `b2 == t2`
-            // special case, matched here on purpose since our `to` is
-            // always fragment-stripped for that comparison too).
-            //
-            // For the cross-document case, `make_refnode` computes
-            // `get_relative_uri(fromdocname, todocname)` on the *bare*
-            // uri and only appends `'#' + targetid` to that *result*
-            // afterwards — never feeding the anchor into `relative_uri`
-            // itself. That ordering matters: `relative_uri` (both here
-            // and upstream) strips any `#fragment` off `to` before
-            // comparing paths, so embedding the anchor into `target_uri`
-            // first (rather than after) would just have it silently
-            // stripped back out again.
+                // Mirrors `sphinx.util.nodes.make_refnode`: a same-document
+                // reference with a target id becomes a bare `#targetid`
+                // fragment (docutils resolves `refid` this way at write
+                // time), bypassing `relative_uri` entirely — which would
+                // otherwise collapse a same-page `to` down to `''`,
+                // silently dropping the fragment (see its own `b2 == t2`
+                // special case, matched here on purpose since our `to` is
+                // always fragment-stripped for that comparison too).
+                //
+                // For the cross-document case, `make_refnode` computes
+                // `get_relative_uri(fromdocname, todocname)` on the *bare*
+                // uri and only appends `'#' + targetid` to that *result*
+                // afterwards — never feeding the anchor into `relative_uri`
+                // itself. That ordering matters: `relative_uri` (both here
+                // and upstream) strips any `#fragment` off `to` before
+                // comparing paths, so embedding the anchor into `target_uri`
+                // first (rather than after) would just have it silently
+                // stripped back out again.
                 if resolved.docname == docname && !resolved.anchor.is_empty() {
-                format!("#{}", resolved.anchor)
+                    format!("#{}", resolved.anchor)
                 } else {
                     let rel = relative_uri(&base_uri, &target_uri);
                     if resolved.anchor.is_empty() {
@@ -2792,8 +2843,7 @@ impl BuildEnvironment {
             } else {
                 maxdepth as usize
             };
-            let mut resolved =
-                crate::toctree::resolve_from_entries(self, &entries, resolve_depth);
+            let mut resolved = crate::toctree::resolve_from_entries(self, &entries, resolve_depth);
             for entry in &mut resolved {
                 Self::enrich_toc_entry_with_sections(self, entry, toc_depth.saturating_sub(1));
             }
@@ -2832,7 +2882,10 @@ impl BuildEnvironment {
         let list = tree.append(parent, NodeKind::BulletList { bullet: '*' });
         for entry in entries {
             let item = tree.append(list, NodeKind::ListItem);
-            let (docname, fragment) = entry.docname.split_once('#').unwrap_or((&entry.docname, ""));
+            let (docname, fragment) = entry
+                .docname
+                .split_once('#')
+                .unwrap_or((&entry.docname, ""));
             let mut target_uri = builder.get_target_uri(docname);
             if !fragment.is_empty() {
                 target_uri.push('#');
@@ -2901,7 +2954,11 @@ impl BuildEnvironment {
         if !entry.docname.contains('#') {
             let sections = local_section_entries(env, &entry.docname);
             let nested = std::mem::take(&mut entry.children);
-            entry.children = if sections.is_empty() { nested } else { sections };
+            entry.children = if sections.is_empty() {
+                nested
+            } else {
+                sections
+            };
         }
         for child in &mut entry.children {
             Self::enrich_toc_entry_with_sections(env, child, remaining_depth.saturating_sub(1));
@@ -3024,9 +3081,7 @@ impl BuildEnvironment {
             .collect();
         docnames
             .iter()
-            .flat_map(|docname| {
-                crate::toctree::resolve_with_hidden_diagnostics(self, docname, 0).1
-            })
+            .flat_map(|docname| crate::toctree::resolve_with_hidden_diagnostics(self, docname, 0).1)
             .collect()
     }
 
@@ -3084,10 +3139,7 @@ impl BuildEnvironment {
             let Some(&last_read) = self.all_docs.get(docname) else {
                 added.push(docname.clone());
                 if !config_changed {
-                    debug_messages.push(format!(
-                        "[build target] added {}",
-                        sphinx_repr(docname)
-                    ));
+                    debug_messages.push(format!("[build target] added {}", sphinx_repr(docname)));
                 }
                 continue;
             };
@@ -3328,13 +3380,14 @@ fn shorten_xref_target(target: &str, domain: &str) -> String {
         "rust" => "::",
         _ => ".",
     };
-    target.rsplit(separator).next().unwrap_or(target).to_string()
+    target
+        .rsplit(separator)
+        .next()
+        .unwrap_or(target)
+        .to_string()
 }
 
-fn local_section_entries(
-    env: &BuildEnvironment,
-    docname: &str,
-) -> Vec<crate::toctree::TocEntry> {
+fn local_section_entries(env: &BuildEnvironment, docname: &str) -> Vec<crate::toctree::TocEntry> {
     fn text_content(tree: &Doctree, id: NodeId) -> String {
         match &tree.node(id).kind {
             NodeKind::Text(text) => text.clone(),
@@ -3346,15 +3399,16 @@ fn local_section_entries(
                     .map(|&child| text_content(tree, child))
                     .collect::<String>()
             ),
-            _ => tree.node(id).children.iter().map(|&child| text_content(tree, child)).collect(),
+            _ => tree
+                .node(id)
+                .children
+                .iter()
+                .map(|&child| text_content(tree, child))
+                .collect(),
         }
     }
 
-    fn collect(
-        tree: &Doctree,
-        parent: NodeId,
-        docname: &str,
-    ) -> Vec<crate::toctree::TocEntry> {
+    fn collect(tree: &Doctree, parent: NodeId, docname: &str) -> Vec<crate::toctree::TocEntry> {
         tree.node(parent)
             .children
             .iter()
@@ -3432,7 +3486,8 @@ fn smartquote_text(text: &str) -> String {
         if character == '\'' || character == '"' {
             let previous = chars.get(index.wrapping_sub(1)).copied();
             let next = chars.get(index + 1).copied();
-            let apostrophe = character == '\'' && previous.is_some_and(char::is_alphanumeric)
+            let apostrophe = character == '\''
+                && previous.is_some_and(char::is_alphanumeric)
                 && next.is_some_and(char::is_alphanumeric);
             if apostrophe || previous.is_some_and(|value| !value.is_whitespace()) {
                 out.push(if character == '\'' { '’' } else { '”' });
@@ -3557,12 +3612,7 @@ fn format_sphinx_timestamp(timestamp: i64) -> String {
     let seconds = timestamp.div_euclid(1_000_000);
     let milliseconds = timestamp.rem_euclid(1_000_000) / 1_000;
     chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0)
-        .map(|datetime| {
-            format!(
-                "{}.{milliseconds:03}",
-                datetime.format("%Y-%m-%d %H:%M:%S")
-            )
-        })
+        .map(|datetime| format!("{}.{milliseconds:03}", datetime.format("%Y-%m-%d %H:%M:%S")))
         .unwrap_or_else(|| timestamp.to_string())
 }
 
@@ -4193,9 +4243,14 @@ fn expand_rst_literalincludes(source: &str, base_dir: &Path, encoding: &str) -> 
         }
 
         let trimmed = line.trim_start();
-        if [".. code-block::", ".. code::", ".. sourcecode::", ".. raw::"]
-            .iter()
-            .any(|prefix| trimmed.starts_with(prefix))
+        if [
+            ".. code-block::",
+            ".. code::",
+            ".. sourcecode::",
+            ".. raw::",
+        ]
+        .iter()
+        .any(|prefix| trimmed.starts_with(prefix))
         {
             literal_block_indent = Some(indent);
             output.push(line.to_string());
@@ -4250,7 +4305,10 @@ fn expand_rst_literalincludes(source: &str, base_dir: &Path, encoding: &str) -> 
             .map(|ranges| select_literalinclude_lines(&contents, ranges))
             .unwrap_or(contents);
 
-        let language = options.get("language").map(String::as_str).unwrap_or("text");
+        let language = options
+            .get("language")
+            .map(String::as_str)
+            .unwrap_or("text");
         let prefix = " ".repeat(directive_indent);
         output.push(format!("{prefix}.. code-block:: {language}"));
         if let Some(caption) = options.get("caption") {
@@ -4270,7 +4328,11 @@ fn expand_rst_literalincludes(source: &str, base_dir: &Path, encoding: &str) -> 
 fn select_literalinclude_lines(source: &str, ranges: &str) -> String {
     let lines: Vec<_> = source.lines().collect();
     let mut selected: Vec<&str> = Vec::new();
-    for range in ranges.split(',').map(str::trim).filter(|range| !range.is_empty()) {
+    for range in ranges
+        .split(',')
+        .map(str::trim)
+        .filter(|range| !range.is_empty())
+    {
         let (start, end) = if let Some((start, end)) = range.split_once('-') {
             let start = start.trim().parse::<usize>().unwrap_or(1);
             let end = end.trim().parse::<usize>().unwrap_or(lines.len());
@@ -4293,13 +4355,11 @@ fn extract_python_object(source: &str, object_name: &str) -> Option<String> {
     let lines: Vec<&str> = source.lines().collect();
     let declaration = lines.iter().position(|line| {
         let trimmed = line.trim_start();
-        ["class ", "def ", "async def "]
-            .iter()
-            .any(|prefix| {
-                trimmed
-                    .strip_prefix(prefix)
-                    .is_some_and(|rest| rest.split(['(', ':', ' ']).next() == Some(name))
-            })
+        ["class ", "def ", "async def "].iter().any(|prefix| {
+            trimmed
+                .strip_prefix(prefix)
+                .is_some_and(|rest| rest.split(['(', ':', ' ']).next() == Some(name))
+        })
     })?;
     let indent = source_indentation(lines[declaration]);
     let mut start = declaration;
@@ -4342,11 +4402,12 @@ fn apply_module_section_ids(tree: &mut Doctree, source: &str) {
     fn module_name(tree: &Doctree, id: NodeId) -> Option<String> {
         match &tree.node(id).kind {
             NodeKind::Target { ids, .. } => ids.strip_prefix("module-").map(str::to_string),
-            NodeKind::ObjectDescription { classes, sig_text, .. }
-                if classes.split_whitespace().any(|class| class == "module") => sig_text
-                    .split_once(' ')
-                    .map(|(_, name)| name.trim().to_string())
-                    .filter(|name| !name.is_empty()),
+            NodeKind::ObjectDescription {
+                classes, sig_text, ..
+            } if classes.split_whitespace().any(|class| class == "module") => sig_text
+                .split_once(' ')
+                .map(|(_, name)| name.trim().to_string())
+                .filter(|name| !name.is_empty()),
             _ => None,
         }
     }
@@ -4415,13 +4476,14 @@ fn apply_module_section_ids(tree: &mut Doctree, source: &str) {
         for child in children {
             if matches!(tree.node(child).kind, NodeKind::Section { .. }) {
                 let module = active_module.clone().or_else(|| {
-                    is_document.then(|| {
-                        tree.node(child)
-                            .children
-                            .iter()
-                            .find_map(|&id| module_name_in_section(tree, id))
-                    })
-                    .flatten()
+                    is_document
+                        .then(|| {
+                            tree.node(child)
+                                .children
+                                .iter()
+                                .find_map(|&id| module_name_in_section(tree, id))
+                        })
+                        .flatten()
                 });
                 if let Some(module) = module.filter(|name| !noindex_modules.contains(name)) {
                     assign_module_section(tree, child, &module);
@@ -4460,9 +4522,7 @@ fn apply_python_object_ids(tree: &mut Doctree, source: &str) {
                 ids,
                 sig_text,
                 ..
-            }
-                if classes.split_whitespace().any(|class| class == "py") =>
-            {
+            } if classes.split_whitespace().any(|class| class == "py") => {
                 (classes.clone(), ids.clone(), sig_text.clone())
             }
             _ => continue,
@@ -4518,13 +4578,19 @@ fn apply_python_object_ids(tree: &mut Doctree, source: &str) {
             _ => continue,
         };
         if !parent_classes.split_whitespace().any(|class| class == "py")
-            || !parent_classes.split_whitespace().any(|class| class == "class")
+            || !parent_classes
+                .split_whitespace()
+                .any(|class| class == "class")
             || !child_classes.split_whitespace().any(|class| class == "py")
             || child_ids.starts_with(&format!("{parent_ids}."))
         {
             continue;
         }
-        let member = child_ids.rsplit('.').next().unwrap_or(&child_ids).to_string();
+        let member = child_ids
+            .rsplit('.')
+            .next()
+            .unwrap_or(&child_ids)
+            .to_string();
         if let NodeKind::ObjectDescription { ids, .. } = &mut tree.node_mut(node_id).kind {
             *ids = format!("{parent_ids}.{member}");
         }
@@ -4594,7 +4660,13 @@ fn apply_python_docfield_transform(tree: &mut Doctree) {
                 if parts.next().is_some()
                     || !matches!(
                         field_type.as_str(),
-                        "param" | "parameter" | "arg" | "argument" | "keyword" | "kwarg" | "kwparam"
+                        "param"
+                            | "parameter"
+                            | "arg"
+                            | "argument"
+                            | "keyword"
+                            | "kwarg"
+                            | "kwparam"
                     )
                 {
                     return None;
@@ -4639,7 +4711,8 @@ fn apply_python_docfield_transform(tree: &mut Doctree) {
             .iter()
             .map(|(field, _, _)| *field)
             .collect::<std::collections::HashSet<_>>();
-        let mut ordered_fields = Vec::with_capacity(original_fields.len() - parameter_ids.len() + 1);
+        let mut ordered_fields =
+            Vec::with_capacity(original_fields.len() - parameter_ids.len() + 1);
         let mut inserted_parameters = false;
         for field in original_fields {
             if parameter_ids.contains(&field) {
@@ -4652,7 +4725,10 @@ fn apply_python_docfield_transform(tree: &mut Doctree) {
             }
             if let Some(&field_name) = tree.node(field).children.first()
                 && matches!(tree.node(field_name).kind, NodeKind::FieldName)
-                && matches!(text_content(tree, field_name).as_str(), "return" | "returns")
+                && matches!(
+                    text_content(tree, field_name).as_str(),
+                    "return" | "returns"
+                )
             {
                 set_field_name(tree, field_name, "Returns:");
             }
@@ -4773,12 +4849,16 @@ mod tests {
             select_literalinclude_lines(source, " , 0, 3-2, invalid, 99, 2 "),
             "two"
         );
-        assert_eq!(select_literalinclude_lines(source, "1-2,3"), "one\ntwo\nthree");
+        assert_eq!(
+            select_literalinclude_lines(source, "1-2,3"),
+            "one\ntwo\nthree"
+        );
     }
 
     #[test]
     fn extract_python_object_includes_decorators_and_stops_at_next_definition() {
-        let source = "@first\n@second(1)\ndef wanted(value):\n    return value\n\ndef other():\n    pass\n";
+        let source =
+            "@first\n@second(1)\ndef wanted(value):\n    return value\n\ndef other():\n    pass\n";
         assert_eq!(
             extract_python_object(source, "package.wanted").as_deref(),
             Some("@first\n@second(1)\ndef wanted(value):\n    return value")
@@ -4924,17 +5004,23 @@ mod tests {
         let tree = env.parse_source("markupapi", &expanded).unwrap();
         let parsed_ids = (0..tree.nodes_len())
             .filter_map(|id| match &tree.node(id).kind {
-                NodeKind::ObjectDescription { classes, ids, sig_text, .. } => {
-                    Some((classes.clone(), ids.clone(), sig_text.clone()))
-                }
+                NodeKind::ObjectDescription {
+                    classes,
+                    ids,
+                    sig_text,
+                    ..
+                } => Some((classes.clone(), ids.clone(), sig_text.clone())),
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert!((0..tree.nodes_len()).any(|id| matches!(
-            &tree.node(id).kind,
-            NodeKind::ObjectDescription { ids, .. }
-                if ids == "docutils.parsers.rst.Directive.state_machine"
-        )), "expanded:\n{expanded}\nparsed IDs: {parsed_ids:?}");
+        assert!(
+            (0..tree.nodes_len()).any(|id| matches!(
+                &tree.node(id).kind,
+                NodeKind::ObjectDescription { ids, .. }
+                    if ids == "docutils.parsers.rst.Directive.state_machine"
+            )),
+            "expanded:\n{expanded}\nparsed IDs: {parsed_ids:?}"
+        );
 
         let tree = env
             .parse_source(
@@ -4974,9 +5060,9 @@ mod tests {
         let expanded = qualify_rst_directive_options(source)
             .expect("nested directive options should be qualified");
 
-        assert!(expanded.contains(
-            ".. rst:directive:option:: @py:function@single-line-parameter-list"
-        ));
+        assert!(
+            expanded.contains(".. rst:directive:option:: @py:function@single-line-parameter-list")
+        );
     }
 
     fn source_snapshot() -> AnalysisSnapshot {
@@ -4992,7 +5078,11 @@ mod tests {
             Visibility::Public,
             SourceSpan::new(
                 "src/lib.rs",
-                SourcePosition { byte: 0, line: 1, column: 0 },
+                SourcePosition {
+                    byte: 0,
+                    line: 1,
+                    column: 0,
+                },
                 None,
             ),
         );
@@ -5023,8 +5113,8 @@ mod tests {
     fn parse_source_accepts_builtin_sphinx_roles_but_rejects_unknown_roles() {
         let env = make_env();
         let roles = [
-            "class", "confval", "data", "dfn", "doc", "dudir", "dupage", "duref", "durole",
-            "file", "mod", "py:mod", "ref", "rst:dir", "term",
+            "class", "confval", "data", "dfn", "doc", "dudir", "dupage", "duref", "durole", "file",
+            "mod", "py:mod", "ref", "rst:dir", "term",
         ];
         let source = roles
             .iter()
@@ -5038,7 +5128,9 @@ mod tests {
             "built-in Sphinx roles should not produce unknown-role errors:\n{output}"
         );
 
-        let tree = env.parse_source("unknown-role", ":not-a-role:`target`").unwrap();
+        let tree = env
+            .parse_source("unknown-role", ":not-a-role:`target`")
+            .unwrap();
         let output = docutilsrs::pseudo_xml(&tree);
         assert!(
             output.contains("Unknown interpreted text role") && output.contains("not-a-role"),
@@ -5052,9 +5144,7 @@ mod tests {
         let default_tree = make_env().parse_source("refs", source).unwrap();
         let default_links: Vec<_> = (0..default_tree.nodes_len())
             .filter_map(|id| match &default_tree.node(id).kind {
-                NodeKind::Reference { name, refuri, .. } => {
-                    Some((name.clone(), refuri.clone()))
-                }
+                NodeKind::Reference { name, refuri, .. } => Some((name.clone(), refuri.clone())),
                 _ => None,
             })
             .collect();
@@ -5072,14 +5162,15 @@ mod tests {
         let linked_tree = env.parse_source("refs", source).unwrap();
         let links: Vec<_> = (0..linked_tree.nodes_len())
             .filter_map(|id| match &linked_tree.node(id).kind {
-                NodeKind::Reference { name, refuri, .. } => {
-                    Some((name.clone(), refuri.clone()))
-                }
+                NodeKind::Reference { name, refuri, .. } => Some((name.clone(), refuri.clone())),
                 _ => None,
             })
             .collect();
         assert_eq!(
-            links.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(),
+            links
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
             vec!["contents <table-of-contents>", "ref <directives>"]
         );
     }
@@ -5116,12 +5207,8 @@ mod tests {
         assert!(!env.source_snapshot_matches_request("api", &changed_request));
 
         let persisted = env.to_persisted();
-        let mut restored = BuildEnvironment::new(
-            SphinxConfig::new_defaults(),
-            project,
-            &srcdir,
-            &doctreedir,
-        );
+        let mut restored =
+            BuildEnvironment::new(SphinxConfig::new_defaults(), project, &srcdir, &doctreedir);
         restored.apply_persisted(persisted);
         assert_eq!(restored.rust_domain.source_objects().len(), 1);
         assert!(restored.source_snapshots.contains_key("api"));
@@ -5184,7 +5271,10 @@ mod tests {
 
         assert_eq!(env.domaindata["lean"]["backend"], "lean-test");
         assert_eq!(env.domaindata["lean"]["source_root"], "/tmp/lean");
-        assert_eq!(env.source_snapshots["lean-api"].language, SourceLanguage::Lean);
+        assert_eq!(
+            env.source_snapshots["lean-api"].language,
+            SourceLanguage::Lean
+        );
     }
 
     #[test]
@@ -5338,7 +5428,10 @@ mod tests {
 
         let snapshot = env.source_snapshots.get("api").unwrap();
         assert_eq!(snapshot.request_identity, request.cache_identity());
-        assert_eq!(snapshot.provider_identity, analyzer.cache_identity(&request));
+        assert_eq!(
+            snapshot.provider_identity,
+            analyzer.cache_identity(&request)
+        );
         assert_eq!(
             env.domaindata["rust"]["provider_identity"],
             analyzer.cache_identity(&request)
@@ -5355,11 +5448,15 @@ mod tests {
         assert!(!restored.source_snapshot_matches_provider("api", &changed_toolchain, &request));
     }
 
-    #[cfg(all(feature = "rust-source-analysis", feature = "lsp-source-analysis", unix))]
+    #[cfg(all(
+        feature = "rust-source-analysis",
+        feature = "lsp-source-analysis",
+        unix
+    ))]
     #[test]
     fn cold_lsp_provider_initializes_identity_before_persisted_cache_match() {
-        use crate::source_docs::lsp_backend::{LspServerConfig, LspSnapshotProvider};
         use crate::source_analysis::SourceLanguage;
+        use crate::source_docs::lsp_backend::{LspServerConfig, LspSnapshotProvider};
 
         let directory = tempfile::tempdir().unwrap();
         let workspace = directory.path().join("workspace");
@@ -5396,7 +5493,8 @@ mod tests {
             &doctreedir,
         );
         let original_provider = LspSnapshotProvider::new(config.clone());
-        env.analyze_source("api", &original_provider, &request).unwrap();
+        env.analyze_source("api", &original_provider, &request)
+            .unwrap();
         let persisted = env.to_persisted();
         let mut restored = BuildEnvironment::new(
             SphinxConfig::new_defaults(),
@@ -5486,10 +5584,13 @@ mod tests {
                 &tree.node(section).kind,
                 NodeKind::Section { ids, .. } if ids == "module-pkg.mod"
             ));
-            assert!(!tree.node(section).children.iter().any(|&id| matches!(
-                &tree.node(id).kind,
-                NodeKind::Target { .. }
-            )));
+            assert!(
+                !tree
+                    .node(section)
+                    .children
+                    .iter()
+                    .any(|&id| matches!(&tree.node(id).kind, NodeKind::Target { .. }))
+            );
         }
     }
 
@@ -5505,7 +5606,10 @@ mod tests {
         let ids = (0..tree.nodes_len())
             .filter_map(|id| match &tree.node(id).kind {
                 NodeKind::ObjectDescription { classes, ids, .. }
-                    if classes.split_whitespace().any(|class| class == "py") => Some(ids.as_str()),
+                    if classes.split_whitespace().any(|class| class == "py") =>
+                {
+                    Some(ids.as_str())
+                }
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -5561,8 +5665,14 @@ mod tests {
         );
 
         assert!(env.expand_autodoc(".. automodule:: missing\n").is_none());
-        assert!(env.expand_autodoc(".. autoclass:: missing.Widget\n").is_none());
-        assert!(env.expand_autodoc(".. autofunction:: missing.run\n").is_none());
+        assert!(
+            env.expand_autodoc(".. autoclass:: missing.Widget\n")
+                .is_none()
+        );
+        assert!(
+            env.expand_autodoc(".. autofunction:: missing.run\n")
+                .is_none()
+        );
 
         std::fs::create_dir(dir.path().join("package")).unwrap();
         std::fs::write(
@@ -5733,10 +5843,7 @@ mod tests {
         assert!(expanded.contains("Look for message catalogs"));
         assert!(!expanded.contains(".. autofunction::"));
         for (name, expected) in [
-            (
-                "_",
-                "Translation function for messages on documentation",
-            ),
+            ("_", "Translation function for messages on documentation"),
             ("__", "Translation function for console messages"),
         ] {
             let alias_rst = crate::autodoc::document_function_auto(
@@ -5764,14 +5871,17 @@ mod tests {
         let tree = env
             .parse_source("extdev/i18n", &expanded_i18n)
             .expect("expanded i18n source should parse");
-        let init_signature = (0..tree.nodes_len()).find_map(|node_id| {
-            match &tree.node(node_id).kind {
+        let init_signature =
+            (0..tree.nodes_len()).find_map(|node_id| match &tree.node(node_id).kind {
                 NodeKind::ObjectDescription { ids, sig_text, .. }
-                    if ids == "sphinx.locale.init" => Some(sig_text),
+                    if ids == "sphinx.locale.init" =>
+                {
+                    Some(sig_text)
+                }
                 _ => None,
-            }
-        });
-        let init_signature = init_signature.expect("parsed init directive should have an object node");
+            });
+        let init_signature =
+            init_signature.expect("parsed init directive should have an object node");
         assert!(
             init_signature.contains("Iterable[str | os.PathLike[str] | None]"),
             "signature should be unquoted before HTML rendering: {init_signature}"
@@ -5796,11 +5906,14 @@ mod tests {
         );
 
         let mut empty = Doctree::new_document("empty");
-        let section = empty.append(empty.root(), NodeKind::Section {
-            ids: String::new(),
-            names: String::new(),
-            classes: String::new(),
-        });
+        let section = empty.append(
+            empty.root(),
+            NodeKind::Section {
+                ids: String::new(),
+                names: String::new(),
+                classes: String::new(),
+            },
+        );
         empty.append(section, NodeKind::Paragraph);
         assert_eq!(BuildEnvironment::document_title_from_tree(&empty), None);
 
@@ -5920,7 +6033,10 @@ mod tests {
         env.project
             .docname_to_path
             .insert("broken".into(), "broken.ipynb".into());
-        let error = env.parse_source("broken", "not json").unwrap_err().to_string();
+        let error = env
+            .parse_source("broken", "not json")
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("invalid notebook"));
     }
 
@@ -5996,7 +6112,9 @@ mod tests {
 
         assert_eq!(
             env.multiple_toctree_parent_messages(),
-            vec!["document is referenced in multiple toctrees: ['bravo', 'delta'], selecting: delta <- charlie"]
+            vec![
+                "document is referenced in multiple toctrees: ['bravo', 'delta'], selecting: delta <- charlie"
+            ]
         );
     }
 
@@ -6198,7 +6316,10 @@ chapters:
 
         assert!(env.found_docs().contains("notebook"));
         assert_eq!(
-            env.project.docname_to_path.get("notebook").map(String::as_str),
+            env.project
+                .docname_to_path
+                .get("notebook")
+                .map(String::as_str),
             Some("notebook.ipynb")
         );
         assert_eq!(
@@ -6213,7 +6334,13 @@ chapters:
         // A second registration sees the existing docname and exercises the
         // duplicate-target branch without changing the recorded path.
         env.register_yaml_notebooks().unwrap();
-        assert_eq!(env.found_docs().iter().filter(|doc| *doc == "notebook").count(), 1);
+        assert_eq!(
+            env.found_docs()
+                .iter()
+                .filter(|doc| *doc == "notebook")
+                .count(),
+            1
+        );
     }
 
     #[cfg(unix)]
@@ -6240,7 +6367,11 @@ chapters:
 "#,
         );
         write_src_file(&env, "valid.ipynb", "valid");
-        symlink(env.srcdir.join("target.txt"), env.srcdir.join("non-notebook.ipynb")).unwrap();
+        symlink(
+            env.srcdir.join("target.txt"),
+            env.srcdir.join("non-notebook.ipynb"),
+        )
+        .unwrap();
         symlink(&outside, env.srcdir.join("outside.ipynb")).unwrap();
 
         env.register_yaml_notebooks().unwrap();
@@ -6311,8 +6442,7 @@ chapters:
     fn get_outdated_reports_found_but_unread_docname_as_added() {
         let (_tmp, mut env) = make_env_with_tempdir();
         env.project.docnames.insert("index".to_string());
-        let ((added, changed, removed), debug_messages) =
-            env.get_outdated_with_debug_logs(false);
+        let ((added, changed, removed), debug_messages) = env.get_outdated_with_debug_logs(false);
         assert_eq!(added, vec!["index".to_string()]);
         assert!(changed.is_empty());
         assert!(removed.is_empty());
@@ -6344,8 +6474,7 @@ chapters:
         // Record a read time far in the past so the file's real mtime is
         // always newer than it.
         env.record_doc_read("index", 0);
-        let ((added, changed, removed), debug_messages) =
-            env.get_outdated_with_debug_logs(false);
+        let ((added, changed, removed), debug_messages) = env.get_outdated_with_debug_logs(false);
         assert!(added.is_empty());
         assert_eq!(changed, vec!["index".to_string()]);
         assert!(removed.is_empty());
@@ -6363,8 +6492,7 @@ chapters:
         env.project.docnames.insert("index".to_string());
         env.record_doc_read("index", now_micros() + 60_000_000_000);
 
-        let ((added, changed, removed), debug_messages) =
-            env.get_outdated_with_debug_logs(false);
+        let ((added, changed, removed), debug_messages) = env.get_outdated_with_debug_logs(false);
 
         assert!(added.is_empty());
         assert_eq!(changed, vec!["index".to_string()]);
@@ -6391,9 +6519,10 @@ chapters:
         let ((_, changed, _), debug_messages) = env.get_outdated_with_debug_logs(false);
         assert_eq!(changed, vec!["index".to_string()]);
         assert_eq!(debug_messages.len(), 1);
-        assert!(debug_messages[0].starts_with(
-            "[build target] changed: 'index' is missing dependency PosixPath('",
-        ));
+        assert!(
+            debug_messages[0]
+                .starts_with("[build target] changed: 'index' is missing dependency PosixPath('",)
+        );
         assert!(debug_messages[0].ends_with("/src/missing.rst')"));
     }
 
@@ -6413,17 +6542,17 @@ chapters:
             .write(true)
             .open(&source)
             .unwrap()
-            .set_times(std::fs::FileTimes::new().set_modified(
-                epoch + std::time::Duration::from_secs(1),
-            ))
+            .set_times(
+                std::fs::FileTimes::new().set_modified(epoch + std::time::Duration::from_secs(1)),
+            )
             .unwrap();
         std::fs::File::options()
             .write(true)
             .open(&dependency)
             .unwrap()
-            .set_times(std::fs::FileTimes::new().set_modified(
-                epoch + std::time::Duration::from_secs(2),
-            ))
+            .set_times(
+                std::fs::FileTimes::new().set_modified(epoch + std::time::Duration::from_secs(2)),
+            )
             .unwrap();
         env.record_doc_read("index", 1_500_000);
 
@@ -6480,7 +6609,10 @@ chapters:
     #[test]
     fn sphinx_log_timestamp_uses_utc_milliseconds() {
         assert_eq!(format_sphinx_timestamp(0), "1970-01-01 00:00:00.000");
-        assert_eq!(format_sphinx_timestamp(1_234_567), "1970-01-01 00:00:01.234");
+        assert_eq!(
+            format_sphinx_timestamp(1_234_567),
+            "1970-01-01 00:00:01.234"
+        );
     }
 
     #[test]
@@ -6793,7 +6925,10 @@ chapters:
         );
         let project = EnvProject::new("/tmp/src", &[(".ipynb", "myst")]);
         let env = BuildEnvironment::new(config, project, "/tmp/src", "/tmp/doctrees");
-        let error = env.parse_source("broken.ipynb", "not-json").unwrap_err().to_string();
+        let error = env
+            .parse_source("broken.ipynb", "not-json")
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("invalid notebook"));
     }
 
@@ -6879,7 +7014,9 @@ chapters:
         env.find_files().unwrap();
         let events = AppEventManager::shared();
         events.borrow_mut().connect("doctree-read", 0, |_args| {
-            Err(crate::app_events::EventError("doctree listener failed".into()))
+            Err(crate::app_events::EventError(
+                "doctree listener failed".into(),
+            ))
         });
 
         let error = env.read_all_with_events(&events).unwrap_err().to_string();
@@ -6899,18 +7036,21 @@ chapters:
 
         assert!(env.std_domain.anonlabels.contains_key("label"));
         assert!(env.std_domain.terms.contains_key("widget"));
-        assert!(env
-            .domain_objects()
-            .iter()
-            .any(|(domain, entry)| domain == "rst" && entry.name == "toctree"));
-        assert!(env
-            .domain_objects()
-            .iter()
-            .any(|(domain, entry)| domain == "py" && entry.name == "pkg.mod.greet"));
-        assert!(env
-            .domain_objects()
-            .iter()
-            .any(|(domain, entry)| domain == "js" && entry.name == "widgets.render"));
+        assert!(
+            env.domain_objects()
+                .iter()
+                .any(|(domain, entry)| domain == "rst" && entry.name == "toctree")
+        );
+        assert!(
+            env.domain_objects()
+                .iter()
+                .any(|(domain, entry)| domain == "py" && entry.name == "pkg.mod.greet")
+        );
+        assert!(
+            env.domain_objects()
+                .iter()
+                .any(|(domain, entry)| domain == "js" && entry.name == "widgets.render")
+        );
         assert!(!env.indexentries.get("index").unwrap().is_empty());
         assert_eq!(env.pending_xrefs.get("index").unwrap().len(), 1);
     }
@@ -7005,26 +7145,44 @@ chapters:
             .note_label("target", "index", "target-id", "Target title");
         env.config.set(
             "extlinks",
-            ConfigVal::Map(vec![
-                (
-                    "issue".into(),
-                    ConfigVal::List(vec![
-                        ConfigVal::Str("https://tracker.test/%s".into()),
-                        ConfigVal::Str("Issue %s".into()),
-                    ]),
-                ),
-            ]),
+            ConfigVal::Map(vec![(
+                "issue".into(),
+                ConfigVal::List(vec![
+                    ConfigVal::Str("https://tracker.test/%s".into()),
+                    ConfigVal::Str("Issue %s".into()),
+                ]),
+            )]),
         );
 
         let mut tree = Doctree::new_document("index");
         let root = tree.root();
-        let ref_id = tree.append(root, NodeKind::Inline { classes: "ref".into() });
+        let ref_id = tree.append(
+            root,
+            NodeKind::Inline {
+                classes: "ref".into(),
+            },
+        );
         tree.append(ref_id, NodeKind::Text("target".into()));
-        let disabled = tree.append(root, NodeKind::Inline { classes: "ref".into() });
+        let disabled = tree.append(
+            root,
+            NodeKind::Inline {
+                classes: "ref".into(),
+            },
+        );
         tree.append(disabled, NodeKind::Text("!target".into()));
-        let external = tree.append(root, NodeKind::Inline { classes: "issue".into() });
+        let external = tree.append(
+            root,
+            NodeKind::Inline {
+                classes: "issue".into(),
+            },
+        );
         tree.append(external, NodeKind::Text("42".into()));
-        let unknown = tree.append(root, NodeKind::Inline { classes: "unknown".into() });
+        let unknown = tree.append(
+            root,
+            NodeKind::Inline {
+                classes: "unknown".into(),
+            },
+        );
         tree.append(unknown, NodeKind::Text("text".into()));
         let unknown_rst = tree.append(
             root,
@@ -7035,11 +7193,17 @@ chapters:
         tree.append(unknown_rst, NodeKind::Text("directive".into()));
 
         env.resolve_xref_nodes(&mut tree, "index");
-        assert!(matches!(&tree.node(ref_id).kind, NodeKind::Reference { refuri, .. } if refuri == "#target-id"));
+        assert!(
+            matches!(&tree.node(ref_id).kind, NodeKind::Reference { refuri, .. } if refuri == "#target-id")
+        );
         let span_id = tree.node(ref_id).children[0];
-        assert!(matches!(&tree.node(span_id).kind, NodeKind::Inline { classes } if classes == "std std-ref"));
+        assert!(
+            matches!(&tree.node(span_id).kind, NodeKind::Inline { classes } if classes == "std std-ref")
+        );
         assert!(matches!(tree.node(disabled).kind, NodeKind::Inline { .. }));
-        assert!(matches!(&tree.node(external).kind, NodeKind::Reference { refuri, classes, .. } if refuri == "https://tracker.test/42" && classes.contains("extlink-issue")));
+        assert!(
+            matches!(&tree.node(external).kind, NodeKind::Reference { refuri, classes, .. } if refuri == "https://tracker.test/42" && classes.contains("extlink-issue"))
+        );
         assert!(matches!(tree.node(unknown).kind, NodeKind::Inline { .. }));
         assert!(matches!(
             tree.node(unknown_rst).kind,
@@ -7192,11 +7356,20 @@ chapters:
 
         assert_eq!(fields.len(), 2);
         let parameter_name = tree.node(fields[0]).children[0];
-        assert!(matches!(tree.node(parameter_name).kind, NodeKind::FieldName));
-        assert_eq!(tree.node(tree.node(parameter_name).children[0]).kind, NodeKind::Text("Parameters:".into()));
+        assert!(matches!(
+            tree.node(parameter_name).kind,
+            NodeKind::FieldName
+        ));
+        assert_eq!(
+            tree.node(tree.node(parameter_name).children[0]).kind,
+            NodeKind::Text("Parameters:".into())
+        );
         let parameter_body = tree.node(fields[0]).children[1];
         let bullet_list = tree.node(parameter_body).children[0];
-        assert!(matches!(tree.node(bullet_list).kind, NodeKind::BulletList { .. }));
+        assert!(matches!(
+            tree.node(bullet_list).kind,
+            NodeKind::BulletList { .. }
+        ));
         assert_eq!(tree.node(bullet_list).children.len(), 2);
         let visible_parameter_text = (0..tree.nodes_len())
             .filter_map(|id| match &tree.node(id).kind {
@@ -7211,7 +7384,10 @@ chapters:
 
         let return_name = tree.node(fields[1]).children[0];
         let return_text = tree.node(return_name).children[0];
-        assert_eq!(tree.node(return_text).kind, NodeKind::Text("Returns:".into()));
+        assert_eq!(
+            tree.node(return_text).kind,
+            NodeKind::Text("Returns:".into())
+        );
     }
 
     #[test]
@@ -7375,17 +7551,31 @@ chapters:
             _ => panic!("event signature object description changed node kind"),
         };
         for (target, uri) in [
-            ("str", "https://docs.python.org/3/builtins/stdtypes.html#str"),
-            ("list", "https://docs.python.org/3/builtins/stdtypes.html#list"),
-            ("tuple", "https://docs.python.org/3/builtins/stdtypes.html#tuple"),
-            ("type", "https://docs.python.org/3/builtins/functions.html#type"),
+            (
+                "str",
+                "https://docs.python.org/3/builtins/stdtypes.html#str",
+            ),
+            (
+                "list",
+                "https://docs.python.org/3/builtins/stdtypes.html#list",
+            ),
+            (
+                "tuple",
+                "https://docs.python.org/3/builtins/stdtypes.html#tuple",
+            ),
+            (
+                "type",
+                "https://docs.python.org/3/builtins/functions.html#type",
+            ),
             (
                 "Exception",
                 "https://docs.python.org/3/builtins/exceptions.html#Exception",
             ),
         ] {
             assert!(
-                event_references.iter().any(|reference| reference.uri == uri),
+                event_references
+                    .iter()
+                    .any(|reference| reference.uri == uri),
                 "{target} should resolve from the nested event signature: {event_references:?}"
             );
         }
@@ -7429,10 +7619,26 @@ chapters:
         );
 
         env.resolve_toctree_nodes(&mut tree, "index");
-        assert!(matches!(tree.node(visible).kind, NodeKind::Container { .. }));
-        assert!(tree.node(visible).children.iter().any(|id| matches!(tree.node(*id).kind, NodeKind::Caption)));
-        assert!(tree.node(visible).children.iter().any(|id| matches!(tree.node(*id).kind, NodeKind::BulletList { .. })));
-        assert!(matches!(tree.node(shallow).kind, NodeKind::Container { .. }));
+        assert!(matches!(
+            tree.node(visible).kind,
+            NodeKind::Container { .. }
+        ));
+        assert!(
+            tree.node(visible)
+                .children
+                .iter()
+                .any(|id| matches!(tree.node(*id).kind, NodeKind::Caption))
+        );
+        assert!(
+            tree.node(visible)
+                .children
+                .iter()
+                .any(|id| matches!(tree.node(*id).kind, NodeKind::BulletList { .. }))
+        );
+        assert!(matches!(
+            tree.node(shallow).kind,
+            NodeKind::Container { .. }
+        ));
         assert!(matches!(tree.node(hidden).kind, NodeKind::Comment));
     }
 
@@ -7649,10 +7855,8 @@ sections:
 
     #[test]
     fn yaml_helpers_skip_non_mapping_values_and_report_missing_default_file() {
-        let entries = yaml_toc_entries(
-            "parts:\n  - 7\n  - chapters: [guide]\nsections:\n  - 42\n",
-        )
-        .unwrap();
+        let entries =
+            yaml_toc_entries("parts:\n  - 7\n  - chapters: [guide]\nsections:\n  - 42\n").unwrap();
         assert!(entries.iter().any(|entry| entry.target == "guide"));
 
         let tmp = tempfile::TempDir::new().unwrap();
@@ -7689,7 +7893,9 @@ sections:
     #[test]
     fn yaml_toc_root_and_children_uses_explicit_root() {
         let src = "root: intro\nchapters:\n  - guide\n  - reference\n";
-        let (root, children) = yaml_toc_root_and_children(src, "fallback").unwrap().unwrap();
+        let (root, children) = yaml_toc_root_and_children(src, "fallback")
+            .unwrap()
+            .unwrap();
         assert_eq!(root, "intro");
         assert_eq!(children, vec!["guide".to_string(), "reference".to_string()]);
     }
@@ -7697,22 +7903,30 @@ sections:
     #[test]
     fn yaml_toc_root_and_children_falls_back_to_default_root_without_root_key() {
         let src = "chapters:\n  - guide\n  - reference\n";
-        let (root, children) = yaml_toc_root_and_children(src, "fallback").unwrap().unwrap();
+        let (root, children) = yaml_toc_root_and_children(src, "fallback")
+            .unwrap()
+            .unwrap();
         assert_eq!(root, "fallback");
         assert_eq!(children, vec!["guide".to_string(), "reference".to_string()]);
     }
 
     #[test]
     fn yaml_toc_root_and_children_returns_none_for_empty_toc() {
-        assert!(yaml_toc_root_and_children("chapters: []\n", "fallback")
-            .unwrap()
-            .is_none());
+        assert!(
+            yaml_toc_root_and_children("chapters: []\n", "fallback")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
     fn yaml_toc_root_and_children_returns_none_when_root_entry_is_external() {
         let src = "root: https://example.org\nchapters:\n  - guide\n";
-        assert!(yaml_toc_root_and_children(src, "fallback").unwrap().is_none());
+        assert!(
+            yaml_toc_root_and_children(src, "fallback")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -7756,7 +7970,10 @@ options:
 
     #[test]
     fn yaml_option_lines_returns_empty_for_non_mapping() {
-        assert_eq!(yaml_option_lines("- a\n- b\n").unwrap(), Vec::<String>::new());
+        assert_eq!(
+            yaml_option_lines("- a\n- b\n").unwrap(),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -7849,7 +8066,8 @@ options:
 
     #[test]
     fn scan_toctree_entries_with_titles_strips_suffixes_and_explicit_titles() {
-        let source = ".. toctree::\n   :maxdepth: 2\n\n   guide.rst\n   Custom Title <reference.md>\n";
+        let source =
+            ".. toctree::\n   :maxdepth: 2\n\n   guide.rst\n   Custom Title <reference.md>\n";
         let entries = scan_toctree_entries_with_titles(source);
         assert_eq!(entries[0], ("guide".to_string(), None));
         assert_eq!(

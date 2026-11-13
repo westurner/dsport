@@ -35,19 +35,19 @@
 //! `:option:`/`:token:`/`:productionlist:` resolution, `numfig`-aware
 //! `:numref:` title formatting.
 
-pub mod scan;
-mod py_sig;
-pub mod std_domain;
 pub mod js_domain;
 pub mod py_domain;
+mod py_sig;
 pub mod rst_domain;
+pub mod scan;
 pub mod source_domain;
+pub mod std_domain;
 
-pub use std_domain::StdDomain;
 pub use js_domain::JsDomain;
 pub use py_domain::PyDomain;
 pub use rst_domain::RstDomain;
 pub use source_domain::{LeanDomain, RustDomain, SourceObjectEntry};
+pub use std_domain::StdDomain;
 
 use serde::{Deserialize, Serialize};
 

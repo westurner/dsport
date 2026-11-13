@@ -2793,7 +2793,9 @@ fn sphinx_build_lifecycle_messages(output: &str) -> Vec<String> {
             } else if let Some(asset_path) = line.strip_prefix(template_log_prefix.as_str()) {
                 let asset_path = asset_path.trim();
                 let asset_path = asset_path.rsplit("_static/").next().unwrap_or(asset_path);
-                Some(format!("Writing evaluated template result to <STATIC>/{asset_path}"))
+                Some(format!(
+                    "Writing evaluated template result to <STATIC>/{asset_path}"
+                ))
             } else if prefixes.iter().any(|prefix| line.starts_with(prefix)) {
                 Some(line.to_owned())
             } else {
@@ -3034,18 +3036,12 @@ fn log_cli_color_output_matches_upstream() {
         if let Some(flag) = color_flag {
             python_args.push(flag);
         }
-        python_args.extend([
-            source.to_str().unwrap(),
-            python_out.to_str().unwrap(),
-        ]);
+        python_args.extend([source.to_str().unwrap(), python_out.to_str().unwrap()]);
         let mut rust_args = vec!["-b", "html"];
         if let Some(flag) = color_flag {
             rust_args.push(flag);
         }
-        rust_args.extend([
-            source.to_str().unwrap(),
-            rust_out.to_str().unwrap(),
-        ]);
+        rust_args.extend([source.to_str().unwrap(), rust_out.to_str().unwrap()]);
 
         let (python_exit, python_stdout, python_stderr) =
             run_raw_with_env("sphinx-build", &python_args, &source, env);
@@ -3174,14 +3170,8 @@ fn log_html_build_stderr_snapshot(html_parity_shared: &HtmlParityShared) {
         "HTML build warning stderr differs\nPython:\n{}\nRust:\n{}",
         html_parity_shared.py_stderr, html_parity_shared.rs_stderr
     );
-    insta::assert_yaml_snapshot!(
-        "log_html_build_py_stderr_normalised",
-        py_stderr
-    );
-    insta::assert_yaml_snapshot!(
-        "log_html_build_rs_stderr_normalised",
-        rs_stderr
-    );
+    insta::assert_yaml_snapshot!("log_html_build_py_stderr_normalised", py_stderr);
+    insta::assert_yaml_snapshot!("log_html_build_rs_stderr_normalised", rs_stderr);
 }
 
 // ── sphinx-build invalid argument error messages ──────────────────────────────
@@ -4173,7 +4163,9 @@ fn visible_html_token_counts(html: &str) -> std::collections::BTreeMap<String, u
     static WORD_TOKEN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
 
     let without_code = SCRIPT_STYLE
-        .get_or_init(|| regex::Regex::new(r"(?is)<(?:script|style)\b[^>]*>.*?</(?:script|style)\s*>").unwrap())
+        .get_or_init(|| {
+            regex::Regex::new(r"(?is)<(?:script|style)\b[^>]*>.*?</(?:script|style)\s*>").unwrap()
+        })
         .replace_all(html, " ");
     let without_tags = HTML_TAG
         .get_or_init(|| regex::Regex::new(r"(?s)<!--.*?-->|<[^>]*>").unwrap())
@@ -4210,7 +4202,14 @@ fn visible_html_token_counts(html: &str) -> std::collections::BTreeMap<String, u
             character.map_or_else(|| captures[0].to_string(), |c| c.to_string())
         });
     let mut normalized = decoded.into_owned().to_lowercase();
-    for (from, to) in [("’", "'"), ("‘", "'"), ("“", "\""), ("”", "\""), ("—", "-"), ("–", "-")] {
+    for (from, to) in [
+        ("’", "'"),
+        ("‘", "'"),
+        ("“", "\""),
+        ("”", "\""),
+        ("—", "-"),
+        ("–", "-"),
+    ] {
         normalized = normalized.replace(from, to);
     }
 
@@ -4241,17 +4240,15 @@ fn html_anchor_counts(html: &str) -> std::collections::BTreeMap<String, usize> {
     static ANCHOR: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static CONTENT_ROOT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let mut counts = std::collections::BTreeMap::new();
-    let anchor = ANCHOR.get_or_init(|| {
-        regex::Regex::new(r#"<(section|dt|h[1-6])\b[^>]*\bid="([^"]+)""#).unwrap()
-    });
+    let anchor = ANCHOR
+        .get_or_init(|| regex::Regex::new(r#"<(section|dt|h[1-6])\b[^>]*\bid="([^"]+)""#).unwrap());
     for captures in anchor.captures_iter(html) {
         *counts
             .entry(format!("{}#{}", &captures[1], &captures[2]))
             .or_insert(0) += 1;
     }
-    let root = CONTENT_ROOT.get_or_init(|| {
-        regex::Regex::new(r#"<html\b[^>]*\bdata-content_root="([^"]+)""#).unwrap()
-    });
+    let root = CONTENT_ROOT
+        .get_or_init(|| regex::Regex::new(r#"<html\b[^>]*\bdata-content_root="([^"]+)""#).unwrap());
     for captures in root.captures_iter(html) {
         *counts
             .entry(format!("content_root:{}", &captures[1]))
@@ -4281,19 +4278,17 @@ fn highlighted_span_tokens(html: &str) -> Vec<(String, String)> {
         .and_then(|captures| captures.get(1))
         .expect("viewcode page should contain a highlighted source block")
         .as_str();
-    SPAN.get_or_init(|| {
-        regex::Regex::new(r#"<span(?: class="([^"]+)")?>(.*?)</span>"#).unwrap()
-    })
-    .captures_iter(block)
-    .map(|captures| {
-        (
-            captures
-                .get(1)
-                .map_or_else(String::new, |class| class.as_str().to_string()),
-            captures[2].to_string(),
-        )
-    })
-    .collect()
+    SPAN.get_or_init(|| regex::Regex::new(r#"<span(?: class="([^"]+)")?>(.*?)</span>"#).unwrap())
+        .captures_iter(block)
+        .map(|captures| {
+            (
+                captures
+                    .get(1)
+                    .map_or_else(String::new, |class| class.as_str().to_string()),
+                captures[2].to_string(),
+            )
+        })
+        .collect()
 }
 
 /// Keep the extension API and viewcode output in the parity gate even though
@@ -4480,8 +4475,7 @@ fn sphinx_docs_supported_html_content_parity(sphinx_docs_build_shared: &SphinxDo
         python_total += python_count;
         rust_total += rust_count;
         let overlap = visible_text_overlap(&python_tokens, &rust_tokens);
-        shared_total +=
-            (overlap * (python_count + rust_count) as f64 / 2.0).round() as usize;
+        shared_total += (overlap * (python_count + rust_count) as f64 / 2.0).round() as usize;
         if overlap < 1.00 {
             low_pages.push(format!("{:.1}% {path}", overlap * 100.0));
         }
@@ -4497,10 +4491,7 @@ fn sphinx_docs_supported_html_content_parity(sphinx_docs_build_shared: &SphinxDo
     let link_overlap = visible_text_overlap(&python_links, &rust_links);
     let anchor_overlap = visible_text_overlap(&python_anchors, &rust_anchors);
     assert!(
-        checked_pages >= 100
-            && overlap >= 1.00
-            && link_overlap >= 1.00
-            && anchor_overlap >= 1.00,
+        checked_pages >= 100 && overlap >= 1.00 && link_overlap >= 1.00 && anchor_overlap >= 1.00,
         "HTML parity too low across {checked_pages} supported source pages: \
          visible text {:.1}%, links {:.1}%, anchors {:.1}%; \
          pages below 100% overlap:\n{}",

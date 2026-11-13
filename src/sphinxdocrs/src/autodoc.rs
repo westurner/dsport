@@ -574,7 +574,11 @@ pub fn format_signature_with_hints(params: &Parameters, typehints: TypeHints) ->
             TypeHints::None => Option::None,
         };
         match ann {
-            Some(a) => parts.push(format!("*{}: {}", vararg.name.as_str(), render_annotation(a))),
+            Some(a) => parts.push(format!(
+                "*{}: {}",
+                vararg.name.as_str(),
+                render_annotation(a)
+            )),
             Option::None => parts.push(format!("*{}", vararg.name.as_str())),
         }
     } else if !params.kwonlyargs.is_empty() {
@@ -598,7 +602,11 @@ pub fn format_signature_with_hints(params: &Parameters, typehints: TypeHints) ->
             TypeHints::None => Option::None,
         };
         match ann {
-            Some(a) => parts.push(format!("**{}: {}", kwarg.name.as_str(), render_annotation(a))),
+            Some(a) => parts.push(format!(
+                "**{}: {}",
+                kwarg.name.as_str(),
+                render_annotation(a)
+            )),
             Option::None => parts.push(format!("**{}", kwarg.name.as_str())),
         }
     }
@@ -627,9 +635,12 @@ fn render_annotation(annotation: &Expr) -> String {
     let Some(Stmt::FunctionDef(function)) = parsed.suite().first() else {
         return render_expr(annotation);
     };
-    let Some(parsed_annotation) = function.parameters.args.first().and_then(|parameter| {
-        parameter.parameter.annotation.as_deref()
-    }) else {
+    let Some(parsed_annotation) = function
+        .parameters
+        .args
+        .first()
+        .and_then(|parameter| parameter.parameter.annotation.as_deref())
+    else {
         return render_expr(annotation);
     };
     render_expr(parsed_annotation)
@@ -688,17 +699,18 @@ pub fn signature_type_references(signature: &str) -> Vec<SignatureTypeReference>
         }
     }
 
-    let (signature, signature_offset) = if let Some(class_signature) = signature.strip_prefix("class ") {
-        let Some(open_paren) = class_signature.find('(') else {
-            return Vec::new();
+    let (signature, signature_offset) =
+        if let Some(class_signature) = signature.strip_prefix("class ") {
+            let Some(open_paren) = class_signature.find('(') else {
+                return Vec::new();
+            };
+            (&class_signature[open_paren..], "class ".len() + open_paren)
+        } else {
+            let Some(open_paren) = signature.find('(') else {
+                return Vec::new();
+            };
+            (&signature[open_paren..], open_paren)
         };
-        (&class_signature[open_paren..], "class ".len() + open_paren)
-    } else {
-        let Some(open_paren) = signature.find('(') else {
-            return Vec::new();
-        };
-        (&signature[open_paren..], open_paren)
-    };
     let prefix = "def _sphinx_signature";
     let wrapped = format!("{prefix}{signature}: pass");
     let Ok(parsed) = parse_module(&wrapped) else {
@@ -889,16 +901,17 @@ fn render_function_with_receiver(
         out.push_str(&format!(".. py:{directive}:: {}\n", func.name.as_str()));
     } else {
         let sig = format_signature_with_hints(&func.parameters, typehints);
-        let sig = if omit_receiver && matches!(kind, FunctionKind::Method | FunctionKind::ClassMethod) {
-            let receiverless = strip_method_receiver(&format!("({sig})"));
-            receiverless
-                .strip_prefix('(')
-                .and_then(|signature| signature.strip_suffix(')'))
-                .unwrap_or(&receiverless)
-                .to_string()
-        } else {
-            sig
-        };
+        let sig =
+            if omit_receiver && matches!(kind, FunctionKind::Method | FunctionKind::ClassMethod) {
+                let receiverless = strip_method_receiver(&format!("({sig})"));
+                receiverless
+                    .strip_prefix('(')
+                    .and_then(|signature| signature.strip_suffix(')'))
+                    .unwrap_or(&receiverless)
+                    .to_string()
+            } else {
+                sig
+            };
         let ret = render_return_suffix(func.returns.as_deref(), typehints);
         out.push_str(&format!(
             ".. py:{directive}:: {}({sig}){ret}\n",
@@ -952,15 +965,23 @@ fn render_class_with_name(
         "class"
     };
 
-    let init_signature = include_init_signature.then(|| {
-        class.body.iter().rev().find_map(|statement| match statement {
-            Stmt::FunctionDef(function) if function.name.as_str() == "__init__" => {
-                let signature = format_signature_with_hints(&function.parameters, options.typehints);
-                Some(strip_method_receiver(&format!("({signature})")))
-            }
-            _ => None,
+    let init_signature = include_init_signature
+        .then(|| {
+            class
+                .body
+                .iter()
+                .rev()
+                .find_map(|statement| match statement {
+                    Stmt::FunctionDef(function) if function.name.as_str() == "__init__" => {
+                        let signature =
+                            format_signature_with_hints(&function.parameters, options.typehints);
+                        Some(strip_method_receiver(&format!("({signature})")))
+                    }
+                    _ => None,
+                })
         })
-    }).flatten().unwrap_or_default();
+        .flatten()
+        .unwrap_or_default();
     let signature = if !bases.is_empty() {
         format!("({bases})")
     } else {
@@ -969,7 +990,9 @@ fn render_class_with_name(
     if signature.is_empty() {
         out.push_str(&format!(".. py:{directive}:: {qualified_name}\n"));
     } else {
-        out.push_str(&format!(".. py:{directive}:: {qualified_name}{signature}\n"));
+        out.push_str(&format!(
+            ".. py:{directive}:: {qualified_name}{signature}\n"
+        ));
     }
 
     if let Some(doc) = extract_docstring(&class.body) {
@@ -1016,12 +1039,8 @@ fn render_class_with_name(
             if let Some(overloads) = overloads_by_name.get(name.as_str()) {
                 for (index, overload) in overloads.iter().enumerate() {
                     out.push('\n');
-                    let mut rendered = render_function(
-                        overload,
-                        function_kind(overload),
-                        3,
-                        options.typehints,
-                    );
+                    let mut rendered =
+                        render_function(overload, function_kind(overload), 3, options.typehints);
                     if omit_receiver {
                         rendered = render_function_with_receiver(
                             overload,
@@ -1211,24 +1230,22 @@ pub fn document_class_auto(
     mock_imports: &[String],
 ) -> Result<String, AutodocError> {
     let source = std::fs::read_to_string(path)?;
-    let static_rendered = document_class_source_with_options(
-        class_name,
-        qualified_name,
-        &source,
-        options,
-    );
+    let static_rendered =
+        document_class_source_with_options(class_name, qualified_name, &source, options);
     if let Ok(rendered) = &static_rendered
         && rendered.contains(":no-index:")
     {
         return Ok(rendered.clone());
     }
 
-    if let Ok(classinfo) = crate::autodoc_runtime::introspect_class(
-        module_name,
-        class_name,
-        mock_imports,
-    ) {
-        return Ok(render_class_from_runtime(&classinfo, qualified_name, options));
+    if let Ok(classinfo) =
+        crate::autodoc_runtime::introspect_class(module_name, class_name, mock_imports)
+    {
+        return Ok(render_class_from_runtime(
+            &classinfo,
+            qualified_name,
+            options,
+        ));
     }
 
     static_rendered
@@ -1249,11 +1266,9 @@ pub fn document_function_auto(
         return Ok(rendered.clone());
     }
 
-    if let Ok(function) = crate::autodoc_runtime::introspect_function(
-        module_name,
-        function_name,
-        mock_imports,
-    ) {
+    if let Ok(function) =
+        crate::autodoc_runtime::introspect_function(module_name, function_name, mock_imports)
+    {
         let mut rendered = format!(
             ".. py:function:: {qualified_name}{}\n",
             function.signature.as_deref().unwrap_or("()")
@@ -1286,7 +1301,13 @@ pub fn document_class_source_with_options(
             "class {class_name:?} was not found in the module source"
         )));
     };
-    Ok(render_class_with_name(class, qualified_name, options, true, true))
+    Ok(render_class_with_name(
+        class,
+        qualified_name,
+        options,
+        true,
+        true,
+    ))
 }
 
 /// Render one top-level function from Python source without importing it.
@@ -1384,7 +1405,9 @@ fn definition_span_from_attributes(attributes: &BTreeMap<String, String>) -> Opt
 pub struct RustSourceRenderer;
 
 impl SourceAutodocRenderer for RustSourceRenderer {
-    fn language(&self) -> SourceLanguage { SourceLanguage::Rust }
+    fn language(&self) -> SourceLanguage {
+        SourceLanguage::Rust
+    }
 
     fn directive_for(&self, kind: &DeclarationKind) -> Option<&'static str> {
         Some(match kind {
@@ -1409,9 +1432,10 @@ impl SourceAutodocRenderer for RustSourceRenderer {
     }
 
     fn signature_for(&self, declaration: &SourceDeclaration) -> Option<String> {
-        declaration.signature.as_ref().map(|signature| {
-            format!("{} {signature}", declaration.qualified_name)
-        })
+        declaration
+            .signature
+            .as_ref()
+            .map(|signature| format!("{} {signature}", declaration.qualified_name))
     }
 }
 
@@ -1420,7 +1444,9 @@ impl SourceAutodocRenderer for RustSourceRenderer {
 pub struct LeanSourceRenderer;
 
 impl SourceAutodocRenderer for LeanSourceRenderer {
-    fn language(&self) -> SourceLanguage { SourceLanguage::Lean }
+    fn language(&self) -> SourceLanguage {
+        SourceLanguage::Lean
+    }
 
     fn directive_for(&self, kind: &DeclarationKind) -> Option<&'static str> {
         Some(match kind {
@@ -1827,7 +1853,11 @@ mod tests {
         ) -> Result<crate::source_analysis::AnalysisSnapshot, AnalysisError> {
             let source = SourceSpan::new(
                 "src/lib.rs",
-                crate::source_analysis::SourcePosition { byte: 0, line: 1, column: 0 },
+                crate::source_analysis::SourcePosition {
+                    byte: 0,
+                    line: 1,
+                    column: 0,
+                },
                 None,
             );
             let mut public = SourceDeclaration::new(
@@ -1905,7 +1935,8 @@ mod tests {
     fn source_autodoc_filters_and_renders_structured_declarations() {
         let mut request = SourceAutodocRequest::new("/tmp/src", SourceLanguage::Rust);
         request.include_deprecated = false;
-        let descriptions = document_source(&request, &FixtureAnalyzer, &RustSourceRenderer).unwrap();
+        let descriptions =
+            document_source(&request, &FixtureAnalyzer, &RustSourceRenderer).unwrap();
         assert_eq!(descriptions.len(), 1);
         assert_eq!(descriptions[0].name, "crate::answer");
         assert_eq!(descriptions[0].directive, "rust:function");
@@ -2415,7 +2446,10 @@ def drop():
             ("unknown-option".into(), "ignored".into()),
         ]);
         assert_eq!(opts.members, MemberSelector::All);
-        assert_eq!(opts.private_members, MemberSelector::Named(vec!["_hidden".into()]));
+        assert_eq!(
+            opts.private_members,
+            MemberSelector::Named(vec!["_hidden".into()])
+        );
         assert_eq!(opts.special_members, MemberSelector::All);
         assert!(opts.inherited_members);
         assert!(opts.exclude_members.contains("drop"));
@@ -2423,11 +2457,36 @@ def drop():
         assert_eq!(opts.member_order, MemberOrder::Bysource);
 
         let candidates = vec![
-            MemberCandidate { name: "public".into(), has_doc: true, source_order: 2, kind: MemberKindTag::Function },
-            MemberCandidate { name: "_hidden".into(), has_doc: true, source_order: 0, kind: MemberKindTag::Attribute },
-            MemberCandidate { name: "__dunder__".into(), has_doc: true, source_order: 1, kind: MemberKindTag::Method },
-            MemberCandidate { name: "undoc".into(), has_doc: false, source_order: 3, kind: MemberKindTag::Class },
-            MemberCandidate { name: "drop".into(), has_doc: true, source_order: 4, kind: MemberKindTag::Function },
+            MemberCandidate {
+                name: "public".into(),
+                has_doc: true,
+                source_order: 2,
+                kind: MemberKindTag::Function,
+            },
+            MemberCandidate {
+                name: "_hidden".into(),
+                has_doc: true,
+                source_order: 0,
+                kind: MemberKindTag::Attribute,
+            },
+            MemberCandidate {
+                name: "__dunder__".into(),
+                has_doc: true,
+                source_order: 1,
+                kind: MemberKindTag::Method,
+            },
+            MemberCandidate {
+                name: "undoc".into(),
+                has_doc: false,
+                source_order: 3,
+                kind: MemberKindTag::Class,
+            },
+            MemberCandidate {
+                name: "drop".into(),
+                has_doc: true,
+                source_order: 4,
+                kind: MemberKindTag::Function,
+            },
         ];
         let selected = select_members(&candidates, &opts, None);
         assert_eq!(selected, vec!["_hidden", "__dunder__", "public"]);
@@ -2453,14 +2512,19 @@ def f(a: int = -1, /, b: str = "x", *args: list[int], flag: bool = True, **kwarg
     """Function docs."""
     pass
 "#;
-        let rst = document_module_source_with_options("m", source, &AutodocOptions::legacy_default()).unwrap();
+        let rst =
+            document_module_source_with_options("m", source, &AutodocOptions::legacy_default())
+                .unwrap();
         assert!(rst.contains("py:function:: f(a: int = -1, /, b: str = 'x', *args: list[int], flag: bool = True, **kwargs: dict[str, int]) -> tuple[int, str]"), "{rst}");
         assert!(rst.contains("Function docs."), "{rst}");
 
         let mut none = AutodocOptions::legacy_default();
         none.typehints = TypeHints::None;
         let stripped = document_module_source_with_options("m", source, &none).unwrap();
-        assert!(stripped.contains("py:function:: f(a=-1, /, b='x', *args, flag=True, **kwargs)"), "{stripped}");
+        assert!(
+            stripped.contains("py:function:: f(a=-1, /, b='x', *args, flag=True, **kwargs)"),
+            "{stripped}"
+        );
         assert!(!stripped.contains("-> tuple"));
     }
 
@@ -2517,7 +2581,12 @@ def callback(name: 'str', count: 'int') -> 'None':
             .map(|reference| &signature[reference.start..reference.end])
             .collect::<Vec<_>>();
 
-        assert_eq!(names, ["Literal", "Callable", "Sphinx", "str", "None", "int", "None"]);
+        assert_eq!(
+            names,
+            [
+                "Literal", "Callable", "Sphinx", "str", "None", "int", "None"
+            ]
+        );
 
         let qualified_signature = "sphinx.locale.init(locale_dirs: Iterable[str | os.PathLike[str] | None], language: str | None) -> tuple[NullTranslations, bool]";
         let references = signature_type_references(qualified_signature);
@@ -2553,7 +2622,10 @@ def callback(name: 'str', count: 'int') -> 'None':
             .iter()
             .map(|reference| &signature[reference.start..reference.end])
             .collect::<Vec<_>>();
-        assert_eq!(names, ["str", "Any", "tuple", "type", "Exception", "list", "Any"]);
+        assert_eq!(
+            names,
+            ["str", "Any", "tuple", "type", "Exception", "list", "Any"]
+        );
     }
 
     // ── H9a static-path fallback (runtime unavailable) ───────────────────

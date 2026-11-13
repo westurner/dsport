@@ -538,11 +538,9 @@ mod tests {
         let mut mock = MockRunner::new();
         mock.expect_run()
             .withf(|_, args, _| {
-                args.windows(2)
-                    .any(|pair| {
-                        pair[0] == "--doctree-dir"
-                            && pair[1].ends_with("build/gettext/.doctrees")
-                    })
+                args.windows(2).any(|pair| {
+                    pair[0] == "--doctree-dir" && pair[1].ends_with("build/gettext/.doctrees")
+                })
             })
             .returning(|_, _, _| Ok(0));
         assert_eq!(make_mode_in(&tmp).dispatch("gettext", &mock), 0);

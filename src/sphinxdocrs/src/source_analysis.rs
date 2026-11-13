@@ -5,8 +5,8 @@
 //! search crosses this boundary as one of the serde-stable records below.
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::fmt;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -477,8 +477,14 @@ impl AnalysisSnapshot {
             )
             .map(str::to_string);
             declaration.documentation = normalize_text(&declaration.documentation);
-            declaration.signature = declaration.signature.take().map(|value| normalize_text(&value));
-            declaration.type_text = declaration.type_text.take().map(|value| normalize_text(&value));
+            declaration.signature = declaration
+                .signature
+                .take()
+                .map(|value| normalize_text(&value));
+            declaration.type_text = declaration
+                .type_text
+                .take()
+                .map(|value| normalize_text(&value));
             declaration.aliases = std::mem::take(&mut declaration.aliases)
                 .into_iter()
                 .map(|alias| normalize_name(&alias, separator_for(declaration.language)))
@@ -511,10 +517,7 @@ impl AnalysisSnapshot {
 ///
 /// `SourceAnalyzer` remains a compatibility re-export during migration.
 pub trait SourceSnapshotProvider {
-    fn analyze(
-        &self,
-        request: &SourceAnalysisRequest,
-    ) -> Result<AnalysisSnapshot, AnalysisError>;
+    fn analyze(&self, request: &SourceAnalysisRequest) -> Result<AnalysisSnapshot, AnalysisError>;
 
     /// Prepare lazy provider state needed to determine cache identity.
     /// Static providers do no work; process-backed providers may initialize a
@@ -575,7 +578,10 @@ pub fn source_input_hash(
                 request
                     .selected
                     .iter()
-                    .find(|path| path.extension().is_some_and(|extension| extension == "json"))
+                    .find(|path| {
+                        path.extension()
+                            .is_some_and(|extension| extension == "json")
+                    })
                     .cloned()
                     .into_iter()
                     .collect()
@@ -588,12 +594,12 @@ pub fn source_input_hash(
                 vec![request.source_root.clone()]
             } else {
                 let mut files = Vec::new();
-                collect_source_files(&request.source_root, "lean", &mut files).map_err(|error| {
-                    AnalysisError::Io {
+                collect_source_files(&request.source_root, "lean", &mut files).map_err(
+                    |error| AnalysisError::Io {
                         path: request.source_root.display().to_string(),
                         message: error.to_string(),
-                    }
-                })?;
+                    },
+                )?;
                 files
             }
         }
@@ -700,7 +706,11 @@ pub fn parent_name<'a>(qualified_name: &'a str, separator: &str) -> Option<&'a s
 
 /// Normalize source comments while preserving paragraph line breaks.
 pub fn normalize_text(value: &str) -> String {
-    value.replace("\r\n", "\n").replace('\r', "\n").trim().to_string()
+    value
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .trim()
+        .to_string()
 }
 
 /// Normalize paths used in serialized snapshots to slash-separated paths.
@@ -742,7 +752,10 @@ mod tests {
 
     #[test]
     fn names_use_language_separator_and_preserve_short_name() {
-        assert_eq!(normalize_name(" crate :: api :: Thing ", "::"), "crate::api::Thing");
+        assert_eq!(
+            normalize_name(" crate :: api :: Thing ", "::"),
+            "crate::api::Thing"
+        );
         assert_eq!(short_name("crate::api::Thing", "::"), "Thing");
         assert_eq!(parent_name("crate::api::Thing", "::"), Some("crate::api"));
         assert_eq!(short_name("Main", "."), "Main");
@@ -773,7 +786,10 @@ mod tests {
         declaration.add_child("child-1");
 
         assert_eq!(declaration.documentation, "first line\n\n second line");
-        assert_eq!(declaration.signature.as_deref(), Some("pub struct Thing\nwhere T: Copy"));
+        assert_eq!(
+            declaration.signature.as_deref(),
+            Some("pub struct Thing\nwhere T: Copy")
+        );
         assert_eq!(declaration.source.path, "src/lib.rs");
         assert_eq!(declaration.aliases, ["crate::Alias", "crate::Zed"]);
         assert_eq!(declaration.children, ["child-1", "child-2"]);
@@ -828,11 +844,7 @@ mod tests {
         assert_eq!(restored.backend_kind, SourceBackendKind::Static);
         let mut with_provenance = snapshot.clone();
         let declaration_id = with_provenance.declarations[0].id.clone();
-        with_provenance.set_provenance(
-            &declaration_id,
-            "documentation",
-            SourceProvenance::Lsp,
-        );
+        with_provenance.set_provenance(&declaration_id, "documentation", SourceProvenance::Lsp);
         let round_trip: AnalysisSnapshot =
             serde_json::from_slice(&serde_json::to_vec(&with_provenance).unwrap()).unwrap();
         assert!(round_trip.provenance.is_empty());
@@ -848,11 +860,8 @@ mod tests {
 
     #[test]
     fn stable_ids_depend_on_kind_and_language() {
-        let rust_function = stable_declaration_id(
-            SourceLanguage::Rust,
-            "crate::f",
-            &DeclarationKind::Function,
-        );
+        let rust_function =
+            stable_declaration_id(SourceLanguage::Rust, "crate::f", &DeclarationKind::Function);
         assert_eq!(rust_function.len(), 16);
         assert_ne!(
             rust_function,
@@ -1055,7 +1064,12 @@ pub(crate) mod provider_contract {
             assert!(!declaration.source.path.is_empty());
             assert!(declaration.source.start.line > 0);
             assert!(declaration.aliases.windows(2).all(|pair| pair[0] < pair[1]));
-            assert!(declaration.children.windows(2).all(|pair| pair[0] < pair[1]));
+            assert!(
+                declaration
+                    .children
+                    .windows(2)
+                    .all(|pair| pair[0] < pair[1])
+            );
         }
 
         let mut diagnostics = snapshot.diagnostics.clone();

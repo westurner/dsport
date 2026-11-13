@@ -6,11 +6,11 @@
 
 pub mod model {
     pub use crate::source_analysis::{
-        normalize_name, normalize_path, normalize_text, parent_name, separator_for, short_name,
-        source_input_hash, stable_declaration_id, AnalysisDiagnostic, AnalysisError,
-        AnalysisSnapshot, BackendPolicy, DeclarationKind, DiagnosticSeverity,
-        SourceAnalysisRequest, SourceBackendKind, SourceDeclaration, SourceLanguage,
-        SourcePosition, SourceProvenance, SourceSpan, Visibility, SOURCE_ANALYSIS_SCHEMA_VERSION,
+        AnalysisDiagnostic, AnalysisError, AnalysisSnapshot, BackendPolicy, DeclarationKind,
+        DiagnosticSeverity, SOURCE_ANALYSIS_SCHEMA_VERSION, SourceAnalysisRequest,
+        SourceBackendKind, SourceDeclaration, SourceLanguage, SourcePosition, SourceProvenance,
+        SourceSpan, Visibility, normalize_name, normalize_path, normalize_text, parent_name,
+        separator_for, short_name, source_input_hash, stable_declaration_id,
     };
 }
 
@@ -1290,11 +1290,11 @@ pub mod apidoc {
 
 pub use config::{SourceBuildSandboxMode, SourceDocsSettings, SourceSandboxMode};
 pub use model::{
-    normalize_name, normalize_path, normalize_text, parent_name, separator_for, short_name,
-    source_input_hash, stable_declaration_id, AnalysisDiagnostic, AnalysisError, AnalysisSnapshot,
-    BackendPolicy, DeclarationKind, DiagnosticSeverity, SourceAnalysisRequest, SourceBackendKind,
+    AnalysisDiagnostic, AnalysisError, AnalysisSnapshot, BackendPolicy, DeclarationKind,
+    DiagnosticSeverity, SOURCE_ANALYSIS_SCHEMA_VERSION, SourceAnalysisRequest, SourceBackendKind,
     SourceDeclaration, SourceLanguage, SourcePosition, SourceProvenance, SourceSpan, Visibility,
-    SOURCE_ANALYSIS_SCHEMA_VERSION,
+    normalize_name, normalize_path, normalize_text, parent_name, separator_for, short_name,
+    source_input_hash, stable_declaration_id,
 };
 pub use provider::{
     SourceAnalysisSession, SourceAnalyzer, SourceBackendMode, SourceSnapshotProvider,
@@ -1306,7 +1306,7 @@ mod tests {
     use std::path::Path;
 
     use crate::autodoc::{
-        document_source, render_source_rst, RustSourceRenderer, SourceAutodocRequest,
+        RustSourceRenderer, SourceAutodocRequest, document_source, render_source_rst,
     };
     use crate::config::{ConfigVal, SphinxConfig};
     use crate::domains::{Domain, RustDomain};
@@ -1563,10 +1563,12 @@ mod tests {
             assert_eq!(declaration.source.path, "src/lib.rs");
             assert!(declaration.source.start.line > 0);
             assert!(declaration.aliases.windows(2).all(|pair| pair[0] < pair[1]));
-            assert!(declaration
-                .children
-                .windows(2)
-                .all(|pair| pair[0] < pair[1]));
+            assert!(
+                declaration
+                    .children
+                    .windows(2)
+                    .all(|pair| pair[0] < pair[1])
+            );
         }
         let widget = snapshot
             .declarations
@@ -1598,14 +1600,18 @@ mod tests {
                 .then(left.message.cmp(&right.message))
         });
         assert_eq!(snapshot.diagnostics, sorted_diagnostics);
-        assert!(snapshot
-            .diagnostics
-            .iter()
-            .any(|diagnostic| { diagnostic.message == "alpha contract diagnostic" }));
-        assert!(snapshot
-            .diagnostics
-            .iter()
-            .any(|diagnostic| { diagnostic.message == "zeta contract diagnostic" }));
+        assert!(
+            snapshot
+                .diagnostics
+                .iter()
+                .any(|diagnostic| { diagnostic.message == "alpha contract diagnostic" })
+        );
+        assert!(
+            snapshot
+                .diagnostics
+                .iter()
+                .any(|diagnostic| { diagnostic.message == "zeta contract diagnostic" })
+        );
 
         let encoded = serde_json::to_vec(&snapshot).unwrap();
         let decoded: AnalysisSnapshot = serde_json::from_slice(&encoded).unwrap();
@@ -1701,9 +1707,11 @@ mod tests {
                 .map(String::as_str),
             Some("src/implementation.rs")
         );
-        assert!(!hybrid_widget
-            .attributes
-            .contains_key("lsp:lsp:definition_path"));
+        assert!(
+            !hybrid_widget
+                .attributes
+                .contains_key("lsp:lsp:definition_path")
+        );
 
         let mut static_domain = RustDomain::new();
         static_domain.note_snapshot("api", &static_snapshot.declarations);
@@ -1805,12 +1813,14 @@ mod tests {
         let snapshot = session.analyze(&SourceAnalysisRequest::new("src")).unwrap();
         assert_eq!(snapshot.backend_kind, SourceBackendKind::Hybrid);
         assert_eq!(snapshot.declarations[0].documentation, "static docs");
-        assert!(snapshot
-            .diagnostics
-            .iter()
-            .any(|diagnostic: &AnalysisDiagnostic| {
-                diagnostic.message.contains("LSP enrichment unavailable")
-            }));
+        assert!(
+            snapshot
+                .diagnostics
+                .iter()
+                .any(|diagnostic: &AnalysisDiagnostic| {
+                    diagnostic.message.contains("LSP enrichment unavailable")
+                })
+        );
     }
 
     #[test]
@@ -1842,10 +1852,12 @@ mod tests {
         let snapshot = session.analyze(&SourceAnalysisRequest::new("src")).unwrap();
         assert_eq!(snapshot.backend_kind, SourceBackendKind::Hybrid);
         assert_eq!(snapshot.declarations[0].documentation, "static docs");
-        assert!(snapshot
-            .provenance
-            .values()
-            .all(|value| { *value == super::model::SourceProvenance::Static }));
+        assert!(
+            snapshot
+                .provenance
+                .values()
+                .all(|value| { *value == super::model::SourceProvenance::Static })
+        );
     }
 
     #[test]
@@ -1889,7 +1901,9 @@ mod tests {
             ))
         };
         assert_eq!(
-            parse_backend(ConfigVal::Str("auto".into())).unwrap().backend,
+            parse_backend(ConfigVal::Str("auto".into()))
+                .unwrap()
+                .backend,
             SourceBackendMode::Auto
         );
         assert_eq!(
@@ -1900,9 +1914,11 @@ mod tests {
             parse_backend(ConfigVal::Int(5)).unwrap().backend,
             SourceBackendMode::Static
         );
-        assert!(parse_backend(ConfigVal::Str("unknown".into()))
-            .unwrap_err()
-            .contains("invalid source_backend"));
+        assert!(
+            parse_backend(ConfigVal::Str("unknown".into()))
+                .unwrap_err()
+                .contains("invalid source_backend")
+        );
 
         let mut raw = HashMap::new();
         raw.insert("source_backend".into(), ConfigVal::Str("hybrid".into()));
@@ -1960,28 +1976,32 @@ mod tests {
             ))
         };
 
-        assert!(settings_with_servers(ConfigVal::Int(1))
-            .unwrap_err()
-            .contains("source_lsp_servers must be a mapping"));
-        assert!(settings_with_servers(ConfigVal::Map(vec![(
-            "rust".into(),
-            ConfigVal::Int(1),
-        )]))
-        .unwrap_err()
-        .contains("source_lsp_servers[\"rust\"] must be a list"));
-        assert!(settings_with_servers(ConfigVal::Map(vec![(
-            "rust".into(),
-            ConfigVal::List(vec![ConfigVal::Int(1)]),
-        )]))
-        .unwrap_err()
-        .contains("arguments must be strings"));
-        for args in [Vec::new(), vec![ConfigVal::Str(String::new())]] {
-            assert!(settings_with_servers(ConfigVal::Map(vec![(
+        assert!(
+            settings_with_servers(ConfigVal::Int(1))
+                .unwrap_err()
+                .contains("source_lsp_servers must be a mapping")
+        );
+        assert!(
+            settings_with_servers(ConfigVal::Map(vec![("rust".into(), ConfigVal::Int(1),)]))
+                .unwrap_err()
+                .contains("source_lsp_servers[\"rust\"] must be a list")
+        );
+        assert!(
+            settings_with_servers(ConfigVal::Map(vec![(
                 "rust".into(),
-                ConfigVal::List(args),
+                ConfigVal::List(vec![ConfigVal::Int(1)]),
             )]))
             .unwrap_err()
-            .contains("command is empty"));
+            .contains("arguments must be strings")
+        );
+        for args in [Vec::new(), vec![ConfigVal::Str(String::new())]] {
+            assert!(
+                settings_with_servers(ConfigVal::Map(vec![
+                    ("rust".into(), ConfigVal::List(args),)
+                ]))
+                .unwrap_err()
+                .contains("command is empty")
+            );
         }
     }
 
@@ -2098,7 +2118,10 @@ mod tests {
         }
 
         for (environment, expected_error) in [
-            (ConfigVal::Int(1), "source_lsp_server_environment must be a mapping"),
+            (
+                ConfigVal::Int(1),
+                "source_lsp_server_environment must be a mapping",
+            ),
             (
                 ConfigVal::Map(vec![("lean".into(), ConfigVal::Str("invalid".into()))]),
                 "source_lsp_server_environment[\"lean\"] must be a mapping",
@@ -2176,7 +2199,10 @@ mod tests {
             HashMap::new(),
         ))
         .unwrap();
-        assert_eq!(settings.lsp_server_environment_for("rust").unwrap(), [("PATH".into(), value)]);
+        assert_eq!(
+            settings.lsp_server_environment_for("rust").unwrap(),
+            [("PATH".into(), value)]
+        );
     }
 
     #[cfg(feature = "source-sandbox")]
@@ -2629,9 +2655,7 @@ mod tests {
             raw,
             HashMap::new(),
         ));
-        if !cfg!(feature = "source-sandbox")
-            && !super::config::sandboxing_disabled_by_env()
-        {
+        if !cfg!(feature = "source-sandbox") && !super::config::sandboxing_disabled_by_env() {
             assert_eq!(
                 settings.unwrap_err(),
                 "protected-lsp requires the optional source-sandbox feature (MXC)"

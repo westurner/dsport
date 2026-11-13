@@ -382,7 +382,10 @@ pub fn remove_old_files(
     Ok(())
 }
 
-pub fn effective_source_mode(root_path: &Path, opts: &ApidocOptions) -> Result<SourceMode, ApidocError> {
+pub fn effective_source_mode(
+    root_path: &Path,
+    opts: &ApidocOptions,
+) -> Result<SourceMode, ApidocError> {
     match opts.source_mode {
         SourceMode::Auto => {
             let has_rust = opts.cargo_manifest.is_some()
@@ -427,7 +430,9 @@ fn source_files(
         excludes: &[regex::Regex],
         files: &mut Vec<PathBuf>,
     ) {
-        let Ok(entries) = current.read_dir() else { return };
+        let Ok(entries) = current.read_dir() else {
+            return;
+        };
         let mut entries = entries.flatten().collect::<Vec<_>>();
         entries.sort_by_key(|entry| entry.file_name());
         for entry in entries {
@@ -467,7 +472,12 @@ fn rust_root(root_path: &Path, opts: &ApidocOptions) -> PathBuf {
         .cargo_manifest
         .clone()
         .or_else(|| root_path.is_file().then(|| root_path.to_path_buf()))
-        .or_else(|| root_path.join("Cargo.toml").is_file().then(|| root_path.join("Cargo.toml")));
+        .or_else(|| {
+            root_path
+                .join("Cargo.toml")
+                .is_file()
+                .then(|| root_path.join("Cargo.toml"))
+        });
     manifest
         .as_deref()
         .and_then(Path::parent)
@@ -484,7 +494,10 @@ fn source_module_name(path: &Path, root: &Path, mode: SourceMode, crate_name: &s
         .map(str::to_owned)
         .collect::<Vec<_>>();
     let filename = parts.pop().unwrap_or_else(|| "module".to_owned());
-    let stem = filename.strip_suffix(".rs").or_else(|| filename.strip_suffix(".lean")).unwrap_or(&filename);
+    let stem = filename
+        .strip_suffix(".rs")
+        .or_else(|| filename.strip_suffix(".lean"))
+        .unwrap_or(&filename);
     if mode == SourceMode::Rust {
         if stem == "lib" || stem == "main" {
             parts.clear();
@@ -524,7 +537,9 @@ fn create_source_file(
         SourceMode::Rust => "rust:module",
         SourceMode::Lean => "lean:module",
         SourceMode::Python | SourceMode::Auto => {
-            return Err(ApidocError::InvalidSource("Python has no source module mode".to_owned()))
+            return Err(ApidocError::InvalidSource(
+                "Python has no source module mode".to_owned(),
+            ));
         }
     };
     let mode_name = match mode {
@@ -555,7 +570,11 @@ pub fn recurse_source_tree(
             let crate_name = opts
                 .cargo_package
                 .clone()
-                .or_else(|| root.parent().and_then(Path::file_name).map(|name| name.to_string_lossy().into_owned()))
+                .or_else(|| {
+                    root.parent()
+                        .and_then(Path::file_name)
+                        .map(|name| name.to_string_lossy().into_owned())
+                })
                 .unwrap_or_else(|| "crate".to_owned());
             (root, "rs", crate_name)
         }
@@ -574,7 +593,7 @@ pub fn recurse_source_tree(
         SourceMode::Python | SourceMode::Auto => {
             return Err(ApidocError::InvalidSource(
                 "recurse_source_tree requires Rust or Lean mode".to_owned(),
-            ))
+            ));
         }
     };
     let files = source_files(&root, extension, opts, excludes);
@@ -754,11 +773,7 @@ mod tests {
         assert!(!is_skipped_package(&pkg, &options(&tmp), &[]));
         let namespace = tmp.path().join("namespace");
         std::fs::create_dir(&namespace).unwrap();
-        assert!(is_skipped_package(
-            &namespace,
-            &options(&tmp),
-            &[]
-        ));
+        assert!(is_skipped_package(&namespace, &options(&tmp), &[]));
 
         let mut namespace_options = options(&tmp);
         namespace_options.implicit_namespaces = true;
@@ -766,11 +781,17 @@ mod tests {
         assert!(!is_skipped_package(&namespace, &namespace_options, &[]));
         assert!(is_skipped_package(&pkg, &options(&tmp), &excludes));
 
-        assert!(is_skipped_module(&tmp.path().join("missing.py"), &options(&tmp)));
+        assert!(is_skipped_module(
+            &tmp.path().join("missing.py"),
+            &options(&tmp)
+        ));
         assert!(is_skipped_module(&pkg.join("_private.py"), &options(&tmp)));
         let mut private_options = options(&tmp);
         private_options.include_private = true;
-        assert!(!is_skipped_module(&pkg.join("_private.py"), &private_options));
+        assert!(!is_skipped_module(
+            &pkg.join("_private.py"),
+            &private_options
+        ));
         assert!(!is_skipped_module(&pkg.join("public.py"), &options(&tmp)));
     }
 
@@ -798,7 +819,11 @@ mod tests {
         assert_eq!(steps[0].2, vec!["a.pyx", "z.py"]);
 
         assert!(has_child_module(&root, &[], &options(&tmp)));
-        assert!(!has_child_module(&tmp.path().join("missing"), &[], &options(&tmp)));
+        assert!(!has_child_module(
+            &tmp.path().join("missing"),
+            &[],
+            &options(&tmp)
+        ));
     }
 
     #[test]
@@ -837,7 +862,11 @@ mod tests {
         std::fs::write(root.join("__init__.py"), "").unwrap();
         std::fs::write(root.join("a.py"), "").unwrap();
         std::fs::write(root.join("_private.py"), "").unwrap();
-        let files = vec!["__init__.py".to_string(), "a.py".to_string(), "_private.py".to_string()];
+        let files = vec![
+            "__init__.py".to_string(),
+            "a.py".to_string(),
+            "_private.py".to_string(),
+        ];
         let written = create_package_file(
             &root,
             Some("pkg"),
@@ -895,18 +924,15 @@ mod tests {
         rust_options.cargo_package = Some("demo".to_owned());
         rust_options.force = true;
         rust_options.quiet = true;
-        let (rust_files, rust_modules) = recurse_tree(
-            &rust_root,
-            &[],
-            &rust_options,
-            &templates(),
-        )
-        .unwrap();
+        let (rust_files, rust_modules) =
+            recurse_tree(&rust_root, &[], &rust_options, &templates()).unwrap();
         assert_eq!(rust_modules, vec!["demo", "demo.api"]);
         assert_eq!(rust_files.len(), 2);
-        assert!(std::fs::read_to_string(output.join("demo.api.rst"))
-            .unwrap()
-            .contains(".. rust:module:: demo::api"));
+        assert!(
+            std::fs::read_to_string(output.join("demo.api.rst"))
+                .unwrap()
+                .contains(".. rust:module:: demo::api")
+        );
 
         let mut lean_options = ApidocOptions::new(lean_root.clone(), output.clone());
         lean_options.source_mode = SourceMode::Lean;
@@ -914,8 +940,10 @@ mod tests {
         lean_options.quiet = true;
         let (_, lean_modules) = recurse_tree(&lean_root, &[], &lean_options, &templates()).unwrap();
         assert_eq!(lean_modules, vec!["Demo"]);
-        assert!(std::fs::read_to_string(output.join("Demo.rst"))
-            .unwrap()
-            .contains(".. lean:module:: Demo"));
+        assert!(
+            std::fs::read_to_string(output.join("Demo.rst"))
+                .unwrap()
+                .contains(".. lean:module:: Demo")
+        );
     }
 }

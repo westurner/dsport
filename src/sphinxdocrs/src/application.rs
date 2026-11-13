@@ -821,12 +821,11 @@ impl SphinxApp {
                 .cloned()
                 .collect::<Vec<_>>();
             docnames.sort();
-            let template_asset_messages =
-                crate::theme_static::rendered_template_asset_log_messages(
-                    &self.config,
-                    &self.outdir,
-                    &self.srcdir,
-                );
+            let template_asset_messages = crate::theme_static::rendered_template_asset_log_messages(
+                &self.config,
+                &self.outdir,
+                &self.srcdir,
+            );
             self.status_messages
                 .push(console_progress_done("preparing documents"));
             self.status_messages
@@ -1185,8 +1184,7 @@ mod tests {
         let base = TempDir::new().unwrap();
         let out = base.path().join("out");
         let doctrees = base.path().join("doctrees");
-        let mut app =
-            SphinxApp::new(src.path(), &out, &doctrees, "html", HashMap::new()).unwrap();
+        let mut app = SphinxApp::new(src.path(), &out, &doctrees, "html", HashMap::new()).unwrap();
 
         app.read().unwrap();
         std::fs::write(src.path().join("guide.rst"), "Guide\n=====\n").unwrap();
@@ -1214,11 +1212,15 @@ mod tests {
         let base = TempDir::new().unwrap();
         let out = base.path().join("out");
         let doctrees = base.path().join("doctrees");
-        let mut app =
-            SphinxApp::new(src.path(), &out, &doctrees, "html", HashMap::new()).unwrap();
+        let mut app = SphinxApp::new(src.path(), &out, &doctrees, "html", HashMap::new()).unwrap();
         app.read().unwrap();
 
-        assert_eq!(app.info_messages(), &["document is referenced in multiple toctrees: ['bravo', 'delta'], selecting: delta <- charlie"]);
+        assert_eq!(
+            app.info_messages(),
+            &[
+                "document is referenced in multiple toctrees: ['bravo', 'delta'], selecting: delta <- charlie"
+            ]
+        );
         assert_eq!(
             app.warnings
                 .iter()

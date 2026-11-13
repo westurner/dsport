@@ -129,11 +129,10 @@ fn main() {
                             None,
                         );
                         if !logging.suppress_status {
-                            let summary =
-                                sphinxdocrs::build::logging::format_build_summary(
-                                    app.warnings.len(),
-                                    parsed.warningiserror,
-                                );
+                            let summary = sphinxdocrs::build::logging::format_build_summary(
+                                app.warnings.len(),
+                                parsed.warningiserror,
+                            );
                             println!(
                                 "{}",
                                 sphinxdocrs::build::logging::format_status_message(

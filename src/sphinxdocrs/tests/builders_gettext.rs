@@ -10,8 +10,8 @@ use std::collections::HashMap;
 use tempfile::TempDir;
 
 use sphinxdocrs::application::SphinxApp;
-use sphinxdocrs::builders::gettext::GettextBuilder;
 use sphinxdocrs::builders::Builder;
+use sphinxdocrs::builders::gettext::GettextBuilder;
 use sphinxdocrs::config::{ConfigVal, SphinxConfig};
 use sphinxdocrs::environment::{BuildEnvironment, EnvProject};
 
@@ -139,7 +139,9 @@ fn compact_false_writes_nested_document_catalog_paths() {
 
     let pot = out.path().join("guide").join("intro.pot");
     assert!(pot.exists());
-    assert!(std::fs::read_to_string(pot)
-        .unwrap()
-        .contains("msgid \"Nested message.\""));
+    assert!(
+        std::fs::read_to_string(pot)
+            .unwrap()
+            .contains("msgid \"Nested message.\"")
+    );
 }

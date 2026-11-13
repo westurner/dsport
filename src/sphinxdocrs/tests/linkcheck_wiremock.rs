@@ -226,7 +226,11 @@ async fn build_all_reports_broken_and_redirected_in_output_txt() {
     assert!(txt.contains("[redirected]"), "{txt}");
     assert!(txt.contains("to "), "expected redirect target in {txt}");
     assert_eq!(result.warnings.len(), 1, "{:?}", result.warnings);
-    assert!(result.warnings[0].contains("broken link"), "{:?}", result.warnings);
+    assert!(
+        result.warnings[0].contains("broken link"),
+        "{:?}",
+        result.warnings
+    );
 }
 
 #[tokio::test]

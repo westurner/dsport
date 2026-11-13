@@ -670,6 +670,7 @@ otherdocs-sphinx-diff: otherdocs-sphinx-py otherdocs-sphinx-rs
 	set -x; ls -al otherdocs-sphinx-py-rs.diff*
 	exit $$status
 
+
 otherdocs-sphinx-diff-bytes: otherdocs-sphinx-byte-diff
 
 otherdocs-sphinx-byte-diff:
@@ -682,7 +683,15 @@ otherdocs-sphinx-text-diff:
 	diff -Nur -x .doctrees -x .buildinfo src/sphinx/doc/_build_py/html src/sphinx/doc/_build_rs/html > otherdocs-sphinx-py-rs-text.diff; status=$$?; \
 	ls -al otherdocs-sphinx-py-rs-text.diff; \
 	if test $$status -eq 1; then echo "Sphinx text-level output differs"; fi; \
+	$(MAKE) otherdocs-sphinx-text-diffstat
 	exit $$status
+
+#DIFFSTAT ?= diffstat --file
+DIFFSTAT = cargo run --quiet --bin diffstat -- --file
+
+otherdocs-sphinx-text-diffstat:
+	${DIFFSTAT} otherdocs-sphinx-py-rs-text.diff --print-counts-to-stderr
+
 
 otherdocs-sphinx-py:
 	@#pip install -e src/sphinx/ --group docs

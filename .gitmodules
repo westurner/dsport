@@ -31,3 +31,6 @@
 [submodule "src/ai-sandbox-review"]
 	path = src/ai-sandbox-review
 	url = https://github.com/westurner/sandbox.git
+[submodule "src/diffstat"]
+	path = src/diffstat
+	url = https://github.com/westurner/diffstat

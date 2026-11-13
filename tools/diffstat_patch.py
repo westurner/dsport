@@ -155,8 +155,7 @@ def read_patch(filename: str) -> str:
 def print_stat(files: list[FileStat]) -> None:
     path_width = max(len(item.filename) for item in files)
     changes = [item.additions + item.deletions for item in files]
-    max_changes = max(changes, default=0)
-    count_width = max(
+   count_width = max(
         [len("Bin") if item.binary else len(str(count)) for item, count in zip(files, changes)]
         or [1]
     )
@@ -165,7 +164,7 @@ def print_stat(files: list[FileStat]) -> None:
         count = "Bin" if item.binary else str(changed)
         line = f"{item.filename:<{path_width}} | {count:>{count_width}}"
         if changed:
-            bar_length = max(1, int(changed * 50 / max_changes + 0.5))
+            bar_length = min(changed, 50)
             if item.additions and item.deletions and bar_length < 2:
                 bar_length = 2
             additions = int(bar_length * item.additions / changed + 0.5)
@@ -179,10 +178,12 @@ def print_stat(files: list[FileStat]) -> None:
 
     additions = sum(item.additions for item in files)
     deletions = sum(item.deletions for item in files)
-    noun = "file" if len(files) == 1 else "files"
+    file_noun = "file" if len(files) == 1 else "files"
+    insertion_noun = "insertion" if additions == 1 else "insertions"
+    deletion_noun = "deletion" if deletions == 1 else "deletions"
     print(
-        f"{len(files)} {noun} changed, {additions} insertions(+), "
-        f"{deletions} deletions(-)"
+        f"{len(files)} {file_noun} changed, {additions} {insertion_noun}(+), "
+        f"{deletions} {deletion_noun}(-)"
     )
 
 

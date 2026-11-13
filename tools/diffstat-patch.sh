@@ -213,7 +213,6 @@ END {
 	total_additions = 0
 	total_deletions = 0
 	path_width = 0
-	max_changes = 0
 	count_width = 1
 	for (row = 1; row <= file_count; row++) {
 		total_additions += additions[row]
@@ -221,9 +220,6 @@ END {
 		changed[row] = additions[row] + deletions[row]
 		if (length(files[row]) > path_width) {
 			path_width = length(files[row])
-		}
-		if (changed[row] > max_changes) {
-			max_changes = changed[row]
 		}
 		count_text = (binary[row] ? "Bin" : changed[row])
 		if (length(count_text) > count_width) {
@@ -236,9 +232,9 @@ END {
 			count_text = (binary[row] ? "Bin" : changed[row])
 			printf "%-*s | %*s", path_width, files[row], count_width, count_text
 			if (changed[row] > 0) {
-				bar_length = int(changed[row] * 50 / max_changes + 0.5)
-				if (bar_length < 1) {
-					bar_length = 1
+				bar_length = changed[row]
+				if (bar_length > 50) {
+					bar_length = 50
 				}
 				if (additions[row] && deletions[row] && bar_length < 2) {
 					bar_length = 2
@@ -270,8 +266,11 @@ END {
 		}
 	}
 
-	noun = (stat_mode && file_count == 1 ? "file" : "files")
-	printf "%d %s changed, %d insertions(+), %d deletions(-)\n",
-		file_count, noun, total_additions, total_deletions
+	file_noun = (stat_mode && file_count == 1 ? "file" : "files")
+	insertion_noun = (stat_mode && total_additions == 1 ? "insertion" : "insertions")
+	deletion_noun = (stat_mode && total_deletions == 1 ? "deletion" : "deletions")
+	printf "%d %s changed, %d %s(+), %d %s(-)\n",
+		file_count, file_noun, total_additions, insertion_noun,
+		total_deletions, deletion_noun
 }
 ' <&3

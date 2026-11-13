@@ -59,6 +59,7 @@ pub fn register_parser_components() {
         "cite",
         "cite:p",
         "cite:t",
+        "cite:empty",
         "footcite",
         "footcite:p",
         "footcite:t",
@@ -1388,6 +1389,72 @@ mod citeproc_tests {
             .any(|entry| entry["sameAs"] == "https://doi.org/10.1000/example"));
         let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
         assert!(html.contains("Laser-safe &amp; efficient"));
+    }
+
+    #[test]
+    fn cite_empty_registers_a_reference_without_inline_output() {
+        use crate::application::SphinxApp;
+        use docutilsrs::doctree::{NodeAttributeValue, NodeKind};
+
+        let src = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let doctrees = tempfile::tempdir().unwrap();
+        std::fs::write(
+            src.path().join("refs.bib"),
+            "@book{uncited, author={Ada Lovelace}, title={Analytical Engine}, year={1843}}",
+        )
+        .unwrap();
+        std::fs::write(
+            src.path().join("index.rst"),
+            "Index\n=====\n\nBefore :cite:empty:`uncited` after.\n\n.. bibliography::\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.path().join("conf.py"),
+            format!(
+                "extensions = [{:?}]\nbibtex_bibfiles = ['refs.bib']\n",
+                METADATA.name
+            ),
+        )
+        .unwrap();
+
+        let mut app = SphinxApp::new(
+            src.path(),
+            out.path(),
+            doctrees.path(),
+            "html",
+            HashMap::new(),
+        )
+        .unwrap();
+        app.build().unwrap();
+
+        let raw = app.env.borrow().get_doctree("index").unwrap();
+        let citation = (0..raw.nodes_len())
+            .find(|&id| {
+                matches!(
+                    &raw.node(id).kind,
+                    NodeKind::Extension { class_name, attrs }
+                        if class_name == "BibtexCitation"
+                            && attrs.get("role")
+                                == Some(&NodeAttributeValue::String("cite:empty".into()))
+                )
+            })
+            .expect("cite:empty is preserved as a citation occurrence");
+
+        let resolved = app.env.borrow().get_and_resolve_doctree("index").unwrap();
+        assert!(
+            matches!(resolved.node(citation).kind, NodeKind::Text(ref value) if value.is_empty())
+        );
+        let text = (0..resolved.nodes_len())
+            .filter_map(|id| match &resolved.node(id).kind {
+                NodeKind::Text(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(text.contains("Before "), "rendered text: {text}");
+        assert!(text.contains(" after."), "rendered text: {text}");
+        assert!(text.contains("Analytical Engine"), "rendered text: {text}");
+        assert!(!text.contains("cite:empty"), "rendered text: {text}");
     }
 
     #[test]

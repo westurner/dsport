@@ -1008,6 +1008,10 @@ impl BuildEnvironment {
         for (node_id, cluster_id) in current_cluster_ids {
             let mut value = rendered_clusters.get(&cluster_id).cloned().unwrap_or_default();
             let role = current_citation_roles.get(&node_id).map(String::as_str).unwrap_or("cite");
+            if role == "cite:empty" {
+                tree.set_kind(node_id, NodeKind::Text(String::new()));
+                continue;
+            }
             if role == "cite:t" || role == "footcite:t" {
                 let years: Vec<_> = current_citation_keys
                     .remove(&node_id)
@@ -1163,7 +1167,15 @@ impl BuildEnvironment {
                     attrs,
                 } if class_name == "BibtexCitation" => {
                     let keys = node_attribute(&attrs, "keys").unwrap_or_default();
-                    tree.set_kind(node_id, NodeKind::Text(format!("[{keys}]")));
+                    let text = if node_attribute(&attrs, "role") == Some("cite:empty") {
+                        eprintln!(
+                            "WARNING: :cite:empty keys {keys:?} cannot be registered without the csl-citeproc feature"
+                        );
+                        String::new()
+                    } else {
+                        format!("[{keys}]")
+                    };
+                    tree.set_kind(node_id, NodeKind::Text(text));
                 }
                 NodeKind::Extension { class_name, .. }
                     if matches!(class_name.as_str(), "BibtexBibliography" | "BibtexFootBibliography") =>
@@ -4689,6 +4701,30 @@ mod tests {
             tree.node(id).kind,
             NodeKind::SystemMessage { ty: "WARNING", .. }
         )));
+    }
+
+    #[cfg(not(feature = "csl-citeproc"))]
+    #[test]
+    fn no_csl_fallback_keeps_cite_empty_invisible() {
+        crate::extensions::bibtex::register_parser_components();
+        let mut tree = docutilsrs::parse_rst_for_sphinx(
+            "Before :cite:empty:`key` after.\n",
+            "index",
+            docutilsrs::TitlePromotion::Preserve,
+            true,
+        );
+
+        BuildEnvironment::resolve_bibtex_placeholders_without_csl(&mut tree);
+
+        let text = (0..tree.nodes_len())
+            .filter_map(|id| match &tree.node(id).kind {
+                NodeKind::Text(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(text.contains("Before "), "rendered text: {text}");
+        assert!(text.contains(" after."), "rendered text: {text}");
+        assert!(!text.contains("key"), "rendered text: {text}");
     }
 
     #[test]

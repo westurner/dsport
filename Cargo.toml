@@ -15,6 +15,7 @@ members = [
     "src/rdfhdt",
     "src/sphinxdocrs",
     "src/smartstring-compat",
+    "src/diffstat",
 ]
 
 # Vendored upstream projects and test fixtures — not part of our workspace

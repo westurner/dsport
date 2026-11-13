@@ -147,6 +147,7 @@ windows-sys = { version = "0.61", optional = true, features = [
 ] }
 
 [dev-dependencies]
+diffstat = { path = "../diffstat" }
 insta = { workspace = true }
 rstest = { workspace = true }
 snapbox = { workspace = true }

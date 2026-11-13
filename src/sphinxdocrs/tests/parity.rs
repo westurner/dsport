@@ -2814,6 +2814,10 @@ fn log_build_stream_modes_match_upstream() {
             );
             let (rust_exit, rust_stdout, rust_stderr) =
                 run_build(rust_binary, &rust_out, &rust_options, fresh, use_make_mode);
+            if build_mode == "direct" && mode == "normal" {
+                eprintln!("PYTHON STDOUT:\n{python_stdout}\nPYTHON STDERR:\n{python_stderr}");
+                eprintln!("RUST STDOUT:\n{rust_stdout}\nRUST STDERR:\n{rust_stderr}");
+            }
             let expected_exit = if mode == "warning-error" { 1 } else { 0 };
             let label = format!("{build_mode}/{mode}");
 
@@ -3459,8 +3463,11 @@ pub struct SphinxDocsBuildShared {
 #[once]
 fn sphinx_docs_build_shared() -> SphinxDocsBuildShared {
     let src = sphinx_doc_src();
-    let py_out = TempDir::new().unwrap().keep();
-    let rs_out = TempDir::new().unwrap().keep();
+    let build_root = TempDir::new().unwrap().keep();
+    let py_out = build_root.join("python");
+    let rs_out = build_root.join("rust");
+    std::fs::create_dir_all(&py_out).unwrap();
+    std::fs::create_dir_all(&rs_out).unwrap();
     let rs_bin = env!("CARGO_BIN_EXE_sphinx-build-rs");
 
     // Python: sphinx-build <srcdir> <outdir> -q
@@ -3813,6 +3820,40 @@ fn sphinx_docs_parity_gap_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildSha
 
     insta::assert_yaml_snapshot!("sphinx_docs_parity_gap_missing_in_rust", missing);
     insta::assert_yaml_snapshot!("sphinx_docs_parity_gap_rust_only", rs_only);
+}
+
+/// Snapshot the per-file unified-diff report for the same Python/Rust docs
+/// build used by the parity gap checks. This keeps the remaining output gaps
+/// visible in a compact, reviewable fixture.
+#[rstest]
+fn sphinx_docs_diffstat_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShared) {
+    if !sphinx_docs_build_shared.py_built || !sphinx_docs_build_shared.rs_built {
+        return;
+    }
+
+    let build_root = sphinx_docs_build_shared.py_out.parent().unwrap();
+    let output = Command::new("diff")
+        .args([
+            "-Naur",
+            "-x",
+            ".doctrees",
+            "-x",
+            ".buildinfo",
+            "python",
+            "rust",
+        ])
+        .current_dir(build_root)
+        .output()
+        .expect("failed to run diff for the Sphinx docs diffstat");
+    assert!(
+        output.status.success() || output.status.code() == Some(1),
+        "diff failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let patch = String::from_utf8_lossy(&output.stdout);
+    let report = diffstat::format_stat(&diffstat::parse(&patch));
+    insta::assert_snapshot!("sphinx_docs_diffstat", report);
 }
 
 /// The set of HTML pages produced by Rust must exactly match the set produced

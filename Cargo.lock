@@ -1099,6 +1099,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
 
 [[package]]
+name = "diffstat"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "insta",
+ "rstest",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5136,6 +5145,7 @@ dependencies = [
  "citeproc",
  "clap",
  "criterion",
+ "diffstat",
  "docindexrs-native",
  "docutilsrs",
  "flate2",

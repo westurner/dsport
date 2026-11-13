@@ -383,7 +383,7 @@ in the notes column of the relevant row.
 | `ext/autodoc/` | `autodoc` | P3 | **mirrored** ✅ | Python `document_module`/`document_module_auto`/`render_function`/`render_class` with a PyO3 runtime-import bridge and `ruff_python_parser` static fallback, option handling, type hints, decorators, `__all__`, and `autodoc_mock_imports` (**H9**, done). Source-neutral Rust/Lean autodoc renderers and CLI are implemented under **H14**. **Accepted Python deviations:** `:inherited-members:` parsed but not expanded; overload sets render only the last definition; `autodoc_typehints="description"` treated as `"signature"`. **Accepted source deviations:** Lean syntax-only extraction; mismatched rustdoc JSON schemas fail explicitly |
 | `ext/intersphinx/` | `intersphinx` | P3 | **partial** | `fetch_inventories`, `InvCache`, `Inventory` / `InventoryItem` / `InventoryError` (v1 + v2 `loads`, `load_file`), `dumps`. **Gap:** xref fallback — the parsed inventories are not consulted during reference resolution (→ **H5c**) |
 | `highlighting.py` | — | P3 | **partial** | `docutilsrs` code/code-block/sourcecode paths use native `pygmentsrs` with Python fallback; `automodule` output now enters that path; Sphinx aliases (`py`/`py3`/`python3`/`default`/`pycon3`), Python-console detection, and `guess` fallback are covered. Lexer-error logging, relaxed retry, and location-rich diagnostics remain (→ **H10**) |
-| `sphinxcontrib.bibtex` (new port) | `extensions::bibtex` | P3 | **planned** | Python Sphinx adapter plus Rust equivalent; BibTeX/CSL citation processing, optional Oxigraph/OxiRS linked-data enrichment, and optional DocIndex export (**H15**) |
+| `sphinxcontrib.bibtex` (new port) | `extensions::bibtex` | P3 | **partial** | Native BibTeX parsing, citeproc formatting, citation/footnote resolution, configuration, and standalone TeX/JSON-LD exports are implemented behind `csl-citeproc`; the six common roles and two bibliography directives are registered. **Gaps:** upstream role/directive parity, Python adapter/resolver packaging, RDF enrichment, and DocIndex contribution (**H15g**, **H15c-e**) |
 | `pycode/` | — | P3 | **keep-python** | superseded by `autodoc.rs` + `ruff_python_ast` |
 | `ext/*` (other) | — | P3 | **keep-python** | loaded through the `Extension` registry |
 | *(new, no upstream analogue)* | `scan` | — | **done** | `scan_requirements`, `collect_packages`, stdlib detection — probes `conf.py` extension imports |
@@ -3041,6 +3041,35 @@ integration publishes bibliography records for search and RDF/HDT export.
 This is a new extension port, not a general port of Pybtex's formatting/plugin
 API. Track unsupported upstream features as explicit scope or deviations.
 
+**Verified status (2026-11-13):** commits since the previous plan update added
+the pinned citeproc-rs dependency, `biblatex` parsing and CSL conversion,
+cross-document citation-cluster processing, bibliography/footnote doctree
+resolution, `bibtex_include_uncited`, and standalone `bibliography.tex` and
+`bibliography.jsonld` exports. The native extension is enabled as
+`sphinxdocrs::extensions::bibtex` and requires the `csl-citeproc` feature for
+formatting. The parser currently registers six citation roles (`cite`,
+`cite:p`, `cite:t`, `footcite`, `footcite:p`, `footcite:t`) and two directives;
+this is a functioning native subset, not `sphinxcontrib-bibtex` parity. There
+is no Python adapter or `sphinxdocrs.equivalents` resolver/package path yet.
+The JSON-LD file is a standalone export, not linked-data enrichment or a
+DocIndex contribution. `cargo test -p sphinxdocrs
+extensions::csl::tests::includes_uncited_references_when_requested --lib
+--features csl-citeproc` passed during this review; the broader native
+integration has not been compared against pinned upstream 2.7.0 fixtures.
+
+Other recent committed changes added `NO_COLOR`/`FORCE_COLOR` handling and
+normalized Python-versus-Rust build-stderr assertions in the fixture parity
+tests. This strengthens the CLI/logging check but does not close H11's
+semantic HTML or generated-artifact content gaps. The new diffstat utility is
+diagnostic tooling only; its current report is not a parity pass, and the
+workspace has uncommitted generated diffs and Makefile edits that are not
+treated as committed verification evidence.
+
+**Next scoped slice:** implement upstream `cite:empty` behavior end to end:
+register the role, include its keys in CSL citation processing so they appear
+in the bibliography, render no inline citation text, and assert both effects
+in a native build/doctree test. Keep the remaining H15g role family pending.
+
 #### H15 design boundaries
 
 1. **One reference model.** Parse BibTeX and linked-data records into a
@@ -3243,14 +3272,16 @@ citeproc-rs limitation is documented as an explicit deviation.
 
 #### H15g — sphinxcontrib-bibtex 2.7.0 functional-parity work plan
 
-The current example tests establish only the six registered citation roles
+The current native implementation covers the six common citation roles
 (`cite`, `cite:p`, `cite:t`, `footcite`, `footcite:p`, and `footcite:t`) and
-the two bibliography directives. They are not evidence of full upstream
-compatibility. Use the published `sphinxcontrib-bibtex` 2.7.0 usage/API as the
-initial reference surface and pin the upstream version in parity fixtures so
-future upstream changes do not silently redefine this target. Record each
-feature as **exact parity**, **accepted deviation**, or **pending**, with a
-Python/Rust fixture pair and the relevant output builders.
+the two bibliography directives, with CSL formatting and cross-document
+resolution. The remaining role grammar, directive options, Python adapter,
+and Python/Rust fixture parity are still open. Use the published
+`sphinxcontrib-bibtex` 2.7.0 usage/API as the initial reference surface and
+pin the upstream version in parity fixtures so future upstream changes do not
+silently redefine this target. Record each feature as **exact parity**,
+**accepted deviation**, or **pending**, with a Python/Rust fixture pair and
+the relevant output builders.
 
 The work is ordered by the shared data model and parser/runtime dependencies;
 do not implement a user-visible option as a parser-only flag if resolution,

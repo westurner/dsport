@@ -1,5 +1,5 @@
 ---
 source: src/sphinxdocrs/tests/parity.rs
-expression: "normalise_output(&html_parity_shared.rs_stderr, paths)"
+expression: rs_stderr
 ---
-- "<PATH>/guide.rst: WARNING: document isn't included in any toctree [toc.not_included]"
+[]

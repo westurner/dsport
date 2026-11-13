@@ -1939,23 +1939,22 @@ fn make_clean_both_exit_zero_and_empty_outdir() {
 // search, autodoc, intersphinx); these tests capture the *structural* gap as
 // named insta snapshots so regressions are caught automatically.
 
-const HTML_PARITY_RST_INDEX: &str = "\
-My Test Project\n\
-===============\n\
-\n\
-Welcome to the documentation.\n\
-\n\
-.. toctree::\n\
-   :maxdepth: 2\n\
-\n\
-   guide\n\
-\n\
-Indices and tables\n\
-------------------\n\
-\n\
-* :ref:`genindex`\n\
-* :ref:`search`\n\
-";
+const HTML_PARITY_RST_INDEX: &str = r#"My Test Project
+===============
+
+Welcome to the documentation.
+
+.. toctree::
+    :maxdepth: 2
+
+    guide
+
+Indices and tables
+------------------
+
+* :ref:`genindex`
+* :ref:`search`
+"#;
 
 const HTML_PARITY_RST_GUIDE: &str = "\
 User Guide\n\
@@ -3168,13 +3167,20 @@ fn log_html_build_stderr_snapshot(html_parity_shared: &HtmlParityShared) {
         .and_then(|p| p.to_str())
         .unwrap_or("");
     let paths = &[src_str, py_out_str, rs_out_str];
+    let py_stderr = normalise_output(&html_parity_shared.py_stderr, paths);
+    let rs_stderr = normalise_output(&html_parity_shared.rs_stderr, paths);
+    assert_eq!(
+        rs_stderr, py_stderr,
+        "HTML build warning stderr differs\nPython:\n{}\nRust:\n{}",
+        html_parity_shared.py_stderr, html_parity_shared.rs_stderr
+    );
     insta::assert_yaml_snapshot!(
         "log_html_build_py_stderr_normalised",
-        normalise_output(&html_parity_shared.py_stderr, paths)
+        py_stderr
     );
     insta::assert_yaml_snapshot!(
         "log_html_build_rs_stderr_normalised",
-        normalise_output(&html_parity_shared.rs_stderr, paths)
+        rs_stderr
     );
 }
 

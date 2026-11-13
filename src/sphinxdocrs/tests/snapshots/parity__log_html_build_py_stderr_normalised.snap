@@ -1,6 +1,5 @@
 ---
 source: src/sphinxdocrs/tests/parity.rs
-expression: "normalise_output(&html_parity_shared.py_stderr, paths)"
+expression: py_stderr
 ---
-- "<PATH>/guide.rst: WARNING: document isn't included in any toctree [toc.not_included]"
-- "<PATH>/index.rst:7: WARNING: Explicit markup ends without a blank line; unexpected unindent. [docutils]"
+[]

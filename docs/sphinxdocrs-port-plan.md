@@ -1690,6 +1690,40 @@ native-only additions and remain visible in the parity matrix.
   not retain, and native domain objects keep the H3d default-priority/raw-name
   deviations. Complex index sub-entry details remain under H5e.
 
+**H11.2e: close the external HTML residuals**
+
+Keep the strict fixture matrix and 100% semantic-comparison thresholds intact.
+Resolve the four currently observed `otherdocs.rs` residuals by their owning
+output contracts:
+
+1. `build_otherdocs_parity::case_2` (`src/sphinx/doc`) reports a Rust tree
+   snapshot containing `_modules` pages not present in the committed Rust
+   snapshot. Compare the fresh sorted Python and Rust path sets first. If the
+   generated `_modules` paths are equal on both sides, update only the Rust
+   progress snapshot; otherwise fix the missing/extra producer behavior.
+2. `build_otherdocs_index_html_content_parity::case_1` (`docs`) differs in
+   the Alabaster footer's `sphinx_version` value (`Sphinx VERSION` versus the
+   native commit-suffixed value) and in source-link indentation. Trace the
+   version value through `html-page-context`/theme context and align only the
+   actual context contract; do not normalize the footer text.
+3. `build_otherdocs_index_html_content_parity::case_2` (`src/sphinx/doc`)
+   has a Python-only root `Sphinx` sidebar/toctree item linking to `#`. Trace
+   it to the root document's title/toctree context and reproduce it only where
+   the upstream builder emits that item.
+4. `build_otherdocs_index_html_content_parity::case_4` (`src/jinja2/docs`)
+   uses `sandbox.html#module-jinja2.seccomp`, `#module-jinja2.resource_limits`,
+   `#module-jinja2.path_sandbox`, and `extensions.html#module-jinja2.ext` in
+   Python, while Rust targets heading slugs. Preserve the domain-generated
+   module/section anchors in the toctree and link targets rather than
+   recomputing anchors from visible heading text.
+
+Add focused regressions for each resolved contract, then rerun the individual
+cases and the full `test-build-extdocs` matrix. Completion requires all 15
+external cases to pass, the Rust tree snapshot to match the verified generated
+tree without `INSTA_UPDATE` on the second run, and the strict native fixture
+matrix to remain green. Keep WebMCP-only artifacts as the existing explicit
+deviation; do not add page exclusions or relax comparator thresholds.
+
 Completion gate for H11.2: no unexpected path or missing/extra artifact
 entries; structured inventory and search comparisons pass; same-provenance
 assets are byte-identical; and remaining HTML differences are either zero or

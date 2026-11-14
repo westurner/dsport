@@ -61,6 +61,10 @@ pub fn register_parser_components() {
         "cite:t",
         "cite:ct",
         "cite:alp",
+        "cite:author",
+        "cite:authorpar",
+        "cite:cauthor",
+        "cite:cauthorpar",
         "cite:empty",
         "cite:year",
         "cite:yearpar",
@@ -1521,6 +1525,7 @@ mod citeproc_tests {
              See :cite:alp:`1987:nelson` without brackets.\n\
              See :cite:year:`1987:nelson` using year only.\n\
              See :cite:yearpar:`1987:nelson` using parenthetical year only.\n\
+             Authors: :cite:author:`1987:nelson`; paren: :cite:authorpar:`1987:nelson`; capital: :cite:cauthor:`1987:nelson`; capital paren: :cite:cauthorpar:`1987:nelson`.\n\
              Non-standard analysis is fun :cite:p:`{see }1987:nelson{, page 6}`.\n\n\
              .. bibliography::\n\n\
              See :footcite:t:`1987:nelson` for an introduction.\n\
@@ -1560,7 +1565,7 @@ mod citeproc_tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(roles.len(), 9);
+        assert_eq!(roles.len(), 13);
 
         let resolved = app.env.borrow().get_and_resolve_doctree("index").unwrap();
         let textual = &resolved.node(roles["cite:t"]).kind;
@@ -1576,6 +1581,37 @@ mod citeproc_tests {
         assert!(matches!(
             &resolved.node(roles["cite:yearpar"]).kind,
             NodeKind::Text(value) if value == "(1987)"
+        ));
+        for role in [
+            "cite:author",
+            "cite:authorpar",
+            "cite:cauthor",
+            "cite:cauthorpar",
+        ] {
+            assert!(matches!(
+                &resolved.node(roles[role]).kind,
+                NodeKind::Text(_)
+            ));
+        }
+        assert!(matches!(
+            &resolved.node(roles["cite:author"]).kind,
+            NodeKind::Text(value) if value == "nelson"
+        ));
+        assert!(
+            matches!(
+                &resolved.node(roles["cite:authorpar"]).kind,
+                NodeKind::Text(value) if value == "(nelson)"
+            ),
+            "author-par citation: {:?}",
+            resolved.node(roles["cite:authorpar"]).kind
+        );
+        assert!(matches!(
+            &resolved.node(roles["cite:cauthor"]).kind,
+            NodeKind::Text(value) if value == "Nelson"
+        ));
+        assert!(matches!(
+            &resolved.node(roles["cite:cauthorpar"]).kind,
+            NodeKind::Text(value) if value == "(Nelson)"
         ));
         let parenthetical = &resolved.node(roles["cite:p"]).kind;
         assert!(

@@ -952,7 +952,8 @@ impl BuildEnvironment {
                     .map(|target| {
                         let mut citation = target.clone();
                         citation.mode = match role.as_str() {
-                            "cite:t" | "cite:ct" | "footcite:t" | "footcite:ct" => {
+                            "cite:t" | "cite:ct" | "footcite:t" | "footcite:ct" | "cite:author"
+                            | "cite:authorpar" | "cite:cauthor" | "cite:cauthorpar" => {
                                 Some(CitationMode::AuthorOnly)
                             }
                             "cite" | "cite:p" | "footcite" | "footcite:p" => None,
@@ -1069,15 +1070,24 @@ impl BuildEnvironment {
                     value.push_str(&format!(" ({})", years.join(", ")));
                 }
             }
-            if matches!(role, "cite:ct" | "footcite:ct") {
+            if matches!(
+                role,
+                "cite:ct" | "footcite:ct" | "cite:cauthor" | "cite:cauthorpar"
+            ) {
                 if let Some(first_char) = value.chars().next() {
                     let first_len = first_char.len_utf8();
                     let capitalized = value[..first_len].to_uppercase();
                     value.replace_range(..first_len, &capitalized);
                 }
             }
-            if role == "cite:alp" && value.starts_with('(') && value.ends_with(')') {
+            if matches!(role, "cite:alp" | "cite:author" | "cite:cauthor")
+                && value.starts_with('(')
+                && value.ends_with(')')
+            {
                 value = value[1..value.len() - 1].to_string();
+            }
+            if matches!(role, "cite:authorpar" | "cite:cauthorpar") && !value.is_empty() {
+                value = format!("({value})");
             }
             if role == "footcite" || role.starts_with("footcite:") {
                 tree.set_kind(

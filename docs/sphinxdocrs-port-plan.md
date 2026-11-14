@@ -1696,11 +1696,12 @@ Keep the strict fixture matrix and 100% semantic-comparison thresholds intact.
 Resolve the four currently observed `otherdocs.rs` residuals by their owning
 output contracts:
 
-1. `build_otherdocs_parity::case_2` (`src/sphinx/doc`) reports a Rust tree
-   snapshot containing `_modules` pages not present in the committed Rust
-   snapshot. Compare the fresh sorted Python and Rust path sets first. If the
-   generated `_modules` paths are equal on both sides, update only the Rust
-   progress snapshot; otherwise fix the missing/extra producer behavior.
+1. `build_otherdocs_parity::case_2` (`src/sphinx/doc`) reports a stale Rust
+  progress snapshot: native viewcode now emits `_modules` pages, but the
+  committed Rust tree snapshot predates them. Review the generated `_modules`
+  paths against the Python reference, update only the Rust progress snapshot
+  for intentional native output, and keep unrelated Python-only artifacts
+  classified separately. Do not assert whole-tree equality in this test.
 2. `build_otherdocs_index_html_content_parity::case_1` (`docs`) differs in
    the Alabaster footer's `sphinx_version` value (`Sphinx VERSION` versus the
    native commit-suffixed value) and in source-link indentation. Trace the
@@ -1719,10 +1720,11 @@ output contracts:
 
 Add focused regressions for each resolved contract, then rerun the individual
 cases and the full `test-build-extdocs` matrix. Completion requires all 15
-external cases to pass, the Rust tree snapshot to match the verified generated
-tree without `INSTA_UPDATE` on the second run, and the strict native fixture
-matrix to remain green. Keep WebMCP-only artifacts as the existing explicit
-deviation; do not add page exclusions or relax comparator thresholds.
+external cases to pass, the Rust tree progress snapshot to match the verified
+generated Rust tree without `INSTA_UPDATE` on the second run, the Python
+reference snapshot to remain unchanged, and the strict native fixture matrix
+to stay green. Keep WebMCP-only artifacts as the existing explicit deviation;
+do not add page exclusions or relax comparator thresholds.
 
 Completion gate for H11.2: no unexpected path or missing/extra artifact
 entries; structured inventory and search comparisons pass; same-provenance

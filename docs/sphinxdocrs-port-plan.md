@@ -1896,13 +1896,14 @@ the fixture cases, not merely a refreshed snapshot.
   (all green), plus a regenerated and determinism-reconfirmed
   `native_builder_fixture_parity_matrix` snapshot.
 
-**Current output-parity gate note (2026-11-13):** the all-builder fixture
-matrix cannot currently reach its text/XML rows because Rust's default `latex`
-fixture build produces no `.tex` entry point; this is the open H11.4
-project-output gap, not an H11.3 text regression. The matrix's entry-point
-assertion now recognizes both EPUB archives (`.epub`) and Texinfo documents
-(`.texi`), so those builders are no longer rejected by a missing harness
-case. The H11.3 text-specific Python/Rust parity test passes independently.
+**Current output-parity gate note (2026-11-14):** the aggregate all-builder
+matrix now reaches every builder after its entry-point check was completed for
+EPUB (`.epub`) and Texinfo (`.texi`). A focused H11.3 Python/Rust test passes
+for the text toctree entry. The aggregate snapshot itself is currently
+unstable against the dirty vendored Python Sphinx tree: its version suffix and
+gettext copyright header changed between otherwise identical runs. The
+snapshot was not refreshed for that volatility; use a clean, fixed-provenance
+Python Sphinx checkout before treating the aggregate report as deterministic.
 
 ##### H11.4 Project-oriented LaTeX and man builders
 
@@ -1913,14 +1914,22 @@ names.
 Implement project configuration parsing first, then output generation.
 
 Verified slice: `latex_documents` and `man_pages` are loaded as structured
-configuration values and honored by the native builders. Configured LaTeX
+configuration values and honored by the native builders. When either option is
+absent, the native builder now derives Sphinx's default root project output
+(`make_filename_from_project(project).tex` for LaTeX and
+`make_filename_from_project(project).1` for man); explicitly configured empty
+lists still suppress project output. Configured LaTeX
 projects write the selected `.tex` output plus the vendored TeX support assets
 and rendered helper files, assemble recursively resolved toctree children in
 order, and honor the configured title, author, and document class with one
 master metadata block. Configured man projects write only the selected
 `name.section` outputs, reject duplicate output names, and write no implicit
-per-source pages when `man_pages` is absent. Full support-file byte parity and
-broader upstream fixture coverage remain pending.
+per-source pages when `man_pages` is explicitly empty. Project-level defaults
+are covered by `tests/builders_latex.rs` and the manpage builder tests. The
+fixture matrix now confirms the default `paritymatrix.tex` and
+`paritymatrix.1` entry points on both implementations. Full support-file byte
+parity, extra per-source output cleanup, and broader upstream fixture coverage
+remain pending.
 
 For LaTeX:
 

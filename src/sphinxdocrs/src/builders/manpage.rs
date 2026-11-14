@@ -29,6 +29,10 @@ impl ManpageBuilder {
         let Some(ConfigVal::List(entries)) = env.config.get("man_pages") else {
             return Ok(None);
         };
+        if entries.is_empty() && !env.config.raw_config().contains_key("man_pages") {
+            let name = crate::util_osutil::make_filename_from_project(&env.config.project());
+            return Ok(Some(vec![(env.config.root_doc(), name, "1".into())]));
+        }
         let mut pages = Vec::with_capacity(entries.len());
         let mut outputs = HashSet::new();
         for entry in entries {
@@ -236,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn build_all_renders_configured_pages_and_noop_without_config() {
+    fn build_all_renders_configured_and_default_pages_but_respects_explicit_empty() {
         let src = TempDir::new().unwrap();
         let out = TempDir::new().unwrap();
         std::fs::write(src.path().join("index.rst"), "Tool\n====\n\nA tool.\n").unwrap();
@@ -255,8 +259,24 @@ mod tests {
         assert_eq!(result.written, 1);
         assert!(out.path().join("tool.1").is_file());
 
+        let mut default_config = crate::config::SphinxConfig::new_defaults();
+        default_config.set("project", ConfigVal::Str("Parity Matrix".into()));
+        default_config.set("author", ConfigVal::Str("Parity".into()));
+        default_config.set("release", ConfigVal::Str("1.0".into()));
+        let default_pages = crate::environment::BuildEnvironment::new(
+            default_config,
+            project.clone(),
+            src.path(),
+            out.path(),
+        );
+        let result = ManpageBuilder::new()
+            .build_all(src.path(), out.path(), &default_pages)
+            .unwrap();
+        assert_eq!(result.written, 1);
+        assert!(out.path().join("paritymatrix.1").is_file());
+
         let no_pages = crate::environment::BuildEnvironment::new(
-            crate::config::SphinxConfig::new_defaults(),
+            man_pages_config(vec![]),
             project,
             src.path(),
             out.path(),

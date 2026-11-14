@@ -223,6 +223,27 @@ impl LatexBuilder {
         let Some(ConfigVal::List(entries)) = env.config.get("latex_documents") else {
             return None;
         };
+        if entries.is_empty() && !env.config.raw_config().contains_key("latex_documents") {
+            let project = env.config.project();
+            let author = env.config.author();
+            let documentclass = env
+                .config
+                .raw_config()
+                .get("latex_theme")
+                .and_then(ConfigVal::as_str)
+                .unwrap_or("manual")
+                .to_string();
+            return Some(vec![(
+                env.config.root_doc(),
+                format!(
+                    "{}.tex",
+                    crate::util_osutil::make_filename_from_project(&project)
+                ),
+                escape_latex_abbreviations(&project),
+                escape_latex_abbreviations(&author),
+                documentclass,
+            )]);
+        }
         Some(
             entries
                 .iter()
@@ -332,6 +353,23 @@ fn escape_latex(value: &str) -> String {
         }
     }
     escaped
+}
+
+fn escape_latex_abbreviations(value: &str) -> String {
+    let escaped = escape_latex(value);
+    let characters: Vec<char> = escaped.chars().collect();
+    let mut output = String::with_capacity(escaped.len());
+    for (index, character) in characters.iter().enumerate() {
+        output.push(*character);
+        if *character == '.'
+            && characters
+                .get(index + 1)
+                .is_none_or(|next| next.is_whitespace())
+        {
+            output.push_str(r"\@{}");
+        }
+    }
+    output
 }
 
 impl Builder for LatexBuilder {

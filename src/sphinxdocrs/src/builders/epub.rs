@@ -221,7 +221,12 @@ impl Builder for EpubBuilder {
                 .and_then(|value| value.as_str().map(str::to_owned))
                 .unwrap_or_default(),
         );
-        let basename = config_string(env, "epub_basename", &env.config.project());
+        let basename = env
+            .config
+            .get("epub_basename")
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| crate::util_osutil::make_filename(&env.config.project()));
         let page_progression_direction =
             match config_string(env, "epub_writing_mode", "horizontal").as_str() {
                 "horizontal" => "ltr",

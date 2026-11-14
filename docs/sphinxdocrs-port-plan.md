@@ -961,6 +961,12 @@ have focused tests. A default `toc` guide entry targets the root document unless
 an explicit `toc` item overrides it; automatic cover entries and packaging
 additional referenced resources remain unsupported.
 
+EPUB's implicit output basename now follows upstream's `make_filename(project)`
+rule (preserving case while stripping spaces and unsafe characters); an
+explicit `epub_basename` remains unchanged. A feature-gated Python/Rust
+regression confirms both builders produce `ParityMatrix.epub` for the shared
+`Parity Matrix` fixture. Other package-tree differences remain in H7d/H11.2.
+
 **H7e rationale:** these six builders fall into two groups, neither of
 which fits the "parse RST → render a format" shape every other builder
 in this tier has:

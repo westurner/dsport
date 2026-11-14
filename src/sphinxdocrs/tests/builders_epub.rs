@@ -80,3 +80,25 @@ fn build_all_writes_one_epub_archive_with_documents() {
             .any(|window| window == b"Reparsed title")
     );
 }
+
+#[test]
+fn default_epub_basename_uses_project_filename() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    std::fs::write(src.path().join("index.rst"), "Title\n=====\n\nBody.\n").unwrap();
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let mut config = SphinxConfig::new_defaults();
+    config.set("project", ConfigVal::Str("Parity Matrix".into()));
+    let mut env = BuildEnvironment::new(config, project, src.path(), doctrees.path());
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+
+    let result = EpubBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    assert_eq!(result.written, 1);
+    assert!(out.path().join("ParityMatrix.epub").is_file());
+    assert!(!out.path().join("Parity Matrix.epub").exists());
+}

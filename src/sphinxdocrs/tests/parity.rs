@@ -670,6 +670,62 @@ fn text_builder_renders_toctree_document_titles_like_python() {
     );
 }
 
+#[test]
+fn epub_default_basename_matches_python_project_filename() {
+    if !has_sphinx_build() {
+        return;
+    }
+
+    let project = TempDir::new().unwrap();
+    write_builder_parity_fixture(project.path(), &BUILDER_PARITY_FIXTURES[0]);
+    let python_out = TempDir::new().unwrap();
+    let rust_out = TempDir::new().unwrap();
+    let python_doctree = TempDir::new().unwrap();
+    let rust_doctree = TempDir::new().unwrap();
+    let project_path = project.path().to_str().unwrap();
+    let python_doctree_path = python_doctree.path().to_str().unwrap();
+    let rust_doctree_path = rust_doctree.path().to_str().unwrap();
+    let python_out_path = python_out.path().to_str().unwrap();
+    let rust_out_path = rust_out.path().to_str().unwrap();
+
+    let (python_exit, _, python_stderr) = run(
+        "sphinx-build",
+        &[
+            "-q",
+            "-E",
+            "-a",
+            "-b",
+            "epub",
+            "-d",
+            python_doctree_path,
+            project_path,
+            python_out_path,
+        ],
+        project.path(),
+    );
+    let (rust_exit, _, rust_stderr) = run(
+        env!("CARGO_BIN_EXE_sphinx-build-rs"),
+        &[
+            "-q",
+            "-E",
+            "-a",
+            "-b",
+            "epub",
+            "-d",
+            rust_doctree_path,
+            project_path,
+            rust_out_path,
+        ],
+        project.path(),
+    );
+
+    assert_eq!(python_exit, 0, "Python stderr:\n{python_stderr}");
+    assert_eq!(rust_exit, 0, "Rust stderr:\n{rust_stderr}");
+    assert!(python_out.path().join("ParityMatrix.epub").is_file());
+    assert!(rust_out.path().join("ParityMatrix.epub").is_file());
+    assert!(!rust_out.path().join("Parity Matrix.epub").exists());
+}
+
 // ── tests: python_bin() ───────────────────────────────────────────────────────
 
 #[test]

@@ -30,6 +30,21 @@ impl TextBuilder {
     pub fn new() -> Self {
         Self
     }
+
+    fn write_tree(
+        docname: &str,
+        tree: &docutilsrs::Doctree,
+        outdir: &Path,
+    ) -> Result<(), BuildError> {
+        let output = text(tree);
+        let rel: PathBuf = docname.split('/').collect::<PathBuf>();
+        let out_path = outdir.join(rel).with_extension("txt");
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&out_path, output.as_bytes())?;
+        Ok(())
+    }
 }
 
 impl Builder for TextBuilder {
@@ -50,14 +65,7 @@ impl Builder for TextBuilder {
 
     fn build_doc(&self, docname: &str, source: &str, outdir: &Path) -> Result<(), BuildError> {
         let tree = parse_rst_with_options(source, docname, TitlePromotion::Preserve);
-        let output = text(&tree);
-        let rel: PathBuf = docname.split('/').collect::<PathBuf>();
-        let out_path = outdir.join(rel).with_extension("txt");
-        if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(&out_path, output.as_bytes())?;
-        Ok(())
+        Self::write_tree(docname, &tree, outdir)
     }
 
     fn build_all(
@@ -74,14 +82,20 @@ impl Builder for TextBuilder {
         };
         std::fs::create_dir_all(outdir)?;
         for docname in &docnames {
-            let src_path =
-                super::html::src_path_for_docname_with_suffixes(srcdir, docname, &env.config)?;
-            let source =
-                crate::environment::read_source_file(&src_path, &env.config.source_encoding())
-                    .map_err(|e| {
-                        BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
-                    })?;
-            self.build_doc(docname, &source, outdir)?;
+            if env.has_stored_doctree(docname) {
+                let mut tree = env.get_and_resolve_doctree(docname)?;
+                env.resolve_toctree_nodes(&mut tree, docname);
+                Self::write_tree(docname, &tree, outdir)?;
+            } else {
+                let src_path =
+                    super::html::src_path_for_docname_with_suffixes(srcdir, docname, &env.config)?;
+                let source =
+                    crate::environment::read_source_file(&src_path, &env.config.source_encoding())
+                        .map_err(|e| {
+                            BuildError::Other(format!("failed to read {}: {e}", src_path.display()))
+                        })?;
+                self.build_doc(docname, &source, outdir)?;
+            }
             result.written += 1;
         }
         Ok(result)

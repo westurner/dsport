@@ -262,6 +262,7 @@ fn render_block_recursive(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut
         NodeKind::Bibliographic { tag } => {
             blocks.push(format!(":{tag}: {}", inline_text(tree, id)))
         }
+        NodeKind::Reference { .. } => blocks.push(inline_text(tree, id)),
         NodeKind::BlockQuote => {
             let mut inner = Vec::new();
             for &c in &node.children {

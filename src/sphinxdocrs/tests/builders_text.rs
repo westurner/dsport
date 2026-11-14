@@ -28,7 +28,7 @@ fn build_all_over_a_multi_document_project_with_subdirectory() {
     std::fs::create_dir(src.path().join("guide")).unwrap();
     std::fs::write(
         src.path().join("index.rst"),
-        "Welcome\n=======\n\nHomepage **content**.\n",
+        "Welcome\n=======\n\n.. toctree::\n   :maxdepth: 1\n\n   guide/intro\n\nHomepage **content**.\n",
     )
     .unwrap();
     std::fs::write(
@@ -42,6 +42,30 @@ fn build_all_over_a_multi_document_project_with_subdirectory() {
     let mut env = BuildEnvironment::new(config, project, src.path(), doctrees.path());
     env.find_files().unwrap();
     env.read_all().unwrap();
+    let stored_index = env.get_doctree("index").unwrap();
+    assert!(
+        (0..stored_index.nodes_len()).any(|id| matches!(
+            stored_index.node(id).kind,
+            docutilsrs::NodeKind::Toctree { .. }
+        )),
+        "stored doctree omitted its toctree node"
+    );
+    let toctree = (0..stored_index.nodes_len())
+        .find_map(|id| match &stored_index.node(id).kind {
+            docutilsrs::NodeKind::Toctree { entries, .. } => Some(entries),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(toctree, &["guide/intro"]);
+    assert_eq!(env.toctree_includes.get("index").unwrap(), &["guide/intro"]);
+    let mut resolved_index = env.get_and_resolve_doctree("index").unwrap();
+    env.resolve_toctree_nodes(&mut resolved_index, "index");
+    assert!(
+        (0..resolved_index.nodes_len()).any(|id| {
+            matches!(&resolved_index.node(id).kind, docutilsrs::NodeKind::Text(value) if value == "Intro")
+        }),
+        "resolved toctree omitted its title"
+    );
 
     let result = TextBuilder::new()
         .build_all(src.path(), out.path(), &env)
@@ -53,6 +77,7 @@ fn build_all_over_a_multi_document_project_with_subdirectory() {
     // is a normal level-1 section (not a promoted document title) and uses
     // the first `text_sectionchars` char (`*`), not docutils' `=` default.
     assert!(index_txt.starts_with("Welcome\n*******\n"));
+    assert!(index_txt.contains("* Intro"), "index text: {index_txt}");
     assert!(index_txt.contains("Homepage **content**."));
 
     let intro_txt = std::fs::read_to_string(out.path().join("guide/intro.txt")).unwrap();

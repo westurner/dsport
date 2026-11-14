@@ -486,8 +486,10 @@ fn assert_builder_entry_point(
     let present = match builder {
         "html" | "dirhtml" | "singlehtml" => tree.contains_key("index.html"),
         "json" => tree.contains_key("index.fjson") && tree.contains_key("globalcontext.json"),
+        "epub" => tree.keys().any(|path| path.ends_with(".epub")),
         "latex" => tree.keys().any(|path| path.ends_with(".tex")),
         "man" => tree.keys().any(|path| path.ends_with(".1")),
+        "texinfo" => tree.keys().any(|path| path.ends_with(".texi")),
         "linkcheck" => true,
         "text" => tree.contains_key("index.txt"),
         "xml" => tree.contains_key("index.xml"),
@@ -603,6 +605,69 @@ fn native_builder_fixture_parity_matrix() {
     }
 
     insta::assert_yaml_snapshot!("native_builder_fixture_parity_matrix", matrix);
+}
+
+#[test]
+fn text_builder_renders_toctree_document_titles_like_python() {
+    if !has_sphinx_build() {
+        return;
+    }
+
+    let project = TempDir::new().unwrap();
+    write_builder_parity_fixture(project.path(), &BUILDER_PARITY_FIXTURES[0]);
+    let python_out = TempDir::new().unwrap();
+    let rust_out = TempDir::new().unwrap();
+    let python_doctree = TempDir::new().unwrap();
+    let rust_doctree = TempDir::new().unwrap();
+    let project_path = project.path().to_str().unwrap();
+    let python_doctree_path = python_doctree.path().to_str().unwrap();
+    let rust_doctree_path = rust_doctree.path().to_str().unwrap();
+    let python_out_path = python_out.path().to_str().unwrap();
+    let rust_out_path = rust_out.path().to_str().unwrap();
+
+    let (python_exit, _, python_stderr) = run(
+        "sphinx-build",
+        &[
+            "-q",
+            "-E",
+            "-a",
+            "-b",
+            "text",
+            "-d",
+            python_doctree_path,
+            project_path,
+            python_out_path,
+        ],
+        project.path(),
+    );
+    let (rust_exit, _, rust_stderr) = run(
+        env!("CARGO_BIN_EXE_sphinx-build-rs"),
+        &[
+            "-q",
+            "-E",
+            "-a",
+            "-b",
+            "text",
+            "-d",
+            rust_doctree_path,
+            project_path,
+            rust_out_path,
+        ],
+        project.path(),
+    );
+
+    assert_eq!(python_exit, 0, "Python stderr:\n{python_stderr}");
+    assert_eq!(rust_exit, 0, "Rust stderr:\n{rust_stderr}");
+    let python_text = std::fs::read_to_string(python_out.path().join("index.txt")).unwrap();
+    let rust_text = std::fs::read_to_string(rust_out.path().join("index.txt")).unwrap();
+    assert!(
+        python_text.lines().any(|line| line == "* Guide"),
+        "{python_text}"
+    );
+    assert!(
+        rust_text.lines().any(|line| line == "* Guide"),
+        "{rust_text}"
+    );
 }
 
 // ── tests: python_bin() ───────────────────────────────────────────────────────

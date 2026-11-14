@@ -1882,8 +1882,12 @@ the fixture cases, not merely a refreshed snapshot.
   parity matrix (removed from the deviation list entirely). `index.txt` and
   the `.xml`/`.pseudoxml` outputs still have accepted deviations, but the
   byte-diff offset moved substantially later (title/underline/comment/ids
-  sections now match); remaining known gaps: `index.txt` toctree/paragraph
-  body-content formatting. XML and pseudo-XML `build_all` now replace the
+  sections now match). `TextBuilder::build_all` now renders its stored,
+  resolved doctree, and the text writer emits visible `Reference` text in
+  block/list position. A feature-gated Python/Rust fixture verifies the
+  `.. toctree::` entry renders as `* Guide` on both sides. Remaining text gap:
+  paragraph/body formatting in `index.txt`. XML and pseudo-XML `build_all` now
+  replace the
   parser's docname source with the real source file path, matching Python's
   root `source="..."` metadata; direct single-document `build_doc` calls retain
   their existing docname-based behavior.
@@ -1891,6 +1895,14 @@ the fixture cases, not merely a refreshed snapshot.
   `cargo test -p sphinxdocrs --lib`/`--test builders`/`--test application`
   (all green), plus a regenerated and determinism-reconfirmed
   `native_builder_fixture_parity_matrix` snapshot.
+
+**Current output-parity gate note (2026-11-13):** the all-builder fixture
+matrix cannot currently reach its text/XML rows because Rust's default `latex`
+fixture build produces no `.tex` entry point; this is the open H11.4
+project-output gap, not an H11.3 text regression. The matrix's entry-point
+assertion now recognizes both EPUB archives (`.epub`) and Texinfo documents
+(`.texi`), so those builders are no longer rejected by a missing harness
+case. The H11.3 text-specific Python/Rust parity test passes independently.
 
 ##### H11.4 Project-oriented LaTeX and man builders
 

@@ -66,6 +66,27 @@ fn is_bibtex_placeholder(kind: &NodeKind) -> bool {
     )
 }
 
+#[cfg(feature = "csl-citeproc")]
+fn citation_years(
+    bibliography: &crate::extensions::bibtex::Bibliography,
+    keys: &[String],
+) -> Vec<String> {
+    keys.iter()
+        .filter_map(|key| bibliography.get(key))
+        .filter_map(|record| {
+            record.fields.get("year").map(String::as_str).or_else(|| {
+                record
+                    .fields
+                    .get("date")
+                    .map(|date| date.split('-').next().unwrap_or(date))
+            })
+        })
+        .map(str::trim)
+        .filter(|year| !year.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 fn node_attribute<'a>(
     attrs: &'a BTreeMap<String, NodeAttributeValue>,
     key: &str,
@@ -1034,24 +1055,16 @@ impl BuildEnvironment {
                 tree.set_kind(node_id, NodeKind::Text(String::new()));
                 continue;
             }
+            if matches!(role, "cite:year" | "cite:yearpar") {
+                let keys = current_citation_keys.remove(&node_id).unwrap_or_default();
+                value = citation_years(&bibliography, &keys).join(", ");
+                if role == "cite:yearpar" && !value.is_empty() {
+                    value = format!("({value})");
+                }
+            }
             if matches!(role, "cite:t" | "cite:ct" | "footcite:t" | "footcite:ct") {
-                let years: Vec<_> = current_citation_keys
-                    .remove(&node_id)
-                    .unwrap_or_default()
-                    .iter()
-                    .filter_map(|key| bibliography.get(key))
-                    .filter_map(|record| {
-                        record.fields.get("year").map(String::as_str).or_else(|| {
-                            record
-                                .fields
-                                .get("date")
-                                .map(|date| date.split('-').next().unwrap_or(date))
-                        })
-                    })
-                    .map(str::trim)
-                    .filter(|year| !year.is_empty())
-                    .map(str::to_string)
-                    .collect();
+                let keys = current_citation_keys.remove(&node_id).unwrap_or_default();
+                let years = citation_years(&bibliography, &keys);
                 if !years.is_empty() {
                     value.push_str(&format!(" ({})", years.join(", ")));
                 }

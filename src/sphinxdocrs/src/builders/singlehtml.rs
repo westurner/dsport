@@ -127,9 +127,6 @@ impl Builder for SinglehtmlBuilder {
         if real_theme.is_some() {
             let _ = std::fs::remove_file(outdir.join("_static/sphinxdocrs.css"));
         }
-        if real_theme.is_some() {
-            let _ = std::fs::remove_file(outdir.join("_static/sphinxdocrs.css"));
-        }
 
         let meta = crate::builders::html::PageMeta {
             project: env.config.project(),

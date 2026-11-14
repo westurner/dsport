@@ -2440,11 +2440,16 @@ impl BuildEnvironment {
         }
     }
 
+    /// Resolve cross-references using the flat HTML builder's target URIs.
     pub fn resolve_xref_nodes(&self, tree: &mut Doctree, docname: &str) {
         let builder = crate::builders::html::HtmlBuilder::new();
         self.resolve_xref_nodes_with_builder(tree, docname, &builder);
     }
 
+    /// Resolve cross-references using target URIs from the active builder.
+    ///
+    /// Builders with directory or single-page output should use this helper
+    /// instead of [`Self::resolve_xref_nodes`] to keep generated links valid.
     pub(crate) fn resolve_xref_nodes_with_builder<B: crate::builders::Builder>(
         &self,
         tree: &mut Doctree,
@@ -2857,11 +2862,15 @@ impl BuildEnvironment {
     /// never by pulling in a target document's own internal section
     /// structure the way upstream's `TocTree.resolve` does for
     /// `maxdepth` levels beyond 1 when no nested toctree exists.
+    ///
+    /// This convenience method uses flat HTML targets. Builders with a
+    /// different output layout should use `resolve_toctree_nodes_with_builder`.
     pub fn resolve_toctree_nodes(&self, tree: &mut Doctree, docname: &str) {
         let builder = crate::builders::html::HtmlBuilder::new();
         self.resolve_toctree_nodes_with_builder(tree, docname, &builder);
     }
 
+    /// Expand toctrees using target URIs from the active builder.
     pub(crate) fn resolve_toctree_nodes_with_builder<B: crate::builders::Builder>(
         &self,
         tree: &mut Doctree,

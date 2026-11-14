@@ -1024,6 +1024,10 @@ fn console_progress_done(message: &str) -> String {
     format!("{}... {}", tr_console(message), tr_console("done"))
 }
 
+/// Return Sphinx's display version, falling back to this crate's version.
+///
+/// The vendored Sphinx package is added to Python's import path so callers do
+/// not depend on the process working directory.
 pub(crate) fn display_sphinx_version() -> String {
     Python::attach(|py| -> PyResult<String> {
         crate::config::add_vendored_import_paths(

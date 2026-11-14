@@ -931,7 +931,9 @@ impl BuildEnvironment {
                     .map(|target| {
                         let mut citation = target.clone();
                         citation.mode = match role.as_str() {
-                            "cite:t" | "footcite:t" => Some(CitationMode::AuthorOnly),
+                            "cite:t" | "cite:ct" | "footcite:t" | "footcite:ct" => {
+                                Some(CitationMode::AuthorOnly)
+                            }
                             "cite" | "cite:p" | "footcite" | "footcite:p" => None,
                             _ => None,
                         };
@@ -1032,7 +1034,7 @@ impl BuildEnvironment {
                 tree.set_kind(node_id, NodeKind::Text(String::new()));
                 continue;
             }
-            if role == "cite:t" || role == "footcite:t" {
+            if matches!(role, "cite:t" | "cite:ct" | "footcite:t" | "footcite:ct") {
                 let years: Vec<_> = current_citation_keys
                     .remove(&node_id)
                     .unwrap_or_default()
@@ -1054,6 +1056,13 @@ impl BuildEnvironment {
                     value.push_str(&format!(" ({})", years.join(", ")));
                 }
             }
+            if matches!(role, "cite:ct" | "footcite:ct") {
+                if let Some(first_char) = value.chars().next() {
+                    let first_len = first_char.len_utf8();
+                    let capitalized = value[..first_len].to_uppercase();
+                    value.replace_range(..first_len, &capitalized);
+                }
+            }
             if role == "footcite" || role.starts_with("footcite:") {
                 tree.set_kind(
                     node_id,
@@ -1061,7 +1070,7 @@ impl BuildEnvironment {
                         classes: "footcite".into(),
                     },
                 );
-                if role == "footcite:t" {
+                if role == "footcite:t" || role == "footcite:ct" {
                     tree.append(node_id, NodeKind::Text(value));
                 }
                 for (number, footnote_id, reference_id) in

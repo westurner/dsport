@@ -59,10 +59,12 @@ pub fn register_parser_components() {
         "cite",
         "cite:p",
         "cite:t",
+        "cite:ct",
         "cite:empty",
         "footcite",
         "footcite:p",
         "footcite:t",
+        "footcite:ct",
     ] {
         docutilsrs::roles::register_canonical_role(role);
         docutilsrs::plugins::register_native_role(role, |role_name, content| {
@@ -1481,7 +1483,7 @@ mod citeproc_tests {
         let doctrees = tempfile::tempdir().unwrap();
         std::fs::write(
             src.path().join("refs.bib"),
-            "@book{1987:nelson, author={Edward Nelson}, title={Internal Set Theory}, year={1987}}",
+            "@book{1987:nelson, author={nelson, Edward}, title={Internal Set Theory}, year={1987}}",
         )
         .unwrap();
         std::fs::write(
@@ -1512,9 +1514,11 @@ mod citeproc_tests {
         std::fs::write(
             src.path().join("index.rst"),
             "Index\n=====\n\nSee :cite:t:`1987:nelson` for an introduction.\n\
+             See :cite:ct:`1987:nelson` for a capitalized introduction.\n\
              Non-standard analysis is fun :cite:p:`{see }1987:nelson{, page 6}`.\n\n\
              .. bibliography::\n\n\
              See :footcite:t:`1987:nelson` for an introduction.\n\
+             See :footcite:ct:`1987:nelson` for a capitalized introduction.\n\
              Non-standard analysis is fun\\ :footcite:p:`1987:nelson`.\n\n\
              .. footbibliography::\n",
         )
@@ -1550,16 +1554,18 @@ mod citeproc_tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(roles.len(), 4);
+        assert_eq!(roles.len(), 6);
 
         let resolved = app.env.borrow().get_and_resolve_doctree("index").unwrap();
         let textual = &resolved.node(roles["cite:t"]).kind;
-        assert!(matches!(textual, NodeKind::Text(value) if value == "Nelson (1987)"));
+        assert!(matches!(textual, NodeKind::Text(value) if value == "nelson (1987)"));
+        let capitalized = &resolved.node(roles["cite:ct"]).kind;
+        assert!(matches!(capitalized, NodeKind::Text(value) if value == "Nelson (1987)"));
         let parenthetical = &resolved.node(roles["cite:p"]).kind;
         assert!(
             matches!(
                 parenthetical,
-                NodeKind::Text(value) if value == "(see Nelson, 1987, page 6)"
+                NodeKind::Text(value) if value == "(see nelson, 1987, page 6)"
             ),
             "resolved parenthetical citation: {parenthetical:?}"
         );
@@ -1576,7 +1582,21 @@ mod citeproc_tests {
                 _ => None,
             })
             .collect::<String>();
-        assert_eq!(footcite_text, "Nelson (1987)");
+        assert_eq!(footcite_text, "nelson (1987)");
+        assert!(matches!(
+            resolved.node(roles["footcite:ct"]).kind,
+            NodeKind::Inline { .. }
+        ));
+        let footcite_capitalized_text = resolved
+            .node(roles["footcite:ct"])
+            .children
+            .iter()
+            .filter_map(|&id| match &resolved.node(id).kind {
+                NodeKind::Text(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(footcite_capitalized_text, "Nelson (1987)");
         assert!(matches!(
             resolved.node(roles["footcite:p"]).kind,
             NodeKind::Inline { .. }
@@ -1601,7 +1621,7 @@ mod citeproc_tests {
             (0..resolved.nodes_len())
                 .filter(|&id| matches!(resolved.node(id).kind, NodeKind::FootnoteReference { .. }))
                 .count(),
-            2
+            3
         );
         let reference_ids: HashSet<_> = (0..resolved.nodes_len())
             .filter_map(|id| match &resolved.node(id).kind {
@@ -1609,7 +1629,7 @@ mod citeproc_tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(reference_ids.len(), 2);
+        assert_eq!(reference_ids.len(), 3);
 
         let html = std::fs::read_to_string(out.path().join("index.html")).unwrap();
         assert!(html.contains("href=\"#bibtex-footnote-1\""));

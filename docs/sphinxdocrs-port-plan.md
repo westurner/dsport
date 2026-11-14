@@ -1680,9 +1680,15 @@ native-only additions and remain visible in the parity matrix.
 - Continue aligning environment-version keys, document ordering, filenames, title terms,
   body terms, stemming, stopword filtering, `alltitles`, object entries, and
   index entries with Sphinx's `IndexBuilder` inputs.
-- Add fixture assertions for repeated terms, title-only terms, nested
-  documents, domain objects, and `.. index::` entries. Keep the accepted
-  deviation limited to features not represented by the native doctree.
+- Added the feature-gated `search_index_semantics_cover_extended_fixture` with
+  repeated body terms, a title-only term, a nested document, a Python function
+  object, and a simple `.. index::` entry. It asserts exact shared docname,
+  filename, title, titleterm, alltitle, repeated-term, and simple-index-entry
+  semantics, plus object presence on both sides.
+- Remaining search differences are bounded to known model limits: Python
+  indexes words from index-directive source text that the native doctree does
+  not retain, and native domain objects keep the H3d default-priority/raw-name
+  deviations. Complex index sub-entry details remain under H5e.
 
 Completion gate for H11.2: no unexpected path or missing/extra artifact
 entries; structured inventory and search comparisons pass; same-provenance

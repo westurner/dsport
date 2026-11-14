@@ -246,6 +246,17 @@ const STRUCTURED_FIXTURE_FILES: &[(&str, &str)] = &[
     ),
 ];
 
+const SEARCH_SEMANTIC_FIXTURE_FILES: &[(&str, &str)] = &[
+    (
+        "index.rst",
+        "Search Semantics\n================\n\n.. toctree::\n\n   chapters/guide\n\nrepeat repeat repeat.\n\n.. index:: Event Horizon\n",
+    ),
+    (
+        "chapters/guide.rst",
+        "Quasar\n======\n\n.. py:module:: samplepkg\n\n.. py:function:: comet_api(value)\n\n   repeat repeat.\n",
+    ),
+];
+
 const BUILDER_PARITY_FIXTURES: &[BuilderParityFixture] = &[
     BuilderParityFixture {
         name: "basic",
@@ -1233,6 +1244,133 @@ fn alabaster_html_assets_match_with_shared_provenance() {
             "same-provenance asset differs: {asset}"
         );
     }
+}
+
+#[test]
+fn search_index_semantics_cover_extended_fixture() {
+    if !has_sphinx_build() {
+        return;
+    }
+
+    let project = TempDir::new().unwrap();
+    write_builder_parity_fixture(
+        project.path(),
+        &BuilderParityFixture {
+            name: "search-semantics",
+            files: SEARCH_SEMANTIC_FIXTURE_FILES,
+        },
+    );
+    let python_out = TempDir::new().unwrap();
+    let rust_out = TempDir::new().unwrap();
+    let python_doctree = TempDir::new().unwrap();
+    let rust_doctree = TempDir::new().unwrap();
+    let project_path = project.path().to_str().unwrap();
+    let parity_env = [("SOURCE_DATE_EPOCH", Some("1794614400"))];
+
+    let (python_exit, _, python_stderr) = run_raw_with_env(
+        "sphinx-build",
+        &[
+            "-q",
+            "-E",
+            "-a",
+            "-b",
+            "html",
+            "-d",
+            python_doctree.path().to_str().unwrap(),
+            project_path,
+            python_out.path().to_str().unwrap(),
+        ],
+        project.path(),
+        &parity_env,
+    );
+    assert_eq!(
+        python_exit, 0,
+        "Python search fixture failed: {python_stderr}"
+    );
+
+    let (rust_exit, _, rust_stderr) = run_raw_with_env(
+        env!("CARGO_BIN_EXE_sphinx-build-rs"),
+        &[
+            "-q",
+            "-E",
+            "-a",
+            "-b",
+            "html",
+            "-d",
+            rust_doctree.path().to_str().unwrap(),
+            project_path,
+            rust_out.path().to_str().unwrap(),
+        ],
+        project.path(),
+        &parity_env,
+    );
+    assert_eq!(rust_exit, 0, "Rust search fixture failed: {rust_stderr}");
+
+    let python_tree = parity_output_tree(python_out.path());
+    let rust_tree = parity_output_tree(rust_out.path());
+    let python_index = search_index_json(
+        python_tree
+            .get("searchindex.js")
+            .expect("Python searchindex.js"),
+    )
+    .expect("Python search index JSON");
+    let rust_index = search_index_json(
+        rust_tree
+            .get("searchindex.js")
+            .expect("Rust searchindex.js"),
+    )
+    .expect("Rust search index JSON");
+    // These shared projections should match exactly; source text from index
+    // directives and H3d object priority/display metadata remain documented
+    // differences outside this fixture's exact comparison.
+    for field in ["docnames", "filenames", "titles", "titleterms", "alltitles"] {
+        assert_eq!(python_index[field], rust_index[field], "{field} differs");
+    }
+    assert_eq!(
+        python_index["docnames"],
+        serde_json::json!(["chapters/guide", "index"])
+    );
+    assert_eq!(
+        python_index["terms"]["repeat"],
+        rust_index["terms"]["repeat"]
+    );
+    assert_eq!(
+        python_index["terms"]["quasar"],
+        rust_index["terms"]["quasar"]
+    );
+    assert!(
+        rust_index["terms"]["repeat"]
+            .as_array()
+            .is_some_and(|docs| docs.len() == 2)
+    );
+
+    let has_comet_object = |index: &serde_json::Value| {
+        index["objects"].as_object().is_some_and(|objects| {
+            objects.values().any(|entries| {
+                entries.as_array().is_some_and(|entries| {
+                    entries.iter().any(|entry| {
+                        entry.get(4).and_then(serde_json::Value::as_str) == Some("comet_api")
+                    })
+                })
+            })
+        })
+    };
+    for index in [&python_index, &rust_index] {
+        assert!(index["titleterms"].get("quasar").is_some());
+        assert!(index["terms"].get("quasar").is_some());
+        assert!(index["alltitles"].get("Quasar").is_some());
+        assert!(
+            index["objtypes"]
+                .as_object()
+                .is_some_and(|types| types.values().any(|value| value == "py:function"))
+        );
+        assert!(has_comet_object(index));
+        assert!(index["indexentries"].get("event horizon").is_some());
+    }
+    assert_eq!(
+        python_index["indexentries"]["event horizon"],
+        rust_index["indexentries"]["event horizon"]
+    );
 }
 
 #[test]

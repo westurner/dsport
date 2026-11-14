@@ -72,7 +72,7 @@ fn test_domain_and_extension_directives() {
     let html = render_html(src);
 
     assert!(
-        html.contains("py:function foo(a, b=1)"),
+        html.contains("<dl class=\"py py function\"><dt id=\"foo\">foo(a, b=1)"),
         "HTML output: {html}"
     );
     assert!(html.contains("py:autoclass MyClass"), "HTML output: {html}");

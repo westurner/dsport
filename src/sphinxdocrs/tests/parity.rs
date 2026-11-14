@@ -320,6 +320,8 @@ fn normalize_parity_file(path: &str, source_root: &str, bytes: &[u8]) -> Vec<u8>
         r#"(?i)(<meta\s+name=[\"']generator[\"']\s+content=[\"'])[^\"']*([\"'])"#,
     )
     .unwrap();
+    let sphinx_version =
+        regex::Regex::new(r"\b\d+\.\d+\.\d+[A-Za-z0-9.+-]*/[0-9a-f]{7,40}\b").unwrap();
 
     if path == ".buildinfo" {
         return b"# Sphinx build info version 1\nconfig: <CONFIG_HASH>\ntags: <TAGS_HASH>\n"
@@ -329,20 +331,138 @@ fn normalize_parity_file(path: &str, source_root: &str, bytes: &[u8]) -> Vec<u8>
     let normalized = timestamp.replace_all(text, "<TIMESTAMP>");
     let normalized = generator_comment.replace_all(&normalized, "<!-- GENERATED -->");
     let normalized = generator_meta.replace_all(&normalized, "${1}GENERATOR${2}");
+    let normalized = if path.ends_with(".pot") {
+        normalize_pot_metadata(&normalized)
+    } else {
+        normalized.into_owned()
+    };
     let normalized = normalized.replace(source_root, "<SOURCE>");
     let normalized = if path.ends_with(".json") {
         serde_json::from_str::<serde_json::Value>(&normalized)
             .ok()
-            .and_then(|value| serde_json::to_string_pretty(&value).ok())
+            .and_then(|mut value| {
+                normalize_sphinx_json_metadata(&mut value);
+                serde_json::to_string_pretty(&value).ok()
+            })
             .unwrap_or(normalized)
     } else {
         normalized
     };
+    let normalized = sphinx_version.replace_all(&normalized, "<SPHINX_VERSION>");
 
     // Keep the path in the signature so future builder-specific metadata can
     // be added without changing the tree-diff call sites.
     let _ = path;
-    normalized.into_bytes()
+    normalized.into_owned().into_bytes()
+}
+
+fn normalize_pot_metadata(text: &str) -> String {
+    let header_marker = "msgid \"\"\nmsgstr \"\"\n";
+    let Some(header_start) = text.find(header_marker) else {
+        return text.to_owned();
+    };
+    let Some(header_end) = text[header_start..].find("\n\n") else {
+        return text.to_owned();
+    };
+    let body_start = header_start + header_end + 2;
+    let temp_source_root = regex::Regex::new(r"(?m)(#:\s*)\.\./\.tmp[^/\s]+/").unwrap();
+    let normalized_body = temp_source_root.replace_all(&text[body_start..], "${1}<TEMP>/");
+    format!("# POT metadata normalized\n\n{normalized_body}")
+}
+
+fn normalize_sphinx_json_metadata(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for (key, value) in fields {
+                match key.as_str() {
+                    "sphinx_version" => {
+                        *value = serde_json::Value::String("<SPHINX_VERSION>".to_owned());
+                    }
+                    "sphinx_version_tuple" => {
+                        *value = serde_json::Value::String("<SPHINX_VERSION_TUPLE>".to_owned());
+                    }
+                    _ => normalize_sphinx_json_metadata(value),
+                }
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                normalize_sphinx_json_metadata(value);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn write_normalized_parity_tree(source: &Path, destination: &Path, source_root: &str) {
+    for (relative, bytes) in parity_output_tree(source) {
+        let path = destination.join(&relative);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(&path, normalize_parity_file(&relative, source_root, &bytes)).unwrap();
+    }
+}
+
+#[test]
+fn parity_normalizer_canonicalizes_volatile_sphinx_and_gettext_metadata() {
+    let json = br#"{"nested":{"sphinx_version":"9.1.1+/4ef6748f0","sphinx_version_tuple":[9,1,1,"+","/4ef6748f0"],"project":"Parity"}}"#;
+    let normalized: serde_json::Value = serde_json::from_slice(&normalize_parity_file(
+        "globalcontext.json",
+        "SOURCE_ROOT_NOT_PRESENT",
+        json,
+    ))
+    .unwrap();
+    assert_eq!(normalized["nested"]["sphinx_version"], "<SPHINX_VERSION>");
+    assert_eq!(
+        normalized["nested"]["sphinx_version_tuple"],
+        "<SPHINX_VERSION_TUPLE>"
+    );
+    assert_eq!(normalized["nested"]["project"], "Parity");
+
+    let pot = b"# Copyright (C) 2026, Sphinx contributors\n\"Project-Id-Version: Parity 1.0\\n\"\n\"POT-Creation-Date: 2026-11-14 12:34+0000\\n\"\n";
+    let pot_second = b"# Copyright (C) 2027, Another Sphinx contributor\n\"Project-Id-Version: Parity 2.0\\n\"\n\"POT-Creation-Date: 2027-01-02 23:59+0000\\n\"\n";
+    let with_catalog = |header: &[u8], message: &str| {
+        let header = String::from_utf8_lossy(header);
+        format!(
+            "{header}msgid \"\"\nmsgstr \"\"\n\"POT-Creation-Date: varying\\n\"\n\n#: ../.tmpSphinxA/index.rst:1\nmsgid \"{message}\"\nmsgstr \"\"\n"
+        )
+    };
+    let normalized_pot = normalize_parity_file(
+        "sphinx.pot",
+        "SOURCE_ROOT_NOT_PRESENT",
+        with_catalog(pot, "Stable message").as_bytes(),
+    );
+    let second_normalized_pot = normalize_parity_file(
+        "sphinx.pot",
+        "SOURCE_ROOT_NOT_PRESENT",
+        with_catalog(pot_second, "Stable message").as_bytes(),
+    );
+    let normalized_pot_text = String::from_utf8_lossy(&normalized_pot);
+    assert!(normalized_pot_text.starts_with("# POT metadata normalized\n\n"));
+    assert!(normalized_pot_text.contains("Stable message"));
+    assert_eq!(normalized_pot, second_normalized_pot);
+    assert_ne!(
+        normalized_pot,
+        normalize_parity_file(
+            "sphinx.pot",
+            "SOURCE_ROOT_NOT_PRESENT",
+            with_catalog(pot_second, "Changed message").as_bytes(),
+        )
+    );
+    let temp_path_a = "msgid \"\"\nmsgstr \"\"\n\"POT-Creation-Date: 2026-01-01\\n\"\n\n#: ../.tmpSphinxA/index.rst:1\nmsgid \"Message\"\n";
+    let temp_path_b = "msgid \"\"\nmsgstr \"\"\n\"POT-Creation-Date: 2027-01-01\\n\"\n\n#: ../.tmpSphinxB/index.rst:1\nmsgid \"Message\"\n";
+    assert_eq!(
+        normalize_pot_metadata(temp_path_a),
+        normalize_pot_metadata(temp_path_b)
+    );
+
+    let old_html = b"<p>Built by Sphinx 9.1.1+/4ef6748f0</p>";
+    let new_html = b"<p>Built by Sphinx 9.1.1+/29cde4fd3</p>";
+    assert_eq!(
+        normalize_parity_file("index.html", "SOURCE_ROOT_NOT_PRESENT", old_html),
+        normalize_parity_file("index.html", "SOURCE_ROOT_NOT_PRESENT", new_html)
+    );
 }
 
 fn stable_digest(bytes: &[u8]) -> String {
@@ -418,6 +538,11 @@ fn accepted_deviation(builder: &str, path: &str) -> Option<&'static str> {
     if builder == "json" && path == "environment.pickle" {
         return Some("H8b: Rust persists environment.json instead of Python pickle");
     }
+    if builder == "epub" && path.ends_with(".epub") {
+        return Some(
+            "H7d: compare EPUB entries structurally; archive metadata and compression parity pending",
+        );
+    }
     match builder {
         "html" | "dirhtml" | "singlehtml" => {
             Some("H11.2: HTML-family paths, assets, and page templates pending")
@@ -426,6 +551,7 @@ fn accepted_deviation(builder: &str, path: &str) -> Option<&'static str> {
             "H11.6: nested navigation, search-index ordering, and full template context remain",
         ),
         "latex" | "man" => Some("H11.4: project-oriented output pending"),
+        "texinfo" => Some("H7d/H11.4: project-level Texinfo output and support files pending"),
         "text" | "xml" | "pseudoxml" => Some("H11.3: writer metadata and formatting pending"),
         "gettext" => Some("H11.5: per-document gettext catalogs pending"),
         "changes" => Some(
@@ -453,6 +579,9 @@ fn diff_parity_trees(
         match (python.get(path), rust.get(path)) {
             (Some(_), None) => diff.push(record(format!("missing_in_rust: {path}"))),
             (None, Some(_)) => diff.push(record(format!("rust_only: {path}"))),
+            (Some(_), Some(_)) if builder == "epub" && path.ends_with(".epub") => {
+                diff.push(record(format!("archive_content_not_compared: {path}")));
+            }
             (Some(python_bytes), Some(rust_bytes))
                 if python_bytes != rust_bytes
                     && !(path == "objects.inv"
@@ -4146,7 +4275,20 @@ fn sphinx_docs_diffstat_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShare
         return;
     }
 
-    let build_root = sphinx_docs_build_shared.py_out.parent().unwrap();
+    let normalized_root = TempDir::new().unwrap();
+    let normalized_python = normalized_root.path().join("python");
+    let normalized_rust = normalized_root.path().join("rust");
+    let source_root = sphinx_doc_src().to_string_lossy().into_owned();
+    write_normalized_parity_tree(
+        &sphinx_docs_build_shared.py_out,
+        &normalized_python,
+        &source_root,
+    );
+    write_normalized_parity_tree(
+        &sphinx_docs_build_shared.rs_out,
+        &normalized_rust,
+        &source_root,
+    );
     let output = Command::new("diff")
         .args([
             "-Naur",
@@ -4157,7 +4299,7 @@ fn sphinx_docs_diffstat_snapshot(sphinx_docs_build_shared: &SphinxDocsBuildShare
             "python",
             "rust",
         ])
-        .current_dir(build_root)
+        .current_dir(normalized_root.path())
         .output()
         .expect("failed to run diff for the Sphinx docs diffstat");
     assert!(

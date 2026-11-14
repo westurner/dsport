@@ -948,7 +948,7 @@ Ordered by dependency on `docutilsrs` writers that already exist.
 | **H7a** | ✅ `text`, `xml`, `pseudoxml` — thin `Builder` wrappers (`builders/text.rs`, `builders/xml.rs`, `builders/pseudoxml.rs`) over two new `docutilsrs` writers (`docutilsrs::text`, `docutilsrs::to_xml`) plus the already-existing `docutilsrs::pseudo_xml`. All three are registered in `NATIVE_BUILDER_CLASSES`/`NATIVE_BUILDERS` and dispatched from `SphinxApp::build`. **Accepted deviations:** `docutilsrs::text` has no upstream analogue to mirror exactly (Sphinx's own `sphinx.writers.text.TextWriter` is a from-scratch line-wrapping/table-drawing engine, not a `docutils` writer) — it is a deliberately simplified renderer (no line wrapping, no visual table drawing, non-arabic `EnumeratedList` types still render as arabic digits); `docutilsrs::to_xml`'s pretty-printer always puts an element's open tag, children, and close tag on separate lines (even a childless leaf), rather than upstream's collapsed same-line/self-closing forms — still well-formed XML, verified by a stack-based tag-balance test |
 | **H7b** | ✅ `dirhtml` — `DirhtmlBuilder` delegates every `Builder` method to an inner `HtmlBuilder` constructed via a new `HtmlBuilder::new_dir_style()` (a `PathStyle::{Flat,Dir}` field threaded through `get_target_uri` and the (now `&self`) `write_page`), reusing the *entire* H6 theming/search-index/static-asset pipeline unchanged — only the physical file layout (`<docname>/index.html`) and `get_target_uri` differ. **Accepted deviation:** in-page navigation chrome rendered through the real theme pipeline (`theme_render.rs`'s `pathto`/`toctree` helpers) still hardcodes a flat-style `HtmlBuilder::new().get_target_uri(..)` at several call sites, so a `dirhtml` build's *files* land correctly but themed cross-document navigation links may still point at the flat naming — recorded in `PathStyle`'s own doc comment. ✅ `singlehtml` — `SinglehtmlBuilder` renders every document's fragment via `HtmlBuilder::render_fragment_from_tree`/`render_embedded_or_wrap` (both promoted to `pub(crate)` for this) and concatenates them into one `index.html` in resolved toctree order, with matching `id="document-{docname}"` anchors and Sphinx-compatible `#document-{docname}` targets (including WebMCP manifest URLs). **Accepted deviation:** no merged sidebar/TOC reflecting the concatenated structure (each fragment still renders independently), and the merged page does not yet use the real resolved theme renderer |
 | **H7c** | ✅ `gettext` — `GettextBuilder` walks each document's doctree, extracting translatable text from `Title`/`Subtitle`/`Paragraph` nodes (`builders/gettext.rs`), groups occurrences by message text (deduplicated, insertion-ordered per-docname location list), and writes one combined `sphinx.pot` GNU-gettext template. **Accepted deviations:** only `Title`/`Subtitle`/`Paragraph` are extracted (not list items, definition terms, field lists, table cells, or image `alt` text — a real line-number field on `docutilsrs::doctree::Node` would be needed to emit faithful `#: docname:linenum` locations for all of these); location comments omit the line number (`#: docname` only) for the same reason; `gettext_compact`-style per-directory catalog splitting is not honoured (always one combined `.pot`); `gettext_uuid`/`gettext_location`/`gettext_auto_build` config are not read |
-| **H7d** | ✅ `epub` and `texinfo` — native project builders are registered and dispatched; EPUB writes a deterministic stored ZIP containing `mimetype`, `META-INF/container.xml`, `OEBPS/content.opf` with metadata/manifest/spine, `OEBPS/nav.xhtml`, `OEBPS/toc.ncx`, and per-document XHTML, using persisted read-phase doctrees when available; texinfo writes `.texi` documents with Texinfo headers and `@bye`. **Accepted deviations:** EPUB does not yet mirror Sphinx's cover, pre/post-file, CSS, or compressed-package configuration; explicit `epub_guide` triples are serialized and a default TOC reference is generated when no explicit `toc` entry exists, but automatic cover entries and copying referenced non-document files remain unsupported; navigation is a flat document list rather than a resolved hierarchical toctree; texinfo does not yet produce a project-level `.info` archive or full Texinfo node/menu structure. `changes` — ✅ `ChangesBuilder` (`builders/changes.rs`) scans every document's RST source for `.. versionadded::`/`.. versionchanged::`/`.. deprecated::` directives (`scan_version_changes`, following the H3a/H3c/H5b text-scan precedent), groups entries by version, and renders one flat `index.html` report, newest version first. **Accepted deviations:** versions sort as plain strings (reverse-lexicographic), not PEP 440/semver-aware; output is a flat per-version `<ul>`, not the module-grouped, cross-linked-to-source-docs report upstream's Jinja2 template renders |
+| **H7d** | ✅ `epub` and `texinfo` — native project builders are registered and dispatched; EPUB writes a deterministic stored ZIP containing `mimetype`, `META-INF/container.xml`, `OEBPS/content.opf` with metadata/manifest/spine, `OEBPS/nav.xhtml`, `OEBPS/toc.ncx`, and per-document XHTML, using persisted read-phase doctrees when available; texinfo currently writes per-document `.texi` files with basic headers and `@bye`. **Accepted deviations:** EPUB does not yet mirror Sphinx's cover, pre/post-file, CSS, or compressed-package configuration; explicit `epub_guide` triples are serialized and a default TOC reference is generated when no explicit `toc` entry exists, but automatic cover entries and copying referenced non-document files remain unsupported; navigation is a flat document list rather than a resolved hierarchical toctree; texinfo does not yet assemble a project-level `.texi`, generate `Makefile`/support files, build a `.info` archive, or emit full Texinfo node/menu structure. `changes` — ✅ `ChangesBuilder` (`builders/changes.rs`) scans every document's RST source for `.. versionadded::`/`.. versionchanged::`/`.. deprecated::` directives (`scan_version_changes`, following the H3a/H3c/H5b text-scan precedent), groups entries by version, and renders one flat `index.html` report, newest version first. **Accepted deviations:** versions sort as plain strings (reverse-lexicographic), not PEP 440/semver-aware; output is a flat per-version `<ul>`, not the module-grouped, cross-linked-to-source-docs report upstream's Jinja2 template renders |
 | **H7e** | ❌ `doctest`, `coverage`, `qthelp` / `devhelp` / `htmlhelp` / `applehelp` — **keep-python decision** |
 
 The EPUB builder honors `epub_writing_mode`: the horizontal default emits
@@ -1910,10 +1910,15 @@ the fixture cases, not merely a refreshed snapshot.
 matrix now reaches every builder after its entry-point check was completed for
 EPUB (`.epub`) and Texinfo (`.texi`). A focused H11.3 Python/Rust test passes
 for the text toctree entry. The aggregate snapshot itself is currently
-unstable against the dirty vendored Python Sphinx tree: its version suffix and
-gettext copyright header changed between otherwise identical runs. The
-snapshot was not refreshed for that volatility; use a clean, fixed-provenance
-Python Sphinx checkout before treating the aggregate report as deterministic.
+normalized for variable Sphinx version identifiers and gettext POT copyright,
+project-version, and creation-date headers, so those build-environment values
+no longer churn its content hashes. The report still preserves actual page,
+support-file, and per-document output differences. In particular, the fixture
+matrix currently shows Python Texinfo producing `paritymatrix.texi` and a
+`Makefile`, while Rust produces `index.texi`/`guide.texi` (and
+`reference.texi` for the structured fixture); these are tracked H7d/H11.4
+gaps, not normalized away. LaTeX support-file presence/bytes and project output
+content also remain open under H11.4.
 
 ##### H11.4 Project-oriented LaTeX and man builders
 
@@ -2973,10 +2978,13 @@ of arbitrary document reads:
   Python fallback). The remaining work is the Sphinx-specific highlighting
   parity suite and top-language gate described in §9, not lexer breadth;
   re-check `docs/pygments-port-inventory.md` when selecting that matrix.
-- **H11 (parity matrix) — done.** The feature-gated matrix covers the two
-  fixture sets against all twelve native builders, with deterministic output
-  normalization and a committed parity-gap snapshot. It requires only Python
-  plus upstream Sphinx in the test environment.
+- **H11 (parity matrix) — in progress.** The feature-gated matrix harness
+  covers the two fixture sets against all twelve native builders and now
+  normalizes volatile Sphinx/gettext metadata before recording its committed
+  gap snapshot. This makes the evidence repeatable; it does not mean builder
+  output parity is complete. H11.2 remains partial, and H11.3-H11.6 retain the
+  builder-specific gaps recorded above. The matrix requires Python plus
+  upstream Sphinx in the test environment.
 - **H13 (MyST Markdown bridge) — in progress.** The parser-to-
   `docutilsrs::Doctree` API, `'.md': 'myst'` dispatch, and native mixed-source
   `.md` to doctree to HTML acceptance gate are implemented. Remaining work is

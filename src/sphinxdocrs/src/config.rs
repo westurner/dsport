@@ -1034,6 +1034,15 @@ impl SphinxConfig {
         add("language", Str("en".into()), Env, "Language");
         add("epub_title", Str(String::new()), Env, "EPUB title");
         add("epub_author", Str(String::new()), Env, "EPUB author");
+        add("epub_theme", Str("epub".into()), Env, "EPUB theme");
+        add("epub_version", Float(3.0), Env, "EPUB format version");
+        add(
+            "epub_scheme",
+            Str("unknown".into()),
+            Env,
+            "EPUB identifier scheme",
+        );
+        add("epub_use_index", Bool(true), Env, "Include the EPUB index");
         add(
             "epub_contributor",
             Str("unknown".into()),
@@ -1219,6 +1228,12 @@ impl SphinxConfig {
             List(vec![]),
             Env,
             "LaTeX output documents",
+        );
+        add(
+            "texinfo_documents",
+            List(vec![]),
+            Env,
+            "Texinfo output documents",
         );
         add("man_pages", List(vec![]), Env, "Man page output documents");
         add("manpages_url", Null, Env, "Manpages URL template");

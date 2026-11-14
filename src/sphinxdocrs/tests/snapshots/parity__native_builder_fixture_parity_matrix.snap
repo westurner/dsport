@@ -2,6 +2,9 @@
 source: src/sphinxdocrs/tests/parity.rs
 expression: matrix
 ---
+_html_asset_provenance:
+  - "Python assets: Sphinx CLI=sphinx-build 9.1.1+/4ef6748f0, display=9.1.1+/4ef6748f0, Alabaster=1.0.0, Pygments=2.20.0, snowballstemmer=3.0.1; stemmer JS SHA-256={\"base-stemmer.js\":\"d42c3db25433456d2de85c57c5ff4d5200f5321f8365dbeabec19c16b66854d9\",\"english-stemmer.js\":\"7d7aea429ad57d94a080ba841862028d91a982befdb9f395f7ea90b7b552c1e3\"}"
+  - "Rust assets: Sphinx display=9.1.1+/4ef6748f0 via the same vendored runtime; Alabaster via the same theme resolver; pygmentsrs 0.0.1 from Pygments 2.20.0; rust-stemmers 1.2.0; copied stemmer JS uses the recorded Sphinx hashes"
 "basic::changes":
   - "accepted_deviation: H11.5: structured module/C API classification and full theme-template parity remain: rust_only: basic.css"
   - "accepted_deviation: H11.5: structured module/C API classification and full theme-template parity remain: rust_only: changes.html"

@@ -698,6 +698,127 @@ fn search_index_json(bytes: &[u8]) -> Option<serde_json::Value> {
     serde_json::from_str(json).ok()
 }
 
+fn html_asset_provenance(workspace_root: &Path) -> Vec<String> {
+    const PYTHON_QUERY: &str = r#"
+import hashlib
+import importlib.metadata as metadata
+import json
+from pathlib import Path
+import pygments
+import sphinx
+
+def distribution_version(name):
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return None
+
+stemmer_dir = Path(sphinx.__file__).parent / 'search' / 'minified-js'
+stemmer_assets = {}
+for name in ('base-stemmer.js', 'english-stemmer.js'):
+    path = stemmer_dir / name
+    stemmer_assets[name] = (
+        hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+    )
+
+print(json.dumps({
+    'sphinx_cli': None,
+    'sphinx_display': sphinx.__display_version__,
+    'alabaster': distribution_version('alabaster'),
+    'pygments': pygments.__version__,
+    'snowballstemmer': distribution_version('snowballstemmer'),
+    'stemmer_assets': stemmer_assets,
+}, sort_keys=True))
+"#;
+    let (python_status, python_stdout, python_stderr) =
+        run("python", &["-c", PYTHON_QUERY], workspace_root);
+    assert_eq!(
+        python_status, 0,
+        "could not collect Python asset provenance:\n{python_stderr}"
+    );
+    let mut python: serde_json::Value =
+        serde_json::from_str(&python_stdout).expect("Python provenance must be JSON");
+    let (cli_status, cli_stdout, cli_stderr) = run("sphinx-build", &["--version"], workspace_root);
+    assert_eq!(
+        cli_status, 0,
+        "could not read Python Sphinx CLI version:\n{cli_stderr}"
+    );
+    python["sphinx_cli"] = serde_json::Value::String(cli_stdout.trim().to_owned());
+
+    let (metadata_status, metadata_stdout, metadata_stderr) = run(
+        "cargo",
+        &["metadata", "--format-version", "1", "--locked"],
+        workspace_root,
+    );
+    assert_eq!(
+        metadata_status, 0,
+        "could not read locked Rust package versions:\n{metadata_stderr}"
+    );
+    let metadata: serde_json::Value =
+        serde_json::from_str(&metadata_stdout).expect("Cargo metadata must be JSON");
+    let package_version = |name: &str| {
+        metadata["packages"]
+            .as_array()
+            .and_then(|packages| {
+                packages
+                    .iter()
+                    .find(|package| package["name"].as_str() == Some(name))
+            })
+            .and_then(|package| package["version"].as_str())
+            .unwrap_or_else(|| panic!("Cargo metadata is missing package `{name}`"))
+            .to_owned()
+    };
+
+    vec![
+        format!(
+            "Python assets: Sphinx CLI={}, display={}, Alabaster={}, Pygments={}, snowballstemmer={}; stemmer JS SHA-256={}",
+            python["sphinx_cli"].as_str().unwrap_or("unknown"),
+            python["sphinx_display"].as_str().unwrap_or("unknown"),
+            python["alabaster"].as_str().unwrap_or("not installed"),
+            python["pygments"].as_str().unwrap_or("unknown"),
+            python["snowballstemmer"]
+                .as_str()
+                .unwrap_or("not installed"),
+            python["stemmer_assets"],
+        ),
+        format!(
+            "Rust assets: Sphinx display={} via the same vendored runtime; Alabaster via the same theme resolver; pygmentsrs {} from Pygments {}; rust-stemmers {}; copied stemmer JS uses the recorded Sphinx hashes",
+            python["sphinx_display"].as_str().unwrap_or("unknown"),
+            pygmentsrs::version(),
+            python["pygments"].as_str().unwrap_or("unknown"),
+            package_version("rust-stemmers"),
+        ),
+    ]
+}
+
+fn assert_same_provenance_html_assets(
+    builder: &str,
+    python: &BTreeMap<String, Vec<u8>>,
+    rust: &BTreeMap<String, Vec<u8>>,
+) {
+    if !matches!(builder, "html" | "dirhtml" | "singlehtml") {
+        return;
+    }
+    for path in [
+        "_static/basic.css",
+        "_static/base-stemmer.js",
+        "_static/documentation_options.js",
+        "_static/english-stemmer.js",
+        "_static/language_data.js",
+        "_static/pygments.css",
+        "_static/searchtools.js",
+    ] {
+        match (python.get(path), rust.get(path)) {
+            (Some(python_bytes), Some(rust_bytes)) => assert_eq!(
+                python_bytes, rust_bytes,
+                "same-provenance HTML asset differs for builder `{builder}`: {path}"
+            ),
+            (None, None) => {}
+            _ => panic!("same-provenance HTML asset presence differs for `{builder}`: {path}"),
+        }
+    }
+}
+
 #[test]
 fn search_index_comparison_uses_json_semantics_and_preserves_array_order() {
     let first = br#"Search.setIndex({"terms":{"alpha":0,"beta":1},"docnames":["index","guide"]})"#;
@@ -930,7 +1051,15 @@ fn native_builder_fixture_parity_matrix() {
         return;
     }
 
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("sphinxdocrs manifest should be two directories below the workspace root");
     let mut matrix = BTreeMap::new();
+    matrix.insert(
+        "_html_asset_provenance".to_owned(),
+        html_asset_provenance(workspace_root),
+    );
     for fixture in BUILDER_PARITY_FIXTURES {
         for builder in NATIVE_BUILDERS {
             let project = TempDir::new().unwrap();
@@ -1014,6 +1143,7 @@ fn native_builder_fixture_parity_matrix() {
                 .collect();
             assert_builder_entry_point(builder, fixture, &python_tree, "Python");
             assert_builder_entry_point(builder, fixture, &rust_tree, "Rust");
+            assert_same_provenance_html_assets(builder, &python_tree, &rust_tree);
             matrix.insert(
                 format!("{}::{builder}", fixture.name),
                 diff_parity_trees(builder, &python_tree, &rust_tree),
@@ -1022,6 +1152,87 @@ fn native_builder_fixture_parity_matrix() {
     }
 
     insta::assert_yaml_snapshot!("native_builder_fixture_parity_matrix", matrix);
+}
+
+#[test]
+fn alabaster_html_assets_match_with_shared_provenance() {
+    if !has_sphinx_build() {
+        return;
+    }
+
+    let project = TempDir::new().unwrap();
+    write_builder_parity_fixture(project.path(), &BUILDER_PARITY_FIXTURES[0]);
+    let alabaster_config = PARITY_CONF.replace("html_theme = 'basic'", "html_theme = 'alabaster'");
+    std::fs::write(project.path().join("conf.py"), alabaster_config).unwrap();
+
+    let python_out = TempDir::new().unwrap();
+    let rust_out = TempDir::new().unwrap();
+    let python_doctree = TempDir::new().unwrap();
+    let rust_doctree = TempDir::new().unwrap();
+    let project_path = project.path().to_str().unwrap();
+    let parity_env = [("SOURCE_DATE_EPOCH", Some("1794614400"))];
+
+    let (python_exit, _, python_stderr) = run_raw_with_env(
+        "sphinx-build",
+        &[
+            "-q",
+            "-E",
+            "-a",
+            "-b",
+            "html",
+            "-d",
+            python_doctree.path().to_str().unwrap(),
+            project_path,
+            python_out.path().to_str().unwrap(),
+        ],
+        project.path(),
+        &parity_env,
+    );
+    assert_eq!(
+        python_exit, 0,
+        "Python Alabaster build failed: {python_stderr}"
+    );
+
+    let (rust_exit, _, rust_stderr) = run_raw_with_env(
+        env!("CARGO_BIN_EXE_sphinx-build-rs"),
+        &[
+            "-q",
+            "-E",
+            "-a",
+            "-b",
+            "html",
+            "-d",
+            rust_doctree.path().to_str().unwrap(),
+            project_path,
+            rust_out.path().to_str().unwrap(),
+        ],
+        project.path(),
+        &parity_env,
+    );
+    assert_eq!(rust_exit, 0, "Rust Alabaster build failed: {rust_stderr}");
+
+    let python_tree = parity_output_tree(python_out.path());
+    let rust_tree = parity_output_tree(rust_out.path());
+    for asset in [
+        "_static/alabaster.css",
+        "_static/basic.css",
+        "_static/pygments.css",
+        "_static/base-stemmer.js",
+        "_static/english-stemmer.js",
+        "_static/language_data.js",
+        "_static/searchtools.js",
+    ] {
+        let python_bytes = python_tree
+            .get(asset)
+            .unwrap_or_else(|| panic!("Python Alabaster build missing {asset}"));
+        let rust_bytes = rust_tree
+            .get(asset)
+            .unwrap_or_else(|| panic!("Rust Alabaster build missing {asset}"));
+        assert_eq!(
+            python_bytes, rust_bytes,
+            "same-provenance asset differs: {asset}"
+        );
+    }
 }
 
 #[test]

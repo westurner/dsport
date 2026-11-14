@@ -1607,13 +1607,14 @@ deviation unless a future decision explicitly requires reproducing pickle.
 
 ##### H11.2 HTML, dirhtml, and singlehtml
 
-Status: **partial**. HTML/dirhtml/singlehtml path-aware rendering, structured
-inventory and search-index fixture parity, and the strict native fixture matrix
-pass. The latest gated external-document run passes 11 of 15 cases; HTML
-content and generated-tree residuals remain. H11.2 is still open for
-provenance-backed asset verification, broader search-index semantic fixtures,
 and structured HTML writer/theme differences. WebMCP script/manifest artifacts
-are intentional native-only additions and remain visible in the parity matrix.
+Status: **partial**. HTML/dirhtml/singlehtml path-aware rendering, structured
+inventory and search-index fixture parity, same-provenance HTML asset checks,
+and the strict native fixture matrix pass. The latest gated external-document
+run passes 11 of 15 cases; HTML-content and generated-tree residuals remain.
+H11.2 is still open for broader search-index semantic fixtures and structured
+HTML writer/theme differences. WebMCP script/manifest artifacts are intentional
+native-only additions and remain visible in the parity matrix.
 
 **H11.2a: artifact contract and metadata**
 
@@ -1630,10 +1631,13 @@ are intentional native-only additions and remain visible in the parity matrix.
 
 **H11.2b: theme assets and page serialization**
 
-- Record Python and Rust theme provenance, including Sphinx, Alabaster,
-  Pygments, and stemmer versions, before comparing bytes. Same-provenance
-  assets must be byte-identical; different-provenance assets remain an H6
-  deviation with the provenance recorded.
+- The parity snapshot records Python Sphinx CLI/display versions, Alabaster,
+  Pygments, and Snowball stemmer versions, the Rust `pygmentsrs` and
+  `rust-stemmers` versions, and SHA-256 hashes for Sphinx's copied stemmer JS.
+  The shared-provenance HTML-family assets are asserted byte-identical in the
+  builder matrix, and a dedicated Alabaster fixture verifies its CSS plus
+  Pygments/search assets. Python Snowball and Rust stemmer versions remain
+  distinct producers and are recorded rather than normalized.
 - `documentation_options.js` receives Sphinx's builder, suffix, source
   availability, and source-link suffix context; focused tests cover the
   html-family suffix contract.

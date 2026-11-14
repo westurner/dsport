@@ -60,6 +60,7 @@ pub fn register_parser_components() {
         "cite:p",
         "cite:t",
         "cite:ct",
+        "cite:alp",
         "cite:empty",
         "footcite",
         "footcite:p",
@@ -1515,6 +1516,7 @@ mod citeproc_tests {
             src.path().join("index.rst"),
             "Index\n=====\n\nSee :cite:t:`1987:nelson` for an introduction.\n\
              See :cite:ct:`1987:nelson` for a capitalized introduction.\n\
+             See :cite:alp:`1987:nelson` without brackets.\n\
              Non-standard analysis is fun :cite:p:`{see }1987:nelson{, page 6}`.\n\n\
              .. bibliography::\n\n\
              See :footcite:t:`1987:nelson` for an introduction.\n\
@@ -1554,13 +1556,15 @@ mod citeproc_tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(roles.len(), 6);
+        assert_eq!(roles.len(), 7);
 
         let resolved = app.env.borrow().get_and_resolve_doctree("index").unwrap();
         let textual = &resolved.node(roles["cite:t"]).kind;
         assert!(matches!(textual, NodeKind::Text(value) if value == "nelson (1987)"));
         let capitalized = &resolved.node(roles["cite:ct"]).kind;
         assert!(matches!(capitalized, NodeKind::Text(value) if value == "Nelson (1987)"));
+        let unbracketed = &resolved.node(roles["cite:alp"]).kind;
+        assert!(matches!(unbracketed, NodeKind::Text(value) if value == "nelson, 1987"));
         let parenthetical = &resolved.node(roles["cite:p"]).kind;
         assert!(
             matches!(

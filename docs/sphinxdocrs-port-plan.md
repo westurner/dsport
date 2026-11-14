@@ -3074,9 +3074,9 @@ cross-document citation-cluster processing, bibliography/footnote doctree
 resolution, `bibtex_include_uncited`, and standalone `bibliography.tex` and
 `bibliography.jsonld` exports. The native extension is enabled as
 `sphinxdocrs::extensions::bibtex` and requires the `csl-citeproc` feature for
-formatting. The parser currently registers nine citation roles (`cite`,
-`cite:p`, `cite:t`, `cite:ct`, `cite:empty`, `footcite`, `footcite:p`,
-`footcite:t`, `footcite:ct`) and two directives;
+formatting. The parser currently registers ten citation roles (`cite`,
+`cite:p`, `cite:t`, `cite:ct`, `cite:alp`, `cite:empty`, `footcite`,
+`footcite:p`, `footcite:t`, `footcite:ct`) and two directives;
 this is a functioning native subset, not `sphinxcontrib-bibtex` parity. There
 is no Python adapter or `sphinxdocrs.equivalents` resolver/package path yet.
 The JSON-LD file is a standalone export, not linked-data enrichment or a
@@ -3116,9 +3116,14 @@ build regression distinguishes lowercase `:t` from capitalized `:ct` for both
 regular and footnote citations; the 8 CSL tests and 7 bibliography integration
 tests pass.
 
-**Next scoped slice:** continue H15g.1 with full-author, unbracketed, and
-label/year/author role families, each with a mode-specific output fixture. The
-rest of the H15g matrix remains pending.
+**Completed slice (2026-11-14):** `cite:alp` is registered as an unbracketed
+parenthetical citation. The resolver removes only the outer parentheses
+produced by the active CSL style; its native build regression verifies the
+visible citation text and bibliography processing.
+
+**Next scoped slice:** continue H15g.1 with `cite:alps`, full-author variants,
+and the label/year/author role families, each with a mode-specific output
+fixture. The rest of the H15g matrix remains pending.
 
 #### H15 design boundaries
 

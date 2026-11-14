@@ -1063,6 +1063,9 @@ impl BuildEnvironment {
                     value.replace_range(..first_len, &capitalized);
                 }
             }
+            if role == "cite:alp" && value.starts_with('(') && value.ends_with(')') {
+                value = value[1..value.len() - 1].to_string();
+            }
             if role == "footcite" || role.starts_with("footcite:") {
                 tree.set_kind(
                     node_id,

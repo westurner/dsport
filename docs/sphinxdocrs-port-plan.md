@@ -946,7 +946,7 @@ Ordered by dependency on `docutilsrs` writers that already exist.
 | id | builders |
 | --- | --- |
 | **H7a** | ✅ `text`, `xml`, `pseudoxml` — thin `Builder` wrappers (`builders/text.rs`, `builders/xml.rs`, `builders/pseudoxml.rs`) over two new `docutilsrs` writers (`docutilsrs::text`, `docutilsrs::to_xml`) plus the already-existing `docutilsrs::pseudo_xml`. All three are registered in `NATIVE_BUILDER_CLASSES`/`NATIVE_BUILDERS` and dispatched from `SphinxApp::build`. **Accepted deviations:** `docutilsrs::text` has no upstream analogue to mirror exactly (Sphinx's own `sphinx.writers.text.TextWriter` is a from-scratch line-wrapping/table-drawing engine, not a `docutils` writer) — it is a deliberately simplified renderer (no line wrapping, no visual table drawing, non-arabic `EnumeratedList` types still render as arabic digits); `docutilsrs::to_xml`'s pretty-printer always puts an element's open tag, children, and close tag on separate lines (even a childless leaf), rather than upstream's collapsed same-line/self-closing forms — still well-formed XML, verified by a stack-based tag-balance test |
-| **H7b** | ✅ `dirhtml` — `DirhtmlBuilder` delegates every `Builder` method to an inner `HtmlBuilder` constructed via a new `HtmlBuilder::new_dir_style()` (a `PathStyle::{Flat,Dir}` field threaded through `get_target_uri` and the (now `&self`) `write_page`), reusing the *entire* H6 theming/search-index/static-asset pipeline unchanged — only the physical file layout (`<docname>/index.html`) and `get_target_uri` differ. **Accepted deviation:** in-page navigation chrome rendered through the real theme pipeline (`theme_render.rs`'s `pathto`/`toctree` helpers) still hardcodes a flat-style `HtmlBuilder::new().get_target_uri(..)` at several call sites, so a `dirhtml` build's *files* land correctly but themed cross-document navigation links may still point at the flat naming — recorded in `PathStyle`'s own doc comment. ✅ `singlehtml` — `SinglehtmlBuilder` renders every document's fragment via `HtmlBuilder::render_fragment_from_tree`/`render_embedded_or_wrap` (both promoted to `pub(crate)` for this) and concatenates them into one `index.html` in resolved toctree order, with matching `id="document-{docname}"` anchors and Sphinx-compatible `#document-{docname}` targets (including WebMCP manifest URLs). **Accepted deviation:** no merged sidebar/TOC reflecting the concatenated structure (each fragment still renders independently), and the merged page does not yet use the real resolved theme renderer |
+| **H7b** | ✅ `dirhtml` — `DirhtmlBuilder` delegates every `Builder` method to an inner `HtmlBuilder` constructed via `HtmlBuilder::new_dir_style()` (`PathStyle::{Flat,Dir,Single}` drives URI/output behavior); xref and toctree expansion receive the active builder so directory links use the correct targets. ✅ `singlehtml` — `SinglehtmlBuilder` assembles a merged doctree by inlining child nodes at their toctree positions, emits `document-{docname}` targets, and renders once through the real theme with the embedded theme as fallback. HTML-family fixture inventory rows match for html, dirhtml, and singlehtml. **Accepted deviations:** WebMCP artifacts are native-only; wider real-theme content and same-provenance asset parity remain tracked under H11.2 |
 | **H7c** | ✅ `gettext` — `GettextBuilder` walks each document's doctree, extracting translatable text from `Title`/`Subtitle`/`Paragraph` nodes (`builders/gettext.rs`), groups occurrences by message text (deduplicated, insertion-ordered per-docname location list), and writes one combined `sphinx.pot` GNU-gettext template. **Accepted deviations:** only `Title`/`Subtitle`/`Paragraph` are extracted (not list items, definition terms, field lists, table cells, or image `alt` text — a real line-number field on `docutilsrs::doctree::Node` would be needed to emit faithful `#: docname:linenum` locations for all of these); location comments omit the line number (`#: docname` only) for the same reason; `gettext_compact`-style per-directory catalog splitting is not honoured (always one combined `.pot`); `gettext_uuid`/`gettext_location`/`gettext_auto_build` config are not read |
 | **H7d** | ✅ `epub` and `texinfo` — native project builders are registered and dispatched. EPUB packages generated XHTML, resolved navigation, cover images/pages, configured pre/post pages, CSS links, and referenced images; it uses Python `zipfile` for Sphinx-compatible ZIP ordering, DEFLATE (with stored `mimetype`), timestamps, and file attributes. The parity matrix compares extracted entries and canonicalizes only DOS timestamp fields and the generated OPF modified date; both basic and structured fixtures match. Texinfo selects configured `texinfo_documents` (or Sphinx's default root project target), writes one project `.texi`, and copies the standard `Makefile` support file. **Accepted deviations:** Texinfo's project filename/support-file membership matches the fixture, with `builders/texinfo.rs` at 100% branch coverage, but document body markup, section nodes/menus, full copying metadata, and `.info` generation remain incomplete. `changes` — ✅ `ChangesBuilder` (`builders/changes.rs`) scans every document's RST source for `.. versionadded::`/`.. versionchanged::`/`.. deprecated::` directives (`scan_version_changes`, following the H3a/H3c/H5b text-scan precedent), groups entries by version, and renders one flat `index.html` report, newest version first. **Accepted deviations:** versions sort as plain strings (reverse-lexicographic), not PEP 440/semver-aware; output is a flat per-version `<ul>`, not the module-grouped, cross-linked-to-source-docs report upstream's Jinja2 template renders |
 | **H7e** | ❌ `doctest`, `coverage`, `qthelp` / `devhelp` / `htmlhelp` / `applehelp` — **keep-python decision** |
@@ -1607,12 +1607,13 @@ deviation unless a future decision explicitly requires reproducing pickle.
 
 ##### H11.2 HTML, dirhtml, and singlehtml
 
-Status: **partial**. The path/layout plumbing and asset-tag contracts are
-implemented, and all 15 gated external-document cases pass, including the
-real Sphinx and Jinja builds. That matrix no longer reports the five residual
-failures described in earlier progress notes. H11.2 remains open for its
-stronger completion contract below: structured inventory/search parity,
-layout/artifact assertions, and same-provenance asset verification.
+Status: **partial**. HTML/dirhtml/singlehtml path-aware rendering, structured
+inventory and search-index fixture parity, and all 15 gated external-document
+cases pass, including the real Sphinx and Jinja builds. H11.2 remains open for
+the shared layout abstraction, provenance-backed asset verification, broader
+search-index semantic fixtures, and structured HTML writer/theme differences.
+WebMCP script/manifest artifacts are intentional native-only additions and
+remain visible in the parity matrix.
 
 **H11.2a: artifact contract and metadata**
 
@@ -1621,10 +1622,9 @@ layout/artifact assertions, and same-provenance asset verification.
 - Route HTML, dirhtml, and singlehtml through that contract rather than
   deriving the same values independently in builders, theme rendering, and
   static assets.
-- Make `.buildinfo` use the same normalized configuration identity and tags as
-  Python Sphinx. If the values are intentionally implementation-specific,
-  normalize only those named fields in `parity.rs` and classify the artifact as
-  metadata-only.
+- Match `.buildinfo`'s stable header/comments and normalize only the volatile
+  `config:` and `tags:` identity values. Regressions prove other lines remain
+  significant. A shared `HtmlOutputLayout` contract is still open.
 - Add direct assertions for root, nested, and synthetic pages (`search`,
   `genindex`, and `py-modindex`) in both flat and directory layouts.
 
@@ -1634,10 +1634,9 @@ layout/artifact assertions, and same-provenance asset verification.
   Pygments, and stemmer versions, before comparing bytes. Same-provenance
   assets must be byte-identical; different-provenance assets remain an H6
   deviation with the provenance recorded.
-- For `documentation_options.js`, pass the exact builder context used by
-  Python (`BUILDER`, `FILE_SUFFIX`, `LINK_SUFFIX`, `HAS_SOURCE`, and
-  `SOURCELINK_SUFFIX`) and add a fixture assertion for each HTML-family
-  builder.
+- `documentation_options.js` receives Sphinx's builder, suffix, source
+  availability, and source-link suffix context; focused tests cover the
+  html-family suffix contract.
 - Decide whether native output uses upstream stemmer/language assets or a
   native implementation. Do not mix the two in one build. The selected policy
   must cover `base-stemmer.js`, `english-stemmer.js`, and `language_data.js`
@@ -1645,34 +1644,36 @@ layout/artifact assertions, and same-provenance asset verification.
 - Make Pygments CSS style, selector prefix, and trailing newline explicit.
   Compare generated CSS after style selection so a version mismatch cannot
   masquerade as a renderer defect.
-- Remove the unconditional `sphinxdocrs.css` artifact from parity builds when
-  the active upstream theme does not produce an equivalent file; retain it
-  only for the embedded fallback theme and test that fallback separately.
+- Real-theme builds remove the embedded-only `sphinxdocrs.css`; the fallback
+  theme retains it and has separate coverage.
 - Compare normalized DOM structure for `index.html`, `guide.html`,
-  `guide/index.html`, and the search page before attempting byte parity. Align
-  doctype, `<html>` attributes, meta-tag order, whitespace, stylesheet/script
-  attributes, and title suffixes in the real theme renderer.
-- Render `search.html`/`search/index.html` through the same synthetic-page
-  context as Python, including `searchtools.js`, `language_data.js`,
-  `searchindex.js`, `pagename`, `builder`, and empty source metadata.
+  `guide/index.html`, and the search page before attempting byte parity. The
+  basic dirhtml fixture is clean; remaining basic HTML/singlehtml page diffs
+  are WebMCP script injection, while structured fixtures still expose shared
+  HTML5 writer/theme differences.
+- Synthetic search pages now use the real `search.html` theme template,
+  `searchtools.js`, `language_data.js`, `searchindex.js`, `pagename`, builder,
+  empty source metadata, no document-only viewport tag, and Sphinx's display
+  version. The remaining search-page fixture delta is its WebMCP script.
 
 **H11.2c: inventory semantics**
 
 - Decode both `objects.inv` files in the harness and compare project, version,
-  object type, name, priority, URI, and display name as structured rows.
-- Populate the native inventory from the same domain sources as the search
-  index, including standard document and label objects, with deterministic
-  sorting and duplicate handling.
-- Match target URI and anchor rules for flat, dirhtml, and singlehtml before
-  comparing compressed bytes. Only after row parity is exact should zlib
-  level/header differences be addressed.
+  object type, name, priority, URI, and display name as structured rows. The
+  basic and structured fixture rows now match for html, dirhtml, and singlehtml.
+- The native writer includes standard document and virtual label objects with
+  deterministic ordering; singlehtml document rows use `#document-*` targets.
+  The `$` anchor abbreviation is limited to URI fragments that directly end in
+  the object name, preserving merged-page IDs.
 
 **H11.2d: search-index semantics**
 
-- Compare `searchindex.js` as `Search.setIndex()` JSON rather than treating it
-  as opaque JavaScript. Preserve key order only as a final serialization
-  check.
-- Align environment-version keys, document ordering, filenames, title terms,
+- The parity harness parses `searchindex.js` as `Search.setIndex()` JSON,
+  compares semantic values before serialized bytes, and preserves array order.
+  Basic and structured fixtures match; the H14-only `sourceobjects` field
+  remains available from the general JSON API but is omitted from Sphinx's JS
+  payload.
+- Continue aligning environment-version keys, document ordering, filenames, title terms,
   body terms, stemming, stopword filtering, `alltitles`, object entries, and
   index entries with Sphinx's `IndexBuilder` inputs.
 - Add fixture assertions for repeated terms, title-only terms, nested
@@ -1756,8 +1757,9 @@ explicitly documented renderer/theme provenance deviations.
   keys for ordinary HTML-family pages.
 - Matched the basic theme's synthetic search-page sidebar context (`None`),
   preserving its empty sidebar wrapper while keeping search-page navigation
-  suppressed. The remaining fixture search-page difference is the documented
-  native-versus-upstream Sphinx version footer.
+  suppressed. Search pages use Sphinx's display version and omit the extra
+  document viewport tag; the remaining fixture search-page difference is the
+  native WebMCP script.
 - Preserved `refexplicit` while lowering parsed Sphinx cross-reference roles,
   so explicit-title `:ref:` links resolve through anonymous labels as in
   upstream. Resolved references now emit `std std-ref` (and the corresponding
@@ -1789,23 +1791,36 @@ explicitly documented renderer/theme provenance deviations.
   use the same `document-` anchor prefix, with focused unit, integration, and
   application coverage exercising the contract.
 - Corrected singlehtml's merged-page title selection to distinguish an actual
-  document title from the renderer's docname fallback. A titleless root now
-  reaches the existing `Contents` fallback, with an integration regression
-  covering the page title, merged document anchor, and body content.
+  document title from the renderer's docname fallback. Real-theme singlehtml
+  uses `html_title` even for a titleless root, while the embedded fallback keeps
+  its `Contents` fallback.
 - Preserved parsed image `width` and `height` attributes in native HTML5
   output, with a focused writer regression covering dimensioned images.
 - Corrected themed `toc` semantics to use only the current document's section
-  headings, excluding document-level toctree children; section fragment links
-  are preserved through flat and dirhtml target URI generation.
+  headings, excluding document-level toctree children; singlehtml uses the
+  global tree with `toctree-lN` classes, and root document-title entries are
+  omitted from real-theme local sidebars while child section links are kept.
 - Added structured `objects.inv` comparison in `parity.rs`. Inventory rows
   now include virtual standard labels (`genindex`, `modindex`, `py-modindex`,
   and `search`), standard-document entries, target URIs, priorities, and
   deterministic name/type ordering. Compression-only differences are no
   longer mistaken for row-semantic differences.
 - Added environment-backed search-index reuse and case-preserving tokenization
-  so native `terms` retain Sphinx's post-stemming fallback behavior. Remaining
-  H11.2 differences are real-theme page serialization, search-page markup, and
-  singlehtml's embedded renderer.
+  so native `terms` retain Sphinx's post-stemming fallback behavior. The
+  parity matrix no longer reports inventory or searchindex.js differences.
+- Removed H14 `sourceobjects` from `SearchIndex::to_js` while retaining it in
+  `to_json`, matching Sphinx's `Search.setIndex` schema without breaking the
+  native source-index consumer.
+- Routed singlehtml through the real resolved theme and assembled a merged
+  doctree by inlining child documents at their toctree nodes. The merged body
+  now has Sphinx's section nesting, document targets, wrapper, global TOC
+  classes, singlehtml title context, and root-page URI. The native WebMCP
+  script/manifest remain intentional extra artifacts.
+- Passed the active builder into doctree xref/toctree expansion so dirhtml
+  links use directory targets. The basic dirhtml parity fixture is now clean;
+  structured dirhtml still exposes writer-level markup differences.
+- Matched the stable `.buildinfo` comments and narrowed normalization to only
+  the `config:` and `tags:` hashes; unrelated buildinfo changes remain visible.
 - Preserved Sphinx's safe HTML `accesskey` attributes through a native Jinja
   global that resets per page and emits each key once, matching the upstream
   context helper. The focused renderer regression covers duplicate and empty
@@ -1822,17 +1837,12 @@ explicitly documented renderer/theme provenance deviations.
   reports a TOC-tree or root-anchor mismatch; hidden-node provenance remains an
   accepted `includehidden` limitation.
   Also matched the default `html_title` separator when `release` is empty. A
-  minimal basic-theme search-page comparison now differs only in the expected
-  native-versus-upstream `sphinx_version` footer value.
-- Closed the remaining feature-gated external HTML parity matrix: all 15
-  `tests/otherdocs.rs` tree/content/viewport cases now pass. Real-theme local
-  TOCs omit `hide-header` document-title sections like Sphinx, while ordinary
-  document-title anchors remain available; module directives now produce the
-  expected Python module-section anchors and module-index relation. The same
-  parity cycle added recursive RST include expansion, hidden toctree filtering,
-  smart-quote transformation, project copyright-year expansion, and refreshed
-  DSPort/Sphinx/Jinja output-tree snapshots for copied assets and generated
-  pages.
+  minimal basic-theme search-page comparison now differs only by the native
+  WebMCP script; its footer uses the vendored Sphinx display version.
+- The feature-gated external HTML parity matrix currently passes 11 of 15
+  `tests/otherdocs.rs` cases. Three HTML content cases and one output-tree case
+  retain the known writer/theme and generated-artifact differences. No
+  aggregate snapshot was updated; H11.2 remains partial.
 - Fixed Python extension event initialization parity: `config-inited` now
   receives the live config facade, and the app/environment facades expose the
   paths, discovered documents, and `emit_firstresult` surface needed by the

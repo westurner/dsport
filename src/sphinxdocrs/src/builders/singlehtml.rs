@@ -1,25 +1,14 @@
 //! `sphinxdocrs::builders::singlehtml` — Rust port of
 //! `sphinx.builders.singlehtml.SingleFileHTMLBuilder`.
 //!
-//! Renders every document into **one** `index.html` page, reusing
-//! `HtmlBuilder`'s fragment rendering (`render_fragment_from_tree`) and
-//! embedded-theme wrapper (`render_embedded_or_wrap`) per document, then
-//! concatenating the fragments (each wrapped in a `<div id="document-{docname}">`
-//! anchor) before wrapping the whole thing once.
+//! Renders a merged doctree into one `index.html`: included documents are
+//! inlined at their toctree nodes, with `document-{docname}` targets for
+//! cross-document navigation. The assembled tree is rendered through the
+//! resolved Sphinx theme when available, with the embedded theme as fallback.
 //!
-//! **Accepted deviation:** this does not go through the *real* resolved
-//! Sphinx theme (H6c's `theme_render::ThemeRenderer`) or generate a merged
-//! sidebar/TOC reflecting the concatenated structure — each document's
-//! fragment is rendered independently (same as `HtmlBuilder`'s embedded
-//! placeholder-theme path) and merely concatenated with an anchor `id`, so
-//! within-page navigation (`#docname`) works but there is no single merged
-//! table of contents. Document order follows [`crate::toctree`]'s resolved
-//! toctree rooted at `env.config.root_doc()` (mirroring upstream's
-//! `assemble_doctree`/`inline_all_toctrees`, which walks the toctree
-//! structure rather than sorting docnames); any document not reachable
-//! from the root toctree (orphans, or projects with no `.. toctree::` at
-//! all) is appended afterwards in lexicographic order so nothing silently
-//! disappears from the merged page.
+//! Documents not reachable from the root toctree (orphans, or projects with
+//! no `.. toctree::` at all) are appended afterwards in lexicographic order
+//! so no discovered document silently disappears from the merged page.
 //!
 //! ## What is ported
 //!
@@ -32,12 +21,13 @@
 //! | `SingleFileHTMLBuilder.assemble_doctree` + `write` | [`SinglehtmlBuilder::build_all`] | concatenates every document's rendered fragment into one `index.html` |
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use docutilsrs::doctree::{Doctree, NodeId, NodeKind};
 use docutilsrs::parse_rst_with_source;
 
-use super::html::HtmlBuilder;
+use super::html::{HtmlBuilder, PathStyle};
 use super::{BuildError, BuildResult, Builder};
 use crate::environment::BuildEnvironment;
 use crate::util_strypes::html_escape_attr;
@@ -132,6 +122,14 @@ impl Builder for SinglehtmlBuilder {
             "singlehtml",
         )
         .map_err(BuildError::Io)?;
+        let real_theme =
+            crate::theme_render::ThemeRenderer::new(env, outdir, &docnames, PathStyle::Single);
+        if real_theme.is_some() {
+            let _ = std::fs::remove_file(outdir.join("_static/sphinxdocrs.css"));
+        }
+        if real_theme.is_some() {
+            let _ = std::fs::remove_file(outdir.join("_static/sphinxdocrs.css"));
+        }
 
         let meta = crate::builders::html::PageMeta {
             project: env.config.project(),
@@ -144,10 +142,9 @@ impl Builder for SinglehtmlBuilder {
             language: env.config.language(),
         };
 
-        let mut sections: Vec<String> = Vec::with_capacity(docnames.len());
-        let mut combined_title = String::new();
-        for (i, docname) in docnames.iter().enumerate() {
-            let tree = match env.get_and_resolve_doctree(docname) {
+        let mut document_trees = HashMap::with_capacity(docnames.len());
+        for docname in &docnames {
+            let mut tree = match env.get_and_resolve_doctree(docname) {
                 Ok(tree) => tree,
                 Err(_) => {
                     let src_path = super::html::src_path_for_docname_with_suffixes(
@@ -165,31 +162,183 @@ impl Builder for SinglehtmlBuilder {
                     parse_rst_with_source(&source, docname)
                 }
             };
-            let (_title, body) = self.inner.render_fragment_from_tree(docname, &tree);
-            if i == 0 {
-                combined_title = HtmlBuilder::document_title(&tree).unwrap_or_default();
-            }
-            sections.push(format!(
-                "<div id=\"document-{}\">\n{body}\n</div>",
-                html_escape_attr(docname)
-            ));
+            env.resolve_xref_nodes_with_builder(&mut tree, docname, self);
+            let image_prefix =
+                crate::util_osutil::relative_uri(&self.get_target_uri(docname), "_images");
+            super::html::copy_image_assets(&mut tree, srcdir, outdir, docname, &image_prefix)?;
+            document_trees.insert(docname.clone(), tree);
             result.written += 1;
         }
 
-        let body = sections.join("\n");
-        let page = HtmlBuilder::render_embedded_or_wrap(
-            "index",
-            if combined_title.is_empty() {
-                "Contents"
-            } else {
-                &combined_title
-            },
-            &body,
-            &meta,
-        );
+        let root_doc = env.config.root_doc();
+        let merged_tree = assemble_singlehtml_doctree(env, &root_doc, &docnames, &document_trees);
+        let (_, body) = self
+            .inner
+            .render_fragment_from_tree(&root_doc, &merged_tree);
+        let combined_title = HtmlBuilder::document_title(&merged_tree).unwrap_or_default();
+        let title = if combined_title.is_empty() {
+            "Contents"
+        } else {
+            &combined_title
+        };
+        let page = if let Some(renderer) = &real_theme {
+            let theme_title = env.config.html_title();
+            let source_suffix =
+                super::html::src_path_for_docname_with_suffixes(srcdir, &root_doc, &env.config)?
+                    .extension()
+                    .map(|extension| format!(".{}", extension.to_string_lossy()))
+                    .unwrap_or_else(|| ".rst".into());
+            match renderer.render_page(
+                env,
+                &root_doc,
+                &theme_title,
+                &body,
+                &source_suffix,
+                Some(&merged_tree),
+            ) {
+                Ok(page) => page,
+                Err(error) => {
+                    eprintln!(
+                        "Warning: real singlehtml theme render failed: {error}; using embedded fallback"
+                    );
+                    HtmlBuilder::render_embedded_or_wrap("index", title, &body, &meta)
+                }
+            }
+        } else {
+            HtmlBuilder::render_embedded_or_wrap("index", title, &body, &meta)
+        };
         write_index(outdir, &page)?;
-        super::html::write_objects_inventory(&self.inner, env, outdir, &docnames)?;
+        super::html::write_objects_inventory(self, env, outdir, &docnames)?;
         Ok(result)
+    }
+}
+
+fn assemble_singlehtml_doctree(
+    env: &BuildEnvironment,
+    root_doc: &str,
+    docnames: &[String],
+    documents: &HashMap<String, Doctree>,
+) -> Doctree {
+    let mut merged = Doctree::new_document(root_doc);
+    let merged_root = merged.root();
+    let mut included = HashSet::new();
+    if let Some(root) = documents.get(root_doc) {
+        merged.node_mut(merged_root).kind = root.node(root.root()).kind.clone();
+        included.insert(root_doc.to_string());
+        let source = InlineSource {
+            docname: root_doc,
+            tree: root,
+        };
+        for &child in &root.node(root.root()).children.clone() {
+            inline_node_into(
+                env,
+                &mut merged,
+                merged_root,
+                &source,
+                child,
+                documents,
+                &mut included,
+            );
+        }
+    }
+    for docname in docnames {
+        inline_document(
+            env,
+            &mut merged,
+            merged_root,
+            docname,
+            documents,
+            &mut included,
+        );
+    }
+    merged
+}
+
+struct InlineSource<'a> {
+    docname: &'a str,
+    tree: &'a Doctree,
+}
+
+fn inline_document(
+    env: &BuildEnvironment,
+    merged: &mut Doctree,
+    parent: NodeId,
+    docname: &str,
+    documents: &HashMap<String, Doctree>,
+    included: &mut HashSet<String>,
+) {
+    if !included.insert(docname.to_string()) {
+        return;
+    }
+    let Some(source) = documents.get(docname) else {
+        return;
+    };
+    merged.append(
+        parent,
+        NodeKind::Target {
+            ids: format!("document-{docname}"),
+            names: String::new(),
+            refuri: String::new(),
+            anonymous: false,
+        },
+    );
+    let source = InlineSource {
+        docname,
+        tree: source,
+    };
+    for child in source.tree.node(source.tree.root()).children.clone() {
+        inline_node_into(env, merged, parent, &source, child, documents, included);
+    }
+}
+
+fn inline_node_into(
+    env: &BuildEnvironment,
+    merged: &mut Doctree,
+    parent: NodeId,
+    source: &InlineSource<'_>,
+    source_id: NodeId,
+    documents: &HashMap<String, Doctree>,
+    included: &mut HashSet<String>,
+) {
+    let node = source.tree.node(source_id);
+    if let NodeKind::Toctree {
+        caption,
+        entries,
+        hidden,
+        ..
+    } = &node.kind
+    {
+        if !hidden && !entries.is_empty() {
+            let wrapper = merged.append(
+                parent,
+                NodeKind::Container {
+                    classes: "toctree-wrapper compound".into(),
+                },
+            );
+            if let Some(caption) = caption {
+                let caption_node = merged.append(wrapper, NodeKind::Caption);
+                let caption_text = merged.append(
+                    caption_node,
+                    NodeKind::Inline {
+                        classes: "caption-text".into(),
+                    },
+                );
+                merged.append(caption_text, NodeKind::Text(caption.clone()));
+            }
+            for entry in entries {
+                let included_doc = crate::environment::docname_join(source.docname, entry);
+                inline_document(env, merged, wrapper, &included_doc, documents, included);
+            }
+        }
+        return;
+    }
+
+    let cloned = merged.append(parent, node.kind.clone());
+    if let Some(line) = node.line {
+        merged.set_line(cloned, line);
+    }
+    for child in node.children.clone() {
+        inline_node_into(env, merged, cloned, source, child, documents, included);
     }
 }
 
@@ -324,14 +473,13 @@ mod tests {
         assert!(out.path().join("index.html").exists());
         assert!(!out.path().join("about.html").exists());
         let combined = std::fs::read_to_string(out.path().join("index.html")).unwrap();
-        assert!(combined.contains("id=\"document-index\""));
+        assert!(!combined.contains("id=\"document-index\""));
         assert!(combined.contains("id=\"document-about\""));
         assert!(combined.contains("Homepage."));
         assert!(combined.contains("Some info."));
         // `index` renders before `about` in document order.
         assert!(
-            combined.find("id=\"document-index\"").unwrap()
-                < combined.find("id=\"document-about\"").unwrap()
+            combined.find("Homepage.").unwrap() < combined.find("id=\"document-about\"").unwrap()
         );
     }
 
@@ -343,7 +491,7 @@ mod tests {
         let out = TempDir::new().unwrap();
         std::fs::write(
             src.path().join("index.rst"),
-            "Welcome\n=======\n\n.. toctree::\n\n   zzz\n   aaa\n",
+            "Welcome\n=======\n\nRoot content.\n\n.. toctree::\n\n   zzz\n   aaa\n",
         )
         .unwrap();
         std::fs::write(src.path().join("aaa.rst"), "Aaa\n===\n\nAaa content.\n").unwrap();
@@ -362,10 +510,10 @@ mod tests {
             .unwrap();
         assert_eq!(result.written, 3);
         let combined = std::fs::read_to_string(out.path().join("index.html")).unwrap();
-        let idx_index = combined.find("id=\"document-index\"").unwrap();
+        let idx_root_content = combined.find("Root content.").unwrap();
         let idx_zzz = combined.find("id=\"document-zzz\"").unwrap();
         let idx_aaa = combined.find("id=\"document-aaa\"").unwrap();
-        assert!(idx_index < idx_zzz, "root doc must render first");
+        assert!(idx_root_content < idx_zzz, "root doc must render first");
         assert!(
             idx_zzz < idx_aaa,
             "toctree order (zzz before aaa) must win over alphabetical order"

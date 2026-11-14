@@ -497,7 +497,7 @@ pub fn dumps(project: &str, version: &str, entries: &[InventoryEntry]) -> std::i
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(9));
     for entry in entries {
         let uri = match entry.uri.strip_suffix(&entry.name) {
-            Some(prefix) if prefix.contains('#') => format!("{prefix}$"),
+            Some(prefix) if prefix.ends_with('#') => format!("{prefix}$"),
             _ => entry.uri.clone(),
         };
         let display_name = if entry.display_name == entry.name {
@@ -552,6 +552,43 @@ mod tests {
     use crate::config::{ConfigVal, SphinxConfig};
     use std::collections::HashMap;
     use tempfile::TempDir;
+
+    #[test]
+    fn inventory_writer_only_abbreviates_direct_fragment_anchors() {
+        use std::io::Read as _;
+
+        let entries = [
+            InventoryEntry {
+                name: "guide".into(),
+                item_type: "std:doc".into(),
+                priority: -1,
+                uri: "#document-guide".into(),
+                display_name: "Guide".into(),
+            },
+            InventoryEntry {
+                name: "intro".into(),
+                item_type: "std:label".into(),
+                priority: -1,
+                uri: "guide/index.html#intro".into(),
+                display_name: "Intro".into(),
+            },
+        ];
+        let bytes = dumps("Project", "1.0", &entries).unwrap();
+        let compressed = bytes.splitn(5, |byte| *byte == b'\n').nth(4).unwrap();
+        let mut body = String::new();
+        flate2::read::ZlibDecoder::new(compressed)
+            .read_to_string(&mut body)
+            .unwrap();
+
+        assert!(
+            body.contains("guide std:doc -1 #document-guide Guide"),
+            "{body}"
+        );
+        assert!(
+            body.contains("intro std:label -1 guide/index.html#$ Intro"),
+            "{body}"
+        );
+    }
 
     fn config_with_intersphinx(mapping: Vec<(String, ConfigVal)>) -> SphinxConfig {
         let mut raw = HashMap::new();

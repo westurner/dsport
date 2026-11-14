@@ -720,9 +720,17 @@ impl SearchIndex {
     ///
     /// The JS runtime expects `Search.setIndex(<json>)`.
     pub fn to_js(&self) -> String {
-        let json = serde_json::to_string(&sort_json_keys(self.to_json()))
+        let json = serde_json::to_string(&sort_json_keys(self.to_sphinx_json()))
             .expect("search index JSON serialization cannot fail");
         format!("Search.setIndex({json})")
+    }
+
+    fn to_sphinx_json(&self) -> serde_json::Value {
+        let mut json = self.to_json();
+        if let Some(fields) = json.as_object_mut() {
+            fields.remove("sourceobjects");
+        }
+        json
     }
 
     /// Build a search index by feeding every `.rst` document under `srcdir`
@@ -914,6 +922,8 @@ The widget handles rendering and layout.\n";
         let inner = &js["Search.setIndex(".len()..js.len() - 1];
         let v: serde_json::Value = serde_json::from_str(inner).unwrap();
         assert!(v["docnames"].is_array());
+        assert!(idx.to_json().get("sourceobjects").is_some());
+        assert!(v.get("sourceobjects").is_none());
     }
 
     #[test]

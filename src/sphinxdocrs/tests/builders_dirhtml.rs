@@ -78,6 +78,52 @@ fn dirhtml_build_all_reuses_the_full_html_pipeline() {
 }
 
 #[test]
+fn dirhtml_toctree_links_use_directory_target_uris() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "Index\n=====\n\n.. toctree::\n\n   guide\n",
+    )
+    .unwrap();
+    std::fs::write(src.path().join("guide.rst"), "Guide\n=====\n\nBody.\n").unwrap();
+    let project = EnvProject::new(src.path(), &[(".rst", "restructuredtext")]);
+    let mut env = BuildEnvironment::new(
+        SphinxConfig::new_defaults(),
+        project,
+        src.path(),
+        doctrees.path(),
+    );
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+
+    DirhtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    let index = std::fs::read_to_string(out.path().join("index.html")).unwrap();
+    assert!(index.contains("href=\"guide/\""), "{index}");
+    assert!(!index.contains("href=\"guide.html\""), "{index}");
+
+    let inventory =
+        sphinxdocrs::intersphinx::Inventory::load_file(out.path().join("objects.inv"), "").unwrap();
+    for (name, uri, display) in [
+        ("genindex", "genindex/", "Index"),
+        ("modindex", "py-modindex/", "Module Index"),
+        ("py-modindex", "py-modindex/", "Python Module Index"),
+        ("search", "search/", "Search Page"),
+    ] {
+        let label = inventory.get("std:label", name).expect("standard label");
+        assert_eq!(label.uri, uri, "{name}");
+        assert_eq!(label.display_name, display, "{name}");
+    }
+    let guide = inventory.get("std:doc", "guide").expect("guide doc entry");
+    assert_eq!(guide.uri, "guide/");
+    assert_eq!(guide.display_name, "Guide");
+}
+
+#[test]
 fn sphinx_app_build_dispatches_to_dirhtml() {
     let src = TempDir::new().unwrap();
     write_project(src.path());

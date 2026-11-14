@@ -1024,8 +1024,12 @@ fn console_progress_done(message: &str) -> String {
     format!("{}... {}", tr_console(message), tr_console("done"))
 }
 
-fn display_sphinx_version() -> String {
+pub(crate) fn display_sphinx_version() -> String {
     Python::attach(|py| -> PyResult<String> {
+        crate::config::add_vendored_import_paths(
+            py,
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
+        )?;
         py.import("sphinx")?
             .getattr("__display_version__")?
             .extract()

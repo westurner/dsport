@@ -324,8 +324,13 @@ fn normalize_parity_file(path: &str, source_root: &str, bytes: &[u8]) -> Vec<u8>
         regex::Regex::new(r"\b\d+\.\d+\.\d+[A-Za-z0-9.+-]*/[0-9a-f]{7,40}\b").unwrap();
 
     if path == ".buildinfo" {
-        return b"# Sphinx build info version 1\nconfig: <CONFIG_HASH>\ntags: <TAGS_HASH>\n"
-            .to_vec();
+        let config = regex::Regex::new(r"(?m)^config:.*$").unwrap();
+        let tags = regex::Regex::new(r"(?m)^tags:.*$").unwrap();
+        let normalized = config.replace_all(text, "config: <CONFIG_ID>");
+        return tags
+            .replace_all(&normalized, "tags: <TAGS_ID>")
+            .into_owned()
+            .into_bytes();
     }
 
     let normalized = timestamp.replace_all(text, "<TIMESTAMP>");
@@ -593,6 +598,36 @@ fn parity_normalizer_canonicalizes_volatile_sphinx_and_gettext_metadata() {
         normalize_parity_file("index.html", "SOURCE_ROOT_NOT_PRESENT", old_html),
         normalize_parity_file("index.html", "SOURCE_ROOT_NOT_PRESENT", new_html)
     );
+
+    let buildinfo = |config: &str, tags: &str| {
+        format!(
+            "# Sphinx build info version 1\n# Stable comment.\nconfig: {config}\ntags: {tags}\n"
+        )
+    };
+    assert_eq!(
+        normalize_parity_file(
+            ".buildinfo",
+            "SOURCE_ROOT_NOT_PRESENT",
+            buildinfo("py-hash", "py-tags").as_bytes(),
+        ),
+        normalize_parity_file(
+            ".buildinfo",
+            "SOURCE_ROOT_NOT_PRESENT",
+            buildinfo("rs-hash", "rs-tags").as_bytes(),
+        )
+    );
+    assert_ne!(
+        normalize_parity_file(
+            ".buildinfo",
+            "SOURCE_ROOT_NOT_PRESENT",
+            buildinfo("py-hash", "py-tags").as_bytes(),
+        ),
+        normalize_parity_file(
+            ".buildinfo",
+            "SOURCE_ROOT_NOT_PRESENT",
+            b"# Sphinx build info version 1\n# Changed comment.\nconfig: rs-hash\ntags: rs-tags\n",
+        )
+    );
 }
 
 fn stable_digest(bytes: &[u8]) -> String {
@@ -657,6 +692,25 @@ fn inventory_rows(bytes: &[u8]) -> Option<Vec<(String, String, i32, String, Stri
     Some(rows)
 }
 
+fn search_index_json(bytes: &[u8]) -> Option<serde_json::Value> {
+    let text = std::str::from_utf8(bytes).ok()?.trim();
+    let json = text.strip_prefix("Search.setIndex(")?.strip_suffix(')')?;
+    serde_json::from_str(json).ok()
+}
+
+#[test]
+fn search_index_comparison_uses_json_semantics_and_preserves_array_order() {
+    let first = br#"Search.setIndex({"terms":{"alpha":0,"beta":1},"docnames":["index","guide"]})"#;
+    let reordered_keys =
+        br#"Search.setIndex({"docnames":["index","guide"],"terms":{"beta":1,"alpha":0}})"#;
+    let reordered_docs =
+        br#"Search.setIndex({"docnames":["guide","index"],"terms":{"alpha":0,"beta":1}})"#;
+
+    assert_eq!(search_index_json(first), search_index_json(reordered_keys));
+    assert_ne!(search_index_json(first), search_index_json(reordered_docs));
+    assert!(search_index_json(b"not Search.setIndex JSON").is_none());
+}
+
 /// Current, intentionally bounded parity deviations. These labels keep the
 /// aggregate matrix useful while each builder family is brought to parity;
 /// the raw path and byte diff remain in the report so regressions still change
@@ -709,6 +763,30 @@ fn diff_parity_trees(
         match (python.get(path), rust.get(path)) {
             (Some(_), None) => diff.push(record(format!("missing_in_rust: {path}"))),
             (None, Some(_)) => diff.push(record(format!("rust_only: {path}"))),
+            (Some(python_bytes), Some(rust_bytes)) if path == "searchindex.js" => {
+                match (
+                    search_index_json(python_bytes),
+                    search_index_json(rust_bytes),
+                ) {
+                    (Some(python_json), Some(rust_json)) if python_json == rust_json => {
+                        if python_bytes != rust_bytes {
+                            diff.push(record(format!(
+                                "searchindex_serialization_changed: {path} python={} rust={} {}",
+                                stable_digest(python_bytes),
+                                stable_digest(rust_bytes),
+                                first_difference(python_bytes, rust_bytes),
+                            )));
+                        }
+                    }
+                    (Some(_), Some(_)) => diff.push(record(format!(
+                        "searchindex_semantics_changed: {path} python={} rust={} {}",
+                        stable_digest(python_bytes),
+                        stable_digest(rust_bytes),
+                        first_difference(python_bytes, rust_bytes),
+                    ))),
+                    _ => diff.push(record(format!("searchindex_parse_failed: {path}"))),
+                }
+            }
             (Some(_), Some(_)) if builder == "epub" && path.ends_with(".epub") => {
                 let (Some(python_entries), Some(rust_entries)) = (
                     epub_entries(python.get(path).unwrap()),
@@ -769,11 +847,34 @@ fn diff_parity_trees(
                     && !(path == "objects.inv"
                         && inventory_rows(python_bytes) == inventory_rows(rust_bytes)) =>
             {
+                let detail = if path == "objects.inv" {
+                    match (inventory_rows(python_bytes), inventory_rows(rust_bytes)) {
+                        (Some(python_rows), Some(rust_rows)) => {
+                            let python_rows: std::collections::BTreeSet<_> =
+                                python_rows.into_iter().collect();
+                            let rust_rows: std::collections::BTreeSet<_> =
+                                rust_rows.into_iter().collect();
+                            let missing_in_rust = python_rows
+                                .difference(&rust_rows)
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            let rust_only = rust_rows
+                                .difference(&python_rows)
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            format!(
+                                "inventory_rows missing_in_rust={missing_in_rust:?} rust_only={rust_only:?}"
+                            )
+                        }
+                        _ => "inventory_rows_parse_failed".to_string(),
+                    }
+                } else {
+                    first_difference(python_bytes, rust_bytes)
+                };
                 diff.push(record(format!(
-                    "changed: {path} python={} rust={} {}",
+                    "changed: {path} python={} rust={} {detail}",
                     stable_digest(python_bytes),
-                    stable_digest(rust_bytes),
-                    first_difference(python_bytes, rust_bytes),
+                    stable_digest(rust_bytes)
                 )))
             }
             (Some(_), Some(_)) => {}

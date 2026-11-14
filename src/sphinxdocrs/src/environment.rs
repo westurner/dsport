@@ -2441,8 +2441,16 @@ impl BuildEnvironment {
     }
 
     pub fn resolve_xref_nodes(&self, tree: &mut Doctree, docname: &str) {
-        use crate::builders::Builder as _;
-        use crate::builders::html::HtmlBuilder;
+        let builder = crate::builders::html::HtmlBuilder::new();
+        self.resolve_xref_nodes_with_builder(tree, docname, &builder);
+    }
+
+    pub(crate) fn resolve_xref_nodes_with_builder<B: crate::builders::Builder>(
+        &self,
+        tree: &mut Doctree,
+        docname: &str,
+        builder: &B,
+    ) {
         use crate::domains::Domain as _;
         use crate::util_osutil::relative_uri;
 
@@ -2501,7 +2509,6 @@ impl BuildEnvironment {
             None
         }
 
-        let builder = HtmlBuilder::new();
         let base_uri = builder.get_target_uri(docname);
 
         // A single forward pass over the arena (`0..nodes_len()`) rather
@@ -2851,10 +2858,16 @@ impl BuildEnvironment {
     /// structure the way upstream's `TocTree.resolve` does for
     /// `maxdepth` levels beyond 1 when no nested toctree exists.
     pub fn resolve_toctree_nodes(&self, tree: &mut Doctree, docname: &str) {
-        use crate::builders::Builder as _;
-        use crate::builders::html::HtmlBuilder;
+        let builder = crate::builders::html::HtmlBuilder::new();
+        self.resolve_toctree_nodes_with_builder(tree, docname, &builder);
+    }
 
-        let builder = HtmlBuilder::new();
+    pub(crate) fn resolve_toctree_nodes_with_builder<B: crate::builders::Builder>(
+        &self,
+        tree: &mut Doctree,
+        docname: &str,
+        builder: &B,
+    ) {
         let base_uri = builder.get_target_uri(docname);
 
         for id in 0..tree.nodes_len() {
@@ -2906,7 +2919,7 @@ impl BuildEnvironment {
                     );
                     tree.append(span, NodeKind::Text(caption));
                 }
-                Self::append_toc_entries(tree, id, &resolved, &builder, &base_uri);
+                Self::append_toc_entries(builder, tree, id, &resolved, &base_uri);
             }
         }
     }
@@ -2918,13 +2931,12 @@ impl BuildEnvironment {
     /// mirrors the `<li><a href="...">Title</a><ul>...</ul></li>` shape
     /// `resolve_toctree_nodes` doc comment describes.
     fn append_toc_entries(
+        builder: &impl crate::builders::Builder,
         tree: &mut Doctree,
         parent: NodeId,
         entries: &[crate::toctree::TocEntry],
-        builder: &crate::builders::html::HtmlBuilder,
         base_uri: &str,
     ) {
-        use crate::builders::Builder as _;
         use crate::util_osutil::relative_uri;
 
         let list = tree.append(parent, NodeKind::BulletList { bullet: '*' });
@@ -2962,7 +2974,7 @@ impl BuildEnvironment {
             );
             Self::append_toc_title(tree, refnode, &entry.title);
             if !entry.children.is_empty() {
-                Self::append_toc_entries(tree, item, &entry.children, builder, base_uri);
+                Self::append_toc_entries(builder, tree, item, &entry.children, base_uri);
             }
         }
     }
@@ -7761,7 +7773,7 @@ chapters:
             },
         ];
 
-        BuildEnvironment::append_toc_entries(&mut tree, root, &entries, &builder, "index.html");
+        BuildEnvironment::append_toc_entries(&builder, &mut tree, root, &entries, "index.html");
 
         let references = (0..tree.nodes_len())
             .filter(|&id| matches!(tree.node(id).kind, NodeKind::Reference { .. }))

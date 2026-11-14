@@ -44,8 +44,8 @@
 //! - `meta` (per-page docinfo) is not modeled. The default docutils viewport
 //!   metatag is supplied through `metatags`; themes that declare their own
 //!   viewport therefore receive both upstream viewport tags.
-//! - `sphinx_version` uses the configured project `release`, since the native
-//!   builder has no separate Python Sphinx runtime version to report.
+//! - `sphinx_version` comes from the vendored Sphinx runtime when available,
+//!   matching the value exposed by upstream theme contexts.
 //! - A theme building `titlesuffix`-style values via Jinja string
 //!   concatenation (`" — "|safe + docstitle|e`) needs the `+` operator to
 //!   propagate markup-safety the way Python MarkupSafe's `Markup.__add__`
@@ -84,6 +84,8 @@ struct PageState {
     current_docname: Mutex<String>,
     /// Every docname discovered/read this build — backs `hasdoc(name)`.
     all_docs: HashSet<String>,
+    /// Root document used by singlehtml's root-page link.
+    root_doc: String,
     /// Whether a `genindex` page will be generated — backs
     /// `hasdoc('genindex')`.
     use_index: bool,
@@ -124,7 +126,34 @@ impl PageState {
     /// rendered.
     fn current_target_uri(&self) -> String {
         let docname = self.current_docname.lock().unwrap().clone();
-        target_uri(self.path_style, &docname)
+        state_target_uri(self, &docname)
+    }
+}
+
+fn state_target_uri(state: &PageState, docname: &str) -> String {
+    if state.path_style == PathStyle::Single {
+        let (docname, fragment) = docname.split_once('#').unwrap_or((docname, ""));
+        if docname == state.root_doc {
+            return if fragment.is_empty() {
+                String::new()
+            } else {
+                format!("#{fragment}")
+            };
+        }
+        let uri = if state.all_docs.contains(docname) {
+            format!("#document-{docname}")
+        } else {
+            format!("{docname}.html")
+        };
+        if fragment.is_empty() {
+            uri
+        } else if uri.ends_with(".html") {
+            format!("{uri}#{fragment}")
+        } else {
+            uri
+        }
+    } else {
+        target_uri(state.path_style, docname)
     }
 }
 
@@ -134,6 +163,7 @@ fn target_uri(path_style: PathStyle, docname: &str) -> String {
     let uri = match path_style {
         PathStyle::Flat => HtmlBuilder::new().get_target_uri(docname),
         PathStyle::Dir => HtmlBuilder::new_dir_style().get_target_uri(docname),
+        PathStyle::Single => format!("#document-{docname}"),
     };
     if !has_fragment {
         uri
@@ -145,6 +175,7 @@ fn target_uri(path_style: PathStyle, docname: &str) -> String {
 fn content_root(path_style: PathStyle, docname: &str) -> String {
     let depth = match path_style {
         PathStyle::Flat => docname.split('/').count().saturating_sub(1),
+        PathStyle::Single => 0,
         PathStyle::Dir if docname == "index" => 0,
         PathStyle::Dir if docname.ends_with("/index") => {
             docname.split('/').count().saturating_sub(1)
@@ -206,10 +237,14 @@ impl Object for PathtoGlobal {
         let target_uri = if resource {
             otheruri
         } else {
-            target_uri(self.0.path_style, &otheruri)
+            state_target_uri(&self.0, &otheruri)
         };
         let base_uri = self.0.current_target_uri();
-        let uri = relative_uri(&base_uri, &target_uri);
+        let uri = if self.0.path_style == PathStyle::Single {
+            target_uri
+        } else {
+            relative_uri(&base_uri, &target_uri)
+        };
         let uri = if uri.is_empty() { "#".to_string() } else { uri };
         // Mark the URI as already-safe markup: real templates apply this
         // through `{{ pathto(...)|e }}` (see e.g. `basic/layout.html`), and
@@ -944,11 +979,10 @@ fn local_toc_from_doctree(
                     _ => None,
                 })
                 .unwrap_or(false);
-            if hidden_root
-                && !entries.is_empty() {
-                    let root_entry = entries.remove(0);
-                    entries = root_entry.children;
-                }
+            if hidden_root && !entries.is_empty() {
+                let root_entry = entries.remove(0);
+                entries = root_entry.children;
+            }
             entries
         })
         .unwrap_or_default()
@@ -1223,6 +1257,7 @@ impl ThemeRenderer {
         let state = Arc::new(PageState {
             current_docname: Mutex::new(String::new()),
             all_docs,
+            root_doc: env.config.root_doc(),
             use_index: env.config.html_use_index(),
             toc_entries: toc_entries.clone(),
             toc_groups,
@@ -1266,15 +1301,10 @@ impl ThemeRenderer {
             &toc_entries,
             path_style,
         );
-        let default_metatags = if matches!(theme_name.as_str(), "alabaster" | "sphinx13") {
-            r#"<meta name="viewport" content="width=device-width, initial-scale=1" />
-"#
-        } else if theme_name == "jinja" {
+        let default_metatags = if theme_name == "jinja" {
             ""
         } else {
-            r#"
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-    "#
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n"
         }
         .into();
 
@@ -1305,17 +1335,21 @@ impl ThemeRenderer {
         *self.state.current_docname.lock().unwrap() = docname.to_string();
         self.state.accesskeys.lock().unwrap().clear();
 
+        let singlehtml = self.state.path_style == PathStyle::Single;
         let mut ctx = self.global_ctx.clone();
         ctx.insert("pagename".into(), docname.into());
         ctx.insert("current_page_name".into(), docname.into());
         ctx.insert("title".into(), title.into());
+        if singlehtml {
+            ctx.insert("docstitle".into(), serde_json::Value::Null);
+        }
         ctx.insert("body".into(), body_html.into());
         ctx.insert("meta".into(), serde_json::Value::Null);
         ctx.insert(
             "pageurl".into(),
             canonical_page_url(
                 &env.config.html_baseurl(),
-                &target_uri(self.state.path_style, docname),
+                &state_target_uri(&self.state, docname),
             )
             .map(serde_json::Value::from)
             .unwrap_or(serde_json::Value::Null),
@@ -1326,33 +1360,55 @@ impl ThemeRenderer {
         let relation = self.relations.get(docname).cloned().unwrap_or_default();
         let titles = &env.titles;
         let base_uri = self.state.current_target_uri();
-        let link_of = |d: &str| relative_uri(&base_uri, &target_uri(self.state.path_style, d));
+        let link_of = |d: &str| {
+            let target = state_target_uri(&self.state, d);
+            if singlehtml {
+                target
+            } else {
+                relative_uri(&base_uri, &target)
+            }
+        };
         let title_of = |d: &str| titles.get(d).cloned().unwrap_or_else(|| d.to_string());
         ctx.insert(
             "next".to_string(),
-            relation
-                .next
-                .as_deref()
-                .map(|d| serde_json::json!({"link": link_of(d), "title": title_of(d)}))
-                .unwrap_or(serde_json::Value::Null),
+            if singlehtml {
+                serde_json::Value::Null
+            } else {
+                relation
+                    .next
+                    .as_deref()
+                    .map(|d| serde_json::json!({"link": link_of(d), "title": title_of(d)}))
+                    .unwrap_or(serde_json::Value::Null)
+            },
         );
         ctx.insert(
             "prev".to_string(),
-            relation
-                .prev
-                .as_deref()
-                .map(|d| serde_json::json!({"link": link_of(d), "title": title_of(d)}))
-                .unwrap_or(serde_json::Value::Null),
+            if singlehtml {
+                serde_json::Value::Null
+            } else {
+                relation
+                    .prev
+                    .as_deref()
+                    .map(|d| serde_json::json!({"link": link_of(d), "title": title_of(d)}))
+                    .unwrap_or(serde_json::Value::Null)
+            },
         );
-        let mut rellinks = self
-            .global_ctx
-            .get("rellinks")
-            .and_then(serde_json::Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        append_relation_rellinks(&mut rellinks, &relation, title_of);
+        let mut rellinks = if singlehtml {
+            Vec::new()
+        } else {
+            self.global_ctx
+                .get("rellinks")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        };
+        if !singlehtml {
+            append_relation_rellinks(&mut rellinks, &relation, title_of);
+        }
         ctx.insert("rellinks".into(), rellinks.into());
-        let parents: Vec<serde_json::Value> = if docname.starts_with("_modules/") {
+        let parents: Vec<serde_json::Value> = if singlehtml {
+            Vec::new()
+        } else if docname.starts_with("_modules/") {
             vec![serde_json::json!({
                 "link": link_of("_modules/index"),
                 "title": "Module code"
@@ -1365,13 +1421,35 @@ impl ThemeRenderer {
         };
         ctx.insert("parents".into(), parents.into());
 
-        let toc_entries_for_doc = local_toc_from_doctree(doctree, docname);
+        let mut toc_entries_for_doc = if singlehtml {
+            self.state.toc_entries.clone()
+        } else {
+            local_toc_from_doctree(doctree, docname)
+        };
+        if !singlehtml
+            && toc_entries_for_doc
+                .first()
+                .is_some_and(|entry| entry.docname == format!("{docname}#"))
+        {
+            toc_entries_for_doc = toc_entries_for_doc.remove(0).children;
+        }
         // Local TOC: section headings from this document only. The global
         // `toctree()` remains backed by the environment's document tree.
-        ctx.insert(
-            "toc".into(),
-            render_toc_html(&toc_entries_for_doc, &base_uri, self.state.path_style).into(),
-        );
+        let toc_html = if singlehtml {
+            render_toc_html_with_options(
+                &toc_entries_for_doc,
+                &base_uri,
+                self.state.path_style,
+                0,
+                false,
+                false,
+                true,
+                docname,
+            )
+        } else {
+            render_toc_html(&toc_entries_for_doc, &base_uri, self.state.path_style)
+        };
+        ctx.insert("toc".into(), toc_html.into());
         ctx.insert(
             "display_toc".into(),
             (!toc_entries_for_doc.is_empty()).into(),
@@ -1385,7 +1463,7 @@ impl ThemeRenderer {
             resolve_sidebars(docname, &self.html_sidebars, &self.default_sidebars).into(),
         );
 
-        let sourcename = if docname.starts_with("_modules/") {
+        let sourcename = if singlehtml || docname.starts_with("_modules/") {
             String::new()
         } else if env.config.html_copy_source() {
             format!(
@@ -1462,12 +1540,12 @@ impl ThemeRenderer {
             "pageurl".into(),
             canonical_page_url(
                 &env.config.html_baseurl(),
-                &target_uri(self.state.path_style, "search"),
+                &state_target_uri(&self.state, "search"),
             )
             .map(serde_json::Value::from)
             .unwrap_or(serde_json::Value::Null),
         );
-        ctx.insert("metatags".into(), self.default_metatags.clone().into());
+        ctx.insert("metatags".into(), String::new().into());
         ctx.insert("has_maths_elements".into(), false.into());
         ctx.insert("next".into(), serde_json::Value::Null);
         ctx.insert("prev".into(), serde_json::Value::Null);
@@ -1665,11 +1743,15 @@ fn build_global_context(
     let (builder, file_suffix, link_suffix) = match path_style {
         PathStyle::Flat => ("html", ".html", ".html"),
         PathStyle::Dir => ("dirhtml", ".html", ".html"),
+        PathStyle::Single => ("singlehtml", ".html", ".html"),
     };
     ctx.insert("file_suffix".into(), file_suffix.into());
     ctx.insert("link_suffix".into(), link_suffix.into());
     ctx.insert("language".into(), config.language().into());
-    ctx.insert("sphinx_version".into(), config.release().into());
+    ctx.insert(
+        "sphinx_version".into(),
+        crate::application::display_sphinx_version().into(),
+    );
     ctx.insert("builder".into(), builder.into());
     ctx.insert("html5_doctype".into(), true.into());
     ctx.insert("html_tag".into(), serde_json::Value::Null);
@@ -2213,6 +2295,43 @@ mod tests {
     }
 
     #[test]
+    fn real_theme_local_toc_omits_document_title() {
+        let src = tempfile::TempDir::new().unwrap();
+        let doctrees = tempfile::TempDir::new().unwrap();
+        let outdir = tempfile::TempDir::new().unwrap();
+        let mut env = make_test_env(
+            src.path().to_str().unwrap(),
+            doctrees.path().to_str().unwrap(),
+        );
+        env.config
+            .set("html_theme", crate::config::ConfigVal::Str("basic".into()));
+        let docnames = vec!["guide".to_string()];
+        let renderer = ThemeRenderer::new(&env, outdir.path(), &docnames, PathStyle::Flat)
+            .expect("basic theme should resolve");
+        let doctree = docutilsrs::parse_rst_with_options(
+            "======\nSphinx\n======\n\nGet started\n-----------\n\nText.\n",
+            "guide",
+            docutilsrs::TitlePromotion::Preserve,
+        );
+        let html = renderer
+            .render_page(
+                &env,
+                "guide",
+                "Sphinx",
+                "<p>Text</p>",
+                ".rst",
+                Some(&doctree),
+            )
+            .expect("basic page should render");
+
+        assert!(
+            html.contains("href=\"#get-started\">Get started</a>"),
+            "{html}"
+        );
+        assert!(!html.contains("href=\"#\">Sphinx</a>"), "{html}");
+    }
+
+    #[test]
     fn collect_relations_prev_next_parent() {
         let entries = vec![
             TocEntry {
@@ -2439,6 +2558,7 @@ mod tests {
         let state = PageState {
             current_docname: Mutex::new("guide/page".into()),
             all_docs: HashSet::new(),
+            root_doc: "index".into(),
             use_index: true,
             toc_entries: Vec::new(),
             toc_groups: Vec::new(),
@@ -2679,10 +2799,12 @@ mod tests {
 
     #[test]
     fn real_theme_keeps_default_metatags_alongside_theme_viewport() {
-        let env = make_test_env(
+        let mut env = make_test_env(
             "/tmp/theme-render-viewport-src",
             "/tmp/theme-render-viewport-doctrees",
         );
+        env.config
+            .set("html_theme", crate::config::ConfigVal::Str("basic".into()));
         let outdir = tempfile::TempDir::new().unwrap();
         let renderer = ThemeRenderer::new(
             &env,
@@ -2697,6 +2819,25 @@ mod tests {
 
         assert!(html.contains("initial-scale=1.0"));
         assert!(html.contains("initial-scale=1\" />"));
+        assert!(
+            html.contains("initial-scale=1.0\" /><meta name=\"viewport\""),
+            "{}",
+            html
+        );
+        assert!(
+            html.contains("initial-scale=1\" />\n\n    <title>"),
+            "{}",
+            html
+        );
+
+        let search = renderer
+            .render_search_page(&env)
+            .expect("basic search page should render");
+        assert!(search.contains("initial-scale=1.0\" />"), "{search}");
+        assert!(
+            !search.contains("initial-scale=1.0\" /><meta name=\"viewport\""),
+            "{search}"
+        );
     }
 
     fn make_test_env(srcdir: &str, doctreedir: &str) -> crate::environment::BuildEnvironment {
@@ -2753,7 +2894,7 @@ mod tests {
     }
 
     #[test]
-    fn build_global_context_uses_configured_release_as_sphinx_version() {
+    fn build_global_context_uses_sphinx_display_version() {
         let env = make_test_env(
             "/tmp/theme-render-test-version-src",
             "/tmp/theme-render-test-version-doctrees",
@@ -2762,7 +2903,9 @@ mod tests {
         let ctx =
             build_global_context(&env, outdir, &Default::default(), &[], &[], PathStyle::Flat);
 
-        assert_eq!(ctx["sphinx_version"], env.config.release());
+        let sphinx_version = crate::application::display_sphinx_version();
+        assert_eq!(ctx["sphinx_version"], sphinx_version);
+        assert!(sphinx_version.starts_with("9.1.1"), "{sphinx_version}");
     }
 
     /// Regression test: real `DirectoryHTMLBuilder` never overrides

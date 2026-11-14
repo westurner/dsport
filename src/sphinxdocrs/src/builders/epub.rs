@@ -801,7 +801,10 @@ fn stage_epub_files(outdir: &Path, entries: &[(String, Vec<u8>)]) -> Result<(), 
     }
     std::fs::write(
         outdir.join(".buildinfo"),
-        "# Sphinx build info version 1\nconfig: sphinxdocrs\ntags: head\n",
+        "# Sphinx build info version 1\n\
+         # This file records the configuration used when building these files. When it is not found, a full rebuild will be done.\n\
+         config: sphinxdocrs\n\
+         tags: head\n",
     )?;
     Ok(())
 }

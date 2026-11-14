@@ -90,6 +90,8 @@ pub(crate) enum PathStyle {
     Flat,
     /// `<docname>/index.html` (`index` docname itself stays at the root).
     Dir,
+    /// One merged page with one anchor per source document.
+    Single,
 }
 
 impl HtmlBuilder {
@@ -356,7 +358,7 @@ impl HtmlBuilder {
     /// `DirectoryHTMLBuilder.get_outfilename`).
     fn write_page(&self, docname: &str, page: &str, outdir: &Path) -> Result<(), BuildError> {
         let rel: PathBuf = match self.path_style {
-            PathStyle::Flat => format!("{docname}.html").split('/').collect(),
+            PathStyle::Flat | PathStyle::Single => format!("{docname}.html").split('/').collect(),
             PathStyle::Dir => {
                 if docname == "index" || docname.ends_with("/index") {
                     format!("{docname}.html").split('/').collect()
@@ -562,6 +564,7 @@ impl Builder for HtmlBuilder {
                     format!("{}/", percent_encode_path(docname))
                 }
             }
+            PathStyle::Single => format!("#document-{}", percent_encode_path(docname)),
         }
     }
 
@@ -649,7 +652,7 @@ impl Builder for HtmlBuilder {
             let _ = std::fs::remove_file(outdir.join("_static/sphinxdocrs.css"));
             if let Ok(search_page) = renderer.render_search_page(env) {
                 let search_path = match self.path_style {
-                    PathStyle::Flat => outdir.join("search.html"),
+                    PathStyle::Flat | PathStyle::Single => outdir.join("search.html"),
                     PathStyle::Dir => outdir.join("search/index.html"),
                 };
                 if let Some(parent) = search_path.parent() {
@@ -703,11 +706,11 @@ impl Builder for HtmlBuilder {
             // Keep the resolution call as an idempotent compatibility fallback
             // for callers that bypass `read_all`; normal builds already have
             // persisted references from the post-read phase.
-            env.resolve_xref_nodes(&mut tree, docname);
+            env.resolve_xref_nodes_with_builder(&mut tree, docname, self);
             // Expand `.. toctree::` placeholders into their real
             // caption + nested bullet-list-of-links subtree (see
             // `BuildEnvironment::resolve_toctree_nodes`).
-            env.resolve_toctree_nodes(&mut tree, docname);
+            env.resolve_toctree_nodes_with_builder(&mut tree, docname, self);
             if viewcode_enabled {
                 self.attach_viewcode_links(env, &mut tree, docname, &mut viewcode_modules);
             }
@@ -1069,8 +1072,7 @@ pub(crate) fn write_static_files(
 
     // .buildinfo — sphinx build fingerprint written by StandaloneHTMLBuilder.
     let buildinfo = "# Sphinx build info version 1\n\
-                     # This file records the configuration used when building these files.\n\
-                     # When it is not found, a full rebuild will be done.\n\
+                     # This file records the configuration used when building these files. When it is not found, a full rebuild will be done.\n\
                      config: sphinxdocrs\n\
                      tags: head\n";
     std::fs::write(outdir.join(".buildinfo"), buildinfo.as_bytes())?;
@@ -1094,7 +1096,7 @@ pub(crate) fn write_static_files(
             "",
         );
         let search_path = match path_style {
-            PathStyle::Flat => outdir.join("search.html"),
+            PathStyle::Flat | PathStyle::Single => outdir.join("search.html"),
             PathStyle::Dir => outdir.join("search/index.html"),
         };
         if let Some(parent) = search_path.parent() {
@@ -1108,8 +1110,8 @@ pub(crate) fn write_static_files(
     Ok(())
 }
 
-pub(crate) fn write_objects_inventory(
-    builder: &HtmlBuilder,
+pub(crate) fn write_objects_inventory<B: Builder>(
+    builder: &B,
     env: &BuildEnvironment,
     outdir: &Path,
     docnames: &[String],
@@ -1122,7 +1124,7 @@ pub(crate) fn write_objects_inventory(
             item_type: format!("{domain}:{}", object.obj_type),
             priority: 0,
             uri: {
-                let target = builder.get_target_uri(&object.docname);
+                let target = inventory_target_uri(builder, &object.docname);
                 if object.anchor.is_empty() {
                     target
                 } else {
@@ -1132,12 +1134,26 @@ pub(crate) fn write_objects_inventory(
             display_name: object.name,
         })
         .collect::<Vec<_>>();
+    for (name, target, display_name) in [
+        ("genindex", "genindex", "Index"),
+        ("modindex", "py-modindex", "Module Index"),
+        ("py-modindex", "py-modindex", "Python Module Index"),
+        ("search", "search", "Search Page"),
+    ] {
+        entries.push(crate::intersphinx::InventoryEntry {
+            name: name.to_string(),
+            item_type: "std:label".to_string(),
+            priority: -1,
+            uri: builder.get_target_uri(target),
+            display_name: display_name.to_string(),
+        });
+    }
     for docname in docnames {
         entries.push(crate::intersphinx::InventoryEntry {
             name: docname.clone(),
             item_type: "std:doc".to_string(),
-            priority: 0,
-            uri: builder.get_target_uri(docname),
+            priority: -1,
+            uri: inventory_target_uri(builder, docname),
             display_name: env.titles.get(docname).cloned().unwrap_or_default(),
         });
     }
@@ -1148,6 +1164,14 @@ pub(crate) fn write_objects_inventory(
         crate::intersphinx::dumps(&env.config.project(), &env.config.version(), &entries)?;
     std::fs::write(outdir.join("objects.inv"), content)?;
     Ok(())
+}
+
+fn inventory_target_uri(builder: &impl Builder, docname: &str) -> String {
+    if builder.name() == "singlehtml" {
+        format!("#document-{docname}")
+    } else {
+        builder.get_target_uri(docname)
+    }
 }
 
 /// Copy every directory listed in `html_static_path` into `outdir/_static/`.

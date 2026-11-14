@@ -126,9 +126,21 @@ fn test_inline_literal_ending_with_backtick() {
     let html = render_html(src);
 
     assert!(
-        html.contains("<code>:py:func:`io.open`</code>"),
+        html.contains(
+            "<code class=\"docutils literal notranslate\"><span class=\"pre\">:py:func:`io.open`</span></code>"
+        ),
         "HTML output: {html}"
     );
-    assert!(html.contains("<code>:ref:</code>"), "HTML output: {html}");
-    assert!(html.contains("<code>:doc:</code>"), "HTML output: {html}");
+    assert!(
+        html.contains(
+            "<code class=\"docutils literal notranslate\"><span class=\"pre\">:ref:</span></code>"
+        ),
+        "HTML output: {html}"
+    );
+    assert!(
+        html.contains(
+            "<code class=\"docutils literal notranslate\"><span class=\"pre\">:doc:</span></code>"
+        ),
+        "HTML output: {html}"
+    );
 }

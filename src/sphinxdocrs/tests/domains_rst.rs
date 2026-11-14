@@ -68,6 +68,31 @@ fn resolve_rst_dir_xref_across_documents() {
 }
 
 #[test]
+fn resolved_rst_dir_xref_uses_literal_code_markup() {
+    let (_src, _dt, mut env) = make_disk_env(&[
+        (
+            "usage/directives",
+            ".. rst:directive:: toctree\n\n   Build a table of contents.\n",
+        ),
+        ("index", "Use :rst:dir:`toctree` here.\n"),
+    ]);
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+    let mut tree = env.get_doctree("index").unwrap();
+    env.resolve_xref_nodes(&mut tree, "index");
+
+    let html = docutilsrs::html5(
+        &tree,
+        &docutilsrs::cli::Html5Options::default(),
+        &docutilsrs::cli::CommonOptions::default(),
+    );
+    assert!(html.contains(
+        "<code class=\"docutils literal notranslate\"><span class=\"pre\">toctree</span></code>"
+    ));
+    assert!(html.contains("href=\"usage/directives.html#"));
+}
+
+#[test]
 fn resolve_rst_role_xref() {
     let (_src, _dt, mut env) = make_disk_env(&[
         (

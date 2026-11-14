@@ -184,6 +184,31 @@ fn build_doc_literal_block() {
     assert!(html.contains("code here") || html.contains("<pre>"));
 }
 
+#[test]
+fn build_all_applies_highlight_language_to_implicit_literal_blocks() {
+    let src = TempDir::new().unwrap();
+    let out = TempDir::new().unwrap();
+    let doctrees = TempDir::new().unwrap();
+    std::fs::write(
+        src.path().join("index.rst"),
+        "Title\n=====\n\n.. highlight:: rst\n\nDirective syntax::\n\n   .. note::\n      body\n",
+    )
+    .unwrap();
+    let mut env = make_env(src.path(), doctrees.path());
+    env.find_files().unwrap();
+    env.read_all().unwrap();
+
+    HtmlBuilder::new()
+        .build_all(src.path(), out.path(), &env)
+        .unwrap();
+
+    let html = read_html(out.path(), "index");
+    assert!(
+        html.contains("<div class=\"highlight-rst notranslate\"><div class=\"highlight\"><pre>"),
+        "HTML output: {html}"
+    );
+}
+
 // ── build_doc — output path ───────────────────────────────────────────────────
 
 #[test]

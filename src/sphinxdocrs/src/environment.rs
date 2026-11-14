@@ -1993,7 +1993,7 @@ impl BuildEnvironment {
                 if !next.is_empty() {
                     language = next.to_string();
                 }
-                output.push(String::new());
+                output.push(line.to_string());
                 changed = true;
                 continue;
             }
@@ -2807,13 +2807,18 @@ impl BuildEnvironment {
                     },
                 },
             );
-            let span = tree.append(
-                id,
-                NodeKind::Inline {
-                    classes: resolved_class,
-                },
-            );
-            tree.append(span, NodeKind::Text(title));
+            if domain == "rst" {
+                let literal = tree.append(id, NodeKind::Literal);
+                tree.append(literal, NodeKind::Text(title));
+            } else {
+                let span = tree.append(
+                    id,
+                    NodeKind::Inline {
+                        classes: resolved_class,
+                    },
+                );
+                tree.append(span, NodeKind::Text(title));
+            }
         }
         self.resolve_signature_references(tree, docname);
     }

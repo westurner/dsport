@@ -1733,6 +1733,10 @@ explicitly documented renderer/theme provenance deviations.
 - Resolved dotted Pygments style declarations such as
   `alabaster.support.Alabaster`, producing byte-identical Alabaster
   `pygments.css` for the current external fixture.
+- Matched the upstream HTML5 literal wrapper for resolved RST-domain cross
+  references and applied `.. highlight::` state to following implicit literal
+  blocks, including the `highlight-rst` wrapper. Focused regressions cover the
+  cross-document `:rst:dir:` link and a built RST page; H11.2 remains partial.
 - Added Alabaster's page-context version value and normalized only the native
   WebMCP script and `-sphinxdocrs` footer marker in strict HTML content parity.
 - Passed the active HTML-family path style into local TOC rendering, preserving

@@ -117,6 +117,7 @@ fn parse_rst_impl(
         current_line: 0,
         show_docutils_links,
         current_program: None,
+        current_highlight_language: String::new(),
         inline_ref_sites: Vec::new(),
     };
     for block in blocks {
@@ -411,6 +412,7 @@ pub struct ParseCtx {
     pub(crate) figure_count: u32,
     pub(crate) show_docutils_links: bool,
     pub(crate) current_program: Option<String>,
+    pub(crate) current_highlight_language: String,
     /// Source line of the paragraph currently being emitted, or 0 when
     /// unknown. Used to stamp `line=` on system messages for unresolved
     /// references discovered during inline parsing.
@@ -494,6 +496,7 @@ pub enum Block {
         name: String,
         text: String,
     },
+    Highlight(String),
     Comment(String),
     SystemMessage {
         level: u32,
@@ -2329,7 +2332,7 @@ fn parse_directive(
             let lang = args.trim().to_string();
             *i_ref += 1;
             let _inner = consume_indented_text(lines, i_ref, base_indent);
-            Block::Comment(format!("highlight: {}", lang))
+            Block::Highlight(lang)
         }
         "index" => {
             let spec = args.trim().to_string();
@@ -3578,6 +3581,7 @@ mod rich_paragraph_tests {
             show_docutils_links: true,
             inline_ref_sites: Vec::new(),
             current_program: None,
+            current_highlight_language: String::new(),
         };
         emit_block(
             &mut tree,
@@ -3624,6 +3628,7 @@ mod rich_paragraph_tests {
             show_docutils_links: true,
             inline_ref_sites: Vec::new(),
             current_program: None,
+            current_highlight_language: String::new(),
         };
         emit_block(
             &mut tree,
@@ -3777,10 +3782,17 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             }
             Block::LiteralBlock {
                 text,
-                classes,
+                mut classes,
                 caption,
-                tokens,
+                mut tokens,
             } => {
+                if classes.is_empty()
+                    && !ctx.current_highlight_language.is_empty()
+                    && ctx.current_highlight_language != "none"
+                {
+                    classes = format!("code {}", ctx.current_highlight_language);
+                    tokens = crate::code_block::tokenize(&ctx.current_highlight_language, &text);
+                }
                 let ids = caption.as_ref().map(|_| ctx.next_figure_id());
                 let lb = tree.append(
                     parent,
@@ -3914,6 +3926,9 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
             Block::Comment(text) => {
                 let c = tree.append(parent, NodeKind::Comment);
                 tree.append(c, NodeKind::Text(text));
+            }
+            Block::Highlight(language) => {
+                ctx.current_highlight_language = language;
             }
             Block::SystemMessage {
                 level,

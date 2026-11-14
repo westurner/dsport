@@ -670,7 +670,6 @@ otherdocs-sphinx-diff: otherdocs-sphinx-py otherdocs-sphinx-rs
 	set -x; ls -al otherdocs-sphinx-py-rs.diff*
 	exit $$status
 
-
 otherdocs-sphinx-diff-bytes: otherdocs-sphinx-byte-diff
 
 otherdocs-sphinx-byte-diff:
@@ -690,7 +689,7 @@ otherdocs-sphinx-text-diff:
 DIFFSTAT = cargo run --quiet --bin diffstat -- --file
 
 otherdocs-sphinx-text-diffstat:
-	${DIFFSTAT} otherdocs-sphinx-py-rs-text.diff --print-counts-to-stderr
+	${DIFFSTAT} otherdocs-sphinx-py-rs-text.diff --format jsonlines --show-line-ranges #--show-actual-diffs
 
 
 otherdocs-sphinx-py:

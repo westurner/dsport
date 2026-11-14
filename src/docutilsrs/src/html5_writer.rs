@@ -198,23 +198,36 @@ fn emit_enter(
         NodeKind::Title => {
             let level = heading_level(tree, id);
             let tag = format!("h{level}");
-            let close = tree
-                .node(id)
-                .parent
-                .and_then(|parent| match &tree.node(parent).kind {
-                    NodeKind::Section { ids, .. } if !ids.is_empty() => Some(format!(
-                        "<a class=\"headerlink\" href=\"#{}\" title=\"Link to this heading\">¶</a></{tag}>\n",
-                        escape(ids)
-                    )),
-                    _ => None,
-                })
-                .unwrap_or_else(|| format!("</{tag}>\n"));
+            let close = if options.no_section_self_link.is_some() {
+                format!("</{tag}>\n")
+            } else {
+                tree.node(id)
+                    .parent
+                    .and_then(|parent| match &tree.node(parent).kind {
+                        NodeKind::Section { ids, .. } if !ids.is_empty() => Some(format!(
+                            "<a class=\"headerlink\" href=\"#{}\" title=\"Link to this heading\">¶</a></{tag}>\n",
+                            escape(ids)
+                        )),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| format!("</{tag}>\n"))
+            };
             let _ = write!(out, "<{tag}>");
             schedule(node, close, tasks);
         }
         NodeKind::Subtitle { .. } => wrap_with_class(node, "p", "subtitle", out, tasks),
         NodeKind::Transition => out.push_str("<hr class=\"docutils\" />\n"),
-        NodeKind::Paragraph => wrap_block(node, "p", out, tasks),
+        NodeKind::Paragraph => {
+            if options.epub_compat
+                && node
+                    .parent
+                    .is_some_and(|parent| matches!(tree.node(parent).kind, NodeKind::ListItem))
+            {
+                wrap(node, "p", out, tasks);
+            } else {
+                wrap_block(node, "p", out, tasks);
+            }
+        }
         NodeKind::Emphasis => wrap(node, "em", out, tasks),
         NodeKind::Strong => wrap(node, "strong", out, tasks),
         NodeKind::Literal => {
@@ -278,8 +291,13 @@ fn emit_enter(
                     out,
                     "<div class=\"highlight-{language} notranslate\"><div class=\"highlight\"><pre>"
                 );
+                if options.epub_compat {
+                    out.push_str("<span></span>");
+                }
                 let mut close = if line_numbers {
                     "</pre></div></div></td></tr></table>".to_string()
+                } else if options.epub_compat {
+                    "\n</pre></div>\n</div>\n".to_string()
                 } else {
                     "</pre></div></div>".to_string()
                 };
@@ -299,6 +317,13 @@ fn emit_enter(
             if toctree_level(tree, id).is_some() {
                 out.push_str("<ul>\n");
                 schedule(node, "</ul>\n", tasks);
+            } else if options.epub_compat {
+                if is_compactable(tree, id, options, false) {
+                    out.push_str("<ul class=\"simple\">\n");
+                } else {
+                    out.push_str("<ul>\n");
+                }
+                schedule(node, "</ul>\n", tasks);
             } else if is_compactable(tree, id, options, false) {
                 wrap_with_class(node, "ul", "simple", out, tasks)
             } else {
@@ -315,6 +340,9 @@ fn emit_enter(
         NodeKind::ListItem => {
             if let Some(level) = toctree_level(tree, id) {
                 let _ = write!(out, "<li class=\"toctree-l{level}\">");
+                schedule(node, "</li>\n", tasks);
+            } else if options.epub_compat {
+                out.push_str("<li>");
                 schedule(node, "</li>\n", tasks);
             } else {
                 wrap(node, "li", out, tasks);
@@ -746,6 +774,35 @@ fn emit_enter(
         NodeKind::Keyboard => wrap_with_class(node, "kbd", "kbd", out, tasks),
         NodeKind::Rubric => wrap_with_class(node, "p", "rubric", out, tasks),
         NodeKind::VersionModified { kind, version } => {
+            if options.epub_compat
+                && let Some(paragraph_id) = node
+                    .children
+                    .first()
+                    .copied()
+                    .filter(|child| matches!(tree.node(*child).kind, NodeKind::Paragraph))
+            {
+                let prefix = match *kind {
+                    "added" => "Added in version",
+                    "changed" => "Changed in version",
+                    "deprecated" => "Deprecated since version",
+                    _ => "Modified in version",
+                };
+                let _ = write!(
+                    out,
+                    "<div class=\"version{kind}\">\n<p><span class=\"versionmodified {kind}\">{} {}: </span>",
+                    prefix,
+                    escape(version)
+                );
+                tasks.push(Task::Append("</div>\n".to_string()));
+                for &child in node.children.iter().skip(1).rev() {
+                    tasks.push(Task::Enter(child));
+                }
+                tasks.push(Task::Append("</p>\n".to_string()));
+                for &child in tree.node(paragraph_id).children.iter().rev() {
+                    tasks.push(Task::Enter(child));
+                }
+                return;
+            }
             let _ = write!(
                 out,
                 "<div class=\"versionmodified {kind}\"><span class=\"versionmodified\">"

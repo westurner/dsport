@@ -467,24 +467,50 @@ fn build_render_context(
     // and singlehtml alike: real `DirectoryHTMLBuilder` never overrides
     // `link_suffix`, only `get_target_uri`/`get_output_path` (verified
     // against a real `sphinx-build -b dirhtml` run's `documentation_options.js`).
-    let file_suffix = if builder == "json" { ".fjson" } else { ".html" };
-    let link_suffix = ".html";
+    let file_suffix = match builder {
+        "json" => ".fjson",
+        "epub" => ".xhtml",
+        _ => ".html",
+    };
+    let link_suffix = if builder == "epub" { ".xhtml" } else { ".html" };
     ctx.insert("builder".into(), Value::String(builder.into()));
     ctx.insert("file_suffix".into(), Value::String(file_suffix.into()));
     ctx.insert("link_suffix".into(), Value::String(link_suffix.into()));
+    if builder == "epub" {
+        let writing_mode = config
+            .get("epub_writing_mode")
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_else(|| "horizontal".into());
+        let writing_mode = match writing_mode.as_str() {
+            "vertical" => "vertical-rl",
+            _ => "horizontal-tb",
+        };
+        ctx.insert(
+            "theme_writing_mode".into(),
+            Value::String(writing_mode.into()),
+        );
+    }
     ctx.insert(
         "sourcelink_suffix".into(),
         Value::String(config.html_sourcelink_suffix()),
     );
     ctx.insert("has_source".into(), Value::Bool(config.html_copy_source()));
     ctx.insert("show_search_summary".into(), Value::Bool(true));
+    let (stop_words, stemming_code) = if builder == "epub" {
+        (String::new(), String::new())
+    } else {
+        (
+            theme.search_language_stop_words.clone(),
+            theme.search_language_stemming_code.clone(),
+        )
+    };
     ctx.insert(
         "search_language_stop_words".into(),
-        Value::String(theme.search_language_stop_words.clone()),
+        Value::String(stop_words),
     );
     ctx.insert(
         "search_language_stemming_code".into(),
-        Value::String(theme.search_language_stemming_code.clone()),
+        Value::String(stemming_code),
     );
     ctx
 }
@@ -515,7 +541,28 @@ pub fn copy_theme_static_files_for_builder(
     confdir: &Path,
     builder: &str,
 ) -> std::io::Result<()> {
-    let theme_name = config.html_theme();
+    copy_theme_static_files_for_theme(config, outdir, confdir, &config.html_theme(), builder)
+}
+
+/// Copy theme assets for a builder whose theme setting is independent of
+/// `html_theme`, such as the EPUB builder's `epub_theme`.
+pub fn copy_theme_static_files_for_named_theme(
+    config: &SphinxConfig,
+    outdir: &Path,
+    confdir: &Path,
+    theme_name: &str,
+    builder: &str,
+) -> std::io::Result<()> {
+    copy_theme_static_files_for_theme(config, outdir, confdir, theme_name, builder)
+}
+
+fn copy_theme_static_files_for_theme(
+    config: &SphinxConfig,
+    outdir: &Path,
+    confdir: &Path,
+    theme_name: &str,
+    builder: &str,
+) -> std::io::Result<()> {
     let theme_path_dirs = resolve_theme_path_dirs(confdir, &config.html_theme_path());
     let pygments_style = config
         .get("pygments_style")
@@ -546,13 +593,14 @@ pub fn copy_theme_static_files_for_builder(
         copy_static_dir(dir, &static_out, &renderer, &ctx)?;
     }
 
-    // Stemmer JS: base-stemmer.js is always needed; english-stemmer.js covers
-    // the default English search language.
-    let search_dir = Path::new(&theme.search_js_dir);
-    for js in ["base-stemmer.js", "english-stemmer.js"] {
-        let from = search_dir.join(js);
-        if from.is_file() {
-            let _ = std::fs::copy(&from, static_out.join(js));
+    // Stemmer assets are used by the HTML search runtime, not by EPUB output.
+    if builder != "epub" {
+        let search_dir = Path::new(&theme.search_js_dir);
+        for js in ["base-stemmer.js", "english-stemmer.js"] {
+            let from = search_dir.join(js);
+            if from.is_file() {
+                let _ = std::fs::copy(&from, static_out.join(js));
+            }
         }
     }
 
@@ -663,10 +711,22 @@ fn copy_static_dir(
             });
             std::fs::write(dst.join(out_name), rendered.as_bytes())?;
         } else {
-            std::fs::copy(&from, dst.join(&name))?;
+            copy_file_preserving_modified_time(&from, &dst.join(&name))?;
         }
     }
     Ok(())
+}
+
+pub(crate) fn copy_file_preserving_modified_time(
+    source: &Path,
+    destination: &Path,
+) -> std::io::Result<()> {
+    let modified = std::fs::metadata(source)?.modified()?;
+    std::fs::write(destination, std::fs::read(source)?)?;
+    std::fs::File::options()
+        .write(true)
+        .open(destination)?
+        .set_times(std::fs::FileTimes::new().set_modified(modified))
 }
 
 /// Thin wrapper around a `jinja2rs::Environment` for rendering theme asset
@@ -777,5 +837,24 @@ mod tests {
                 "builder `{builder}` should report link_suffix = .html"
             );
         }
+    }
+
+    #[test]
+    fn epub_context_omits_html_search_stemmer_data() {
+        let cfg = SphinxConfig::new_defaults();
+        let mut theme = ResolvedTheme::default();
+        theme.search_language_stop_words = "[\"the\"]".into();
+        theme.search_language_stemming_code = "window.Stemmer = EnglishStemmer;".into();
+
+        let ctx = build_render_context(&cfg, &theme, "epub");
+
+        assert_eq!(
+            ctx["search_language_stop_words"],
+            serde_json::Value::String(String::new())
+        );
+        assert_eq!(
+            ctx["search_language_stemming_code"],
+            serde_json::Value::String(String::new())
+        );
     }
 }

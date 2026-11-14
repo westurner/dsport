@@ -71,6 +71,26 @@ fn test_html5_external_links_have_external_class() {
 }
 
 #[test]
+fn test_html5_no_section_self_link_suppresses_heading_anchor() {
+    let tree = parse_rst("Document\n========\n\nIntro.\n\nSection\n-------\n\nBody.\n");
+    let default_html = html5(&tree, &Html5Options::default(), &CommonOptions::default());
+    assert!(
+        default_html.contains("class=\"headerlink\""),
+        "{default_html}"
+    );
+
+    let html = html5(
+        &tree,
+        &Html5Options {
+            no_section_self_link: Some(String::new()),
+            ..Html5Options::default()
+        },
+        &CommonOptions::default(),
+    );
+    assert!(!html.contains("class=\"headerlink\""), "{html}");
+}
+
+#[test]
 fn test_html5_math_output_mathjax() {
     let rst = r#"
 :math:`x^2`

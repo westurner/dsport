@@ -1,8 +1,11 @@
-//! EPUB3 builder with deterministic, stored ZIP entries.
+//! EPUB3 builder with Sphinx-compatible ZIP packaging.
 
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
-use docutilsrs::{Doctree, html5, parse_rst_with_source, zip_writer::ZipBuilder};
+use docutilsrs::{Doctree, html5, parse_rst_with_source};
+use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 
 use super::{BuildError, BuildResult, Builder};
 use crate::config::ConfigVal;
@@ -19,14 +22,42 @@ impl EpubBuilder {
 
     fn document_xhtml(docname: &str, tree: &Doctree) -> String {
         let body = html5(
-            &tree,
-            &docutilsrs::cli::Html5Options::default(),
+            tree,
+            &docutilsrs::cli::Html5Options {
+                epub_compat: true,
+                no_section_self_link: Some(String::new()),
+                ..docutilsrs::cli::Html5Options::default()
+            },
             &docutilsrs::cli::CommonOptions::default(),
         );
         let title = Self::title_text(tree).unwrap_or_else(|| docname.to_string());
+        Self::page_xhtml(&title, &format!("  {body}"))
+    }
+
+    fn resolve_epub_links(env: &BuildEnvironment, docname: &str, tree: &mut Doctree) {
+        env.resolve_xref_nodes(tree, docname);
+        env.resolve_toctree_nodes(tree, docname);
+        for node_id in 0..tree.nodes_len() {
+            let docutilsrs::NodeKind::Reference { refuri, .. } = &mut tree.node_mut(node_id).kind
+            else {
+                continue;
+            };
+            *refuri = epub_target_uri(refuri);
+        }
+    }
+
+    fn genindex_xhtml() -> String {
+        Self::page_xhtml(
+            "Index",
+            "<h1 id=\"index\">Index</h1>\n\n<div class=\"genindex-jumpbox\">\n \n</div>\n",
+        )
+    }
+
+    fn page_xhtml(title: &str, body: &str) -> String {
         format!(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>{}</title></head><body>{body}</body></html>\n",
-            xml_escape(&title)
+            "<!DOCTYPE html>\n\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n  <head>\n    <meta charset=\"utf-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" /><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n\n    <title>{}</title>\n    <link rel=\"stylesheet\" type=\"text/css\" href=\"_static/pygments.css\" />\n    <link rel=\"stylesheet\" type=\"text/css\" href=\"_static/epub.css\" /> \n  </head><body>\n\n    <div class=\"document\">\n      <div class=\"documentwrapper\">\n          <div class=\"body\" role=\"main\">\n            \n{}\n\n            <div class=\"clearer\"></div>\n          </div>\n      </div>\n      <div class=\"clearer\"></div>\n    </div>\n  </body>\n</html>",
+            xml_escape(title),
+            body,
         )
     }
 
@@ -55,7 +86,46 @@ impl EpubBuilder {
     }
 
     fn archive(
+        entries: &[(String, Vec<u8>)],
+        stagedir: Option<&Path>,
+    ) -> Result<Vec<u8>, BuildError> {
+        Python::attach(|py| -> PyResult<Vec<u8>> {
+            let zipfile = PyModule::import(py, "zipfile")?;
+            let io = PyModule::import(py, "io")?;
+            let buffer = io.getattr("BytesIO")?.call0()?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs.set_item("compression", zipfile.getattr("ZIP_DEFLATED")?)?;
+            let archive = zipfile
+                .getattr("ZipFile")?
+                .call((buffer.clone(), "w"), Some(&kwargs))?;
+            let zip_info = zipfile.getattr("ZipInfo")?;
+            for (name, contents) in entries {
+                let info = if let Some(stagedir) = stagedir {
+                    let path = stagedir.join(name);
+                    let path = path.to_str().ok_or_else(|| {
+                        pyo3::exceptions::PyValueError::new_err("non-UTF8 EPUB path")
+                    })?;
+                    zip_info.call_method1("from_file", (path, name))?
+                } else {
+                    zip_info.call1((name,))?
+                };
+                let compression = if name == "mimetype" {
+                    zipfile.getattr("ZIP_STORED")?
+                } else {
+                    zipfile.getattr("ZIP_DEFLATED")?
+                };
+                info.setattr("compress_type", compression)?;
+                archive.call_method1("writestr", (info, PyBytes::new(py, contents)))?;
+            }
+            archive.call_method0("close")?;
+            buffer.call_method0("getvalue")?.extract::<Vec<u8>>()
+        })
+        .map_err(|error| BuildError::Other(format!("failed to create EPUB archive: {error}")))
+    }
+
+    fn package_entries(
         documents: &[(String, String, String)],
+        extra_pages: &[(String, String)],
         title: &str,
         author: &str,
         contributor: &str,
@@ -67,57 +137,139 @@ impl EpubBuilder {
         rights: &str,
         page_progression_direction: &str,
         guides: &[(String, String, String)],
-    ) -> Vec<u8> {
-        let mut zip = ZipBuilder::new();
-        zip.add_file("mimetype", b"application/epub+zip");
-        zip.add_file("META-INF/container.xml", br#"<?xml version="1.0" encoding="utf-8"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#);
-        let manifest: String = documents.iter().enumerate().map(|(index, (docname, _, _))| format!("<item id=\"doc{index}\" href=\"{}.xhtml\" media-type=\"application/xhtml+xml\"/>", xml_escape(docname))).collect();
-        let spine: String = (0..documents.len())
-            .map(|index| format!("<itemref idref=\"doc{index}\"/>"))
+        assets: &[(String, Vec<u8>)],
+        epub_version: &str,
+        scheme: &str,
+        project_version: &str,
+        modified_date: &str,
+        ibook_scroll_axis: &str,
+    ) -> Vec<(String, Vec<u8>)> {
+        let mut pages: Vec<(String, Vec<u8>)> = documents
+            .iter()
+            .map(|(docname, content, _)| (format!("{docname}.xhtml"), content.as_bytes().to_vec()))
+            .chain(
+                extra_pages
+                    .iter()
+                    .map(|(filename, content)| (filename.clone(), content.as_bytes().to_vec())),
+            )
+            .collect();
+        pages.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut page_ids = BTreeMap::new();
+        let mut manifest_items = String::new();
+        for (index, (filename, _)) in pages.iter().enumerate() {
+            let id = format!("epub-{index}");
+            page_ids.insert(filename.clone(), id.clone());
+            manifest_items.push_str(&format!(
+                "    <item id=\"{id}\" href=\"{}\" media-type=\"application/xhtml+xml\" />\n",
+                xml_escape(filename)
+            ));
+        }
+        for (index, (path, _)) in assets.iter().enumerate() {
+            manifest_items.push_str(&format!(
+                "    <item id=\"epub-{}\" href=\"{}\" media-type=\"{}\" />\n",
+                pages.len() + index,
+                xml_escape(path),
+                epub_media_type(path).unwrap()
+            ));
+        }
+        let spine: String = documents
+            .iter()
+            .filter_map(|(docname, _, _)| page_ids.get(&format!("{docname}.xhtml")))
+            .chain(
+                extra_pages
+                    .iter()
+                    .filter_map(|(filename, _)| page_ids.get(filename)),
+            )
+            .map(|id| format!("    <itemref idref=\"{id}\" />\n"))
             .collect();
         let guide: String = guides
             .iter()
             .map(|(kind, uri, title)| {
                 format!(
-                    "<reference type=\"{}\" title=\"{}\" href=\"{}\" />",
+                    "    <reference type=\"{}\" title=\"{}\" href=\"{}\" />\n",
                     xml_escape(kind),
                     xml_escape(title),
                     xml_escape(uri)
                 )
             })
             .collect();
+        let identifier = if epub_version == "3.1" {
+            format!(
+                "<dc:identifier id=\"{}\" opf:scheme=\"{}\">{}</dc:identifier>",
+                xml_escape(uid),
+                xml_escape(scheme),
+                xml_escape(identifier)
+            )
+        } else {
+            format!(
+                "<dc:identifier id=\"{}\">{}</dc:identifier>",
+                xml_escape(uid),
+                xml_escape(identifier)
+            )
+        };
         let opf = format!(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"{}\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"{}\">{}</dc:identifier><dc:title>{}</dc:title><dc:creator>{}</dc:creator><dc:contributor>{}</dc:contributor><dc:language>{}</dc:language><dc:description>{}</dc:description><dc:publisher>{}</dc:publisher><dc:rights>{}</dc:rights></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>{manifest}</manifest><spine toc=\"ncx\" page-progression-direction=\"{}\">{spine}</spine><guide>{guide}</guide></package>\n",
-            xml_escape(uid),
-            xml_escape(uid),
-            xml_escape(identifier),
-            xml_escape(title),
-            xml_escape(author),
-            xml_escape(contributor),
-            xml_escape(language),
-            xml_escape(description),
-            xml_escape(publisher),
-            xml_escape(rights),
-            page_progression_direction
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"{epub_version}\" xml:lang=\"{language}\"\n unique-identifier=\"{uid}\"\n prefix=\"ibooks: http://vocabulary.itunes.apple.com/rdf/ibooks/vocabulary-extensions-1.0/\">\n  <metadata xmlns:opf=\"http://www.idpf.org/2007/opf\"\n        xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n    <dc:language>{language}</dc:language>\n    <dc:title>{title}</dc:title>\n    <dc:description>{description}</dc:description>\n    <dc:creator>{author}</dc:creator>\n    <dc:contributor>{contributor}</dc:contributor>\n    <dc:publisher>{publisher}</dc:publisher>\n    <dc:rights>{rights}</dc:rights>\n    {identifier}\n    <dc:date>{modified_date}</dc:date>\n    <meta property=\"dcterms:modified\">{modified_date}</meta>\n    <meta property=\"ibooks:version\">{project_version}</meta>\n    <meta property=\"ibooks:specified-fonts\">true</meta>\n    <meta property=\"ibooks:binding\">true</meta>\n    <meta property=\"ibooks:scroll-axis\">{ibook_scroll_axis}</meta>\n  </metadata>\n  <manifest>\n    <item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\" />\n    <item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>\n{manifest_items}  </manifest>\n  <spine toc=\"ncx\" page-progression-direction=\"{page_progression_direction}\">\n{spine}  </spine>\n  <guide>\n{guide}  </guide>\n</package>",
+            epub_version = xml_escape(epub_version),
+            language = xml_escape(language),
+            uid = xml_escape(uid),
+            title = xml_escape(title),
+            description = xml_escape(description),
+            author = xml_escape(author),
+            contributor = xml_escape(contributor),
+            publisher = xml_escape(publisher),
+            rights = xml_escape(rights),
+            modified_date = xml_escape(modified_date),
+            project_version = xml_escape(project_version),
+            ibook_scroll_axis = xml_escape(ibook_scroll_axis),
         );
-        zip.add_file("OEBPS/content.opf", opf.as_bytes());
         let nav: String = documents
             .iter()
             .map(|(docname, _, title)| {
                 format!(
-                    "<li><a href=\"{}.xhtml\">{}</a></li>",
+                    "        <li>\n          <a href=\"{}.xhtml\">{}</a>\n        </li>\n",
                     xml_escape(docname),
                     xml_escape(title)
                 )
             })
             .collect();
-        zip.add_file("OEBPS/nav.xhtml", format!("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\"><head><title>{}</title></head><body><nav epub:type=\"toc\" id=\"toc\"><ol>{nav}</ol></nav></body></html>\n", xml_escape(title)).as_bytes());
-        let nav_points: String = documents.iter().enumerate().map(|(index, (docname, _, title))| format!("<navPoint id=\"navPoint-{index}\" playOrder=\"{}\"><navLabel><text>{}</text></navLabel><content src=\"{}.xhtml\"/></navPoint>", index + 1, xml_escape(title), xml_escape(docname))).collect();
-        zip.add_file("OEBPS/toc.ncx", format!("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<ncx xmlns=\"http://www.daisy.org/z3986/2005/ncx/\" version=\"2005-1\"><head><meta name=\"dtb:uid\" content=\"{}\"/></head><docTitle><text>{}</text></docTitle><navMap>{nav_points}</navMap></ncx>\n", xml_escape(uid), xml_escape(title)).as_bytes());
-        for (docname, content, _) in documents {
-            zip.add_file(&format!("OEBPS/{docname}.xhtml"), content.as_bytes());
-        }
-        zip.finish()
+        let nav = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\"\n      xmlns:epub=\"http://www.idpf.org/2007/ops\" lang=\"{}\" xml:lang=\"{}\">\n  <head>\n    <title>Table of Contents</title>\n  </head>\n  <body>\n    <nav epub:type=\"toc\">\n      <h1>Table of Contents</h1>\n      <ol>\n{}      </ol>\n    </nav>\n  </body>\n</html>",
+            xml_escape(language),
+            xml_escape(language),
+            nav
+        );
+        let nav_points: String = documents
+            .iter()
+            .enumerate()
+            .map(|(index, (docname, _, title))| {
+                format!(
+                    "    <navPoint id=\"navPoint{}\" playOrder=\"{}\">\n      <navLabel>\n        <text>{}</text>\n      </navLabel>\n      <content src=\"{}.xhtml\" />  \n    </navPoint>\n",
+                    index + 1,
+                    index + 1,
+                    xml_escape(title),
+                    xml_escape(docname)
+                )
+            })
+            .collect();
+        let toc = format!(
+            "<?xml version=\"1.0\"?>\n<ncx version=\"2005-1\" xmlns=\"http://www.daisy.org/z3986/2005/ncx/\">\n  <head>\n    <meta name=\"dtb:uid\" content=\"{}\"/>\n    <meta name=\"dtb:depth\" content=\"1\"/>\n    <meta name=\"dtb:totalPageCount\" content=\"0\"/>\n    <meta name=\"dtb:maxPageNumber\" content=\"0\"/>\n  </head>\n  <docTitle>\n    <text>{}</text>\n  </docTitle>\n  <navMap>    \n{}  </navMap>\n</ncx>",
+            xml_escape(uid),
+            xml_escape(title),
+            nav_points
+        );
+        let mut entries = vec![
+            ("mimetype".to_string(), b"application/epub+zip".to_vec()),
+            (
+                "META-INF/container.xml".to_string(),
+                include_bytes!("../../../sphinx/sphinx/templates/epub3/container.xml").to_vec(),
+            ),
+            ("content.opf".to_string(), opf.into_bytes()),
+            ("toc.ncx".to_string(), toc.into_bytes()),
+        ];
+        entries.extend(pages);
+        entries.extend(assets.iter().cloned());
+        entries.push(("nav.xhtml".to_string(), nav.into_bytes()));
+        entries
     }
 }
 
@@ -131,6 +283,162 @@ fn config_string(env: &BuildEnvironment, key: &str, fallback: &str) -> String {
                 .map(str::to_owned)
         })
         .unwrap_or_else(|| fallback.to_string())
+}
+fn order_epub_documents(env: &BuildEnvironment, mut candidates: Vec<String>) -> Vec<String> {
+    candidates.sort();
+    let available: HashSet<_> = candidates.iter().cloned().collect();
+    let root = env.config.root_doc();
+    let mut ordered = Vec::new();
+    let mut seen = HashSet::new();
+    if available.contains(&root) && seen.insert(root.clone()) {
+        ordered.push(root.clone());
+    }
+    fn append(
+        entries: &[crate::toctree::TocEntry],
+        available: &HashSet<String>,
+        seen: &mut HashSet<String>,
+        ordered: &mut Vec<String>,
+    ) {
+        for entry in entries {
+            if available.contains(&entry.docname) && seen.insert(entry.docname.clone()) {
+                ordered.push(entry.docname.clone());
+            }
+            append(&entry.children, available, seen, ordered);
+        }
+    }
+    append(
+        &crate::toctree::resolve(env, &root, 0),
+        &available,
+        &mut seen,
+        &mut ordered,
+    );
+    for candidate in candidates {
+        if seen.insert(candidate.clone()) {
+            ordered.push(candidate);
+        }
+    }
+    ordered
+}
+
+fn epub_use_index(env: &BuildEnvironment) -> bool {
+    if env.config.raw_config().contains_key("epub_use_index") {
+        env.config
+            .get("epub_use_index")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true)
+    } else {
+        env.config
+            .get("html_use_index")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true)
+    }
+}
+
+fn epub_modified_date() -> String {
+    let timestamp = std::env::var("SOURCE_DATE_EPOCH")
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok())
+        .and_then(|seconds| chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0));
+    timestamp
+        .unwrap_or_else(chrono::Utc::now)
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
+}
+
+fn epub_version(env: &BuildEnvironment) -> String {
+    match env.config.get("epub_version") {
+        Some(ConfigVal::Float(version)) if version.fract() == 0.0 => {
+            format!("{version:.1}")
+        }
+        Some(value) => value.display(),
+        None => "3.0".into(),
+    }
+}
+
+fn epub_media_type(path: &str) -> Option<&'static str> {
+    match Path::new(path)
+        .extension()?
+        .to_str()?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "css" => Some("text/css"),
+        "gif" => Some("image/gif"),
+        "jpeg" | "jpg" => Some("image/jpeg"),
+        "png" => Some("image/png"),
+        "svg" => Some("image/svg+xml"),
+        _ => None,
+    }
+}
+
+fn collect_epub_assets(outdir: &Path) -> Result<Vec<(String, Vec<u8>)>, BuildError> {
+    fn collect(
+        root: &Path,
+        dir: &Path,
+        files: &mut BTreeMap<String, Vec<u8>>,
+    ) -> Result<(), BuildError> {
+        let mut entries = std::fs::read_dir(dir)?.collect::<Result<Vec<_>, _>>()?;
+        entries.sort_by_key(std::fs::DirEntry::path);
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                collect(root, &path, files)?;
+            } else if path.is_file() {
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                if epub_media_type(&relative).is_some() {
+                    let packaged_path = format!("_static/{relative}");
+                    files.insert(packaged_path, std::fs::read(path)?);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let static_root = outdir.join("_static");
+    let mut files = BTreeMap::new();
+    if static_root.is_dir() {
+        collect(&static_root, &static_root, &mut files)?;
+    }
+    Ok(files.into_iter().collect())
+}
+
+fn stage_epub_files(outdir: &Path, entries: &[(String, Vec<u8>)]) -> Result<(), BuildError> {
+    for (name, contents) in entries {
+        let path = outdir.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let template_path = match name.as_str() {
+            "mimetype" => Some(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../sphinx/sphinx/templates/epub3/mimetype"),
+            ),
+            "META-INF/container.xml" => Some(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../sphinx/sphinx/templates/epub3/container.xml"),
+            ),
+            _ => None,
+        };
+        if let Some(template_path) = template_path
+            && std::fs::read(&template_path)? == *contents
+        {
+            crate::theme_static::copy_file_preserving_modified_time(&template_path, &path)?;
+            continue;
+        }
+        if name.starts_with("_static/") && path.is_file() && std::fs::read(&path)? == *contents {
+            continue;
+        }
+        std::fs::write(path, contents)?;
+    }
+    std::fs::write(
+        outdir.join(".buildinfo"),
+        "# Sphinx build info version 1\nconfig: sphinxdocrs\ntags: head\n",
+    )?;
+    Ok(())
 }
 
 impl Builder for EpubBuilder {
@@ -155,19 +463,29 @@ impl Builder for EpubBuilder {
         std::fs::write(
             path,
             Self::archive(
-                &[(docname.to_owned(), document, title)],
-                "Sphinx documentation",
-                "",
-                "unknown",
-                "en",
-                "unknown",
-                "unknown",
-                "",
-                "",
-                "",
-                "ltr",
-                &[],
-            ),
+                &Self::package_entries(
+                    &[(docname.to_owned(), document, title)],
+                    &[],
+                    "Sphinx documentation",
+                    "",
+                    "unknown",
+                    "en",
+                    "unknown",
+                    "unknown",
+                    "",
+                    "",
+                    "",
+                    "ltr",
+                    &[],
+                    &[],
+                    "3.0",
+                    "unknown",
+                    "",
+                    &epub_modified_date(),
+                    "vertical",
+                ),
+                None,
+            )?,
         )?;
         Ok(())
     }
@@ -177,15 +495,15 @@ impl Builder for EpubBuilder {
         outdir: &Path,
         env: &BuildEnvironment,
     ) -> Result<BuildResult, BuildError> {
-        let mut docnames: Vec<String> = if env.all_docs.is_empty() {
+        let docnames: Vec<String> = if env.all_docs.is_empty() {
             super::html::discover_docnames_pub(srcdir, &env.config)
         } else {
             env.all_docs.keys().cloned().collect()
         };
-        docnames.sort();
+        let docnames = order_epub_documents(env, docnames);
         let mut documents = Vec::new();
         for docname in &docnames {
-            let tree = match env.get_and_resolve_doctree(docname) {
+            let mut tree = match env.get_and_resolve_doctree(docname) {
                 Ok(tree) => tree,
                 Err(_) => {
                     let path = super::html::src_path_for_docname_with_suffixes(
@@ -201,10 +519,21 @@ impl Builder for EpubBuilder {
                     parse_rst_with_source(&source, docname)
                 }
             };
+            Self::resolve_epub_links(env, docname, &mut tree);
             let title = Self::title_text(&tree).unwrap_or_else(|| docname.clone());
             documents.push((docname.clone(), Self::document_xhtml(docname, &tree), title));
         }
         std::fs::create_dir_all(outdir)?;
+        let epub_theme = config_string(env, "epub_theme", "epub");
+        crate::theme_static::copy_theme_static_files_for_named_theme(
+            &env.config,
+            outdir,
+            srcdir,
+            &epub_theme,
+            "epub",
+        )?;
+        super::html::copy_html_static_path(srcdir, outdir, &env.config)?;
+        let assets = collect_epub_assets(outdir)?;
         let title = config_string(env, "epub_title", &env.config.project());
         let author = config_string(env, "epub_author", &env.config.author());
         let contributor = config_string(env, "epub_contributor", "unknown");
@@ -212,7 +541,7 @@ impl Builder for EpubBuilder {
         let uid = config_string(env, "epub_uid", "unknown");
         let identifier = config_string(env, "epub_identifier", "unknown");
         let description = config_string(env, "epub_description", "unknown");
-        let publisher = config_string(env, "epub_publisher", "");
+        let publisher = config_string(env, "epub_publisher", &env.config.author());
         let rights = config_string(
             env,
             "epub_copyright",
@@ -238,27 +567,66 @@ impl Builder for EpubBuilder {
                 }
             };
         let guides = epub_guide_entries(env, !documents.is_empty())?;
+        let epub_version = epub_version(env);
+        let scheme = config_string(env, "epub_scheme", "unknown");
+        let project_version = env.config.version();
+        let modified_date = epub_modified_date();
+        let ibook_scroll_axis = if page_progression_direction == "ltr" {
+            "vertical"
+        } else {
+            "horizontal"
+        };
+        let extra_pages = if epub_use_index(env) {
+            vec![("genindex.xhtml".to_string(), Self::genindex_xhtml())]
+        } else {
+            Vec::new()
+        };
+        let package_entries = Self::package_entries(
+            &documents,
+            &extra_pages,
+            &title,
+            &author,
+            &contributor,
+            &language,
+            &uid,
+            &identifier,
+            &description,
+            &publisher,
+            &rights,
+            page_progression_direction,
+            &guides,
+            &assets,
+            &epub_version,
+            &scheme,
+            &project_version,
+            &modified_date,
+            ibook_scroll_axis,
+        );
+        stage_epub_files(outdir, &package_entries)?;
         std::fs::write(
             outdir.join(format!("{basename}.epub")),
-            Self::archive(
-                &documents,
-                &title,
-                &author,
-                &contributor,
-                &language,
-                &uid,
-                &identifier,
-                &description,
-                &publisher,
-                &rights,
-                page_progression_direction,
-                &guides,
-            ),
+            Self::archive(&package_entries, Some(outdir))?,
         )?;
         Ok(BuildResult {
             written: docnames.len(),
             ..BuildResult::default()
         })
+    }
+}
+
+fn epub_target_uri(uri: &str) -> String {
+    if crate::util_uri::is_url(uri) {
+        return uri.to_owned();
+    }
+    let (path, fragment) = uri
+        .split_once('#')
+        .map_or((uri, None), |(path, fragment)| (path, Some(fragment)));
+    let Some(stem) = path.strip_suffix(".html") else {
+        return uri.to_owned();
+    };
+    match fragment {
+        Some(fragment) => format!("{stem}.xhtml#{fragment}"),
+        None => format!("{stem}.xhtml"),
     }
 }
 

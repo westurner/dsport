@@ -394,6 +394,136 @@ fn normalize_sphinx_json_metadata(value: &mut serde_json::Value) {
     }
 }
 
+fn zip_u16(bytes: &[u8], offset: usize) -> Option<u16> {
+    Some(u16::from_le_bytes(
+        bytes.get(offset..offset + 2)?.try_into().ok()?,
+    ))
+}
+
+fn zip_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(
+        bytes.get(offset..offset + 4)?.try_into().ok()?,
+    ))
+}
+
+fn epub_entries(bytes: &[u8]) -> Option<BTreeMap<String, Vec<u8>>> {
+    const END_SIGNATURE: &[u8; 4] = b"PK\x05\x06";
+    const CENTRAL_SIGNATURE: &[u8; 4] = b"PK\x01\x02";
+    const LOCAL_SIGNATURE: &[u8; 4] = b"PK\x03\x04";
+
+    let end = bytes
+        .windows(END_SIGNATURE.len())
+        .rposition(|window| window == END_SIGNATURE)?;
+    let count = usize::from(zip_u16(bytes, end + 10)?);
+    let mut central = zip_u32(bytes, end + 16)? as usize;
+    let mut entries = BTreeMap::new();
+    for _ in 0..count {
+        if bytes.get(central..central + 4)? != CENTRAL_SIGNATURE {
+            return None;
+        }
+        let method = zip_u16(bytes, central + 10)?;
+        let compressed_size = zip_u32(bytes, central + 20)? as usize;
+        let uncompressed_size = zip_u32(bytes, central + 24)? as usize;
+        let name_length = usize::from(zip_u16(bytes, central + 28)?);
+        let extra_length = usize::from(zip_u16(bytes, central + 30)?);
+        let comment_length = usize::from(zip_u16(bytes, central + 32)?);
+        let local = zip_u32(bytes, central + 42)? as usize;
+        if bytes.get(local..local + 4)? != LOCAL_SIGNATURE {
+            return None;
+        }
+        let local_name_length = usize::from(zip_u16(bytes, local + 26)?);
+        let local_extra_length = usize::from(zip_u16(bytes, local + 28)?);
+        let data_start = local + 30 + local_name_length + local_extra_length;
+        let data_end = data_start.checked_add(compressed_size)?;
+        let compressed = bytes.get(data_start..data_end)?;
+        let name = String::from_utf8(
+            bytes
+                .get(central + 46..central + 46 + name_length)?
+                .to_vec(),
+        )
+        .ok()?;
+        let contents = match method {
+            0 => compressed.to_vec(),
+            8 => {
+                let mut decoder = flate2::read::DeflateDecoder::new(compressed);
+                let mut decoded = Vec::with_capacity(uncompressed_size);
+                decoder.read_to_end(&mut decoded).ok()?;
+                decoded
+            }
+            _ => return None,
+        };
+        if contents.len() != uncompressed_size {
+            return None;
+        }
+        entries.insert(name, contents);
+        central += 46 + name_length + extra_length + comment_length;
+    }
+    Some(entries)
+}
+
+fn normalize_epub_zip_timestamps(bytes: &[u8]) -> Option<Vec<u8>> {
+    const END_SIGNATURE: &[u8; 4] = b"PK\x05\x06";
+    const CENTRAL_SIGNATURE: &[u8; 4] = b"PK\x01\x02";
+    const LOCAL_SIGNATURE: &[u8; 4] = b"PK\x03\x04";
+
+    let end = bytes
+        .windows(END_SIGNATURE.len())
+        .rposition(|window| window == END_SIGNATURE)?;
+    let count = usize::from(zip_u16(bytes, end + 10)?);
+    let mut central = zip_u32(bytes, end + 16)? as usize;
+    let mut normalized = bytes.to_vec();
+    for _ in 0..count {
+        if bytes.get(central..central + 4)? != CENTRAL_SIGNATURE {
+            return None;
+        }
+        normalized[central + 12..central + 16].fill(0);
+        let name_length = usize::from(zip_u16(bytes, central + 28)?);
+        let extra_length = usize::from(zip_u16(bytes, central + 30)?);
+        let comment_length = usize::from(zip_u16(bytes, central + 32)?);
+        let local = zip_u32(bytes, central + 42)? as usize;
+        if bytes.get(local..local + 4)? != LOCAL_SIGNATURE {
+            return None;
+        }
+        normalized[local + 10..local + 14].fill(0);
+        central += 46 + name_length + extra_length + comment_length;
+    }
+    Some(normalized)
+}
+
+#[test]
+fn epub_archive_normalization_ignores_only_dos_timestamps() {
+    let mut first = docutilsrs::zip_writer::ZipBuilder::new();
+    first.add_file("mimetype", b"application/epub+zip");
+    first.add_file("index.xhtml", b"<p>stable payload</p>");
+    let first = first.finish();
+
+    let mut second = first.clone();
+    let end = second
+        .windows(4)
+        .rposition(|window| window == b"PK\x05\x06")
+        .unwrap();
+    let mut central = zip_u32(&second, end + 16).unwrap() as usize;
+    let count = usize::from(zip_u16(&second, end + 10).unwrap());
+    for _ in 0..count {
+        let name_length = usize::from(zip_u16(&second, central + 28).unwrap());
+        let local = zip_u32(&second, central + 42).unwrap() as usize;
+        second[local + 10..local + 14].copy_from_slice(&[0x34, 0x12, 0x78, 0x56]);
+        second[central + 12..central + 16].copy_from_slice(&[0x34, 0x12, 0x78, 0x56]);
+        central += 46 + name_length;
+    }
+
+    assert_eq!(
+        normalize_epub_zip_timestamps(&first),
+        normalize_epub_zip_timestamps(&second)
+    );
+
+    second[30 + "mimetype".len()] ^= 1;
+    assert_ne!(
+        normalize_epub_zip_timestamps(&first),
+        normalize_epub_zip_timestamps(&second)
+    );
+}
+
 fn write_normalized_parity_tree(source: &Path, destination: &Path, source_root: &str) {
     for (relative, bytes) in parity_output_tree(source) {
         let path = destination.join(&relative);
@@ -540,7 +670,7 @@ fn accepted_deviation(builder: &str, path: &str) -> Option<&'static str> {
     }
     if builder == "epub" && path.ends_with(".epub") {
         return Some(
-            "H7d: compare EPUB entries structurally; archive metadata and compression parity pending",
+            "H7d: optional EPUB cover/pre-post files, configured CSS, and referenced image assets pending",
         );
     }
     match builder {
@@ -551,7 +681,7 @@ fn accepted_deviation(builder: &str, path: &str) -> Option<&'static str> {
             "H11.6: nested navigation, search-index ordering, and full template context remain",
         ),
         "latex" | "man" => Some("H11.4: project-oriented output pending"),
-        "texinfo" => Some("H7d/H11.4: project-level Texinfo output and support files pending"),
+        "texinfo" => Some("H7d/H11.4: Texinfo body markup and node/menu parity pending"),
         "text" | "xml" | "pseudoxml" => Some("H11.3: writer metadata and formatting pending"),
         "gettext" => Some("H11.5: per-document gettext catalogs pending"),
         "changes" => Some(
@@ -580,7 +710,59 @@ fn diff_parity_trees(
             (Some(_), None) => diff.push(record(format!("missing_in_rust: {path}"))),
             (None, Some(_)) => diff.push(record(format!("rust_only: {path}"))),
             (Some(_), Some(_)) if builder == "epub" && path.ends_with(".epub") => {
-                diff.push(record(format!("archive_content_not_compared: {path}")));
+                let (Some(python_entries), Some(rust_entries)) = (
+                    epub_entries(python.get(path).unwrap()),
+                    epub_entries(rust.get(path).unwrap()),
+                ) else {
+                    diff.push(record(format!("archive_parse_failed: {path}")));
+                    continue;
+                };
+                let python_entries: BTreeMap<_, _> = python_entries
+                    .into_iter()
+                    .map(|(entry, contents)| {
+                        (entry.clone(), normalize_parity_file(&entry, "", &contents))
+                    })
+                    .collect();
+                let rust_entries: BTreeMap<_, _> = rust_entries
+                    .into_iter()
+                    .map(|(entry, contents)| {
+                        (entry.clone(), normalize_parity_file(&entry, "", &contents))
+                    })
+                    .collect();
+                let entry_paths: std::collections::BTreeSet<_> =
+                    python_entries.keys().chain(rust_entries.keys()).collect();
+                let mut entry_diffs = 0;
+                for entry in entry_paths {
+                    match (python_entries.get(entry), rust_entries.get(entry)) {
+                        (Some(_), None) => {
+                            entry_diffs += 1;
+                            diff.push(record(format!("archive_missing_in_rust: {entry}")));
+                        }
+                        (None, Some(_)) => {
+                            entry_diffs += 1;
+                            diff.push(record(format!("archive_rust_only: {entry}")));
+                        }
+                        (Some(python_bytes), Some(rust_bytes)) if python_bytes != rust_bytes => {
+                            entry_diffs += 1;
+                            diff.push(record(format!(
+                                "archive_changed: {entry} python={} rust={} {}",
+                                stable_digest(python_bytes),
+                                stable_digest(rust_bytes),
+                                first_difference(python_bytes, rust_bytes),
+                            )));
+                        }
+                        (Some(_), Some(_)) => {}
+                        (None, None) => unreachable!(),
+                    }
+                }
+                if entry_diffs == 0
+                    && let (Some(python_archive), Some(rust_archive)) =
+                        (python.get(path), rust.get(path))
+                    && normalize_epub_zip_timestamps(python_archive)
+                        != normalize_epub_zip_timestamps(rust_archive)
+                {
+                    diff.push(record(format!("archive_container_bytes_differ: {path}")));
+                }
             }
             (Some(python_bytes), Some(rust_bytes))
                 if python_bytes != rust_bytes
@@ -662,8 +844,9 @@ fn native_builder_fixture_parity_matrix() {
             let rust_out_path = rust_out.path().to_str().unwrap();
             let python_doctree_path = python_doctree.path().to_str().unwrap();
             let rust_doctree_path = rust_doctree.path().to_str().unwrap();
+            let parity_env = [("SOURCE_DATE_EPOCH", Some("1794614400"))];
 
-            let (python_exit, _, python_stderr) = run(
+            let (python_exit, _, python_stderr) = run_raw_with_env(
                 "sphinx-build",
                 &[
                     "-q",
@@ -677,8 +860,10 @@ fn native_builder_fixture_parity_matrix() {
                     python_out_path,
                 ],
                 project.path(),
+                &parity_env,
             );
-            let (rust_exit, _, rust_stderr) = run(
+            let python_stderr = strip_ansi(&python_stderr);
+            let (rust_exit, _, rust_stderr) = run_raw_with_env(
                 env!("CARGO_BIN_EXE_sphinx-build-rs"),
                 &[
                     "-q",
@@ -692,7 +877,9 @@ fn native_builder_fixture_parity_matrix() {
                     rust_out_path,
                 ],
                 project.path(),
+                &parity_env,
             );
+            let rust_stderr = strip_ansi(&rust_stderr);
 
             assert_eq!(
                 python_exit, rust_exit,

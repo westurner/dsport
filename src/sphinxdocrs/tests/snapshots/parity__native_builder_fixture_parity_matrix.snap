@@ -15,27 +15,7 @@ expression: matrix
   - "accepted_deviation: H11.2: HTML-family paths, assets, and page templates pending: changed: objects.inv python=900bed8940a03be7 rust=ec901738288279e2 byte=126 python_hex=6f6d70726573736564207573696e67207a6c69622e0a78da4b4fcdcbcc4b49ad50282e49b1ca494c4acd51d035544887 rust_hex=6f6d70726573736564207573696e67207a6c69622e0a78da4dc9410a00101046e1bd53fc3760ed0256ca1564a4d9508c"
   - "accepted_deviation: H11.2: HTML-family paths, assets, and page templates pending: changed: search/index.html python=0ec9931ef4a5d8eb rust=d7439b4db099cd2e byte=177 python_hex=697469616c2d7363616c653d312e3022202f3e0a202020203c7469746c653e536561726368202623383231323b205061 rust_hex=697469616c2d7363616c653d312e3022202f3e0a2020202020203c6d657461206e616d653d2276696577706f72742220"
   - "accepted_deviation: H11.2: HTML-family paths, assets, and page templates pending: changed: searchindex.js python=9b7a86cf2de9d601 rust=8099205b3ad21908 byte=483 python_hex=616d6573223a7b7d2c226f626a7479706573223a7b7d2c227465726d73223a7b2241223a312c2254686973223a302c22 rust_hex=616d6573223a7b7d2c226f626a7479706573223a7b7d2c22736f757263656f626a65637473223a5b5d2c227465726d73"
-"basic::epub":
-  - "missing_in_rust: .buildinfo"
-  - "missing_in_rust: META-INF/container.xml"
-  - "accepted_deviation: H7d: compare EPUB entries structurally; archive metadata and compression parity pending: archive_content_not_compared: ParityMatrix.epub"
-  - "missing_in_rust: _static/basic.css"
-  - "missing_in_rust: _static/doctools.js"
-  - "missing_in_rust: _static/documentation_options.js"
-  - "missing_in_rust: _static/epub.css"
-  - "missing_in_rust: _static/file.png"
-  - "missing_in_rust: _static/language_data.js"
-  - "missing_in_rust: _static/minus.png"
-  - "missing_in_rust: _static/plus.png"
-  - "missing_in_rust: _static/pygments.css"
-  - "missing_in_rust: _static/searchtools.js"
-  - "missing_in_rust: _static/sphinx_highlight.js"
-  - "missing_in_rust: content.opf"
-  - "missing_in_rust: guide.xhtml"
-  - "missing_in_rust: index.xhtml"
-  - "missing_in_rust: mimetype"
-  - "missing_in_rust: nav.xhtml"
-  - "missing_in_rust: toc.ncx"
+"basic::epub": []
 "basic::gettext":
   - "accepted_deviation: H11.5: per-document gettext catalogs pending: changed: guide.pot python=de7a97df0cb92431 rust=68f72026a2663a29 byte=30 python_hex=6d65746164617461206e6f726d616c697a65640a0a233a203c54454d503e2f67756964652e7273743a320a6d73676964 rust_hex=6d65746164617461206e6f726d616c697a65640a0a233a2067756964650a6d7367696420224775696465220a6d736773"
   - "accepted_deviation: H11.5: per-document gettext catalogs pending: changed: index.pot python=e50ea5a465c79ede rust=4f99a19a4b970687 byte=30 python_hex=6d65746164617461206e6f726d616c697a65640a0a233a203c54454d503e2f696e6465782e7273743a320a6d73676964 rust_hex=6d65746164617461206e6f726d616c697a65640a0a233a20696e6465780a6d7367696420224120626f6c642070617261"
@@ -75,10 +55,7 @@ expression: matrix
   - "accepted_deviation: H11.2: HTML-family paths, assets, and page templates pending: changed: objects.inv python=89d90379e8364deb rust=a3a0402a8000d10c byte=126 python_hex=6f6d70726573736564207573696e67207a6c69622e0a78da4b4fcdcbcc4b49ad50282e49b1ca494c4acd51d035544887 rust_hex=6f6d70726573736564207573696e67207a6c69622e0a78da4dcacb09c0201045d1bd55bc0a42d66920ab405a908c9801"
   - "accepted_deviation: H11.2: HTML-family paths, assets, and page templates pending: rust_only: webmcp.json"
 "basic::texinfo":
-  - "accepted_deviation: H7d/H11.4: project-level Texinfo output and support files pending: missing_in_rust: Makefile"
-  - "accepted_deviation: H7d/H11.4: project-level Texinfo output and support files pending: rust_only: guide.texi"
-  - "accepted_deviation: H7d/H11.4: project-level Texinfo output and support files pending: rust_only: index.texi"
-  - "accepted_deviation: H7d/H11.4: project-level Texinfo output and support files pending: missing_in_rust: paritymatrix.texi"
+  - "accepted_deviation: H7d/H11.4: Texinfo body markup and node/menu parity pending: changed: paritymatrix.texi python=8edfb61474966460 rust=aea8d5a64096bf50 byte=38 python_hex=2020204063202d2a2d746578696e666f2d2a2d0a406320252a2a7374617274206f66206865616465720a407365746669 rust_hex=2020204063202d2a2d746578696e666f2d2a2d0a40632025252a2a7374617274206f66206865616465720a4073657466"
 "basic::text": []
 "basic::xml":
   - "accepted_deviation: H11.3: writer metadata and formatting pending: changed: guide.xml python=9f84b133dcdb3fed rust=b50406bc5d984334 byte=243 python_hex=7263653d223c534f555243453e2f67756964652e72737422207472616e736c6174696f6e5f70726f67726573733d227b rust_hex=7263653d223c534f555243453e2f67756964652e727374223e0a202020203c73656374696f6e206964733d2267756964"
@@ -98,28 +75,7 @@ expression: matrix
   - "accepted_deviation: H11.2: HTML-family paths, assets, and page templates pending: changed: reference/index.html python=e5b1d3e1df648256 rust=1b076dc325eb5538 byte=172 python_hex=682c20696e697469616c2d7363616c653d312e3022202f3e3c6d657461206e616d653d2276696577706f72742220636f rust_hex=682c20696e697469616c2d7363616c653d312e3022202f3e0a2020202020203c6d657461206e616d653d227669657770"
   - "accepted_deviation: H11.2: HTML-family paths, assets, and page templates pending: changed: search/index.html python=0ec9931ef4a5d8eb rust=d7439b4db099cd2e byte=177 python_hex=697469616c2d7363616c653d312e3022202f3e0a202020203c7469746c653e536561726368202623383231323b205061 rust_hex=697469616c2d7363616c653d312e3022202f3e0a2020202020203c6d657461206e616d653d2276696577706f72742220"
   - "accepted_deviation: H11.2: HTML-family paths, assets, and page templates pending: changed: searchindex.js python=243792b831c64e6c rust=47bb036b9014872f byte=538 python_hex=616d6573223a7b7d2c226f626a7479706573223a7b7d2c227465726d73223a7b2241223a5b312c325d2c22616464223a rust_hex=616d6573223a7b7d2c226f626a7479706573223a7b7d2c22736f757263656f626a65637473223a5b5d2c227465726d73"
-"structured::epub":
-  - "missing_in_rust: .buildinfo"
-  - "missing_in_rust: META-INF/container.xml"
-  - "accepted_deviation: H7d: compare EPUB entries structurally; archive metadata and compression parity pending: archive_content_not_compared: ParityMatrix.epub"
-  - "missing_in_rust: _static/basic.css"
-  - "missing_in_rust: _static/doctools.js"
-  - "missing_in_rust: _static/documentation_options.js"
-  - "missing_in_rust: _static/epub.css"
-  - "missing_in_rust: _static/file.png"
-  - "missing_in_rust: _static/language_data.js"
-  - "missing_in_rust: _static/minus.png"
-  - "missing_in_rust: _static/plus.png"
-  - "missing_in_rust: _static/pygments.css"
-  - "missing_in_rust: _static/searchtools.js"
-  - "missing_in_rust: _static/sphinx_highlight.js"
-  - "missing_in_rust: content.opf"
-  - "missing_in_rust: guide.xhtml"
-  - "missing_in_rust: index.xhtml"
-  - "missing_in_rust: mimetype"
-  - "missing_in_rust: nav.xhtml"
-  - "missing_in_rust: reference.xhtml"
-  - "missing_in_rust: toc.ncx"
+"structured::epub": []
 "structured::gettext":
   - "accepted_deviation: H11.5: per-document gettext catalogs pending: changed: guide.pot python=901063edb861fc81 rust=d31b87f852b6cbc8 byte=30 python_hex=6d65746164617461206e6f726d616c697a65640a0a233a203c54454d503e2f67756964652e7273743a320a6d73676964 rust_hex=6d65746164617461206e6f726d616c697a65640a0a233a2067756964650a6d7367696420224775696465220a6d736773"
   - "accepted_deviation: H11.5: per-document gettext catalogs pending: changed: index.pot python=7cd42fd432110b9d rust=34092198e61aa340 byte=30 python_hex=6d65746164617461206e6f726d616c697a65640a0a233a203c54454d503e2f696e6465782e7273743a320a6d73676964 rust_hex=6d65746164617461206e6f726d616c697a65640a0a233a20696e6465780a6d7367696420224120706172616772617068"
@@ -163,11 +119,7 @@ expression: matrix
   - "accepted_deviation: H11.2: HTML-family paths, assets, and page templates pending: changed: objects.inv python=2efd721db1eee3ce rust=9cb1a91dacda710b byte=126 python_hex=6f6d70726573736564207573696e67207a6c69622e0a78da858fcf0ac2300cc6ef7d8a82e70a5e7d01f13018ee096a13 rust_hex=6f6d70726573736564207573696e67207a6c69622e0a78da4d8c410a80300c04ef7d455e209efd80272ffa0249620d68"
   - "accepted_deviation: H11.2: HTML-family paths, assets, and page templates pending: rust_only: webmcp.json"
 "structured::texinfo":
-  - "accepted_deviation: H7d/H11.4: project-level Texinfo output and support files pending: missing_in_rust: Makefile"
-  - "accepted_deviation: H7d/H11.4: project-level Texinfo output and support files pending: rust_only: guide.texi"
-  - "accepted_deviation: H7d/H11.4: project-level Texinfo output and support files pending: rust_only: index.texi"
-  - "accepted_deviation: H7d/H11.4: project-level Texinfo output and support files pending: missing_in_rust: paritymatrix.texi"
-  - "accepted_deviation: H7d/H11.4: project-level Texinfo output and support files pending: rust_only: reference.texi"
+  - "accepted_deviation: H7d/H11.4: Texinfo body markup and node/menu parity pending: changed: paritymatrix.texi python=7647b3e643df7801 rust=1ded9fc3b2a7bf78 byte=38 python_hex=2020204063202d2a2d746578696e666f2d2a2d0a406320252a2a7374617274206f66206865616465720a407365746669 rust_hex=2020204063202d2a2d746578696e666f2d2a2d0a40632025252a2a7374617274206f66206865616465720a4073657466"
 "structured::text":
   - "accepted_deviation: H11.3: writer metadata and formatting pending: changed: reference.txt python=836c82d3be4e602d rust=e7ac03f1a9793375 byte=22 python_hex=5265666572656e63650a2a2a2a2a2a2a2a2a2a0a0a416464656420696e2076657273696f6e20312e303a20412064 rust_hex=5265666572656e63650a2a2a2a2a2a2a2a2a2a0a0a4120646f63756d656e74656420666561747572652e0a0a4e6f"
 "structured::xml":

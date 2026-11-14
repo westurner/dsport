@@ -65,8 +65,7 @@ use minijinja::value::{Kwargs, Object, ObjectRepr, Value, from_args};
 use minijinja::{Error, ErrorKind, State};
 
 use crate::app_events::EventArg;
-use crate::builders::Builder;
-use crate::builders::html::{HtmlBuilder, PathStyle};
+use crate::builders::html::PathStyle;
 use crate::environment::BuildEnvironment;
 use crate::toctree::{self, TocEntry};
 use crate::util_osutil::relative_uri;
@@ -141,7 +140,7 @@ fn state_target_uri(state: &PageState, docname: &str) -> String {
             };
         }
         let uri = if state.all_docs.contains(docname) {
-            format!("#document-{docname}")
+            PathStyle::Single.target_uri(docname, PathStyle::Single.link_suffix())
         } else {
             format!("{docname}.html")
         };
@@ -160,11 +159,7 @@ fn state_target_uri(state: &PageState, docname: &str) -> String {
 fn target_uri(path_style: PathStyle, docname: &str) -> String {
     let has_fragment = docname.contains('#');
     let (docname, fragment) = docname.split_once('#').unwrap_or((docname, ""));
-    let uri = match path_style {
-        PathStyle::Flat => HtmlBuilder::new().get_target_uri(docname),
-        PathStyle::Dir => HtmlBuilder::new_dir_style().get_target_uri(docname),
-        PathStyle::Single => format!("#document-{docname}"),
-    };
+    let uri = path_style.target_uri(docname, path_style.link_suffix());
     if !has_fragment {
         uri
     } else {
@@ -173,15 +168,7 @@ fn target_uri(path_style: PathStyle, docname: &str) -> String {
 }
 
 fn content_root(path_style: PathStyle, docname: &str) -> String {
-    let depth = match path_style {
-        PathStyle::Flat => docname.split('/').count().saturating_sub(1),
-        PathStyle::Single => 0,
-        PathStyle::Dir if docname == "index" => 0,
-        PathStyle::Dir if docname.ends_with("/index") => {
-            docname.split('/').count().saturating_sub(1)
-        }
-        PathStyle::Dir => docname.split('/').count(),
-    };
+    let depth = path_style.content_root_depth(docname);
     if depth == 0 {
         "./".to_string()
     } else {
@@ -1740,13 +1727,9 @@ fn build_global_context(
     // real `sphinx-build -b dirhtml` run; `sphinx/builders/html/__init__.py`
     // sets `link_suffix = self.out_suffix` in `init_templates`, and
     // `sphinx/builders/dirhtml.py`'s `DirectoryHTMLBuilder` doesn't touch it).
-    let (builder, file_suffix, link_suffix) = match path_style {
-        PathStyle::Flat => ("html", ".html", ".html"),
-        PathStyle::Dir => ("dirhtml", ".html", ".html"),
-        PathStyle::Single => ("singlehtml", ".html", ".html"),
-    };
-    ctx.insert("file_suffix".into(), file_suffix.into());
-    ctx.insert("link_suffix".into(), link_suffix.into());
+    let builder = path_style.builder_name();
+    ctx.insert("file_suffix".into(), path_style.file_suffix().into());
+    ctx.insert("link_suffix".into(), path_style.link_suffix().into());
     ctx.insert("language".into(), config.language().into());
     ctx.insert(
         "sphinx_version".into(),

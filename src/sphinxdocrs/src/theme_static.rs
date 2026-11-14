@@ -30,6 +30,8 @@ use std::sync::{Mutex, OnceLock};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
+use crate::builders::html::HtmlOutputLayout;
+
 use crate::config::SphinxConfig;
 
 /// One theme in the resolved inheritance chain.
@@ -467,12 +469,19 @@ fn build_render_context(
     // and singlehtml alike: real `DirectoryHTMLBuilder` never overrides
     // `link_suffix`, only `get_target_uri`/`get_output_path` (verified
     // against a real `sphinx-build -b dirhtml` run's `documentation_options.js`).
-    let file_suffix = match builder {
-        "json" => ".fjson",
-        "epub" => ".xhtml",
-        _ => ".html",
-    };
-    let link_suffix = if builder == "epub" { ".xhtml" } else { ".html" };
+    let html_layout = HtmlOutputLayout::for_builder_name(builder);
+    let file_suffix = html_layout.map_or_else(
+        || match builder {
+            "json" => ".fjson",
+            "epub" => ".xhtml",
+            _ => ".html",
+        },
+        HtmlOutputLayout::file_suffix,
+    );
+    let link_suffix = html_layout.map_or_else(
+        || if builder == "epub" { ".xhtml" } else { ".html" },
+        HtmlOutputLayout::link_suffix,
+    );
     ctx.insert("builder".into(), Value::String(builder.into()));
     ctx.insert("file_suffix".into(), Value::String(file_suffix.into()));
     ctx.insert("link_suffix".into(), Value::String(link_suffix.into()));

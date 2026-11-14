@@ -61,7 +61,7 @@ impl Builder for SinglehtmlBuilder {
         "html"
     }
     fn out_suffix(&self) -> &str {
-        ".html"
+        PathStyle::Single.file_suffix()
     }
 
     /// Mirrors `SingleFileHTMLBuilder.get_target_uri` for documents known to
@@ -71,9 +71,9 @@ impl Builder for SinglehtmlBuilder {
         if docname == "index" {
             String::new()
         } else if self.known_docs.borrow().contains(docname) {
-            format!("#document-{docname}")
+            PathStyle::Single.target_uri(docname, PathStyle::Single.link_suffix())
         } else {
-            format!("{docname}.html")
+            format!("{docname}{}", PathStyle::Single.file_suffix())
         }
     }
 
@@ -119,7 +119,7 @@ impl Builder for SinglehtmlBuilder {
             &env.config,
             outdir,
             srcdir,
-            "singlehtml",
+            PathStyle::Single.builder_name(),
         )
         .map_err(BuildError::Io)?;
         let real_theme =
@@ -341,7 +341,10 @@ fn inline_node_into(
 
 fn write_index(outdir: &Path, page: &str) -> Result<(), BuildError> {
     std::fs::create_dir_all(outdir)?;
-    std::fs::write(outdir.join("index.html"), page.as_bytes())?;
+    std::fs::write(
+        outdir.join(PathStyle::Single.page_path("index")),
+        page.as_bytes(),
+    )?;
     Ok(())
 }
 

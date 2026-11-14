@@ -5,20 +5,20 @@ This document merges the former `docs/sphinx-port-inventory.md`
 (*sphinx port inventory, Phase 4*) and `docs/sphinxdocrs-cli-port-plan.md`
 (*sphinxdocrs CLI port & test plan*); both are superseded by this file.
 
-## Current Verification (2026-10-25)
+## Current Verification (2026-11-14)
 
 The current all-target branch-coverage gate is
 `PYTHONPATH="$PWD/src/sphinx:$PWD/src/docutils" cargo +nightly llvm-cov -p sphinxdocrs --lib --bins --tests --branch --summary-only -- --quiet`.
 All library tests and every binary/integration test target pass. The measured
-result is 78.60% branch coverage (887/4,145 branches missed), 94.09% line
-coverage, and 92.01% function coverage. The repository's 100% branch
+result is 78.21% branch coverage (965/4,429 branches missed), 94.10% line
+coverage, and 92.05% function coverage. The repository's 100% branch
 target remains open; neither coverage exclusions nor semantic parity
 thresholds were relaxed.
 
-The highest current branch gaps are `environment.rs` (113/812 missed),
+The highest current branch gaps are `environment.rs` (114/820 missed),
 `source_docs.rs` (72/208), `autodoc.rs` (66/252),
-`apidoc/generate.rs` (60/136), `theme_render.rs` (54/246), and
-`builders/html.rs` (52/176). `apidoc/templates.rs`, `genindex.rs`, and
+`apidoc/generate.rs` (60/136), `theme_render.rs` (57/282), and
+`builders/html.rs` (53/178). `apidoc/templates.rs`, `genindex.rs`, and
 `quickstart/templates.rs` now each have 100% branch coverage.
 
 The environment now emits Sphinx-compatible verbose diagnostics for
@@ -30,11 +30,11 @@ diagnostics report sorted parent names and select the lexicographically
 greatest parent for page relation/breadcrumb context.
 
 The H4-H7 implementation rows below reflect the current native code, not the
-original phase-4 placeholders. The focused theme renderer suite passes 39/39,
+original phase-4 placeholders. The focused theme renderer suite passes 40/40,
 the native builder parity matrix passes, and fresh Alabaster and Jinja/Pocoo
-builds match Python viewport metadata. The gated external-document matrix is
-now fully green with all 15 real-project tree, HTML-content, and viewport cases
-passing.
+builds match Python viewport metadata. The gated external-document matrix
+currently passes 11 of 15 real-project tree, HTML-content, and viewport cases;
+three HTML-content differences and native-only `_modules` pages remain.
 
 ### LSP API & test function comparison (2026-10-24)
 
@@ -1608,25 +1608,25 @@ deviation unless a future decision explicitly requires reproducing pickle.
 ##### H11.2 HTML, dirhtml, and singlehtml
 
 Status: **partial**. HTML/dirhtml/singlehtml path-aware rendering, structured
-inventory and search-index fixture parity, and all 15 gated external-document
-cases pass, including the real Sphinx and Jinja builds. H11.2 remains open for
-the shared layout abstraction, provenance-backed asset verification, broader
-search-index semantic fixtures, and structured HTML writer/theme differences.
-WebMCP script/manifest artifacts are intentional native-only additions and
-remain visible in the parity matrix.
+inventory and search-index fixture parity, and the strict native fixture matrix
+pass. The latest gated external-document run passes 11 of 15 cases; HTML
+content and generated-tree residuals remain. H11.2 is still open for
+provenance-backed asset verification, broader search-index semantic fixtures,
+and structured HTML writer/theme differences. WebMCP script/manifest artifacts
+are intentional native-only additions and remain visible in the parity matrix.
 
 **H11.2a: artifact contract and metadata**
 
-- Add a shared `HtmlOutputLayout` contract containing builder name, physical
-  page path, target URI, `file_suffix`, `link_suffix`, and content-root depth.
-- Route HTML, dirhtml, and singlehtml through that contract rather than
-  deriving the same values independently in builders, theme rendering, and
-  static assets.
+- Implemented the shared `HtmlOutputLayout` contract for builder name,
+  physical page path, target URI, `file_suffix`, `link_suffix`, and content-root
+  depth. HTML, dirhtml, singlehtml, real-theme rendering, and static-template
+  context now consume the same layout values; singlehtml's root/unknown-page
+  rules remain builder-specific.
 - Match `.buildinfo`'s stable header/comments and normalize only the volatile
   `config:` and `tags:` identity values. Regressions prove other lines remain
-  significant. A shared `HtmlOutputLayout` contract is still open.
-- Add direct assertions for root, nested, and synthetic pages (`search`,
-  `genindex`, and `py-modindex`) in both flat and directory layouts.
+  significant.
+- Direct layout assertions cover root, nested and `*/index` documents, plus
+  `search`, `genindex`, and `py-modindex` in flat and directory layouts.
 
 **H11.2b: theme assets and page serialization**
 
@@ -1840,17 +1840,18 @@ explicitly documented renderer/theme provenance deviations.
   minimal basic-theme search-page comparison now differs only by the native
   WebMCP script; its footer uses the vendored Sphinx display version.
 - The feature-gated external HTML parity matrix currently passes 11 of 15
-  `tests/otherdocs.rs` cases. Three HTML content cases and one output-tree case
-  retain the known writer/theme and generated-artifact differences. No
-  aggregate snapshot was updated; H11.2 remains partial.
+  `tests/otherdocs.rs` cases. Three HTML-content cases retain theme/content
+  differences, and the `src/sphinx/doc` tree snapshot includes native `_modules`
+  pages absent upstream. No aggregate snapshot was updated; H11.2 remains partial.
 - Fixed Python extension event initialization parity: `config-inited` now
   receives the live config facade, and the app/environment facades expose the
   paths, discovered documents, and `emit_firstresult` surface needed by the
   real Sphinx/Jinja builds. First-result dispatch now returns the earliest
-  non-`None` Python listener result in priority order. The 15-case external
-  matrix, the focused first-result regression, and all 9 `events_app`
-  integration tests pass. Return-value transport from native Rust listeners
-  remains an event-bridge deviation.
+  non-`None` Python listener result in priority order. The focused
+  first-result regression and all 9 `events_app` integration tests pass. The
+  external-document matrix's current 11/15 status is recorded above.
+  Return-value transport from native Rust listeners remains an event-bridge
+  deviation.
 
 ##### H11.3 Text, XML, and pseudo-XML writers
 

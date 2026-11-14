@@ -56,7 +56,7 @@ pub struct HtmlBuilder {
     /// `<docname>/index.html` per document (matching
     /// `sphinx.builders.dirhtml.DirectoryHTMLBuilder`, used by
     /// [`crate::builders::dirhtml::DirhtmlBuilder`]).
-    path_style: PathStyle,
+    layout: HtmlOutputLayout,
 
     /// docutilsrs HTML5 writer options.
     html5_options: Html5Options,
@@ -72,19 +72,10 @@ struct ViewCodeModule {
     used: HashMap<String, (String, String)>,
 }
 
-/// Output file/URI layout used by [`HtmlBuilder`].
+/// Shared output contract for the HTML-family builders.
 ///
-/// **Accepted deviation:** only the *physical output layout* and
-/// [`Builder::get_target_uri`] switch with [`PathStyle::Dir`] — in-page
-/// navigation (relbar/toctree/`pathto`) rendered through the real theme
-/// pipeline (`theme_render.rs`) still resolves links via a hardcoded
-/// flat-style `HtmlBuilder::new().get_target_uri(..)` call at several call
-/// sites, so a `dirhtml` build's *files* land in the correct
-/// `docname/index.html` locations but cross-document navigation links
-/// embedded in the themed chrome may still point at the flat `.html`
-/// naming. Recorded in the H7b plan notes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum PathStyle {
+pub(crate) enum HtmlOutputLayout {
     /// `<docname>.html`.
     #[default]
     Flat,
@@ -94,13 +85,79 @@ pub(crate) enum PathStyle {
     Single,
 }
 
+/// Compatibility name retained while existing builder helpers migrate.
+pub(crate) type PathStyle = HtmlOutputLayout;
+
+impl HtmlOutputLayout {
+    pub(crate) const fn builder_name(self) -> &'static str {
+        match self {
+            Self::Flat => "html",
+            Self::Dir => "dirhtml",
+            Self::Single => "singlehtml",
+        }
+    }
+
+    pub(crate) const fn file_suffix(self) -> &'static str {
+        ".html"
+    }
+
+    pub(crate) const fn link_suffix(self) -> &'static str {
+        ".html"
+    }
+
+    pub(crate) fn page_path(self, docname: &str) -> PathBuf {
+        let output = match self {
+            Self::Flat => format!("{docname}.html"),
+            Self::Dir if docname == "index" || docname.ends_with("/index") => {
+                format!("{docname}.html")
+            }
+            Self::Dir => format!("{docname}/index.html"),
+            Self::Single => "index.html".into(),
+        };
+        output.split('/').collect()
+    }
+
+    pub(crate) fn target_uri(self, docname: &str, flat_link_suffix: &str) -> String {
+        match self {
+            Self::Flat => format!("{}{flat_link_suffix}", percent_encode_path(docname)),
+            Self::Dir if docname == "index" => String::new(),
+            Self::Dir => {
+                let path = docname.strip_suffix("/index").unwrap_or(docname);
+                format!("{}/", percent_encode_path(path))
+            }
+            Self::Single => format!("#document-{docname}"),
+        }
+    }
+
+    pub(crate) fn content_root_depth(self, docname: &str) -> usize {
+        match self {
+            Self::Flat => docname.split('/').count().saturating_sub(1),
+            Self::Single => 0,
+            Self::Dir if docname == "index" => 0,
+            Self::Dir if docname.ends_with("/index") => {
+                docname.split('/').count().saturating_sub(1)
+            }
+            Self::Dir => docname.split('/').count(),
+        }
+    }
+
+    pub(crate) fn for_builder_name(name: &str) -> Option<Self> {
+        match name {
+            "html" => Some(Self::Flat),
+            "dirhtml" => Some(Self::Dir),
+            "singlehtml" => Some(Self::Single),
+            _ => None,
+        }
+    }
+}
+
 impl HtmlBuilder {
     /// Construct with default settings.
     pub fn new() -> Self {
         Self {
             out_suffix: ".html".into(),
             link_suffix: ".html".into(),
-            path_style: PathStyle::Flat,
+            layout: HtmlOutputLayout::Flat,
             html5_options: Html5Options::default(),
             common_options: CommonOptions::default(),
         }
@@ -127,7 +184,7 @@ impl HtmlBuilder {
         Self {
             out_suffix: "/index.html".into(),
             link_suffix: "/".into(),
-            path_style: PathStyle::Dir,
+            layout: HtmlOutputLayout::Dir,
             html5_options: Html5Options::default(),
             common_options: CommonOptions::default(),
         }
@@ -357,17 +414,7 @@ impl HtmlBuilder {
     /// staying at its own directory root, matching upstream
     /// `DirectoryHTMLBuilder.get_outfilename`).
     fn write_page(&self, docname: &str, page: &str, outdir: &Path) -> Result<(), BuildError> {
-        let rel: PathBuf = match self.path_style {
-            PathStyle::Flat | PathStyle::Single => format!("{docname}.html").split('/').collect(),
-            PathStyle::Dir => {
-                if docname == "index" || docname.ends_with("/index") {
-                    format!("{docname}.html").split('/').collect()
-                } else {
-                    format!("{docname}/index.html").split('/').collect()
-                }
-            }
-        };
-        let out_path = outdir.join(rel);
+        let out_path = outdir.join(self.layout.page_path(docname));
         if let Some(parent) = out_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -553,19 +600,7 @@ impl Builder for HtmlBuilder {
     /// assert_eq!(b.get_target_uri("guide/intro"), "guide/intro.html");
     /// ```
     fn get_target_uri(&self, docname: &str) -> String {
-        match self.path_style {
-            PathStyle::Flat => format!("{}{}", percent_encode_path(docname), self.link_suffix),
-            PathStyle::Dir => {
-                if docname == "index" {
-                    String::new()
-                } else if let Some(stripped) = docname.strip_suffix("/index") {
-                    format!("{}/", percent_encode_path(stripped))
-                } else {
-                    format!("{}/", percent_encode_path(docname))
-                }
-            }
-            PathStyle::Single => format!("#document-{}", percent_encode_path(docname)),
-        }
+        self.layout.target_uri(docname, &self.link_suffix)
     }
 
     /// Parse `source` and write the resulting HTML to `outdir/{docname}.html`.
@@ -608,18 +643,14 @@ impl Builder for HtmlBuilder {
 
         std::fs::create_dir_all(outdir)?;
         // Write static assets (minimal CSS, objects.inv stub, genindex stub, .buildinfo)
-        write_static_files(outdir, self.path_style, true)?;
+        write_static_files(outdir, self.layout, true)?;
 
         // Copy user static files (html_static_path) into outdir/_static/.
         copy_html_static_path(srcdir, outdir, &env.config)?;
 
         // Copy the active theme's static assets (CSS/JS/images) from the
         // installed Sphinx / theme packages, plus stemmer JS and pygments.css.
-        let asset_builder = if self.path_style == PathStyle::Dir {
-            "dirhtml"
-        } else {
-            "html"
-        };
+        let asset_builder = self.layout.builder_name();
         if let Err(e) = crate::theme_static::copy_theme_static_files_for_builder(
             &env.config,
             outdir,
@@ -647,11 +678,11 @@ impl Builder for HtmlBuilder {
         // not, which previously made `hasdoc()` silently disagree between
         // the single-phase and two-phase paths for the exact same project.
         let real_theme =
-            crate::theme_render::ThemeRenderer::new(env, outdir, &docnames, self.path_style);
+            crate::theme_render::ThemeRenderer::new(env, outdir, &docnames, self.layout);
         if let Some(renderer) = &real_theme {
             let _ = std::fs::remove_file(outdir.join("_static/sphinxdocrs.css"));
             if let Ok(search_page) = renderer.render_search_page(env) {
-                let search_path = match self.path_style {
+                let search_path = match self.layout {
                     PathStyle::Flat | PathStyle::Single => outdir.join("search.html"),
                     PathStyle::Dir => outdir.join("search/index.html"),
                 };
@@ -1550,6 +1581,87 @@ mod tests {
             builder().get_target_uri("api/module/foo"),
             "api/module/foo.html"
         );
+    }
+
+    #[test]
+    fn html_output_layout_contract_covers_all_html_builders() {
+        for (layout, name, page, uri, depth) in [
+            (
+                HtmlOutputLayout::Flat,
+                "html",
+                "guide/intro.html",
+                "guide/intro.html",
+                1,
+            ),
+            (
+                HtmlOutputLayout::Dir,
+                "dirhtml",
+                "guide/intro/index.html",
+                "guide/intro/",
+                2,
+            ),
+            (
+                HtmlOutputLayout::Single,
+                "singlehtml",
+                "index.html",
+                "#document-guide/intro",
+                0,
+            ),
+        ] {
+            assert_eq!(layout.builder_name(), name);
+            assert_eq!(layout.file_suffix(), ".html");
+            assert_eq!(layout.link_suffix(), ".html");
+            assert_eq!(layout.page_path("guide/intro"), PathBuf::from(page));
+            assert_eq!(layout.target_uri("guide/intro", ".html"), uri);
+            assert_eq!(layout.content_root_depth("guide/intro"), depth);
+            assert_eq!(HtmlOutputLayout::for_builder_name(name), Some(layout));
+        }
+        assert_eq!(HtmlOutputLayout::for_builder_name("epub"), None);
+
+        for layout in [
+            HtmlOutputLayout::Flat,
+            HtmlOutputLayout::Dir,
+            HtmlOutputLayout::Single,
+        ] {
+            let guide_index_path = if layout == HtmlOutputLayout::Single {
+                "index.html"
+            } else {
+                "guide/index.html"
+            };
+            assert_eq!(layout.page_path("index"), PathBuf::from("index.html"));
+            assert_eq!(
+                layout.page_path("guide/index"),
+                PathBuf::from(guide_index_path)
+            );
+            assert_eq!(layout.content_root_depth("index"), 0);
+        }
+        assert_eq!(
+            HtmlOutputLayout::Flat.target_uri("index", ".html"),
+            "index.html"
+        );
+        assert_eq!(HtmlOutputLayout::Dir.target_uri("index", ".html"), "");
+        assert_eq!(
+            HtmlOutputLayout::Single.target_uri("guide/a b", ".html"),
+            "#document-guide/a b"
+        );
+        for docname in ["search", "genindex", "py-modindex"] {
+            assert_eq!(
+                HtmlOutputLayout::Flat.page_path(docname),
+                PathBuf::from(format!("{docname}.html"))
+            );
+            assert_eq!(
+                HtmlOutputLayout::Flat.target_uri(docname, ".html"),
+                format!("{docname}.html")
+            );
+            assert_eq!(
+                HtmlOutputLayout::Dir.page_path(docname),
+                PathBuf::from(format!("{docname}/index.html"))
+            );
+            assert_eq!(
+                HtmlOutputLayout::Dir.target_uri(docname, ".html"),
+                format!("{docname}/")
+            );
+        }
     }
 
     // ── build_doc ─────────────────────────────────────────────────────────────

@@ -1136,9 +1136,16 @@ mod tests {
             .build_all(src.path(), out.path(), &env)
             .unwrap();
         assert_eq!(result.written, 1);
-        let bytes = std::fs::read(out.path().join("book.epub")).unwrap();
+        let archive_path = out.path().join("book.epub");
+        let opf = Python::attach(|py| -> PyResult<Vec<u8>> {
+            let archive = PyModule::import(py, "zipfile")?
+                .getattr("ZipFile")?
+                .call1((archive_path.to_str().unwrap(),))?;
+            archive.call_method1("read", ("content.opf",))?.extract()
+        })
+        .unwrap();
         assert!(
-            bytes
+            opf
                 .windows(b"page-progression-direction=\"ltr\"".len())
                 .any(|window| window == b"page-progression-direction=\"ltr\"")
         );

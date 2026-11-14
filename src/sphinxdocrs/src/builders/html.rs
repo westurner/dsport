@@ -1215,7 +1215,7 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), BuildError> {
 
 /// Copy local image directive sources to Sphinx's shared `_images` directory
 /// and rewrite their doctree URIs to the emitted asset path.
-fn copy_image_assets(
+pub(crate) fn copy_image_assets(
     tree: &mut Doctree,
     srcdir: &Path,
     outdir: &Path,

@@ -291,7 +291,6 @@ pub fn raw_config_from_conf_py(path: &Path) -> PyResult<HashMap<String, ConfigVa
             "html_extra_path",
             "templates_path",
             "html_theme_path",
-            "html_css_files",
         ] {
             if let Ok(Some(v)) = globals.get_item(*key) {
                 if let Ok(list) = v.cast::<PyList>() {
@@ -1036,6 +1035,25 @@ impl SphinxConfig {
         add("epub_author", Str(String::new()), Env, "EPUB author");
         add("epub_theme", Str("epub".into()), Env, "EPUB theme");
         add("epub_version", Float(3.0), Env, "EPUB format version");
+        add(
+            "epub_cover",
+            List(vec![]),
+            Env,
+            "EPUB cover image and template",
+        );
+        add(
+            "epub_pre_files",
+            List(vec![]),
+            Env,
+            "EPUB pages before documents",
+        );
+        add(
+            "epub_post_files",
+            List(vec![]),
+            Env,
+            "EPUB pages after documents",
+        );
+        add("epub_css_files", List(vec![]), Env, "EPUB stylesheets");
         add(
             "epub_scheme",
             Str("unknown".into()),
@@ -2404,6 +2422,19 @@ imgmath_dvisvgm = 'dvisvgm-custom'
     }
 
     #[test]
+    fn epub_packaging_options_are_registered_as_sequences() {
+        let cfg = SphinxConfig::new_defaults();
+        for name in [
+            "epub_cover",
+            "epub_pre_files",
+            "epub_post_files",
+            "epub_css_files",
+        ] {
+            assert!(cfg.get(name).unwrap().as_list().is_some(), "{name}");
+        }
+    }
+
+    #[test]
     fn master_doc_root_doc_alias() {
         let mut raw = HashMap::new();
         raw.insert("master_doc".into(), ConfigVal::Str("contents".into()));
@@ -3172,6 +3203,32 @@ html_css_files = ["custom.css"]
         assert_eq!(
             raw["html_css_files"],
             ConfigVal::List(vec![ConfigVal::Str("custom.css".into())])
+        );
+    }
+
+    #[test]
+    fn reads_html_css_file_attributes_from_conf_py() {
+        let (_dir, path) = write_conf(
+            r#"
+html_css_files = [
+    "css/site.css",
+    ("https://example.com/custom.css", {"media": "print", "title": "Print"}),
+]
+"#,
+        );
+        let raw = raw_config_from_conf_py(&path).unwrap();
+        assert_eq!(
+            raw["html_css_files"],
+            ConfigVal::List(vec![
+                ConfigVal::Str("css/site.css".into()),
+                ConfigVal::List(vec![
+                    ConfigVal::Str("https://example.com/custom.css".into()),
+                    ConfigVal::Map(vec![
+                        ("media".into(), ConfigVal::Str("print".into())),
+                        ("title".into(), ConfigVal::Str("Print".into())),
+                    ]),
+                ]),
+            ])
         );
     }
 

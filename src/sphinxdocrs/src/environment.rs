@@ -904,6 +904,7 @@ impl BuildEnvironment {
         let mut current_footcite_refs = HashMap::new();
         let mut bibliography_nodes = Vec::new();
         let mut footbibliography_nodes = Vec::new();
+        let mut include_all = false;
         for current_doc in docnames {
             let source_tree = if current_doc == docname {
                 tree.clone()
@@ -919,6 +920,10 @@ impl BuildEnvironment {
                     continue;
                 };
                 if class_name == "BibtexBibliography" {
+                    include_all |= matches!(
+                        attrs.get("include_all"),
+                        Some(NodeAttributeValue::Bool(true))
+                    );
                     if current_doc == docname {
                         bibliography_nodes.push(node_id);
                     }
@@ -1013,11 +1018,12 @@ impl BuildEnvironment {
         {
             return Ok(());
         }
-        let include_uncited = if self
-            .config
-            .get("bibtex_include_uncited")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false)
+        let include_uncited = if include_all
+            || self
+                .config
+                .get("bibtex_include_uncited")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
         {
             IncludeUncited::All
         } else {

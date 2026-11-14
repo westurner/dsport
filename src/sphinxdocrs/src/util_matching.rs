@@ -533,7 +533,8 @@ mod tests {
             let files: Vec<String> = files.extract()?;
             assert_eq!(files, vec!["index.rst"]);
 
-            let py_error = to_py_err(Regex::new("[").unwrap_err());
+            let invalid_pattern = String::from("[");
+            let py_error = to_py_err(Regex::new(&invalid_pattern).unwrap_err());
             assert!(py_error.is_instance_of::<PyValueError>(py));
             Ok(())
         })

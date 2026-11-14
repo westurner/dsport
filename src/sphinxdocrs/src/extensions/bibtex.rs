@@ -91,10 +91,17 @@ pub fn register_parser_components() {
         });
     }
 
-    docutilsrs::plugins::register_native_directive("bibliography", |_arguments, _content| {
+    docutilsrs::plugins::register_native_directive("bibliography", |_arguments, content| {
+        let mut attrs = BTreeMap::new();
+        attrs.insert(
+            "include_all".to_string(),
+            docutilsrs::doctree::NodeAttributeValue::Bool(
+                content.iter().any(|line| line.trim() == ":all:"),
+            ),
+        );
         Some(vec![docutilsrs::parser::Block::Extension {
             class_name: "BibtexBibliography".to_string(),
-            attrs: BTreeMap::new(),
+            attrs,
             children: Vec::new(),
         }])
     });
@@ -1329,7 +1336,7 @@ mod citeproc_tests {
         .unwrap();
         std::fs::write(
             src.path().join("index.rst"),
-            "Index\n=====\n\nText :cite:`alpha`.\n\n.. bibliography::\n",
+            "Index\n=====\n\nText :cite:`alpha`.\n\n.. bibliography::\n   :all:\n",
         )
         .unwrap();
         std::fs::write(
@@ -1340,7 +1347,7 @@ mod citeproc_tests {
         std::fs::write(
             src.path().join("conf.py"),
             format!(
-                "extensions = [{:?}]\nbibtex_bibfiles = ['refs-a.bib', 'refs-b.bib']\nbibtex_csl_style = 'test.csl'\nbibtex_include_uncited = True\n",
+                "extensions = [{:?}]\nbibtex_bibfiles = ['refs-a.bib', 'refs-b.bib']\nbibtex_csl_style = 'test.csl'\n",
                 METADATA.name
             ),
         )

@@ -165,26 +165,18 @@ impl fmt::Display for NodeAttributeValue {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {
     /// `<abbreviation explanation="...">` element produced by `:abbr:` / `:abbreviation:`.
-    Abbreviation {
-        explanation: String,
-    },
+    Abbreviation { explanation: String },
     /// Admonition with a fixed kind (`note`, `warning`, `tip`, etc.).
-    Admonition {
-        kind: &'static str,
-    },
+    Admonition { kind: &'static str },
     /// Attribution line within a block_quote (`-- Author`).
     Attribution,
     /// A recognized bibliographic field (e.g. `<author>`, `<date>`). `tag`
     /// is the docutils element name (lower-case).
-    Bibliographic {
-        tag: &'static str,
-    },
+    Bibliographic { tag: &'static str },
     /// Extended quotation set apart from the surrounding text.
     BlockQuote,
     /// Unordered list; `bullet` records the marker used in the source.
-    BulletList {
-        bullet: char,
-    },
+    BulletList { bullet: char },
     /// Caption text associated with a figure.
     Caption,
     /// `<citation>` element. Mirrors `Footnote` but for citations (no `auto`).
@@ -195,22 +187,15 @@ pub enum NodeKind {
     },
     /// Inline reference to a citation entry.
     /// `<citation_reference>` element.
-    CitationReference {
-        ids: String,
-        refid: String,
-    },
+    CitationReference { ids: String, refid: String },
     /// Qualifier attached to a term in a definition list.
     Classifier,
     /// Specification for a column in a table group.
-    Colspec {
-        colwidth: u32,
-    },
+    Colspec { colwidth: u32 },
     /// Author note retained in the tree but hidden from output.
     Comment,
     /// `.. container:: classes` — generic named container `<div>`.
-    Container {
-        classes: String,
-    },
+    Container { classes: String },
     /// Definition body associated with a term in a definition list.
     Definition,
     /// List of terms and their definitions, as in a glossary or dictionary.
@@ -252,9 +237,7 @@ pub enum NodeKind {
     /// `.. epigraph::` — a blockquote rendered with an `epigraph` class,
     /// plus any extra classes propagated from a preceding `.. class::`/
     /// `.. cssclass::` directive.
-    Epigraph {
-        classes: String,
-    },
+    Epigraph { classes: String },
     /// An extension-defined node registered via upstream `Sphinx.add_node`
     /// (see `docs/adr/0006-extension-nodes.md`). `class_name` is the
     /// registering Python class's `__name__`, used to key the per-
@@ -279,10 +262,7 @@ pub enum NodeKind {
     /// Name or label of a field.
     FieldName,
     /// Formal figure grouping an image, caption, and optional legend.
-    Figure {
-        ids: String,
-        classes: String,
-    },
+    Figure { ids: String, classes: String },
     /// `<footnote>` element. `ids` is the auto-assigned identifier,
     /// `names` is the visible label (digit or `*`/`#`), `backrefs` is the
     /// space-separated list of inline-reference ids that resolve here, and
@@ -305,10 +285,7 @@ pub enum NodeKind {
     /// `.. admonition:: Title` — generic admonition with an arbitrary
     /// title (as opposed to the fixed-kind `Admonition` variant).
     /// `classes` holds the optional `:class:` option value.
-    GenericAdmonition {
-        title: String,
-        classes: String,
-    },
+    GenericAdmonition { title: String, classes: String },
     /// Reference to an image resource; may occur inline or as a block.
     Image {
         uri: String,
@@ -319,9 +296,7 @@ pub enum NodeKind {
     },
     /// Generic inline element used by roles and directives.
     /// `<inline classes="...">` element used by some roles/directives.
-    Inline {
-        classes: String,
-    },
+    Inline { classes: String },
     /// Inline keyboard input text produced by `:kbd:`.
     /// `<keyboard>` element produced by `:kbd:`.
     Keyboard,
@@ -342,14 +317,10 @@ pub enum NodeKind {
     },
     /// `<math>` inline element produced by the `:math:` role. `latex` is
     /// the raw LaTeX source.
-    Math {
-        latex: String,
-    },
+    Math { latex: String },
     /// `<math_block>` element produced by the `.. math::` directive.
     /// `latex` is the raw LaTeX source.
-    MathBlock {
-        latex: String,
-    },
+    MathBlock { latex: String },
     /// Sphinx object description containing signatures and shared content.
     /// A generic Sphinx domain "object description" block, e.g.
     /// `.. rst:directive::`/`.. rst:role::` (Tier **H3c**), reusable for
@@ -384,14 +355,9 @@ pub enum NodeKind {
     },
     /// `<problematic>` element. Produced as a placeholder for unresolved
     /// references; `refid` points to the matching `<system_message>`.
-    Problematic {
-        ids: String,
-        refid: String,
-    },
+    Problematic { ids: String, refid: String },
     /// Raw passthrough (`.. raw:: format`).
-    Raw {
-        format: String,
-    },
+    Raw { format: String },
     /// Hyperlink reference. `refuri` is empty until resolved.
     Reference {
         name: String,
@@ -420,18 +386,11 @@ pub enum NodeKind {
     /// `<subscript>` element produced by `:sub:` / `:subscript:`.
     Subscript,
     /// Definition of reusable substitution content.
-    SubstitutionDefinition {
-        names: String,
-    },
+    SubstitutionDefinition { names: String },
     /// Inline use of a named substitution.
-    SubstitutionReference {
-        refname: String,
-    },
+    SubstitutionReference { refname: String },
     /// Subtitle following a title in a document or section.
-    Subtitle {
-        ids: String,
-        names: String,
-    },
+    Subtitle { ids: String, names: String },
     /// `<superscript>` element produced by `:sup:` / `:superscript:`.
     Superscript,
     /// `<system_message>` element produced by the parser for error and
@@ -460,9 +419,7 @@ pub enum NodeKind {
     /// Plain text leaf node in the document tree.
     Text(String),
     /// Table group defining columns, an optional head, and a body.
-    Tgroup {
-        cols: u32,
-    },
+    Tgroup { cols: u32 },
     /// Header rows within a table group.
     Thead,
     /// Title of a document, section, or titled body element.
@@ -486,10 +443,7 @@ pub enum NodeKind {
     Transition,
     /// Sphinx version-change entry produced by version-related directives.
     /// `<versionmodified>` element produced by `.. versionadded::`, `.. versionchanged::`, etc.
-    VersionModified {
-        kind: &'static str,
-        version: String,
-    },
+    VersionModified { kind: &'static str, version: String },
 }
 
 #[derive(Debug, Clone)]
@@ -984,7 +938,7 @@ impl From<&NodeKind> for NodeKindData {
             },
             NodeKind::CitationReference { ids, refid } => {
                 NodeKindData::CitationReference { ids, refid }
-            },
+            }
             NodeKind::Classifier => NodeKindData::Classifier,
             NodeKind::Colspec { colwidth } => NodeKindData::Colspec { colwidth },
             NodeKind::Comment => NodeKindData::Comment,
@@ -1028,7 +982,7 @@ impl From<&NodeKind> for NodeKindData {
             NodeKind::Epigraph { classes } => NodeKindData::Epigraph { classes },
             NodeKind::Extension { class_name, attrs } => {
                 NodeKindData::Extension { class_name, attrs }
-            },
+            }
             NodeKind::Field => NodeKindData::Field,
             NodeKind::FieldBody => NodeKindData::FieldBody,
             NodeKind::FieldList => NodeKindData::FieldList,
@@ -1052,7 +1006,7 @@ impl From<&NodeKind> for NodeKindData {
             },
             NodeKind::GenericAdmonition { title, classes } => {
                 NodeKindData::GenericAdmonition { title, classes }
-            },
+            }
             NodeKind::Image {
                 alt,
                 classes,

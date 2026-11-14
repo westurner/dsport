@@ -95,7 +95,9 @@ The equivalent MyST directive is:
    ```{bibliography}
    ```
 
-The native extension currently accepts no directive options. Bibliography
+The ``bibliography`` directive currently supports the ``:all:`` option to
+include uncited records in that bibliography. Other directive options,
+including filtering and list selection, are not implemented yet. Bibliography
 records are formatted with citeproc and the selected CSL style.
 
 Generated exports

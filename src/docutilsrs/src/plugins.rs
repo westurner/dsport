@@ -231,7 +231,7 @@ pub fn invoke_python_directive(
         let content_list = PyList::new(py, &body_lines).ok()?;
         let state_machine = py
             .eval(
-                c"type('DocutilsRsStateMachine', (), {'reporter': None, 'get_source_and_line': lambda self, lineno=None: (self.source, self.line), 'nested_parse': lambda self, content, offset, node: (lambda document: (__import__('docutils.parsers.rst', fromlist=['Parser']).Parser().parse('\\n'.join(content), document), node.extend(document.children))[1])(__import__('docutils.utils', fromlist=['new_document']).new_document(self.source))})()",
+                c"type('DocutilsRsStateMachine', (), {'reporter': None, 'get_source_and_line': lambda self, lineno=None: (self.source, self.line), 'nested_parse': lambda self, content, offset, node: (lambda document: (__import__('docutils.parsers.rst', fromlist=['Parser']).Parser().parse('\\n'.join(content), document), node.extend(document.children))[1])(__import__('docutils.utils', fromlist=['new_document']).new_document(self.source, settings=__import__('docutils.frontend', fromlist=['get_default_settings']).get_default_settings(__import__('docutils.parsers.rst', fromlist=['Parser']).Parser)))})()",
                 None,
                 None,
             )
@@ -248,7 +248,7 @@ pub fn invoke_python_directive(
                 0,
                 0,
                 format!(".. {name}:: {args}"),
-                py.None(),
+                state_machine.clone(),
                 state_machine,
             ))
             .ok()?;

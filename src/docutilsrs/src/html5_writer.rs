@@ -81,7 +81,8 @@ fn glossary_term_id(tree: &Doctree, term: NodeId) -> Option<String> {
     let mut in_glossary = false;
     while let Some(id) = ancestor {
         let node = tree.node(id);
-        if matches!(&node.kind, NodeKind::Container { classes } if classes.split_whitespace().any(|class| class == "glossary")) {
+        if matches!(&node.kind, NodeKind::Container { classes } if classes.split_whitespace().any(|class| class == "glossary"))
+        {
             in_glossary = true;
             break;
         }
@@ -186,7 +187,11 @@ fn emit_enter(
             if classes.is_empty() {
                 let _ = write!(out, "<section id=\"{ids}\">\n");
             } else {
-                let _ = write!(out, "<section class=\"{}\" id=\"{ids}\">\n", escape(classes));
+                let _ = write!(
+                    out,
+                    "<section class=\"{}\" id=\"{ids}\">\n",
+                    escape(classes)
+                );
             }
             schedule(node, "</section>\n", tasks);
         }
@@ -392,8 +397,8 @@ fn emit_enter(
                 } else {
                     let _ = write!(out, "<div class=\"{classes} docutils container\">");
                 }
-                    out.push('\n');
-                    schedule(node, "</div>\n", tasks);
+                out.push('\n');
+                schedule(node, "</div>\n", tasks);
             }
         }
         NodeKind::GenericAdmonition { title, classes } => {
@@ -462,7 +467,9 @@ fn emit_enter(
             } else {
                 let linked = !in_reference
                     && (width.is_some() || height.is_some())
-                    && !classes.split_whitespace().any(|class| class == "no-scaled-link");
+                    && !classes
+                        .split_whitespace()
+                        .any(|class| class == "no-scaled-link");
                 if linked {
                     let _ = write!(
                         out,
@@ -556,9 +563,10 @@ fn emit_enter(
             let image_reference = classes
                 .split_whitespace()
                 .any(|class| class == "image-reference")
-                && node.children.iter().any(|child| {
-                    matches!(tree.node(*child).kind, NodeKind::Image { .. })
-                });
+                && node
+                    .children
+                    .iter()
+                    .any(|child| matches!(tree.node(*child).kind, NodeKind::Image { .. }));
             tasks.push(Task::Append(if image_reference {
                 "</a>\n".to_string()
             } else {
@@ -1089,12 +1097,11 @@ mod tests {
             &crate::cli::CommonOptions::default(),
         );
 
-        assert!(rendered.contains(
-            "<dt id=\"term-RemoveInSphinxXXXWarning\">RemoveInSphinxXXXWarning</dt>"
-        ));
-        assert!(rendered.contains(
-            "<dt id=\"term-reStructuredText\">reStructuredText</dt>"
-        ));
+        assert!(
+            rendered
+                .contains("<dt id=\"term-RemoveInSphinxXXXWarning\">RemoveInSphinxXXXWarning</dt>")
+        );
+        assert!(rendered.contains("<dt id=\"term-reStructuredText\">reStructuredText</dt>"));
     }
 
     #[test]

@@ -24,7 +24,7 @@ fn image_dimensions_are_preserved_in_html5_output() {
     );
     assert!(
         html.contains(
-            "<img src=\"diagram.svg\" alt=\"Diagram\" width=\"320px\" height=\"180px\"/>"
+            "<img alt=\"Diagram\" src=\"diagram.svg\" style=\"width: 320px; height: 180px;\" />"
         ),
         "{html}"
     );

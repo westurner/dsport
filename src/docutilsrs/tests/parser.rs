@@ -93,7 +93,8 @@ fn reference_resolves_to_target() {
 
 #[test]
 fn named_internal_target_resolves_to_its_fragment() {
-    let source = "See `glob-style patterns`_.\n\n.. _glob-style patterns:\n\nThese patterns match paths.";
+    let source =
+        "See `glob-style patterns`_.\n\n.. _glob-style patterns:\n\nThese patterns match paths.";
     let tree = parse_rst(source);
     assert!((0..tree.nodes_len()).any(|id| matches!(
         &tree.node(id).kind,
@@ -162,7 +163,8 @@ fn angle_only_embedded_uri_reference_resolves() {
 
 #[test]
 fn multiline_embedded_uri_reference_resolves() {
-    let source = "See `reStructuredText User Documentation\n<https://docutils.sourceforge.io/rst.html>`_.";
+    let source =
+        "See `reStructuredText User Documentation\n<https://docutils.sourceforge.io/rst.html>`_.";
     let tree = parse_rst(source);
     assert!(
         (0..tree.nodes_len()).any(|id| matches!(
@@ -179,11 +181,7 @@ fn multiline_embedded_uri_reference_resolves() {
 #[test]
 fn implicit_section_reference_resolves_to_section_id() {
     let source = "See Images_.\n\nImages\n------\n\nImage details.";
-    let tree = docutilsrs::parse_rst_with_options(
-        source,
-        "refs",
-        TitlePromotion::Preserve,
-    );
+    let tree = docutilsrs::parse_rst_with_options(source, "refs", TitlePromotion::Preserve);
     assert!((0..tree.nodes_len()).any(|id| matches!(
         &tree.node(id).kind,
         NodeKind::Reference { name, refuri, .. }
@@ -234,12 +232,8 @@ fn malformed_rst_domain_directive_spelling_is_comment_content() {
 #[test]
 fn docutils_reference_roles_split_titles_and_respect_link_option() {
     let source = ":dudir:`contents <table-of-contents>` and :duref:`ref <directives>`";
-    let linked = parse_rst_with_options_and_docutils_links(
-        source,
-        "refs",
-        TitlePromotion::Preserve,
-        true,
-    );
+    let linked =
+        parse_rst_with_options_and_docutils_links(source, "refs", TitlePromotion::Preserve, true);
     let references: Vec<_> = (0..linked.nodes_len())
         .filter_map(|id| match &linked.node(id).kind {
             NodeKind::Reference {
@@ -269,12 +263,8 @@ fn docutils_reference_roles_split_titles_and_respect_link_option() {
         ]
     );
 
-    let unlinked = parse_rst_with_options_and_docutils_links(
-        source,
-        "refs",
-        TitlePromotion::Preserve,
-        false,
-    );
+    let unlinked =
+        parse_rst_with_options_and_docutils_links(source, "refs", TitlePromotion::Preserve, false);
     let unlinked_labels: Vec<_> = (0..unlinked.nodes_len())
         .filter_map(|id| match &unlinked.node(id).kind {
             NodeKind::Reference { name, refuri, .. } => Some((name.clone(), refuri.clone())),
@@ -452,7 +442,6 @@ fn rst_directive_bare_name_renders_as_object_description() {
     insta::assert_snapshot!("rst_directive_bare_name", pseudo_xml(&parse_rst(src)));
 }
 
-
 #[test]
 fn rst_directive_full_signature_renders_dotted_form() {
     let src = ".. rst:directive:: .. attention::\n\n   An attention admonition.\n";
@@ -478,9 +467,7 @@ fn rst_directive_alternative_signatures_are_not_nested_directives() {
 
 #[test]
 fn autodoc_autoattribute_preserves_qualified_anchor() {
-    let tree = parse_rst(
-        ".. autoattribute:: sphinx.builders.html.StandaloneHTMLBuilder.name\n",
-    );
+    let tree = parse_rst(".. autoattribute:: sphinx.builders.html.StandaloneHTMLBuilder.name\n");
     let object = (0..tree.nodes_len())
         .find_map(|id| match &tree.node(id).kind {
             NodeKind::ObjectDescription {
@@ -488,9 +475,7 @@ fn autodoc_autoattribute_preserves_qualified_anchor() {
                 ids,
                 sig_text,
                 ..
-            } if classes == "autodoc autoattribute" => {
-                Some((ids.as_str(), sig_text.as_str()))
-            }
+            } if classes == "autodoc autoattribute" => Some((ids.as_str(), sig_text.as_str())),
             _ => None,
         })
         .expect("autoattribute object description should be present");
@@ -519,17 +504,10 @@ fn duplicate_section_titles_get_implicit_unique_ids() {
 #[test]
 fn sphinx_duplicate_section_ids_reserve_anonymous_target_ids() {
     let source = "Release\n=======\n\nBugs fixed\n----------\n\nFirst.\n\n`search results`__.\n\n__ https://example.com/\n\nBugs fixed\n----------\n\nSecond.\n";
-    let standalone = docutilsrs::parse_rst_with_options(
-        source,
-        "changes",
-        TitlePromotion::Preserve,
-    );
-    let sphinx = docutilsrs::parse_rst_for_sphinx(
-        source,
-        "changes",
-        TitlePromotion::Preserve,
-        true,
-    );
+    let standalone =
+        docutilsrs::parse_rst_with_options(source, "changes", TitlePromotion::Preserve);
+    let sphinx =
+        docutilsrs::parse_rst_for_sphinx(source, "changes", TitlePromotion::Preserve, true);
     let section_ids = |tree: &docutilsrs::Doctree| {
         (0..tree.nodes_len())
             .filter_map(|id| match &tree.node(id).kind {
@@ -559,9 +537,8 @@ fn sphinx_duplicate_section_ids_reserve_anonymous_target_ids() {
 
 #[test]
 fn sphinx_module_directive_emits_only_its_module_anchor() {
-    let tree = parse_rst(
-        ".. module:: sphinx.builders\n   :synopsis: Built-in builders\n\nBody text.\n",
-    );
+    let tree =
+        parse_rst(".. module:: sphinx.builders\n   :synopsis: Built-in builders\n\nBody text.\n");
     let targets: Vec<_> = (0..tree.nodes_len())
         .filter_map(|id| match &tree.node(id).kind {
             NodeKind::Target { ids, .. } => Some(ids.as_str()),
@@ -582,16 +559,23 @@ fn standard_domain_objects_use_declared_names_for_ids_and_signatures() {
     let tree = parse_rst(".. data:: script_files\n\n.. function:: pathto(document)\n");
     let objects: Vec<_> = (0..tree.nodes_len())
         .filter_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, sig_text, .. }
-                if classes.starts_with("std ") =>
-            {
-                Some((ids.as_str(), sig_text.as_str()))
-            }
+            NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                ..
+            } if classes.starts_with("std ") => Some((ids.as_str(), sig_text.as_str())),
             _ => None,
         })
         .collect();
 
-    assert_eq!(objects, [("script_files", "script_files"), ("pathto", "pathto(document)")]);
+    assert_eq!(
+        objects,
+        [
+            ("script_files", "script_files"),
+            ("pathto", "pathto(document)")
+        ]
+    );
 }
 
 #[test]
@@ -599,9 +583,7 @@ fn environment_variable_ids_preserve_prefix_case_and_underscores() {
     let tree = parse_rst(".. envvar:: SPHINX_APIDOC_OPTIONS\n");
     let envvar_id = (0..tree.nodes_len())
         .find_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, .. }
-                if classes == "std envvar" =>
-            {
+            NodeKind::ObjectDescription { classes, ids, .. } if classes == "std envvar" => {
                 Some(ids.as_str())
             }
             _ => None,
@@ -613,21 +595,23 @@ fn environment_variable_ids_preserve_prefix_case_and_underscores() {
 
 #[test]
 fn standard_domain_signature_aliases_emit_peer_objects() {
-    let tree = parse_rst(
-        ".. data:: master_doc\n          root_doc\n\n   The root document.\n",
-    );
+    let tree = parse_rst(".. data:: master_doc\n          root_doc\n\n   The root document.\n");
     let objects: Vec<_> = (0..tree.nodes_len())
         .filter_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, sig_text, .. }
-                if classes == "std data" =>
-            {
-                Some((ids.as_str(), sig_text.as_str()))
-            }
+            NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                ..
+            } if classes == "std data" => Some((ids.as_str(), sig_text.as_str())),
             _ => None,
         })
         .collect();
 
-    assert_eq!(objects, [("master_doc", "master_doc"), ("root_doc", "root_doc")]);
+    assert_eq!(
+        objects,
+        [("master_doc", "master_doc"), ("root_doc", "root_doc")]
+    );
 }
 
 #[test]
@@ -637,11 +621,12 @@ fn rst_directive_option_keeps_qualified_owner_in_anchor() {
     );
     let objects: Vec<_> = (0..tree.nodes_len())
         .filter_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, sig_text, .. }
-                if classes == "rst directive:option" =>
-            {
-                Some((ids.as_str(), sig_text.as_str()))
-            }
+            NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                ..
+            } if classes == "rst directive:option" => Some((ids.as_str(), sig_text.as_str())),
             _ => None,
         })
         .collect();
@@ -665,9 +650,7 @@ fn python_domain_ids_preserve_object_name_case_and_underscores() {
     );
     let ids: Vec<_> = (0..tree.nodes_len())
         .filter_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, .. }
-                if classes.starts_with("py ") =>
-            {
+            NodeKind::ObjectDescription { classes, ids, .. } if classes.starts_with("py ") => {
                 Some(ids.as_str())
             }
             _ => None,
@@ -683,9 +666,7 @@ fn python_domain_signature_text_omits_directive_prefix() {
     let signature = (0..tree.nodes_len())
         .find_map(|id| match &tree.node(id).kind {
             NodeKind::ObjectDescription {
-                classes,
-                sig_text,
-                ..
+                classes, sig_text, ..
             } if classes == "py py method" => Some(sig_text.as_str()),
             _ => None,
         })
@@ -701,9 +682,7 @@ fn python_domain_continuation_signatures_get_qualified_ids() {
     );
     let ids = (0..tree.nodes_len())
         .filter_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, .. }
-                if classes == "py py attribute" =>
-            {
+            NodeKind::ObjectDescription { classes, ids, .. } if classes == "py py attribute" => {
                 Some(ids.as_str())
             }
             _ => None,
@@ -715,11 +694,9 @@ fn python_domain_continuation_signatures_get_qualified_ids() {
 
 #[test]
 fn glossary_directive_preserves_definition_list_structure() {
-    let tree = parse_rst(
-        ".. glossary::\n\n   builder\n      A class that builds output.\n",
-    );
-    let has_definition_list = (0..tree.nodes_len())
-        .any(|id| matches!(tree.node(id).kind, NodeKind::DefinitionList));
+    let tree = parse_rst(".. glossary::\n\n   builder\n      A class that builds output.\n");
+    let has_definition_list =
+        (0..tree.nodes_len()).any(|id| matches!(tree.node(id).kind, NodeKind::DefinitionList));
     let has_term = (0..tree.nodes_len()).any(|id| matches!(tree.node(id).kind, NodeKind::Term));
 
     assert!(has_definition_list);
@@ -740,16 +717,15 @@ fn glossary_first_real_entries_parse_as_definitions() {
 
 #[test]
 fn autodoc_autoclass_preserves_qualified_target() {
-    let tree = parse_rst(
-        ".. autoclass:: sphinx.transforms.post_transforms.SphinxPostTransform\n",
-    );
+    let tree = parse_rst(".. autoclass:: sphinx.transforms.post_transforms.SphinxPostTransform\n");
     let object = (0..tree.nodes_len())
         .find_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, sig_text, .. }
-                if classes == "autodoc autoclass" =>
-            {
-                Some((ids.as_str(), sig_text.as_str()))
-            }
+            NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                ..
+            } if classes == "autodoc autoclass" => Some((ids.as_str(), sig_text.as_str())),
             _ => None,
         })
         .expect("autoclass object description should be present");
@@ -768,11 +744,12 @@ fn program_options_use_program_scoped_ids_for_each_alias() {
     let tree = parse_rst(".. program:: sphinx-quickstart\n\n.. option:: -q, --quiet\n");
     let option = (0..tree.nodes_len())
         .find_map(|id| match &tree.node(id).kind {
-            NodeKind::ObjectDescription { classes, ids, sig_text, .. }
-                if classes == "std option" =>
-            {
-                Some((ids.as_str(), sig_text.as_str()))
-            }
+            NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                ..
+            } if classes == "std option" => Some((ids.as_str(), sig_text.as_str())),
             _ => None,
         })
         .expect("command option description should be present");
@@ -857,9 +834,7 @@ fn rust_and_lean_source_directives_preserve_kind_signature_and_nested_content() 
     let descriptions: Vec<_> = (0..tree.nodes_len())
         .filter_map(|id| match &tree.node(id).kind {
             NodeKind::ObjectDescription {
-                classes,
-                sig_text,
-                ..
+                classes, sig_text, ..
             } => Some((id, classes.clone(), sig_text.clone())),
             _ => None,
         })
@@ -867,7 +842,10 @@ fn rust_and_lean_source_directives_preserve_kind_signature_and_nested_content() 
     assert_eq!(descriptions.len(), 2);
     assert!(descriptions[0].1.contains("rust"));
     assert!(descriptions[0].1.contains("function"));
-    assert_eq!(descriptions[0].2, "rust:function crate::api::answer() -> i32");
+    assert_eq!(
+        descriptions[0].2,
+        "rust:function crate::api::answer() -> i32"
+    );
     assert!(descriptions[1].1.contains("lean"));
     assert!(descriptions[1].1.contains("theorem"));
     assert_eq!(descriptions[1].2, "lean:theorem Demo.answer");
@@ -882,11 +860,7 @@ fn rust_and_lean_source_directives_preserve_kind_signature_and_nested_content() 
 #[test]
 fn vendored_sphinx_glossary_keeps_term_nodes() {
     let source = include_str!("../../sphinx/doc/glossary.rst");
-    let tree = docutilsrs::parse_rst_with_options(
-        source,
-        "glossary",
-        TitlePromotion::Preserve,
-    );
+    let tree = docutilsrs::parse_rst_with_options(source, "glossary", TitlePromotion::Preserve);
     let terms = (0..tree.nodes_len())
         .filter(|&id| matches!(tree.node(id).kind, NodeKind::Term))
         .count();
@@ -902,10 +876,19 @@ fn rust_and_lean_source_directives_render_as_html_definitions() {
         &docutilsrs::cli::Html5Options::default(),
         &docutilsrs::cli::CommonOptions::default(),
     );
-    assert!(html.contains(r#"<dl class="rust rust function">"#), "got:\n{html}");
-    assert!(html.contains(r#"id="rust-crate-api-answer-t""#), "got:\n{html}");
+    assert!(
+        html.contains(r#"<dl class="rust rust function">"#),
+        "got:\n{html}"
+    );
+    assert!(
+        html.contains(r#"id="rust-crate-api-answer-t""#),
+        "got:\n{html}"
+    );
     assert!(html.contains("Returns the answer."), "got:\n{html}");
-    assert!(html.contains(r#"<dl class="lean lean theorem">"#), "got:\n{html}");
+    assert!(
+        html.contains(r#"<dl class="lean lean theorem">"#),
+        "got:\n{html}"
+    );
     assert!(html.contains("The theorem documentation."), "got:\n{html}");
 }
 

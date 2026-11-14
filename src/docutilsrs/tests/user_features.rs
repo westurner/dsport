@@ -115,9 +115,13 @@ fn rst_class_applies_to_section() {
         "<test>",
         TitlePromotion::Preserve,
     );
-    let section = tree.node(tree.root()).children.iter().find(|&&id| {
-        matches!(tree.node(id).kind, NodeKind::Section { .. })
-    }).copied().expect("section node found");
+    let section = tree
+        .node(tree.root())
+        .children
+        .iter()
+        .find(|&&id| matches!(tree.node(id).kind, NodeKind::Section { .. }))
+        .copied()
+        .expect("section node found");
 
     assert!(matches!(
         &tree.node(section).kind,

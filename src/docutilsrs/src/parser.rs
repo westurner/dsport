@@ -161,7 +161,8 @@ fn normalize_target_placement(tree: &mut Doctree) {
                 let Some(&child) = tree.node(first).children.last() else {
                     break;
                 };
-                if matches!(&tree.node(child).kind, NodeKind::Target { refuri, .. } if refuri.is_empty()) {
+                if matches!(&tree.node(child).kind, NodeKind::Target { refuri, .. } if refuri.is_empty())
+                {
                     moved.push(tree.node_mut(first).children.pop().unwrap());
                 } else {
                     break;
@@ -309,7 +310,8 @@ fn repair_duplicate_section_ids(tree: &mut Doctree, reserve_anonymous_target_ids
                 let _ = ids;
             }
             NodeKind::Target { ids, .. } | NodeKind::ObjectDescription { ids, .. }
-                if !ids.is_empty() => {
+                if !ids.is_empty() =>
+            {
                 reserved.insert(ids.clone());
             }
             _ => {}
@@ -2407,24 +2409,83 @@ fn parse_directive(
                 children,
             }
         }
-        "py:module" | "py:function" | "py:class" | "py:method" | "py:classmethod"
-        | "py:staticmethod" | "py:attribute" | "py:property" | "py:data" | "py:exception"
-        | "py:decorator" | "py:decoratormethod" | "py:type" | "c:alias" | "c:function"
-        | "c:macro" | "c:namespace-pop" | "c:namespace-push" | "c:struct" | "c:union"
-        | "c:type" | "c:var"
-        | "cpp:alias" | "cpp:class" | "cpp:concept" | "cpp:enum-class" | "cpp:enum-struct"
-        | "cpp:enumerator" | "cpp:function" | "cpp:namespace-pop" | "cpp:namespace-push"
-        | "cpp:struct" | "cpp:union" | "cpp:type" | "cpp:var" | "js:class" | "js:function"
-        | "rust:module" | "rust:function" | "rust:struct" | "rust:enum" | "rust:union"
-        | "rust:trait" | "rust:impl" | "rust:method" | "rust:associatedtype"
-        | "rust:associatedconst" | "rust:constant" | "rust:static" | "rust:type"
-        | "rust:macro" | "rust:variant" | "rust:field"
-        | "lean:module" | "lean:namespace" | "lean:def" | "lean:theorem" | "lean:lemma"
-        | "lean:inductive" | "lean:structure" | "lean:class" | "lean:instance"
-        | "lean:abbrev" | "lean:axiom" | "lean:opaque" | "lean:constructor"
-        | "lean:field" | "lean:notation" | "confval"
-        | "data" | "envvar" | "event" | "exception" | "function" | "method"
-        | "option" | "moduleauthor" => {
+        "py:module"
+        | "py:function"
+        | "py:class"
+        | "py:method"
+        | "py:classmethod"
+        | "py:staticmethod"
+        | "py:attribute"
+        | "py:property"
+        | "py:data"
+        | "py:exception"
+        | "py:decorator"
+        | "py:decoratormethod"
+        | "py:type"
+        | "c:alias"
+        | "c:function"
+        | "c:macro"
+        | "c:namespace-pop"
+        | "c:namespace-push"
+        | "c:struct"
+        | "c:union"
+        | "c:type"
+        | "c:var"
+        | "cpp:alias"
+        | "cpp:class"
+        | "cpp:concept"
+        | "cpp:enum-class"
+        | "cpp:enum-struct"
+        | "cpp:enumerator"
+        | "cpp:function"
+        | "cpp:namespace-pop"
+        | "cpp:namespace-push"
+        | "cpp:struct"
+        | "cpp:union"
+        | "cpp:type"
+        | "cpp:var"
+        | "js:class"
+        | "js:function"
+        | "rust:module"
+        | "rust:function"
+        | "rust:struct"
+        | "rust:enum"
+        | "rust:union"
+        | "rust:trait"
+        | "rust:impl"
+        | "rust:method"
+        | "rust:associatedtype"
+        | "rust:associatedconst"
+        | "rust:constant"
+        | "rust:static"
+        | "rust:type"
+        | "rust:macro"
+        | "rust:variant"
+        | "rust:field"
+        | "lean:module"
+        | "lean:namespace"
+        | "lean:def"
+        | "lean:theorem"
+        | "lean:lemma"
+        | "lean:inductive"
+        | "lean:structure"
+        | "lean:class"
+        | "lean:instance"
+        | "lean:abbrev"
+        | "lean:axiom"
+        | "lean:opaque"
+        | "lean:constructor"
+        | "lean:field"
+        | "lean:notation"
+        | "confval"
+        | "data"
+        | "envvar"
+        | "event"
+        | "exception"
+        | "function"
+        | "method"
+        | "option"
+        | "moduleauthor" => {
             let (objtype, sig) = if let Some(stripped) = name.strip_prefix("py:") {
                 ("py", format!("py:{stripped} {}", args.trim()))
             } else if let Some(stripped) = name.strip_prefix("c:") {
@@ -2998,6 +3059,14 @@ fn parse_directive(
             }
             let body_text = inner.join("\n");
             if crate::plugins::has_plugin(&name) {
+                if let Some(blocks) = crate::plugins::invoke_python_directive(
+                    &name,
+                    args,
+                    &inner,
+                    source_line.unwrap_or_default() as usize,
+                ) {
+                    return Block::PluginResult(blocks);
+                }
                 if let Some(rst) = crate::plugins::invoke_plugin(&name, args, &body_text) {
                     let rst_lines: Vec<&str> = rst.lines().collect();
                     let blocks = parse_blocks(&rst_lines, 0, 0);
@@ -3975,22 +4044,15 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                 }
             }
             Block::Container { classes, children } => {
-                if classes
-                    .chars()
-                    .next()
-                    .is_some_and(char::is_uppercase)
-                {
-                    let class_id = tree
-                        .node(parent)
-                        .children
-                        .last()
-                        .and_then(|&id| match &tree.node(id).kind {
-                            NodeKind::Target { ids, .. } => {
-                                ids.strip_prefix("module-")
-                                    .map(|module| format!("{module}.{classes}"))
-                            }
+                if classes.chars().next().is_some_and(char::is_uppercase) {
+                    let class_id = tree.node(parent).children.last().and_then(|&id| {
+                        match &tree.node(id).kind {
+                            NodeKind::Target { ids, .. } => ids
+                                .strip_prefix("module-")
+                                .map(|module| format!("{module}.{classes}")),
                             _ => None,
-                        });
+                        }
+                    });
                     if let Some(ids) = class_id {
                         tree.append(
                             parent,
@@ -4067,9 +4129,8 @@ fn emit_block(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, block: Blo
                         ids: parent_ids, ..
                     } = &tree.node(parent).kind
                     {
-                        let parent_name = parent_ids
-                            .strip_prefix("directive-")
-                            .unwrap_or(parent_ids);
+                        let parent_name =
+                            parent_ids.strip_prefix("directive-").unwrap_or(parent_ids);
                         let option = ids.strip_prefix("directive-option-").unwrap_or(&ids);
                         let prefix = format!("{parent_name}-");
                         if option.starts_with(&prefix) {
@@ -5288,7 +5349,11 @@ fn parse_inline(tree: &mut Doctree, parent: NodeId, ctx: &mut ParseCtx, raw: &st
                         .next_back()
                         .filter(|(offset, character)| {
                             character.is_whitespace()
-                                && pre.escaped.get(text_start + offset).copied().unwrap_or(false)
+                                && pre
+                                    .escaped
+                                    .get(text_start + offset)
+                                    .copied()
+                                    .unwrap_or(false)
                         })
                         .map_or(cursor, |(offset, _)| text_start + offset)
                 } else {
@@ -5955,7 +6020,10 @@ fn try_match_phrase_reference(
         (uri.clone(), Some(uri))
     } else if inner.ends_with('>') {
         if let Some(lt) = inner.rfind('<')
-            && inner[..lt].chars().next_back().is_some_and(char::is_whitespace)
+            && inner[..lt]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_whitespace)
         {
             let name = inner[..lt].trim().to_string();
             let uri = inner[lt + 1..inner.len() - 1].trim().to_string();

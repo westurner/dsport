@@ -65,7 +65,7 @@ fn test_html5_external_links_have_external_class() {
         &CommonOptions::default(),
     );
     assert!(
-        html.contains("<a class=\"external\" href=\"https://example.test/docs\">"),
+        html.contains("<a class=\"reference external\" href=\"https://example.test/docs\">"),
         "External content links should carry the external class: {html}"
     );
 }

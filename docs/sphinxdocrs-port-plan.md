@@ -3145,6 +3145,13 @@ The native build fixture verifies both output forms.
 and apply parenthetical/capitalization behavior from their role names. A
 lowercase-author fixture verifies each output form.
 
+**Completed slice (2026-11-14):** the `bibliography` directive's `:all:`
+option includes uncited records in its rendered bibliography, independently
+of the `bibtex_include_uncited` project setting. The existing cross-document
+build fixture now verifies an otherwise uncited entry is included only by the
+directive option. Other bibliography directive options and filtering remain
+pending under H15g.3/H15g.4.
+
 **Next scoped slice:** continue H15g.1 with `cite:alps`, plural full-author
 variants, and the remaining label roles, each with a mode-specific output
 fixture. The rest of the H15g matrix remains pending.

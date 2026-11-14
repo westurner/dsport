@@ -920,7 +920,7 @@ impl HtmlBuilder {
 
         let mut starts: HashMap<usize, Vec<(&str, usize)>> = HashMap::new();
         let mut ends: BTreeMap<usize, Vec<&str>> = BTreeMap::new();
-        for (name, _) in &module.used {
+        for name in module.used.keys() {
             let Some((_, start, end)) = module.tags.get(name) else {
                 continue;
             };

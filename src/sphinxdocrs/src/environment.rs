@@ -1411,11 +1411,10 @@ impl BuildEnvironment {
         let yaml_source = expand_yaml_toctree_directives(source, &self.srcdir)?;
         let included_source = expand_rst_includes(
             &yaml_source,
-            &self
+            self
                 .doc2path(docname)
                 .parent()
-                .unwrap_or(self.srcdir.as_path())
-                .to_path_buf(),
+                .unwrap_or(self.srcdir.as_path()),
             &self.config.source_encoding(),
         );
         let source_dir = self

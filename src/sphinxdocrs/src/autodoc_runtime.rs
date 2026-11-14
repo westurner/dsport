@@ -47,7 +47,7 @@ fn python_runtime_lock(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
     match (result, release_result) {
         (Ok(lock), Ok(_)) => Ok(lock),
         (Err(error), Ok(_)) => Err(error),
-        (Ok(_), Err(error)) | (Err(_), Err(error)) => Err(error.into()),
+        (Ok(_), Err(error)) | (Err(_), Err(error)) => Err(error),
     }
 }
 
@@ -62,7 +62,7 @@ fn with_python_runtime_lock<T>(
     match (result, release_result) {
         (Ok(value), Ok(_)) => Ok(value),
         (Err(error), Ok(_)) => Err(error),
-        (Ok(_), Err(error)) | (Err(_), Err(error)) => Err(error.into()),
+        (Ok(_), Err(error)) | (Err(_), Err(error)) => Err(error),
     }
 }
 

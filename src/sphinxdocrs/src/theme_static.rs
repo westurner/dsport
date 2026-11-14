@@ -568,7 +568,7 @@ fn copy_theme_static_files_for_theme(
         .get("pygments_style")
         .and_then(|value| value.as_str().map(str::to_owned));
     let Some(theme) = resolve_theme(
-        &theme_name,
+        theme_name,
         &theme_path_dirs,
         config.registered_themes(),
         pygments_style.as_deref(),

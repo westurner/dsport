@@ -426,7 +426,7 @@ fn render_attributes(attributes: &HashMap<String, String>) -> String {
         .iter()
         .filter(|(key, _)| key.as_str() != "priority" && key.as_str() != "loading_method")
         .collect();
-    entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+    entries.sort_by_key(|(left, _)| *left);
     entries
         .into_iter()
         .filter(|(key, _)| is_safe_html_attribute_name(key))
@@ -944,12 +944,11 @@ fn local_toc_from_doctree(
                     _ => None,
                 })
                 .unwrap_or(false);
-            if hidden_root {
-                if !entries.is_empty() {
+            if hidden_root
+                && !entries.is_empty() {
                     let root_entry = entries.remove(0);
                     entries = root_entry.children;
                 }
-            }
             entries
         })
         .unwrap_or_default()

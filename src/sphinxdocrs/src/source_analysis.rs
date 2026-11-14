@@ -290,17 +290,14 @@ pub struct AnalysisDiagnostic {
 /// Backend selection policy supplied by a caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum BackendPolicy {
+    #[default]
     Auto,
     Required,
     AllowFallback,
 }
 
-impl Default for BackendPolicy {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
 
 /// Backend family that produced a normalized source snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

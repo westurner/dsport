@@ -206,11 +206,10 @@ fn repair_duplicate_target_ids(tree: &mut Doctree) {
     let mut used = HashMap::<String, ()>::new();
     for id in 0..tree.nodes_len() {
         match &tree.node(id).kind {
-            NodeKind::Section { ids, .. } | NodeKind::Target { ids, .. } => {
-                if !ids.is_empty() {
+            NodeKind::Section { ids, .. } | NodeKind::Target { ids, .. }
+                if !ids.is_empty() => {
                     used.insert(ids.clone(), ());
                 }
-            }
             _ => {}
         }
     }
@@ -358,8 +357,8 @@ fn repair_duplicate_section_ids(tree: &mut Doctree, reserve_anonymous_target_ids
                     *ids = replacement;
                 }
             }
-            NodeKind::Section { ids, .. } => {
-                if !ids.is_empty() && !seen_sections.insert(ids.clone()) {
+            NodeKind::Section { ids, .. }
+                if !ids.is_empty() && !seen_sections.insert(ids.clone()) => {
                     let replacement = loop {
                         let candidate = format!("id{}", *next_id);
                         *next_id += 1;
@@ -371,7 +370,6 @@ fn repair_duplicate_section_ids(tree: &mut Doctree, reserve_anonymous_target_ids
                         *ids = replacement;
                     }
                 }
-            }
             _ => {}
         }
 

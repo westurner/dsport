@@ -185,11 +185,11 @@ fn emit_enter(
         }
         NodeKind::Section { ids, classes, .. } => {
             if classes.is_empty() {
-                let _ = write!(out, "<section id=\"{ids}\">\n");
+                let _ = writeln!(out, "<section id=\"{ids}\">");
             } else {
-                let _ = write!(
+                let _ = writeln!(
                     out,
-                    "<section class=\"{}\" id=\"{ids}\">\n",
+                    "<section class=\"{}\" id=\"{ids}\">",
                     escape(classes)
                 );
             }
@@ -283,7 +283,7 @@ fn emit_enter(
                         "<table class=\"highlighttable\"><tr><td class=\"linenos\"><div class=\"linenodiv\"><pre>",
                     );
                     for number in 1..=literal_block_line_count(tree, id) {
-                        let _ = write!(out, "<span class=\"normal\">{number}</span>\n");
+                        let _ = writeln!(out, "<span class=\"normal\">{number}</span>");
                     }
                     out.push_str("</pre></div></td><td class=\"code\">");
                 }
@@ -409,15 +409,15 @@ fn emit_enter(
                 "error" => "Error",
                 _ => kind,
             };
-            let _ = write!(out, "<div class=\"admonition {kind}\">\n");
-            let _ = write!(out, "<p class=\"admonition-title\">{}</p>\n", escape(title));
+            let _ = writeln!(out, "<div class=\"admonition {kind}\">");
+            let _ = writeln!(out, "<p class=\"admonition-title\">{}</p>", escape(title));
             schedule(node, "</div>\n", tasks);
         }
         NodeKind::Container { classes } => {
             // `.. container:: classes` — real docutils/Sphinx markup:
             // `<div class="{classes} docutils container">`.
             if classes == "toctree-wrapper compound" {
-                let _ = write!(out, "<div class=\"{classes}\">\n");
+                let _ = writeln!(out, "<div class=\"{classes}\">");
                 schedule(node, "</div>\n", tasks);
             } else {
                 if classes.is_empty() {
@@ -436,9 +436,9 @@ fn emit_enter(
             if classes.is_empty() {
                 out.push_str("<div class=\"admonition\">\n");
             } else {
-                let _ = write!(out, "<div class=\"{classes} admonition\">\n");
+                let _ = writeln!(out, "<div class=\"{classes} admonition\">");
             }
-            let _ = write!(out, "<p class=\"admonition-title\">{}</p>\n", escape(title));
+            let _ = writeln!(out, "<p class=\"admonition-title\">{}</p>", escape(title));
             schedule(node, "</div>\n", tasks);
         }
         NodeKind::Epigraph { classes } => {
@@ -676,7 +676,7 @@ fn emit_enter(
             } else {
                 format!(" id=\"{}\"", escape(ids))
             };
-            let _ = write!(out, "<figure{class_attr}{id_attr}>\n");
+            let _ = writeln!(out, "<figure{class_attr}{id_attr}>");
             schedule(node, "</figure>\n", tasks);
         }
         NodeKind::Caption => {

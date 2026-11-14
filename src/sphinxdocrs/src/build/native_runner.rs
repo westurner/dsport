@@ -26,7 +26,7 @@ use std::path::Path;
 
 use crate::application::{SphinxApp, is_native_builder};
 use crate::build::args::parse_args;
-use crate::cli::io::Runner;
+use crate::cli::io::{Runner, python_main_import_code};
 
 // ── NativeMakeRunner ─────────────────────────────────────────────────────────
 
@@ -209,10 +209,13 @@ fn record_error_log(
 
 /// Spawn `python -c "from sphinx.cmd.build import main; ..."` with `args`.
 fn spawn_python_build(args: &[String]) -> io::Result<i32> {
-    let py_code = "import sys; from sphinx.cmd.build import main; sys.exit(main())";
+    let py_code = format!(
+        "{}; sys.exit(main())",
+        python_main_import_code("sphinx.cmd.build")
+    );
     let status = std::process::Command::new("python")
         .arg("-c")
-        .arg(py_code)
+        .arg(&py_code)
         .args(args)
         .status()?;
     Ok(status.code().unwrap_or(1))

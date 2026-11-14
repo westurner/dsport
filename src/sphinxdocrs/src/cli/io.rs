@@ -224,6 +224,17 @@ pub fn py_fallback_requested(args: &[String]) -> bool {
     args.iter().any(|a| a == "--use-python-impl")
 }
 
+/// Build the import prefix for a Python `-c` invocation of a Sphinx module.
+///
+/// Python puts the current directory first on `sys.path` for `-c`. When that
+/// directory is `sphinxdocrs`, its bundled `locale/` package shadows the
+/// standard-library module. Import stdlib `locale` before restoring the path.
+pub(crate) fn python_main_import_code(mod_path: &str) -> String {
+    format!(
+        "import sys\n_sphinx_cwd = sys.path.pop(0) if sys.path and sys.path[0] == '' else None\nimport locale\nif _sphinx_cwd is not None:\n    sys.path.insert(0, _sphinx_cwd)\nfrom {mod_path} import main"
+    )
+}
+
 /// Run the upstream Python entry-point for `mod_path` (e.g.
 /// `"sphinx.cmd.quickstart"`) with the given `argv`, forwarding its
 /// exit code. Strips `--use-python-impl` from `argv` before forwarding.
@@ -232,10 +243,7 @@ pub fn run_python_impl(mod_path: &str, argv: &[String]) -> ! {
         .iter()
         .filter(|a| a.as_str() != "--use-python-impl")
         .collect();
-    let py_code = format!(
-        "import sys; from {} import main; sys.exit(main())",
-        mod_path
-    );
+    let py_code = format!("{}; sys.exit(main())", python_main_import_code(mod_path));
     let status = std::process::Command::new("python")
         .arg("-c")
         .arg(&py_code)
@@ -364,5 +372,21 @@ mod tests {
         // Can't safely set env vars in unit tests — just test the args path.
         assert!(py_fallback_requested(&["--use-python-impl".to_string()]));
         assert!(!py_fallback_requested(&["-q".to_string()]));
+    }
+
+    #[test]
+    fn python_fallback_imports_sphinx_with_stdlib_locale_from_crate_root() {
+        let output = std::process::Command::new("python")
+            .arg("-c")
+            .arg(python_main_import_code("sphinx.cmd.build"))
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .expect("python should be available for Sphinx fallback tests");
+
+        assert!(
+            output.status.success(),
+            "Sphinx import failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

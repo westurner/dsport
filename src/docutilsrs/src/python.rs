@@ -84,75 +84,75 @@ impl PyDoctree {
 /// class-based `condition` matching can reuse the exact same mapping.
 fn node_kind_tag(kind: &NodeKind) -> String {
     match kind {
-        NodeKind::Document { .. } => "document".into(),
-        NodeKind::Section { .. } => "section".into(),
-        NodeKind::Title => "title".into(),
-        NodeKind::Subtitle { .. } => "subtitle".into(),
-        NodeKind::Transition => "transition".into(),
-        NodeKind::Paragraph => "paragraph".into(),
-        NodeKind::Text(_) => "#text".into(),
-        NodeKind::Emphasis => "emphasis".into(),
-        NodeKind::Strong => "strong".into(),
-        NodeKind::Literal => "literal".into(),
-        NodeKind::TitleReference => "title_reference".into(),
-        NodeKind::Inline { .. } => "inline".into(),
-        NodeKind::Math { .. } => "math".into(),
-        NodeKind::MathBlock { .. } => "math_block".into(),
-        NodeKind::LiteralBlock { .. } => "literal_block".into(),
-        NodeKind::BulletList { .. } => "bullet_list".into(),
-        NodeKind::EnumeratedList { .. } => "enumerated_list".into(),
-        NodeKind::ListItem => "list_item".into(),
-        NodeKind::DefinitionList => "definition_list".into(),
-        NodeKind::DefinitionListItem => "definition_list_item".into(),
-        NodeKind::Term => "term".into(),
-        NodeKind::Classifier => "classifier".into(),
-        NodeKind::Definition => "definition".into(),
-        NodeKind::FieldList => "field_list".into(),
-        NodeKind::Field => "field".into(),
-        NodeKind::FieldName => "field_name".into(),
-        NodeKind::FieldBody => "field_body".into(),
-        NodeKind::Docinfo => "docinfo".into(),
+        NodeKind::Abbreviation { .. } => "abbreviation".into(),
+        NodeKind::Admonition { kind } => (*kind).into(),
+        NodeKind::Attribution => "attribution".into(),
         NodeKind::Bibliographic { tag } => (*tag).into(),
         NodeKind::BlockQuote => "block_quote".into(),
-        NodeKind::Admonition { kind } => (*kind).into(),
-        NodeKind::Container { .. } => "container".into(),
-        NodeKind::GenericAdmonition { .. } => "admonition".into(),
-        NodeKind::Epigraph { .. } => "block_quote".into(),
-        NodeKind::Toctree { .. } => "toctree".into(),
-        NodeKind::Image { .. } => "image".into(),
-        NodeKind::Raw { .. } => "raw".into(),
-        NodeKind::Comment => "comment".into(),
-        NodeKind::Reference { .. } => "reference".into(),
-        NodeKind::Target { .. } => "target".into(),
-        NodeKind::SubstitutionDefinition { .. } => "substitution_definition".into(),
-        NodeKind::SubstitutionReference { .. } => "substitution_reference".into(),
-        NodeKind::Table => "table".into(),
-        NodeKind::Tgroup { .. } => "tgroup".into(),
-        NodeKind::Colspec { .. } => "colspec".into(),
-        NodeKind::Thead => "thead".into(),
-        NodeKind::Tbody => "tbody".into(),
-        NodeKind::Row => "row".into(),
-        NodeKind::Entry { .. } => "entry".into(),
-        NodeKind::Attribution => "attribution".into(),
-        NodeKind::Figure { .. } => "figure".into(),
+        NodeKind::BulletList { .. } => "bullet_list".into(),
         NodeKind::Caption => "caption".into(),
-        NodeKind::Legend => "legend".into(),
-        NodeKind::Label => "label".into(),
-        NodeKind::Footnote { .. } => "footnote".into(),
-        NodeKind::FootnoteReference { .. } => "footnote_reference".into(),
         NodeKind::Citation { .. } => "citation".into(),
         NodeKind::CitationReference { .. } => "citation_reference".into(),
-        NodeKind::Problematic { .. } => "problematic".into(),
-        NodeKind::SystemMessage { .. } => "system_message".into(),
+        NodeKind::Classifier => "classifier".into(),
+        NodeKind::Colspec { .. } => "colspec".into(),
+        NodeKind::Comment => "comment".into(),
+        NodeKind::Container { .. } => "container".into(),
+        NodeKind::Definition => "definition".into(),
+        NodeKind::DefinitionList => "definition_list".into(),
+        NodeKind::DefinitionListItem => "definition_list_item".into(),
+        NodeKind::Docinfo => "docinfo".into(),
+        NodeKind::Document { .. } => "document".into(),
+        NodeKind::Emphasis => "emphasis".into(),
+        NodeKind::Entry { .. } => "entry".into(),
+        NodeKind::EnumeratedList { .. } => "enumerated_list".into(),
+        NodeKind::Epigraph { .. } => "block_quote".into(),
         NodeKind::Extension { class_name, .. } => class_name.clone(),
-        NodeKind::Abbreviation { .. } => "abbreviation".into(),
-        NodeKind::Subscript => "subscript".into(),
-        NodeKind::Superscript => "superscript".into(),
+        NodeKind::Field => "field".into(),
+        NodeKind::FieldBody => "field_body".into(),
+        NodeKind::FieldList => "field_list".into(),
+        NodeKind::FieldName => "field_name".into(),
+        NodeKind::Figure { .. } => "figure".into(),
+        NodeKind::Footnote { .. } => "footnote".into(),
+        NodeKind::FootnoteReference { .. } => "footnote_reference".into(),
+        NodeKind::GenericAdmonition { .. } => "admonition".into(),
+        NodeKind::Image { .. } => "image".into(),
+        NodeKind::Inline { .. } => "inline".into(),
         NodeKind::Keyboard => "keyboard".into(),
-        NodeKind::Rubric => "rubric".into(),
-        NodeKind::VersionModified { .. } => "versionmodified".into(),
-        NodeKind::PendingXref { .. } => "pending_xref".into(),
+        NodeKind::Label => "label".into(),
+        NodeKind::Legend => "legend".into(),
+        NodeKind::ListItem => "list_item".into(),
+        NodeKind::Literal => "literal".into(),
+        NodeKind::LiteralBlock { .. } => "literal_block".into(),
+        NodeKind::Math { .. } => "math".into(),
+        NodeKind::MathBlock { .. } => "math_block".into(),
         NodeKind::ObjectDescription { .. } => "object_description".into(),
+        NodeKind::Paragraph => "paragraph".into(),
+        NodeKind::PendingXref { .. } => "pending_xref".into(),
+        NodeKind::Problematic { .. } => "problematic".into(),
+        NodeKind::Raw { .. } => "raw".into(),
+        NodeKind::Reference { .. } => "reference".into(),
+        NodeKind::Row => "row".into(),
+        NodeKind::Rubric => "rubric".into(),
+        NodeKind::Section { .. } => "section".into(),
+        NodeKind::Strong => "strong".into(),
+        NodeKind::Subscript => "subscript".into(),
+        NodeKind::SubstitutionDefinition { .. } => "substitution_definition".into(),
+        NodeKind::SubstitutionReference { .. } => "substitution_reference".into(),
+        NodeKind::Subtitle { .. } => "subtitle".into(),
+        NodeKind::Superscript => "superscript".into(),
+        NodeKind::SystemMessage { .. } => "system_message".into(),
+        NodeKind::Table => "table".into(),
+        NodeKind::Target { .. } => "target".into(),
+        NodeKind::Tbody => "tbody".into(),
+        NodeKind::Term => "term".into(),
+        NodeKind::Text(_) => "#text".into(),
+        NodeKind::Tgroup { .. } => "tgroup".into(),
+        NodeKind::Thead => "thead".into(),
+        NodeKind::Title => "title".into(),
+        NodeKind::TitleReference => "title_reference".into(),
+        NodeKind::Toctree { .. } => "toctree".into(),
+        NodeKind::Transition => "transition".into(),
+        NodeKind::VersionModified { .. } => "versionmodified".into(),
     }
 }
 
@@ -350,6 +350,27 @@ impl PyNode {
     fn attributes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
         match &self.tree.borrow(py).inner.node(self.id).kind {
+            NodeKind::BulletList { bullet } => {
+                dict.set_item("bullet", bullet.to_string())?;
+            }
+            NodeKind::Citation {
+                ids,
+                names,
+                backrefs,
+            } => {
+                if !backrefs.is_empty() {
+                    dict.set_item("backrefs", backrefs)?;
+                }
+                dict.set_item("ids", ids)?;
+                dict.set_item("names", names)?;
+            }
+            NodeKind::CitationReference { ids, refid } => {
+                dict.set_item("ids", ids)?;
+                dict.set_item("refid", refid)?;
+            }
+            NodeKind::Comment => {
+                dict.set_item("xml:space", "preserve")?;
+            }
             NodeKind::Document {
                 source,
                 ids,
@@ -362,24 +383,6 @@ impl PyNode {
                     dict.set_item("names", names)?;
                     dict.set_item("title", title)?;
                 }
-            }
-            NodeKind::Section {
-                ids,
-                names,
-                classes,
-            } => {
-                if !classes.is_empty() {
-                    dict.set_item("classes", classes)?;
-                }
-                dict.set_item("ids", ids)?;
-                dict.set_item("names", names)?;
-            }
-            NodeKind::Subtitle { ids, names } => {
-                dict.set_item("ids", ids)?;
-                dict.set_item("names", names)?;
-            }
-            NodeKind::BulletList { bullet } => {
-                dict.set_item("bullet", bullet.to_string())?;
             }
             NodeKind::EnumeratedList {
                 enumtype,
@@ -394,83 +397,10 @@ impl PyNode {
                     dict.set_item("start", *s)?;
                 }
             }
-            NodeKind::Inline { classes } => {
-                if !classes.is_empty() {
-                    dict.set_item("classes", classes)?;
+            NodeKind::Extension { attrs, .. } => {
+                for (k, v) in attrs {
+                    dict.set_item(k, crate::plugins::node_attribute_to_py(py, v))?;
                 }
-            }
-            NodeKind::LiteralBlock { classes, .. } => {
-                if !classes.is_empty() {
-                    dict.set_item("classes", classes)?;
-                }
-                dict.set_item("xml:space", "preserve")?;
-            }
-            NodeKind::Image {
-                uri,
-                alt,
-                width,
-                height,
-                ..
-            } => {
-                dict.set_item("uri", uri)?;
-                if let Some(v) = alt {
-                    dict.set_item("alt", v)?;
-                }
-                if let Some(v) = width {
-                    dict.set_item("width", v)?;
-                }
-                if let Some(v) = height {
-                    dict.set_item("height", v)?;
-                }
-            }
-            NodeKind::Raw { format } => {
-                dict.set_item("format", format)?;
-                dict.set_item("xml:space", "preserve")?;
-            }
-            NodeKind::Reference {
-                name,
-                refuri,
-                anonymous,
-                classes,
-            } => {
-                if *anonymous {
-                    dict.set_item("anonymous", "1")?;
-                }
-                if !classes.is_empty() {
-                    dict.set_item("classes", classes)?;
-                }
-                dict.set_item("name", name)?;
-                dict.set_item("refuri", refuri)?;
-            }
-            NodeKind::Target {
-                ids,
-                names,
-                refuri,
-                anonymous,
-            } => {
-                if *anonymous {
-                    dict.set_item("anonymous", "1")?;
-                }
-                dict.set_item("ids", ids)?;
-                if !names.is_empty() {
-                    dict.set_item("names", names)?;
-                }
-                dict.set_item("refuri", refuri)?;
-            }
-            NodeKind::SubstitutionDefinition { names } => {
-                dict.set_item("names", names)?;
-            }
-            NodeKind::SubstitutionReference { refname } => {
-                dict.set_item("refname", refname)?;
-            }
-            NodeKind::Tgroup { cols } => {
-                dict.set_item("cols", *cols)?;
-            }
-            NodeKind::Colspec { colwidth } => {
-                dict.set_item("colwidth", *colwidth)?;
-            }
-            NodeKind::Comment => {
-                dict.set_item("xml:space", "preserve")?;
             }
             NodeKind::Footnote {
                 ids,
@@ -496,24 +426,113 @@ impl PyNode {
                 dict.set_item("ids", ids)?;
                 dict.set_item("refid", refid)?;
             }
-            NodeKind::Citation {
-                ids,
-                names,
-                backrefs,
+            NodeKind::Image {
+                uri,
+                alt,
+                width,
+                height,
+                ..
             } => {
-                if !backrefs.is_empty() {
-                    dict.set_item("backrefs", backrefs)?;
+                dict.set_item("uri", uri)?;
+                if let Some(v) = alt {
+                    dict.set_item("alt", v)?;
                 }
-                dict.set_item("ids", ids)?;
-                dict.set_item("names", names)?;
+                if let Some(v) = width {
+                    dict.set_item("width", v)?;
+                }
+                if let Some(v) = height {
+                    dict.set_item("height", v)?;
+                }
             }
-            NodeKind::CitationReference { ids, refid } => {
-                dict.set_item("ids", ids)?;
-                dict.set_item("refid", refid)?;
+            NodeKind::Inline { classes } => {
+                if !classes.is_empty() {
+                    dict.set_item("classes", classes)?;
+                }
+            }
+            NodeKind::LiteralBlock { classes, .. } => {
+                if !classes.is_empty() {
+                    dict.set_item("classes", classes)?;
+                }
+                dict.set_item("xml:space", "preserve")?;
+            }
+            NodeKind::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                ..
+            } => {
+                if !classes.is_empty() {
+                    dict.set_item("classes", classes)?;
+                }
+                if !ids.is_empty() {
+                    dict.set_item("ids", ids)?;
+                }
+                dict.set_item("sig", sig_text)?;
             }
             NodeKind::Problematic { ids, refid } => {
                 dict.set_item("ids", ids)?;
                 dict.set_item("refid", refid)?;
+            }
+            NodeKind::Raw { format } => {
+                dict.set_item("format", format)?;
+                dict.set_item("xml:space", "preserve")?;
+            }
+            NodeKind::Reference {
+                name,
+                refuri,
+                anonymous,
+                classes,
+            } => {
+                if *anonymous {
+                    dict.set_item("anonymous", "1")?;
+                }
+                if !classes.is_empty() {
+                    dict.set_item("classes", classes)?;
+                }
+                dict.set_item("name", name)?;
+                dict.set_item("refuri", refuri)?;
+            }
+            NodeKind::Section {
+                ids,
+                names,
+                classes,
+            } => {
+                if !classes.is_empty() {
+                    dict.set_item("classes", classes)?;
+                }
+                dict.set_item("ids", ids)?;
+                dict.set_item("names", names)?;
+            }
+            NodeKind::Subtitle { ids, names } => {
+                dict.set_item("ids", ids)?;
+                dict.set_item("names", names)?;
+            }
+            NodeKind::SubstitutionDefinition { names } => {
+                dict.set_item("names", names)?;
+            }
+            NodeKind::SubstitutionReference { refname } => {
+                dict.set_item("refname", refname)?;
+            }
+            NodeKind::Target {
+                ids,
+                names,
+                refuri,
+                anonymous,
+            } => {
+                if *anonymous {
+                    dict.set_item("anonymous", "1")?;
+                }
+                dict.set_item("ids", ids)?;
+                if !names.is_empty() {
+                    dict.set_item("names", names)?;
+                }
+                dict.set_item("refuri", refuri)?;
+            }
+            NodeKind::Tgroup { cols } => {
+                dict.set_item("cols", *cols)?;
+            }
+            NodeKind::Colspec { colwidth } => {
+                dict.set_item("colwidth", *colwidth)?;
             }
             NodeKind::SystemMessage {
                 level,
@@ -534,25 +553,6 @@ impl PyNode {
                 }
                 dict.set_item("source", "<string>")?;
                 dict.set_item("type", *ty)?;
-            }
-            NodeKind::Extension { attrs, .. } => {
-                for (k, v) in attrs {
-                    dict.set_item(k, crate::plugins::node_attribute_to_py(py, v))?;
-                }
-            }
-            NodeKind::ObjectDescription {
-                classes,
-                ids,
-                sig_text,
-                ..
-            } => {
-                if !classes.is_empty() {
-                    dict.set_item("classes", classes)?;
-                }
-                if !ids.is_empty() {
-                    dict.set_item("ids", ids)?;
-                }
-                dict.set_item("sig", sig_text)?;
             }
             _ => {}
         }

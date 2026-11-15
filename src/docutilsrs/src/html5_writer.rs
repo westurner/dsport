@@ -146,7 +146,7 @@ fn heading_level(tree: &Doctree, id: NodeId) -> usize {
         }
         parent = tree.node(parent_id).parent;
     }
-    level.max(1).min(6)
+    level.clamp(1, 6)
 }
 
 fn toctree_level(tree: &Doctree, id: NodeId) -> Option<usize> {
@@ -569,9 +569,8 @@ fn emit_enter(
                 || has_internal_class
                 || has_external_class
                 || refuri.is_empty()
+                || refuri.starts_with('#')
             {
-                classes.clone()
-            } else if refuri.starts_with('#') {
                 classes.clone()
             } else if classes.is_empty() {
                 "reference external".to_string()

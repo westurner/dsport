@@ -157,10 +157,7 @@ fn normalize_target_placement(tree: &mut Doctree) {
                 continue;
             }
             let mut moved = Vec::new();
-            loop {
-                let Some(&child) = tree.node(first).children.last() else {
-                    break;
-                };
+            while let Some(&child) = tree.node(first).children.last() {
                 if matches!(&tree.node(child).kind, NodeKind::Target { refuri, .. } if refuri.is_empty())
                 {
                     moved.push(tree.node_mut(first).children.pop().unwrap());
@@ -2501,9 +2498,7 @@ fn parse_directive(
             };
             let sig_text = if name == "py:class" {
                 format!("class {}", args.trim())
-            } else if name == "confval" || objtype == "std" {
-                args.trim().to_string()
-            } else if objtype == "py" {
+            } else if name == "confval" || objtype == "std" || objtype == "py" {
                 args.trim().to_string()
             } else {
                 sig.trim().to_string()

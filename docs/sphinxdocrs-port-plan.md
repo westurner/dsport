@@ -1693,35 +1693,38 @@ native-only additions and remain visible in the parity matrix.
 **H11.2e: close the external HTML residuals**
 
 Keep the strict fixture matrix and 100% semantic-comparison thresholds intact.
-Resolve the four currently observed `otherdocs.rs` residuals by their owning
-output contracts:
+The four observed `otherdocs.rs` residuals are resolved by their owning output
+contracts:
 
-1. `build_otherdocs_parity::case_2` (`src/sphinx/doc`) reports a stale Rust
-  progress snapshot: native viewcode now emits `_modules` pages, but the
-  committed Rust tree snapshot predates them. This test snapshots the Python
-  and Rust trees separately; review the new native module paths and refresh
-  only the Rust progress snapshot, leaving the Python reference unchanged and
-  keeping unrelated Python-only artifacts classified separately.
-2. `build_otherdocs_index_html_content_parity::case_1` (`docs`) differs only
-  after `normalize_html_for_diff` replaces the numeric Sphinx version but
-  leaves the native `+/commit` suffix (`Sphinx VERSION+/...`). Update that
-  comparator to normalize the complete display-version token and add cases
-  for both final and commit-suffixed versions. Keep generated footer content
-  intact; this is a normalizer defect, not a renderer or source-link change.
-3. `build_otherdocs_index_html_content_parity::case_2` (`src/sphinx/doc`)
-   has a Python-only root `Sphinx` sidebar/toctree item linking to `#`. Trace
-   it to the root document's title/toctree context and reproduce it only where
-   the upstream builder emits that item.
-4. `build_otherdocs_index_html_content_parity::case_4` (`src/jinja2/docs`)
-   uses `sandbox.html#module-jinja2.seccomp`, `#module-jinja2.resource_limits`,
-   `#module-jinja2.path_sandbox`, and `extensions.html#module-jinja2.ext` in
-   Python, while Rust targets heading slugs. Preserve the domain-generated
-   module/section anchors in the toctree and link targets rather than
-   recomputing anchors from visible heading text.
+1. Resolved: `build_otherdocs_parity::case_2` (`src/sphinx/doc`) reported a
+  stale Rust progress snapshot: native viewcode now emits `_modules` pages, but
+  the committed Rust tree snapshot predates them. The Python and Rust trees are
+  snapshotted separately; only the Rust progress snapshot was refreshed,
+  leaving the Python reference unchanged and classifying Python-only artifacts
+  separately.
+2. Resolved: `build_otherdocs_index_html_content_parity::case_1` (`docs`) differed
+  after `normalize_html_for_diff` replaced the numeric Sphinx version but left
+  the native `+/commit` suffix (`Sphinx VERSION+/...`). The comparator now
+  normalizes the complete display-version token, with final, plain commit, and
+  HTML-escaped commit suffix regression cases. Generated footer content stays
+  intact; this was a normalizer defect, not a renderer or source-link change.
+3. Resolved: `build_otherdocs_index_html_content_parity::case_2`
+  (`src/sphinx/doc`) had a Python-only root `Sphinx` item in the `sphinx13`
+  local “On this page” TOC, linking to `#` above the root sections. The
+  document-title entry is preserved for this theme's local TOC, without
+  injecting it into the global pages toctree or adding page-name-specific
+  logic.
+4. Resolved: `build_otherdocs_index_html_content_parity::case_4`
+  (`src/jinja2/docs`) used `sandbox.html#module-jinja2.seccomp`,
+  `#module-jinja2.resource_limits`, `#module-jinja2.path_sandbox`, and
+  `extensions.html#module-jinja2.ext` in Python, while Rust targeted heading
+  slugs. Module/section anchors are now preserved in theme and inline toctree
+  entries rather than recomputed from visible heading text.
 
-Add focused regressions for each resolved contract: snapshot stability,
-version normalization, root sidebar context, and module-anchor preservation.
-Then rerun the individual cases and the full `test-build-extdocs` matrix.
+Focused regressions cover snapshot stability, version normalization, root
+sidebar context, and module-anchor preservation. The obsolete root-TOC spacing
+normalizer was removed after case 2 passed without it. The full
+`test-build-extdocs` suite and strict native fixture matrix are recorded below.
 Completion requires all 15
 external cases to pass, the Rust tree progress snapshot to match the verified
 generated Rust tree without `INSTA_UPDATE` on the second run, the Python
@@ -1888,10 +1891,16 @@ explicitly documented renderer/theme provenance deviations.
   Also matched the default `html_title` separator when `release` is empty. A
   minimal basic-theme search-page comparison now differs only by the native
   WebMCP script; its footer uses the vendored Sphinx display version.
-- The feature-gated external HTML parity matrix currently passes 11 of 15
-  `tests/otherdocs.rs` cases. Three HTML-content cases retain theme/content
-  differences, and the `src/sphinx/doc` tree snapshot includes native `_modules`
-  pages absent upstream. No aggregate snapshot was updated; H11.2 remains partial.
+- Closed the four H11.2e external residuals: refreshed only the native
+  `_modules` tree snapshot, normalized escaped Sphinx commit versions, preserved
+  the `sphinx13` root local-TOC entry, and kept Jinja module anchors in both
+  theme and inline toctrees. The root-TOC whitespace normalizer was removed
+  after the Sphinx external case passed without it.
+- The final `test-build-extdocs` run reported 16 passed and no failures. Docs
+  requiring unavailable optional packages, plus the absent `pygmentsrs/docs`,
+  were skipped by their preflight checks. The strict
+  `native_builder_fixture_parity_matrix` also passed; broader H11.2 work remains
+  partial.
 - Fixed Python extension event initialization parity: `config-inited` now
   receives the live config facade, and the app/environment facades expose the
   paths, discovered documents, and `emit_firstresult` surface needed by the

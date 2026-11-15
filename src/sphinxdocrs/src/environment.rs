@@ -3477,25 +3477,59 @@ fn local_section_entries(env: &BuildEnvironment, docname: &str) -> Vec<crate::to
         }
     }
 
-    fn collect(tree: &Doctree, parent: NodeId, docname: &str) -> Vec<crate::toctree::TocEntry> {
-        tree.node(parent)
+    fn module_target_in_section(tree: &Doctree, section_id: NodeId) -> Option<String> {
+        let mut pending = tree
+            .node(section_id)
             .children
             .iter()
-            .filter_map(|&id| {
-                let NodeKind::Section { ids, .. } = &tree.node(id).kind else {
-                    return None;
-                };
-                let title = tree.node(id).children.iter().find_map(|&child| {
-                    matches!(tree.node(child).kind, NodeKind::Title)
-                        .then(|| text_content(tree, child))
-                })?;
-                Some(crate::toctree::TocEntry {
-                    docname: format!("{docname}#{ids}"),
-                    title,
-                    children: collect(tree, id, docname),
+            .rev()
+            .copied()
+            .collect::<Vec<_>>();
+        while let Some(node_id) = pending.pop() {
+            let node = tree.node(node_id);
+            match &node.kind {
+                NodeKind::Target { ids, .. } if ids.starts_with("module-") => {
+                    return Some(ids.clone());
+                }
+                NodeKind::Section { .. } => continue,
+                _ => pending.extend(node.children.iter().rev().copied()),
+            }
+        }
+        None
+    }
+
+    fn collect(tree: &Doctree, parent: NodeId, docname: &str) -> Vec<crate::toctree::TocEntry> {
+        let mut entries = Vec::new();
+        let mut current_module = None;
+        for &id in &tree.node(parent).children {
+            let node = tree.node(id);
+            if let NodeKind::Target { ids, .. } = &node.kind {
+                current_module = ids.strip_prefix("module-").map(str::to_string);
+                continue;
+            }
+            let NodeKind::Section { ids, .. } = &node.kind else {
+                continue;
+            };
+            let Some(title) = node.children.iter().find_map(|&child| {
+                matches!(tree.node(child).kind, NodeKind::Title).then(|| text_content(tree, child))
+            }) else {
+                continue;
+            };
+            let module_target = module_target_in_section(tree, id);
+            let section_target = module_target
+                .or_else(|| {
+                    current_module
+                        .as_deref()
+                        .map(|module| format!("module-{module}"))
                 })
-            })
-            .collect()
+                .unwrap_or_else(|| ids.clone());
+            entries.push(crate::toctree::TocEntry {
+                docname: format!("{docname}#{section_target}"),
+                title,
+                children: collect(tree, id, docname),
+            });
+        }
+        entries
     }
 
     let Ok(tree) = env.get_doctree(docname) else {
@@ -7762,6 +7796,39 @@ chapters:
         let retained = local_section_entries(&env, "reference");
         assert_eq!(retained.len(), 1);
         assert_eq!(retained[0].title, "Contents");
+    }
+
+    #[test]
+    fn local_section_entries_uses_module_targets_for_sections() {
+        let (_tmp, mut env) = make_env_with_tempdir();
+        let tree = env
+            .parse_source(
+                "sandbox",
+                "Sandbox\n=======\n\nAPI\n---\n\n.. module:: jinja2.sandbox\n\n.. py:class:: SandboxedEnvironment\n\nSeccomp Filtering API\n~~~~~~~~~~~~~~~~~~~~~\n\n.. module:: jinja2.seccomp\n\n.. py:function:: apply_seccomp_filter()\n",
+            )
+            .unwrap();
+        env.store_doctree("sandbox", &tree).unwrap();
+        env.set_title("sandbox", "Sandbox");
+
+        fn find_entry<'a>(
+            entries: &'a [crate::toctree::TocEntry],
+            title: &str,
+        ) -> Option<&'a crate::toctree::TocEntry> {
+            entries.iter().find_map(|entry| {
+                if entry.title == title {
+                    Some(entry)
+                } else {
+                    find_entry(&entry.children, title)
+                }
+            })
+        }
+
+        let entries = local_section_entries(&env, "sandbox");
+        let api = find_entry(&entries, "API").expect("API section is in local TOC");
+        assert_eq!(api.docname, "sandbox#module-jinja2.sandbox");
+        let seccomp =
+            find_entry(&entries, "Seccomp Filtering API").expect("Seccomp section is in local TOC");
+        assert_eq!(seccomp.docname, "sandbox#module-jinja2.seccomp");
     }
 
     #[test]

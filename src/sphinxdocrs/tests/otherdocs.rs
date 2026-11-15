@@ -429,15 +429,16 @@ fn docs_html_keeps_sphinx_default_viewport_metadata() {
 /// real content drift rather than expected per-build noise.
 fn normalize_html_for_diff(html: &str) -> String {
     // Sphinx's own generator string, e.g. "Sphinx v9.1.1+/f60972202" /
-    // "Sphinx 9.1.1".
+    // "Sphinx 9.1.1". The plus-slash may be HTML-escaped by Jinja.
+    const DISPLAY_VERSION: &str = r"v?\d+\.\d+(?:\.\d+)?(?:\+(?:/|&#x2f;)[0-9a-f]+)?";
     let re_sphinx_version =
-        regex::Regex::new(r"Sphinx v?\d+\.\d+(\.\d+)?(\+/[0-9a-f]+)?").expect("valid regex");
+        regex::Regex::new(&format!(r"Sphinx {DISPLAY_VERSION}")).expect("valid regex");
     let mut out = re_sphinx_version
         .replace_all(html, "Sphinx VERSION")
         .into_owned();
-    let re_sphinx_footer = regex::Regex::new(
-        r#"(<a href="https://www\.sphinx-doc\.org/">Sphinx</a> )v?\d+\.\d+(\.\d+)?(\+/[0-9a-f]+)?"#,
-    )
+    let re_sphinx_footer = regex::Regex::new(&format!(
+        r#"(<a href="https://www\.sphinx-doc\.org/">Sphinx</a> ){DISPLAY_VERSION}"#
+    ))
     .expect("valid regex");
     out = re_sphinx_footer
         .replace_all(&out, "${1}VERSION")
@@ -454,6 +455,18 @@ fn normalize_html_for_diff(html: &str) -> String {
             .expect("valid regex");
     out = re_webmcp.replace_all(&out, "").into_owned();
     out
+}
+
+#[test]
+fn normalize_html_for_diff_consumes_escaped_sphinx_commit_suffix() {
+    let final_version = "<a href=\"https://www.sphinx-doc.org/\">Sphinx</a> 9.1.1";
+    let commit_version = "<a href=\"https://www.sphinx-doc.org/\">Sphinx</a> 9.1.1+/4ef6748f0";
+    let escaped_commit_version =
+        "<a href=\"https://www.sphinx-doc.org/\">Sphinx</a> 9.1.1+&#x2f;4ef6748f0";
+
+    let expected = normalize_html_for_diff(final_version);
+    assert_eq!(normalize_html_for_diff(commit_version), expected);
+    assert_eq!(normalize_html_for_diff(escaped_commit_version), expected);
 }
 
 /// Render a compact unified-style diff between `a` (labelled `label_a`)

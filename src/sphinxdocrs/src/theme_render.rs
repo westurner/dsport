@@ -760,6 +760,30 @@ fn local_toc_from_doctree(
         }
     }
 
+    fn module_target_in_section(
+        tree: &docutilsrs::doctree::Doctree,
+        section_id: docutilsrs::doctree::NodeId,
+    ) -> Option<String> {
+        let mut pending = tree
+            .node(section_id)
+            .children
+            .iter()
+            .rev()
+            .copied()
+            .collect::<Vec<_>>();
+        while let Some(node_id) = pending.pop() {
+            let node = tree.node(node_id);
+            match &node.kind {
+                docutilsrs::doctree::NodeKind::Target { ids, .. } if ids.starts_with("module-") => {
+                    return Some(ids.clone());
+                }
+                docutilsrs::doctree::NodeKind::Section { .. } => continue,
+                _ => pending.extend(node.children.iter().rev().copied()),
+            }
+        }
+        None
+    }
+
     fn sections(
         tree: &docutilsrs::doctree::Doctree,
         parent: docutilsrs::doctree::NodeId,
@@ -784,12 +808,17 @@ fn local_toc_from_doctree(
                     }) else {
                         continue;
                     };
+                    let module_target = module_target_in_section(tree, id);
                     Some(TocEntry {
                         docname: if level == 0
                             && index == 0
                             && (document_title.is_empty() || title == document_title)
                         {
                             format!("{docname}#")
+                        } else if let Some(module_target) = module_target {
+                            format!("{docname}#{module_target}")
+                        } else if let Some(module) = current_module.as_deref() {
+                            format!("{docname}#module-{module}")
                         } else {
                             format!("{docname}#{ids}")
                         },
@@ -973,6 +1002,35 @@ fn local_toc_from_doctree(
             entries
         })
         .unwrap_or_default()
+}
+
+fn local_toc_for_theme(
+    theme_name: &str,
+    docname: &str,
+    document_title: Option<&str>,
+    mut entries: Vec<TocEntry>,
+) -> Vec<TocEntry> {
+    let document_target = format!("{docname}#");
+    let has_document_title = entries
+        .first()
+        .is_some_and(|entry| entry.docname == document_target);
+    if theme_name == "sphinx13" {
+        if !has_document_title
+            && !entries.is_empty()
+            && let Some(title) = document_title
+        {
+            entries = vec![TocEntry {
+                docname: document_target,
+                title: title.to_string(),
+                children: entries,
+            }];
+        }
+        entries
+    } else if has_document_title {
+        entries.remove(0).children
+    } else {
+        entries
+    }
 }
 
 // ── relations (parents / prev / next) ─────────────────────────────────────────
@@ -1413,12 +1471,15 @@ impl ThemeRenderer {
         } else {
             local_toc_from_doctree(doctree, docname)
         };
-        if !singlehtml
-            && toc_entries_for_doc
-                .first()
-                .is_some_and(|entry| entry.docname == format!("{docname}#"))
-        {
-            toc_entries_for_doc = toc_entries_for_doc.remove(0).children;
+        if !singlehtml {
+            let theme_name = env.config.html_theme();
+            let document_title = env.titles.get(docname).map(String::as_str);
+            toc_entries_for_doc = local_toc_for_theme(
+                &theme_name,
+                docname,
+                document_title,
+                toc_entries_for_doc,
+            );
         }
         // Local TOC: section headings from this document only. The global
         // `toctree()` remains backed by the environment's document tree.
@@ -2143,6 +2204,61 @@ mod tests {
 
         assert!(local_toc_from_doctree(Some(&doctree), "index").is_empty());
         assert!(local_toc_from_doctree(None, "index").is_empty());
+    }
+
+    #[test]
+    fn local_toc_uses_module_target_for_nested_module_section() {
+        let env = make_test_env(
+            "/tmp/theme-render-module-toc-src",
+            "/tmp/theme-render-module-toc-doctrees",
+        );
+        let tree = env
+            .parse_source(
+                "sandbox",
+                "Sandbox\n=======\n\nAPI\n---\n\n.. module:: jinja2.sandbox\n\n.. py:class:: SandboxedEnvironment\n\nSeccomp Filtering API\n~~~~~~~~~~~~~~~~~~~~~\n\n.. module:: jinja2.seccomp\n\n.. py:function:: apply_seccomp_filter()\n",
+            )
+            .unwrap();
+        let entries = local_toc_from_doctree(Some(&tree), "sandbox");
+
+        fn find_entry<'a>(entries: &'a [TocEntry], title: &str) -> Option<&'a TocEntry> {
+            entries.iter().find_map(|entry| {
+                if entry.title == title {
+                    Some(entry)
+                } else {
+                    find_entry(&entry.children, title)
+                }
+            })
+        }
+
+        let api = find_entry(&entries, "API").expect("API section is in local TOC");
+        assert_eq!(api.docname, "sandbox#module-jinja2.sandbox");
+        let seccomp =
+            find_entry(&entries, "Seccomp Filtering API").expect("Seccomp section is in local TOC");
+        assert_eq!(seccomp.docname, "sandbox#module-jinja2.seccomp");
+    }
+
+    #[test]
+    fn local_toc_uses_module_target_for_module_section() {
+        let env = make_test_env(
+            "/tmp/theme-render-module-toc-src",
+            "/tmp/theme-render-module-toc-doctrees",
+        );
+        let tree = env
+            .parse_source(
+                "sandbox",
+                "Sandbox\n=======\n\nSeccomp Filtering API\n---------------------\n\n.. module:: jinja2.seccomp\n",
+            )
+            .unwrap();
+        let entries = local_toc_from_doctree(Some(&tree), "sandbox");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].title, "Sandbox");
+        assert_eq!(entries[0].children.len(), 1);
+        assert_eq!(entries[0].children[0].title, "Seccomp Filtering API");
+        assert_eq!(
+            entries[0].children[0].docname,
+            "sandbox#module-jinja2.seccomp"
+        );
     }
 
     #[test]

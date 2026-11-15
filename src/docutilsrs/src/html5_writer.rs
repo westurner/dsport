@@ -177,142 +177,52 @@ fn emit_enter(
 ) {
     let node = tree.node(id);
     match &node.kind {
-        NodeKind::Text(s) => out.push_str(&escape(s)),
-        NodeKind::Document { .. } => {
-            for &c in node.children.iter().rev() {
-                tasks.push(Task::Enter(c));
-            }
-        }
-        NodeKind::Section { ids, classes, .. } => {
-            if classes.is_empty() {
-                let _ = writeln!(out, "<section id=\"{ids}\">");
-            } else {
-                let _ = writeln!(
-                    out,
-                    "<section class=\"{}\" id=\"{ids}\">",
-                    escape(classes)
-                );
-            }
-            schedule(node, "</section>\n", tasks);
-        }
-        NodeKind::Title => {
-            let level = heading_level(tree, id);
-            let tag = format!("h{level}");
-            let close = if options.no_section_self_link.is_some() {
-                format!("</{tag}>\n")
-            } else {
-                tree.node(id)
-                    .parent
-                    .and_then(|parent| match &tree.node(parent).kind {
-                        NodeKind::Section { ids, .. } if !ids.is_empty() => Some(format!(
-                            "<a class=\"headerlink\" href=\"#{}\" title=\"Link to this heading\">¶</a></{tag}>\n",
-                            escape(ids)
-                        )),
-                        _ => None,
-                    })
-                    .unwrap_or_else(|| format!("</{tag}>\n"))
-            };
-            let _ = write!(out, "<{tag}>");
-            schedule(node, close, tasks);
-        }
-        NodeKind::Subtitle { .. } => wrap_with_class(node, "p", "subtitle", out, tasks),
-        NodeKind::Transition => out.push_str("<hr class=\"docutils\" />\n"),
-        NodeKind::Paragraph => {
-            if options.epub_compat
-                && node
-                    .parent
-                    .is_some_and(|parent| matches!(tree.node(parent).kind, NodeKind::ListItem))
-            {
-                wrap(node, "p", out, tasks);
-            } else {
-                wrap_block(node, "p", out, tasks);
-            }
-        }
         NodeKind::Emphasis => wrap(node, "em", out, tasks),
         NodeKind::Strong => wrap(node, "strong", out, tasks),
         NodeKind::Literal => {
             out.push_str("<code class=\"docutils literal notranslate\"><span class=\"pre\">");
             schedule(node, "</span></code>", tasks);
         }
-        NodeKind::TitleReference => wrap(node, "cite", out, tasks),
-        NodeKind::Inline { classes } => {
-            if classes.is_empty() {
-                out.push_str("<span>");
+        NodeKind::Abbreviation { explanation } => {
+            if explanation.is_empty() {
+                out.push_str("<abbr>");
             } else {
-                let _ = write!(out, "<span class=\"{classes}\">");
+                let _ = write!(out, "<abbr title=\"{}\">", escape(explanation));
             }
-            schedule(node, "</span>", tasks);
+            schedule(node, "</abbr>", tasks);
         }
-        NodeKind::LiteralBlock {
-            ids,
-            classes,
-            caption,
-            ..
-        } => {
-            let language = classes.split_whitespace().nth(1).unwrap_or("text");
-            let line_numbers = classes.split_whitespace().any(|class| class == "linenos");
-            if classes.split_whitespace().next() == Some("code") {
-                if caption.is_some() {
-                    if let Some(id) = ids {
-                        let _ = write!(
-                            out,
-                            "<div class=\"literal-block-wrapper docutils container\" id=\"{}\">",
-                            escape(id)
-                        );
-                    } else {
-                        out.push_str("<div class=\"literal-block-wrapper docutils container\">");
-                    }
-                    let caption = caption.as_deref().unwrap_or_default();
-                    if let Some(id) = ids {
-                        let _ = write!(
-                            out,
-                            "<div class=\"code-block-caption\"><span class=\"caption-text\">{}</span><a class=\"headerlink\" href=\"#{}\" title=\"Link to this code\">¶</a></div>",
-                            escape(caption),
-                            escape(id)
-                        );
-                    } else {
-                        let _ = write!(
-                            out,
-                            "<div class=\"code-block-caption\"><span class=\"caption-text\">{}</span></div>",
-                            escape(caption)
-                        );
-                    }
-                }
-                if line_numbers {
-                    out.push_str(
-                        "<table class=\"highlighttable\"><tr><td class=\"linenos\"><div class=\"linenodiv\"><pre>",
-                    );
-                    for number in 1..=literal_block_line_count(tree, id) {
-                        let _ = writeln!(out, "<span class=\"normal\">{number}</span>");
-                    }
-                    out.push_str("</pre></div></td><td class=\"code\">");
-                }
-                let _ = write!(
-                    out,
-                    "<div class=\"highlight-{language} notranslate\"><div class=\"highlight\"><pre>"
-                );
-                if options.epub_compat {
-                    out.push_str("<span></span>");
-                }
-                let mut close = if line_numbers {
-                    "</pre></div></div></td></tr></table>".to_string()
-                } else if options.epub_compat {
-                    "\n</pre></div>\n</div>\n".to_string()
-                } else {
-                    "</pre></div></div>".to_string()
-                };
-                if caption.is_some() {
-                    close.push_str("</div>");
-                }
-                schedule(node, close, tasks);
-            } else if classes.is_empty() {
-                out.push_str("<pre>");
-                schedule(node, "</pre>", tasks);
-            } else {
-                let _ = write!(out, "<pre class=\"{classes}\">");
-                schedule(node, "</pre>", tasks);
-            }
+        NodeKind::Attribution => {
+            out.push_str("<p class=\"attribution\">— ");
+            schedule(node, "</p>", tasks);
         }
+        NodeKind::Admonition { kind } => {
+            // Mirrors docutils' HTML5 writer: a fixed-kind admonition
+            // (`.. note::`, `.. seealso::`, ...) renders as
+            // `<div class="admonition {kind}"><p class="admonition-title">
+            // {Title}</p>{body}</div>` — real Sphinx builds never use
+            // `<aside>` for these.
+            let title = match *kind {
+                "attention" => "Attention",
+                "caution" => "Caution",
+                "danger" => "Danger",
+                "error" => "Error",
+                "hint" => "Hint",
+                "important" => "Important",
+                "note" => "Note",
+                "seealso" => "See also",
+                "tip" => "Tip",
+                "warning" => "Warning",
+                _ => kind,
+            };
+            let _ = writeln!(out, "<div class=\"admonition {kind}\">");
+            let _ = writeln!(out, "<p class=\"admonition-title\">{}</p>", escape(title));
+            schedule(node, "</div>\n", tasks);
+        }
+        NodeKind::Bibliographic { tag } => {
+            let _ = write!(out, "<dt>{tag}</dt><dd>");
+            schedule(node, "</dd>", tasks);
+        }
+        NodeKind::BlockQuote => wrap(node, "blockquote", out, tasks),
         NodeKind::BulletList { .. } => {
             if toctree_level(tree, id).is_some() {
                 out.push_str("<ul>\n");
@@ -330,89 +240,45 @@ fn emit_enter(
                 wrap(node, "ul", out, tasks)
             }
         }
-        NodeKind::EnumeratedList { .. } => {
-            if is_compactable(tree, id, options, false) {
-                wrap_with_class(node, "ol", "simple", out, tasks)
+        NodeKind::Caption => {
+            let is_figure_caption = node
+                .parent
+                .is_some_and(|parent| matches!(tree.node(parent).kind, NodeKind::Figure { .. }));
+            if is_figure_caption {
+                out.push_str("<figcaption>\n<p><span class=\"caption-text\">");
+                let close = node
+                    .parent
+                    .and_then(|parent| match &tree.node(parent).kind {
+                        NodeKind::Figure { ids, .. } if !ids.is_empty() => Some(format!(
+                            "</span><a class=\"headerlink\" href=\"#{}\" title=\"Link to this image\">¶</a></p>\n</figcaption>\n",
+                            escape(ids)
+                        )),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "</span></p>\n</figcaption>\n".to_string());
+                schedule(node, close, tasks);
+            } else if node.parent.is_some_and(|parent| {
+                matches!(
+                    &tree.node(parent).kind,
+                    NodeKind::Container { classes } if classes == "toctree-wrapper compound"
+                )
+            }) {
+                out.push_str("<p class=\"caption\" role=\"heading\">");
+                schedule(node, "</p>\n", tasks);
             } else {
-                wrap(node, "ol", out, tasks)
+                wrap(node, "figcaption", out, tasks);
             }
         }
-        NodeKind::ListItem => {
-            if let Some(level) = toctree_level(tree, id) {
-                let _ = write!(out, "<li class=\"toctree-l{level}\">");
-                schedule(node, "</li>\n", tasks);
-            } else if options.epub_compat {
-                out.push_str("<li>");
-                schedule(node, "</li>\n", tasks);
-            } else {
-                wrap(node, "li", out, tasks);
-            }
+        NodeKind::Citation { ids, .. } => {
+            let _ = write!(out, "<aside class=\"citation\" id=\"{ids}\">");
+            schedule(node, "</aside>", tasks);
         }
-        NodeKind::DefinitionList => {
-            if is_compactable(tree, id, options, false) {
-                wrap_with_class(node, "dl", "simple", out, tasks)
-            } else {
-                wrap(node, "dl", out, tasks)
-            }
-        }
-        NodeKind::DefinitionListItem => {
-            for &c in node.children.iter().rev() {
-                tasks.push(Task::Enter(c));
-            }
-        }
-        NodeKind::Term => {
-            if let Some(id) = glossary_term_id(tree, id) {
-                let _ = write!(out, "<dt id=\"{}\">", escape(&id));
-                schedule(node, "</dt>", tasks);
-            } else {
-                wrap(node, "dt", out, tasks);
-            }
+        NodeKind::CitationReference { refid, .. } => {
+            let _ = write!(out, "<a class=\"citation-reference\" href=\"#{refid}\">");
+            schedule(node, "</a>", tasks);
         }
         NodeKind::Classifier => wrap_with_class(node, "span", "classifier", out, tasks),
-        NodeKind::Definition => wrap(node, "dd", out, tasks),
-        NodeKind::FieldList => {
-            if is_compactable(tree, id, options, true) {
-                wrap_with_class(node, "dl", "field-list simple", out, tasks)
-            } else {
-                wrap_with_class(node, "dl", "field-list", out, tasks)
-            }
-        }
-        NodeKind::Field => {
-            for &c in node.children.iter().rev() {
-                tasks.push(Task::Enter(c));
-            }
-        }
-        NodeKind::FieldName => wrap(node, "dt", out, tasks),
-        NodeKind::FieldBody => wrap(node, "dd", out, tasks),
-        NodeKind::Docinfo => wrap(node, "dl", out, tasks),
-        NodeKind::Bibliographic { tag } => {
-            let _ = write!(out, "<dt>{tag}</dt><dd>");
-            schedule(node, "</dd>", tasks);
-        }
-        NodeKind::BlockQuote => wrap(node, "blockquote", out, tasks),
-        NodeKind::Admonition { kind } => {
-            // Mirrors docutils' HTML5 writer: a fixed-kind admonition
-            // (`.. note::`, `.. seealso::`, ...) renders as
-            // `<div class="admonition {kind}"><p class="admonition-title">
-            // {Title}</p>{body}</div>` — real Sphinx builds never use
-            // `<aside>` for these.
-            let title = match *kind {
-                "seealso" => "See also",
-                "note" => "Note",
-                "warning" => "Warning",
-                "tip" => "Tip",
-                "hint" => "Hint",
-                "important" => "Important",
-                "attention" => "Attention",
-                "caution" => "Caution",
-                "danger" => "Danger",
-                "error" => "Error",
-                _ => kind,
-            };
-            let _ = writeln!(out, "<div class=\"admonition {kind}\">");
-            let _ = writeln!(out, "<p class=\"admonition-title\">{}</p>", escape(title));
-            schedule(node, "</div>\n", tasks);
-        }
+        NodeKind::Comment => {}
         NodeKind::Container { classes } => {
             // `.. container:: classes` — real docutils/Sphinx markup:
             // `<div class="{classes} docutils container">`.
@@ -429,6 +295,97 @@ fn emit_enter(
                 schedule(node, "</div>\n", tasks);
             }
         }
+        NodeKind::Definition => wrap(node, "dd", out, tasks),
+        NodeKind::DefinitionList => {
+            if is_compactable(tree, id, options, false) {
+                wrap_with_class(node, "dl", "simple", out, tasks)
+            } else {
+                wrap(node, "dl", out, tasks)
+            }
+        }
+        NodeKind::DefinitionListItem => {
+            for &c in node.children.iter().rev() {
+                tasks.push(Task::Enter(c));
+            }
+        }
+        NodeKind::Docinfo => wrap(node, "dl", out, tasks),
+        NodeKind::Document { .. } => {
+            for &c in node.children.iter().rev() {
+                tasks.push(Task::Enter(c));
+            }
+        }
+        NodeKind::EnumeratedList { .. } => {
+            if is_compactable(tree, id, options, false) {
+                wrap_with_class(node, "ol", "simple", out, tasks)
+            } else {
+                wrap(node, "ol", out, tasks)
+            }
+        }
+        NodeKind::Epigraph { classes } => {
+            if classes.is_empty() {
+                out.push_str("<blockquote class=\"epigraph\">\n<div>");
+            } else {
+                let _ = write!(out, "<blockquote class=\"epigraph {classes}\">\n<div>");
+            }
+            schedule(node, "</div></blockquote>\n", tasks);
+        }
+        NodeKind::Extension { class_name, attrs } => {
+            let visit = crate::plugins::invoke_node_visit(class_name, "html", attrs);
+            if let Some(open) = &visit {
+                out.push_str(open);
+            }
+            let close = if visit.is_some() {
+                crate::plugins::invoke_node_depart(class_name, "html", attrs)
+            } else {
+                None
+            };
+            schedule(node, close.unwrap_or_default(), tasks);
+        }
+        NodeKind::Field => {
+            for &c in node.children.iter().rev() {
+                tasks.push(Task::Enter(c));
+            }
+        }
+        NodeKind::FieldBody => wrap(node, "dd", out, tasks),
+        NodeKind::FieldList => {
+            if is_compactable(tree, id, options, true) {
+                wrap_with_class(node, "dl", "field-list simple", out, tasks)
+            } else {
+                wrap_with_class(node, "dl", "field-list", out, tasks)
+            }
+        }
+        NodeKind::FieldName => wrap(node, "dt", out, tasks),
+        NodeKind::Figure { ids, classes } => {
+            let class_attr = if classes.is_empty() {
+                String::new()
+            } else {
+                format!(" class=\"{}\"", escape(classes))
+            };
+            let id_attr = if ids.is_empty() {
+                String::new()
+            } else {
+                format!(" id=\"{}\"", escape(ids))
+            };
+            let _ = writeln!(out, "<figure{class_attr}{id_attr}>");
+            schedule(node, "</figure>\n", tasks);
+        }
+        NodeKind::Footnote { ids, .. } => {
+            let _ = write!(out, "<aside class=\"footnote\" id=\"{ids}\">");
+            schedule(node, "</aside>", tasks);
+        }
+        NodeKind::FootnoteReference { ids, refid, .. } => {
+            let style = options.footnote_references.as_deref().unwrap_or("brackets");
+            let _ = write!(
+                out,
+                "<a class=\"{style}\" href=\"#{refid}\" id=\"{ids}\" role=\"doc-noteref\">"
+            );
+            if style == "brackets" {
+                out.push_str("<span class=\"fn-bracket\">[</span>");
+                schedule(node, "<span class=\"fn-bracket\">]</span></a>", tasks);
+            } else {
+                schedule(node, "</a>", tasks);
+            }
+        }
         NodeKind::GenericAdmonition { title, classes } => {
             // `.. admonition:: Title` (optionally `:class: extra`) — real
             // markup reverses the class order vs. fixed-kind admonitions:
@@ -440,21 +397,6 @@ fn emit_enter(
             }
             let _ = writeln!(out, "<p class=\"admonition-title\">{}</p>", escape(title));
             schedule(node, "</div>\n", tasks);
-        }
-        NodeKind::Epigraph { classes } => {
-            if classes.is_empty() {
-                out.push_str("<blockquote class=\"epigraph\">\n<div>");
-            } else {
-                let _ = write!(out, "<blockquote class=\"epigraph {classes}\">\n<div>");
-            }
-            schedule(node, "</div></blockquote>\n", tasks);
-        }
-        NodeKind::Toctree { .. } => {
-            // Standalone docutilsrs has no notion of a multi-document
-            // project to expand this into; `sphinxdocrs` resolves it
-            // into a real subtree before this writer ever sees it (see
-            // `BuildEnvironment::resolve_toctree_nodes`). Renders nothing
-            // here, matching a `:hidden:` toctree's real behavior.
         }
         NodeKind::Image {
             uri,
@@ -527,14 +469,96 @@ fn emit_enter(
                 }
             }
         }
-        NodeKind::Raw { format } => {
-            if format == "html" {
-                // Raw HTML passes through.
-                for &c in &node.children {
-                    if let NodeKind::Text(s) = &tree.node(c).kind {
-                        out.push_str(s);
+        NodeKind::Inline { classes } => {
+            if classes.is_empty() {
+                out.push_str("<span>");
+            } else {
+                let _ = write!(out, "<span class=\"{classes}\">");
+            }
+            schedule(node, "</span>", tasks);
+        }
+        NodeKind::Keyboard => wrap_with_class(node, "kbd", "kbd", out, tasks),
+        NodeKind::Label => wrap_with_class(node, "span", "label", out, tasks),
+        NodeKind::Legend => wrap_with_class(node, "div", "legend", out, tasks),
+        NodeKind::ListItem => {
+            if let Some(level) = toctree_level(tree, id) {
+                let _ = write!(out, "<li class=\"toctree-l{level}\">");
+                schedule(node, "</li>\n", tasks);
+            } else if options.epub_compat {
+                out.push_str("<li>");
+                schedule(node, "</li>\n", tasks);
+            } else {
+                wrap(node, "li", out, tasks);
+            }
+        }
+        NodeKind::LiteralBlock {
+            ids,
+            classes,
+            caption,
+            ..
+        } => {
+            let language = classes.split_whitespace().nth(1).unwrap_or("text");
+            let line_numbers = classes.split_whitespace().any(|class| class == "linenos");
+            if classes.split_whitespace().next() == Some("code") {
+                if caption.is_some() {
+                    if let Some(id) = ids {
+                        let _ = write!(
+                            out,
+                            "<div class=\"literal-block-wrapper docutils container\" id=\"{}\">",
+                            escape(id)
+                        );
+                    } else {
+                        out.push_str("<div class=\"literal-block-wrapper docutils container\">");
+                    }
+                    let caption = caption.as_deref().unwrap_or_default();
+                    if let Some(id) = ids {
+                        let _ = write!(
+                            out,
+                            "<div class=\"code-block-caption\"><span class=\"caption-text\">{}</span><a class=\"headerlink\" href=\"#{}\" title=\"Link to this code\">¶</a></div>",
+                            escape(caption),
+                            escape(id)
+                        );
+                    } else {
+                        let _ = write!(
+                            out,
+                            "<div class=\"code-block-caption\"><span class=\"caption-text\">{}</span></div>",
+                            escape(caption)
+                        );
                     }
                 }
+                if line_numbers {
+                    out.push_str(
+                        "<table class=\"highlighttable\"><tr><td class=\"linenos\"><div class=\"linenodiv\"><pre>",
+                    );
+                    for number in 1..=literal_block_line_count(tree, id) {
+                        let _ = writeln!(out, "<span class=\"normal\">{number}</span>");
+                    }
+                    out.push_str("</pre></div></td><td class=\"code\">");
+                }
+                let _ = write!(
+                    out,
+                    "<div class=\"highlight-{language} notranslate\"><div class=\"highlight\"><pre>"
+                );
+                if options.epub_compat {
+                    out.push_str("<span></span>");
+                }
+                let mut close = if line_numbers {
+                    "</pre></div></div></td></tr></table>".to_string()
+                } else if options.epub_compat {
+                    "\n</pre></div>\n</div>\n".to_string()
+                } else {
+                    "</pre></div></div>".to_string()
+                };
+                if caption.is_some() {
+                    close.push_str("</div>");
+                }
+                schedule(node, close, tasks);
+            } else if classes.is_empty() {
+                out.push_str("<pre>");
+                schedule(node, "</pre>", tasks);
+            } else {
+                let _ = write!(out, "<pre class=\"{classes}\">");
+                schedule(node, "</pre>", tasks);
             }
         }
         NodeKind::Math { latex } => {
@@ -552,289 +576,6 @@ fn emit_enter(
                 mathrenderrs::MathDisplay::Block,
                 latex,
             ));
-        }
-        NodeKind::Comment => {}
-        NodeKind::Reference {
-            refuri, classes, ..
-        } => {
-            let is_mailto = refuri.starts_with("mailto:");
-            let should_cloak = is_mailto && options.cloak_email_addresses.is_some();
-            let mut uri = escape(refuri);
-            if should_cloak {
-                uri = uri.replace("@", "&#37;&#52;&#48;").replace(".", "&#46;");
-            }
-            let has_internal_class = classes.split_whitespace().any(|class| class == "internal");
-            let has_external_class = classes.split_whitespace().any(|class| class == "external");
-            let link_classes = if !options.add_external_link_class
-                || has_internal_class
-                || has_external_class
-                || refuri.is_empty()
-                || refuri.starts_with('#')
-            {
-                classes.clone()
-            } else if classes.is_empty() {
-                "reference external".to_string()
-            } else {
-                format!("{classes} external")
-            };
-            if link_classes.is_empty() {
-                let _ = write!(out, "<a href=\"{}\">", uri);
-            } else {
-                let _ = write!(
-                    out,
-                    "<a class=\"{}\" href=\"{}\">",
-                    escape(&link_classes),
-                    uri
-                );
-            }
-            let image_reference = classes
-                .split_whitespace()
-                .any(|class| class == "image-reference")
-                && node
-                    .children
-                    .iter()
-                    .any(|child| matches!(tree.node(*child).kind, NodeKind::Image { .. }));
-            tasks.push(Task::Append(if image_reference {
-                "</a>\n".to_string()
-            } else {
-                "</a>".to_string()
-            }));
-            for &c in node.children.iter().rev() {
-                if should_cloak {
-                    if let NodeKind::Text(s) = &tree.node(c).kind {
-                        let mut cloaked = escape(s);
-                        cloaked = cloaked.replace("@", "&#64;").replace(".", "&#46;");
-                        tasks.push(Task::Append(cloaked));
-                        continue;
-                    }
-                }
-                tasks.push(Task::Enter(c));
-            }
-        }
-        NodeKind::Target { ids, refuri, .. } => {
-            if refuri.is_empty() && !ids.is_empty() {
-                let _ = write!(out, "<span id=\"{}\"></span>", escape(ids));
-            }
-        }
-        NodeKind::SubstitutionDefinition { .. } => {}
-        NodeKind::SubstitutionReference { refname } => {
-            let _ = write!(out, "{}", escape(refname));
-        }
-        NodeKind::Table => {
-            let mut classes = vec![];
-            if let Some(style) = &options.table_style {
-                classes.extend(style.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()));
-            }
-            if classes.is_empty() {
-                wrap(node, "table", out, tasks)
-            } else {
-                let _ = write!(out, "<table class=\"{}\">", classes.join(" "));
-                schedule(node, "</table>", tasks);
-            }
-        }
-        NodeKind::Tgroup { .. } => {
-            for &c in node.children.iter().rev() {
-                tasks.push(Task::Enter(c));
-            }
-        }
-        NodeKind::Colspec { .. } => {}
-        NodeKind::Thead => wrap(node, "thead", out, tasks),
-        NodeKind::Tbody => wrap(node, "tbody", out, tasks),
-        NodeKind::Row => wrap(node, "tr", out, tasks),
-        NodeKind::Entry {
-            morecols,
-            morerows,
-            classes,
-        } => {
-            let mut tag = String::from("<td");
-            if *morecols > 0 {
-                let _ = write!(tag, " colspan=\"{}\"", morecols + 1);
-            }
-            if *morerows > 0 {
-                let _ = write!(tag, " rowspan=\"{}\"", morerows + 1);
-            }
-            if !classes.is_empty() {
-                let _ = write!(tag, " class=\"{}\"", escape(classes));
-            }
-            tag.push('>');
-            out.push_str(&tag);
-            schedule(node, "</td>", tasks);
-        }
-        NodeKind::Attribution => {
-            out.push_str("<p class=\"attribution\">— ");
-            schedule(node, "</p>", tasks);
-        }
-        NodeKind::Figure { ids, classes } => {
-            let class_attr = if classes.is_empty() {
-                String::new()
-            } else {
-                format!(" class=\"{}\"", escape(classes))
-            };
-            let id_attr = if ids.is_empty() {
-                String::new()
-            } else {
-                format!(" id=\"{}\"", escape(ids))
-            };
-            let _ = writeln!(out, "<figure{class_attr}{id_attr}>");
-            schedule(node, "</figure>\n", tasks);
-        }
-        NodeKind::Caption => {
-            let is_figure_caption = node
-                .parent
-                .is_some_and(|parent| matches!(tree.node(parent).kind, NodeKind::Figure { .. }));
-            if is_figure_caption {
-                out.push_str("<figcaption>\n<p><span class=\"caption-text\">");
-                let close = node
-                    .parent
-                    .and_then(|parent| match &tree.node(parent).kind {
-                        NodeKind::Figure { ids, .. } if !ids.is_empty() => Some(format!(
-                            "</span><a class=\"headerlink\" href=\"#{}\" title=\"Link to this image\">¶</a></p>\n</figcaption>\n",
-                            escape(ids)
-                        )),
-                        _ => None,
-                    })
-                    .unwrap_or_else(|| "</span></p>\n</figcaption>\n".to_string());
-                schedule(node, close, tasks);
-            } else if node.parent.is_some_and(|parent| {
-                matches!(
-                    &tree.node(parent).kind,
-                    NodeKind::Container { classes } if classes == "toctree-wrapper compound"
-                )
-            }) {
-                out.push_str("<p class=\"caption\" role=\"heading\">");
-                schedule(node, "</p>\n", tasks);
-            } else {
-                wrap(node, "figcaption", out, tasks);
-            }
-        }
-        NodeKind::Legend => wrap_with_class(node, "div", "legend", out, tasks),
-        NodeKind::Label => wrap_with_class(node, "span", "label", out, tasks),
-        NodeKind::Footnote { ids, .. } => {
-            let _ = write!(out, "<aside class=\"footnote\" id=\"{ids}\">");
-            schedule(node, "</aside>", tasks);
-        }
-        NodeKind::FootnoteReference { ids, refid, .. } => {
-            let style = options.footnote_references.as_deref().unwrap_or("brackets");
-            let _ = write!(
-                out,
-                "<a class=\"{style}\" href=\"#{refid}\" id=\"{ids}\" role=\"doc-noteref\">"
-            );
-            if style == "brackets" {
-                out.push_str("<span class=\"fn-bracket\">[</span>");
-                schedule(node, "<span class=\"fn-bracket\">]</span></a>", tasks);
-            } else {
-                schedule(node, "</a>", tasks);
-            }
-        }
-        NodeKind::Citation { ids, .. } => {
-            let _ = write!(out, "<aside class=\"citation\" id=\"{ids}\">");
-            schedule(node, "</aside>", tasks);
-        }
-        NodeKind::CitationReference { refid, .. } => {
-            let _ = write!(out, "<a class=\"citation-reference\" href=\"#{refid}\">");
-            schedule(node, "</a>", tasks);
-        }
-        NodeKind::Problematic { refid, ids } => {
-            let _ = write!(
-                out,
-                "<a class=\"problematic\" id=\"{ids}\" href=\"#{refid}\">"
-            );
-            schedule(node, "</a>", tasks);
-        }
-        NodeKind::SystemMessage { level, ty, .. } => {
-            let _ = write!(
-                out,
-                "<aside class=\"system-message level-{level} type-{ty}\">"
-            );
-            schedule(node, "</aside>", tasks);
-        }
-        NodeKind::Extension { class_name, attrs } => {
-            let visit = crate::plugins::invoke_node_visit(class_name, "html", attrs);
-            if let Some(open) = &visit {
-                out.push_str(open);
-            }
-            let close = if visit.is_some() {
-                crate::plugins::invoke_node_depart(class_name, "html", attrs)
-            } else {
-                None
-            };
-            schedule(node, close.unwrap_or_default(), tasks);
-        }
-        NodeKind::Abbreviation { explanation } => {
-            if explanation.is_empty() {
-                out.push_str("<abbr>");
-            } else {
-                let _ = write!(out, "<abbr title=\"{}\">", escape(explanation));
-            }
-            schedule(node, "</abbr>", tasks);
-        }
-        NodeKind::Subscript => wrap(node, "sub", out, tasks),
-        NodeKind::Superscript => wrap(node, "sup", out, tasks),
-        NodeKind::Keyboard => wrap_with_class(node, "kbd", "kbd", out, tasks),
-        NodeKind::Rubric => wrap_with_class(node, "p", "rubric", out, tasks),
-        NodeKind::VersionModified { kind, version } => {
-            if options.epub_compat
-                && let Some(paragraph_id) = node
-                    .children
-                    .first()
-                    .copied()
-                    .filter(|child| matches!(tree.node(*child).kind, NodeKind::Paragraph))
-            {
-                let prefix = match *kind {
-                    "added" => "Added in version",
-                    "changed" => "Changed in version",
-                    "deprecated" => "Deprecated since version",
-                    _ => "Modified in version",
-                };
-                let _ = write!(
-                    out,
-                    "<div class=\"version{kind}\">\n<p><span class=\"versionmodified {kind}\">{} {}: </span>",
-                    prefix,
-                    escape(version)
-                );
-                tasks.push(Task::Append("</div>\n".to_string()));
-                for &child in node.children.iter().skip(1).rev() {
-                    tasks.push(Task::Enter(child));
-                }
-                tasks.push(Task::Append("</p>\n".to_string()));
-                for &child in tree.node(paragraph_id).children.iter().rev() {
-                    tasks.push(Task::Enter(child));
-                }
-                return;
-            }
-            let _ = write!(
-                out,
-                "<div class=\"versionmodified {kind}\"><span class=\"versionmodified\">"
-            );
-            let prefix = match *kind {
-                "added" => "Added in version",
-                "changed" => "Changed in version",
-                "deprecated" => "Deprecated since version",
-                _ => "Modified in version",
-            };
-            let _ = write!(out, "{} {}", prefix, escape(version));
-            if !node.children.is_empty() {
-                out.push_str(": </span>");
-                schedule(node, "</div>", tasks);
-            } else {
-                out.push_str(".</span>");
-                out.push_str("</div>");
-            }
-        }
-        NodeKind::PendingXref {
-            reftype, refdomain, ..
-        } => {
-            let role_class = if refdomain.is_empty() {
-                escape(reftype)
-            } else {
-                format!(
-                    "{} {}-{}",
-                    escape(refdomain),
-                    escape(refdomain),
-                    escape(reftype)
-                )
-            };
-            wrap_with_class(node, "span", &format!("xref {role_class}"), out, tasks)
         }
         NodeKind::ObjectDescription {
             classes,
@@ -903,6 +644,265 @@ fn emit_enter(
             }
             out.push_str("</dt><dd>");
             schedule(node, "</dd></dl>", tasks);
+        }
+        NodeKind::Paragraph => {
+            if options.epub_compat
+                && node
+                    .parent
+                    .is_some_and(|parent| matches!(tree.node(parent).kind, NodeKind::ListItem))
+            {
+                wrap(node, "p", out, tasks);
+            } else {
+                wrap_block(node, "p", out, tasks);
+            }
+        }
+        NodeKind::PendingXref {
+            reftype, refdomain, ..
+        } => {
+            let role_class = if refdomain.is_empty() {
+                escape(reftype)
+            } else {
+                format!(
+                    "{} {}-{}",
+                    escape(refdomain),
+                    escape(refdomain),
+                    escape(reftype)
+                )
+            };
+            wrap_with_class(node, "span", &format!("xref {role_class}"), out, tasks)
+        }
+        NodeKind::Problematic { refid, ids } => {
+            let _ = write!(
+                out,
+                "<a class=\"problematic\" id=\"{ids}\" href=\"#{refid}\">"
+            );
+            schedule(node, "</a>", tasks);
+        }
+        NodeKind::Raw { format } => {
+            if format == "html" {
+                // Raw HTML passes through.
+                for &c in &node.children {
+                    if let NodeKind::Text(s) = &tree.node(c).kind {
+                        out.push_str(s);
+                    }
+                }
+            }
+        }
+        NodeKind::Reference {
+            refuri, classes, ..
+        } => {
+            let is_mailto = refuri.starts_with("mailto:");
+            let should_cloak = is_mailto && options.cloak_email_addresses.is_some();
+            let mut uri = escape(refuri);
+            if should_cloak {
+                uri = uri.replace("@", "&#37;&#52;&#48;").replace(".", "&#46;");
+            }
+            let has_internal_class = classes.split_whitespace().any(|class| class == "internal");
+            let has_external_class = classes.split_whitespace().any(|class| class == "external");
+            let link_classes = if !options.add_external_link_class
+                || has_internal_class
+                || has_external_class
+                || refuri.is_empty()
+                || refuri.starts_with('#')
+            {
+                classes.clone()
+            } else if classes.is_empty() {
+                "reference external".to_string()
+            } else {
+                format!("{classes} external")
+            };
+            if link_classes.is_empty() {
+                let _ = write!(out, "<a href=\"{}\">", uri);
+            } else {
+                let _ = write!(
+                    out,
+                    "<a class=\"{}\" href=\"{}\">",
+                    escape(&link_classes),
+                    uri
+                );
+            }
+            let image_reference = classes
+                .split_whitespace()
+                .any(|class| class == "image-reference")
+                && node
+                    .children
+                    .iter()
+                    .any(|child| matches!(tree.node(*child).kind, NodeKind::Image { .. }));
+            tasks.push(Task::Append(if image_reference {
+                "</a>\n".to_string()
+            } else {
+                "</a>".to_string()
+            }));
+            for &c in node.children.iter().rev() {
+                if should_cloak {
+                    if let NodeKind::Text(s) = &tree.node(c).kind {
+                        let mut cloaked = escape(s);
+                        cloaked = cloaked.replace("@", "&#64;").replace(".", "&#46;");
+                        tasks.push(Task::Append(cloaked));
+                        continue;
+                    }
+                }
+                tasks.push(Task::Enter(c));
+            }
+        }
+        NodeKind::Rubric => wrap_with_class(node, "p", "rubric", out, tasks),
+        NodeKind::Section { ids, classes, .. } => {
+            if classes.is_empty() {
+                let _ = writeln!(out, "<section id=\"{ids}\">");
+            } else {
+                let _ = writeln!(
+                    out,
+                    "<section class=\"{}\" id=\"{ids}\">",
+                    escape(classes)
+                );
+            }
+            schedule(node, "</section>\n", tasks);
+        }
+        NodeKind::SubstitutionDefinition { .. } => {}
+        NodeKind::SubstitutionReference { refname } => {
+            let _ = write!(out, "{}", escape(refname));
+        }
+        NodeKind::Subtitle { .. } => wrap_with_class(node, "p", "subtitle", out, tasks),
+        NodeKind::Table => {
+            let mut classes = vec![];
+            if let Some(style) = &options.table_style {
+                classes.extend(style.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()));
+            }
+            if classes.is_empty() {
+                wrap(node, "table", out, tasks)
+            } else {
+                let _ = write!(out, "<table class=\"{}\">", classes.join(" "));
+                schedule(node, "</table>", tasks);
+            }
+        }
+        NodeKind::Colspec { .. } => {}
+        NodeKind::Row => wrap(node, "tr", out, tasks),
+        NodeKind::Tbody => wrap(node, "tbody", out, tasks),
+        NodeKind::Tgroup { .. } => {
+            for &c in node.children.iter().rev() {
+                tasks.push(Task::Enter(c));
+            }
+        }
+        NodeKind::Thead => wrap(node, "thead", out, tasks),
+        NodeKind::Entry {
+            morecols,
+            morerows,
+            classes,
+        } => {
+            let mut tag = String::from("<td");
+            if *morecols > 0 {
+                let _ = write!(tag, " colspan=\"{}\"", morecols + 1);
+            }
+            if *morerows > 0 {
+                let _ = write!(tag, " rowspan=\"{}\"", morerows + 1);
+            }
+            if !classes.is_empty() {
+                let _ = write!(tag, " class=\"{}\"", escape(classes));
+            }
+            tag.push('>');
+            out.push_str(&tag);
+            schedule(node, "</td>", tasks);
+        }
+        NodeKind::Target { ids, refuri, .. } => {
+            if refuri.is_empty() && !ids.is_empty() {
+                let _ = write!(out, "<span id=\"{}\"></span>", escape(ids));
+            }
+        }
+        NodeKind::Term => {
+            if let Some(id) = glossary_term_id(tree, id) {
+                let _ = write!(out, "<dt id=\"{}\">", escape(&id));
+                schedule(node, "</dt>", tasks);
+            } else {
+                wrap(node, "dt", out, tasks);
+            }
+        }
+        NodeKind::Text(s) => out.push_str(&escape(s)),
+        NodeKind::Title => {
+            let level = heading_level(tree, id);
+            let tag = format!("h{level}");
+            let close = if options.no_section_self_link.is_some() {
+                format!("</{tag}>\n")
+            } else {
+                tree.node(id)
+                    .parent
+                    .and_then(|parent| match &tree.node(parent).kind {
+                        NodeKind::Section { ids, .. } if !ids.is_empty() => Some(format!(
+                            "<a class=\"headerlink\" href=\"#{}\" title=\"Link to this heading\">¶</a></{tag}>\n",
+                            escape(ids)
+                        )),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| format!("</{tag}>\n"))
+            };
+            let _ = write!(out, "<{tag}>");
+            schedule(node, close, tasks);
+        }
+        NodeKind::TitleReference => wrap(node, "cite", out, tasks),
+        NodeKind::Toctree { .. } => {
+            // Standalone docutilsrs has no notion of a multi-document
+            // project to expand this into; `sphinxdocrs` resolves it
+            // into a real subtree before this writer ever sees it (see
+            // `BuildEnvironment::resolve_toctree_nodes`). Renders nothing
+            // here, matching a `:hidden:` toctree's real behavior.
+        }
+        NodeKind::Transition => out.push_str("<hr class=\"docutils\" />\n"),
+        NodeKind::Subscript => wrap(node, "sub", out, tasks),
+        NodeKind::Superscript => wrap(node, "sup", out, tasks),
+        NodeKind::SystemMessage { level, ty, .. } => {
+            let _ = write!(
+                out,
+                "<aside class=\"system-message level-{level} type-{ty}\">"
+            );
+            schedule(node, "</aside>", tasks);
+        }
+        NodeKind::VersionModified { kind, version } => {
+            if options.epub_compat
+                && let Some(paragraph_id) = node
+                    .children
+                    .first()
+                    .copied()
+                    .filter(|child| matches!(tree.node(*child).kind, NodeKind::Paragraph))
+            {
+                let prefix = match *kind {
+                    "added" => "Added in version",
+                    "changed" => "Changed in version",
+                    "deprecated" => "Deprecated since version",
+                    _ => "Modified in version",
+                };
+                let _ = write!(
+                    out,
+                    "<div class=\"version{kind}\">\n<p><span class=\"versionmodified {kind}\">{} {}: </span>",
+                    prefix,
+                    escape(version)
+                );
+                tasks.push(Task::Append("</div>\n".to_string()));
+                for &child in node.children.iter().skip(1).rev() {
+                    tasks.push(Task::Enter(child));
+                }
+                tasks.push(Task::Append("</p>\n".to_string()));
+                for &child in tree.node(paragraph_id).children.iter().rev() {
+                    tasks.push(Task::Enter(child));
+                }
+                return;
+            }
+            let _ = write!(
+                out,
+                "<div class=\"versionmodified {kind}\"><span class=\"versionmodified\">"
+            );
+            let prefix = match *kind {
+                "added" => "Added in version",
+                "changed" => "Changed in version",
+                "deprecated" => "Deprecated since version",
+                _ => "Modified in version",
+            };
+            let _ = write!(out, "{} {}", prefix, escape(version));
+            if !node.children.is_empty() {
+                out.push_str(": </span>");
+                schedule(node, "</div>", tasks);
+            } else {
+                out.push_str(".</span>");
+                out.push_str("</div>");
+            }
         }
     }
 }

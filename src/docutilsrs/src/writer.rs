@@ -35,67 +35,6 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
     let node = tree.node(id);
     let indent = "    ".repeat(depth);
     match &node.kind {
-        NodeKind::Text(s) => {
-            // Match Python `str.splitlines()` semantics (used by
-            // upstream `docutils.nodes.Text.pformat`): "\n" yields
-            // one empty line, not two. Without this, a trailing `\n`
-            // in a text node produces a spurious blank line.
-            if s.is_empty() {
-                return;
-            }
-            let body = s.strip_suffix('\n').unwrap_or(s);
-            for line in body.split('\n') {
-                out.push_str(&indent);
-                out.push_str(line);
-                out.push('\n');
-            }
-        }
-        NodeKind::Document {
-            source,
-            ids,
-            names,
-            title,
-        } => {
-            if title.is_empty() {
-                let _ = writeln!(out, "{indent}<document source=\"{source}\">");
-            } else {
-                let _ = writeln!(
-                    out,
-                    "{indent}<document ids=\"{ids}\" names=\"{names}\" source=\"{source}\" title=\"{title}\">"
-                );
-            }
-        }
-        NodeKind::Section {
-            ids,
-            names,
-            classes,
-        } => {
-            let mut s = format!("{indent}<section");
-            if !classes.is_empty() {
-                let _ = write!(s, " classes=\"{classes}\"");
-            }
-            if !ids.is_empty() {
-                let _ = write!(s, " ids=\"{ids}\"");
-            }
-            if !names.is_empty() {
-                let _ = write!(s, " names=\"{names}\"");
-            }
-            s.push('>');
-            s.push('\n');
-            out.push_str(&s);
-        }
-        NodeKind::Title => {
-            let _ = writeln!(out, "{indent}<title>");
-        }
-        NodeKind::Subtitle { ids, names } => {
-            let _ = writeln!(out, "{indent}<subtitle ids=\"{ids}\" names=\"{names}\">");
-        }
-        NodeKind::Transition => {
-            let _ = writeln!(out, "{indent}<transition>");
-        }
-        NodeKind::Paragraph => {
-            let _ = writeln!(out, "{indent}<paragraph>");
-        }
         NodeKind::Emphasis => {
             let _ = writeln!(out, "{indent}<emphasis>");
         }
@@ -105,49 +44,36 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         NodeKind::Literal => {
             let _ = writeln!(out, "{indent}<literal>");
         }
-        NodeKind::TitleReference => {
-            let _ = writeln!(out, "{indent}<title_reference>");
-        }
-        NodeKind::Inline { classes } => {
-            if classes.is_empty() {
-                let _ = writeln!(out, "{indent}<inline>");
+        NodeKind::Abbreviation { explanation } => {
+            if explanation.is_empty() {
+                let _ = writeln!(out, "{indent}<abbreviation>");
             } else {
-                let _ = writeln!(out, "{indent}<inline classes=\"{classes}\">");
+                let _ = writeln!(out, "{indent}<abbreviation explanation=\"{explanation}\">");
             }
         }
-        NodeKind::Math { latex } => {
-            let _ = writeln!(out, "{indent}<math>");
-            let inner = "    ".repeat(depth + 1);
-            let _ = writeln!(out, "{inner}{latex}");
+        NodeKind::Admonition { kind } => {
+            let _ = writeln!(out, "{indent}<{kind}>");
         }
-        NodeKind::MathBlock { latex } => {
-            let _ = writeln!(out, "{indent}<math_block xml:space=\"preserve\">");
-            let inner = "    ".repeat(depth + 1);
-            for line in latex.split('\n') {
-                let _ = writeln!(out, "{inner}{line}");
-            }
+        NodeKind::Attribution => {
+            let _ = writeln!(out, "{indent}<attribution>");
         }
-        NodeKind::LiteralBlock {
-            classes, source, ..
-        } => {
-            let source = source
-                .as_deref()
-                .map(|source| format!(" source=\"{source}\""))
-                .unwrap_or_default();
-            if classes.is_empty() {
-                let _ = writeln!(
-                    out,
-                    "{indent}<literal_block{source} xml:space=\"preserve\">"
-                );
-            } else {
-                let _ = writeln!(
-                    out,
-                    "{indent}<literal_block classes=\"{classes}\"{source} xml:space=\"preserve\">"
-                );
-            }
+        NodeKind::Bibliographic { tag } => {
+            let _ = writeln!(out, "{indent}<{tag}>");
+        }
+        NodeKind::BlockQuote => {
+            let _ = writeln!(out, "{indent}<block_quote>");
         }
         NodeKind::BulletList { bullet } => {
             let _ = writeln!(out, "{indent}<bullet_list bullet=\"{bullet}\">");
+        }
+        NodeKind::Caption => {
+            let _ = writeln!(out, "{indent}<caption>");
+        }
+        NodeKind::Container { classes } => {
+            let _ = writeln!(out, "{indent}<container classes=\"{classes}\">");
+        }
+        NodeKind::Epigraph { classes } => {
+            let _ = writeln!(out, "{indent}<block_quote classes=\"epigraph {classes}\">");
         }
         NodeKind::EnumeratedList {
             enumtype,
@@ -167,8 +93,34 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
                 );
             }
         }
-        NodeKind::ListItem => {
-            let _ = writeln!(out, "{indent}<list_item>");
+        NodeKind::Citation {
+            ids,
+            names,
+            backrefs,
+        } => {
+            let mut s = format!("{indent}<citation");
+            if !backrefs.is_empty() {
+                let _ = write!(s, " backrefs=\"{backrefs}\"");
+            }
+            let _ = write!(s, " ids=\"{ids}\" names=\"{names}\"");
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
+        NodeKind::CitationReference { ids, refid } => {
+            let _ = writeln!(
+                out,
+                "{indent}<citation_reference ids=\"{ids}\" refid=\"{refid}\">"
+            );
+        }
+        NodeKind::Classifier => {
+            let _ = writeln!(out, "{indent}<classifier>");
+        }
+        NodeKind::Comment => {
+            let _ = writeln!(out, "{indent}<comment xml:space=\"preserve\">");
+        }
+        NodeKind::Definition => {
+            let _ = writeln!(out, "{indent}<definition>");
         }
         NodeKind::DefinitionList => {
             let _ = writeln!(out, "{indent}<definition_list>");
@@ -176,14 +128,31 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         NodeKind::DefinitionListItem => {
             let _ = writeln!(out, "{indent}<definition_list_item>");
         }
-        NodeKind::Term => {
-            let _ = writeln!(out, "{indent}<term>");
+        NodeKind::Document {
+            source,
+            ids,
+            names,
+            title,
+        } => {
+            if title.is_empty() {
+                let _ = writeln!(out, "{indent}<document source=\"{source}\">");
+            } else {
+                let _ = writeln!(
+                    out,
+                    "{indent}<document ids=\"{ids}\" names=\"{names}\" source=\"{source}\" title=\"{title}\">"
+                );
+            }
         }
-        NodeKind::Classifier => {
-            let _ = writeln!(out, "{indent}<classifier>");
-        }
-        NodeKind::Definition => {
-            let _ = writeln!(out, "{indent}<definition>");
+        NodeKind::Extension { class_name, attrs } => {
+            let mut s = format!("{indent}<{class_name}");
+            let mut keys: Vec<&String> = attrs.keys().collect();
+            keys.sort();
+            for k in keys {
+                let _ = write!(s, " {k}=\"{}\"", attrs[k]);
+            }
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
         }
         NodeKind::FieldList => {
             let _ = writeln!(out, "{indent}<field_list>");
@@ -197,32 +166,50 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
         NodeKind::FieldBody => {
             let _ = writeln!(out, "{indent}<field_body>");
         }
+        NodeKind::Figure { .. } => {
+            let _ = writeln!(out, "{indent}<figure>");
+        }
+        NodeKind::Footnote {
+            ids,
+            names,
+            backrefs,
+            auto,
+        } => {
+            // Attribute order (alphabetical): auto, backrefs, ids, names.
+            let mut s = format!("{indent}<footnote");
+            if let Some(a) = auto {
+                let _ = write!(s, " auto=\"{a}\"");
+            }
+            if !backrefs.is_empty() {
+                let _ = write!(s, " backrefs=\"{backrefs}\"");
+            }
+            let _ = write!(s, " ids=\"{ids}\"");
+            // Autosymbol footnotes have no `names` attribute (label is `*`).
+            if !names.is_empty() && !matches!(*auto, Some("*")) {
+                let _ = write!(s, " names=\"{names}\"");
+            }
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
+        NodeKind::FootnoteReference { ids, refid, auto } => {
+            let mut s = format!("{indent}<footnote_reference");
+            if let Some(a) = auto {
+                let _ = write!(s, " auto=\"{a}\"");
+            }
+            let _ = write!(s, " ids=\"{ids}\" refid=\"{refid}\"");
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
         NodeKind::Docinfo => {
             let _ = writeln!(out, "{indent}<docinfo>");
-        }
-        NodeKind::Bibliographic { tag } => {
-            let _ = writeln!(out, "{indent}<{tag}>");
-        }
-        NodeKind::BlockQuote => {
-            let _ = writeln!(out, "{indent}<block_quote>");
-        }
-        NodeKind::Admonition { kind } => {
-            let _ = writeln!(out, "{indent}<{kind}>");
-        }
-        NodeKind::Container { classes } => {
-            let _ = writeln!(out, "{indent}<container classes=\"{classes}\">");
         }
         NodeKind::GenericAdmonition { title, classes } => {
             let _ = writeln!(
                 out,
                 "{indent}<admonition title=\"{title}\" classes=\"{classes}\">"
             );
-        }
-        NodeKind::Epigraph { classes } => {
-            let _ = writeln!(out, "{indent}<block_quote classes=\"epigraph {classes}\">");
-        }
-        NodeKind::Toctree { .. } => {
-            let _ = writeln!(out, "{indent}<toctree>");
         }
         NodeKind::Image {
             uri,
@@ -246,14 +233,96 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             s.push('\n');
             out.push_str(&s);
         }
+        NodeKind::Inline { classes } => {
+            if classes.is_empty() {
+                let _ = writeln!(out, "{indent}<inline>");
+            } else {
+                let _ = writeln!(out, "{indent}<inline classes=\"{classes}\">");
+            }
+        }
+        NodeKind::Keyboard => {
+            let _ = writeln!(out, "{indent}<keyboard>");
+        }
+        NodeKind::Label => {
+            let _ = writeln!(out, "{indent}<label>");
+        }
+        NodeKind::ListItem => {
+            let _ = writeln!(out, "{indent}<list_item>");
+        }
+        NodeKind::LiteralBlock {
+            classes, source, ..
+        } => {
+            let source = source
+                .as_deref()
+                .map(|source| format!(" source=\"{source}\""))
+                .unwrap_or_default();
+            if classes.is_empty() {
+                let _ = writeln!(
+                    out,
+                    "{indent}<literal_block{source} xml:space=\"preserve\">"
+                );
+            } else {
+                let _ = writeln!(
+                    out,
+                    "{indent}<literal_block classes=\"{classes}\"{source} xml:space=\"preserve\">"
+                );
+            }
+        }
+        NodeKind::Legend => {
+            let _ = writeln!(out, "{indent}<legend>");
+        }
+        NodeKind::Math { latex } => {
+            let _ = writeln!(out, "{indent}<math>");
+            let inner = "    ".repeat(depth + 1);
+            let _ = writeln!(out, "{inner}{latex}");
+        }
+        NodeKind::MathBlock { latex } => {
+            let _ = writeln!(out, "{indent}<math_block xml:space=\"preserve\">");
+            let inner = "    ".repeat(depth + 1);
+            for line in latex.split('\n') {
+                let _ = writeln!(out, "{inner}{line}");
+            }
+        }
+        NodeKind::ObjectDescription {
+            classes,
+            ids,
+            sig_text,
+            ..
+        } => {
+            let mut s = format!("{indent}<object_description");
+            if !classes.is_empty() {
+                let _ = write!(s, " classes=\"{classes}\"");
+            }
+            if !ids.is_empty() {
+                let _ = write!(s, " ids=\"{ids}\"");
+            }
+            let _ = write!(s, " sig=\"{sig_text}\"");
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
+        NodeKind::PendingXref {
+            reftype, reftarget, ..
+        } => {
+            let _ = writeln!(
+                out,
+                "{indent}<pending_xref reftype=\"{reftype}\" reftarget=\"{reftarget}\">"
+            );
+        }
+        NodeKind::Problematic { ids, refid } => {
+            let _ = writeln!(out, "{indent}<problematic ids=\"{ids}\" refid=\"{refid}\">");
+        }
+        NodeKind::Rubric => {
+            let _ = writeln!(out, "{indent}<rubric>");
+        }
+        NodeKind::Paragraph => {
+            let _ = writeln!(out, "{indent}<paragraph>");
+        }
         NodeKind::Raw { format } => {
             let _ = writeln!(
                 out,
                 "{indent}<raw format=\"{format}\" xml:space=\"preserve\">"
             );
-        }
-        NodeKind::Comment => {
-            let _ = writeln!(out, "{indent}<comment xml:space=\"preserve\">");
         }
         NodeKind::Reference {
             name,
@@ -269,6 +338,60 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
                 let _ = write!(s, " classes=\"{classes}\"");
             }
             let _ = write!(s, " name=\"{name}\" refuri=\"{refuri}\"");
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
+        NodeKind::Section {
+            ids,
+            names,
+            classes,
+        } => {
+            let mut s = format!("{indent}<section");
+            if !classes.is_empty() {
+                let _ = write!(s, " classes=\"{classes}\"");
+            }
+            if !ids.is_empty() {
+                let _ = write!(s, " ids=\"{ids}\"");
+            }
+            if !names.is_empty() {
+                let _ = write!(s, " names=\"{names}\"");
+            }
+            s.push('>');
+            s.push('\n');
+            out.push_str(&s);
+        }
+        NodeKind::Subtitle { ids, names } => {
+            let _ = writeln!(out, "{indent}<subtitle ids=\"{ids}\" names=\"{names}\">");
+        }
+        NodeKind::Subscript => {
+            let _ = writeln!(out, "{indent}<subscript>");
+        }
+        NodeKind::Superscript => {
+            let _ = writeln!(out, "{indent}<superscript>");
+        }
+        NodeKind::SystemMessage {
+            level,
+            line,
+            ty,
+            ids,
+            backrefs,
+        } => {
+            let mut s = format!("{indent}<system_message");
+            if !backrefs.is_empty() {
+                let _ = write!(s, " backrefs=\"{backrefs}\"");
+            }
+            if !ids.is_empty() {
+                let _ = write!(s, " ids=\"{ids}\"");
+            }
+            let _ = write!(s, " level=\"{level}\"");
+            if let Some(l) = line {
+                let _ = write!(s, " line=\"{l}\"");
+            }
+            // SystemMessage always carries source="..." in upstream output;
+            // we omit it because we don't track per-message source paths.
+            let _ = write!(s, " source=\"<string>\"");
+            let _ = write!(s, " type=\"{ty}\"");
             s.push('>');
             s.push('\n');
             out.push_str(&s);
@@ -291,6 +414,36 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             s.push('>');
             s.push('\n');
             out.push_str(&s);
+        }
+        NodeKind::Term => {
+            let _ = writeln!(out, "{indent}<term>");
+        }
+        NodeKind::Text(s) => {
+            // Match Python `str.splitlines()` semantics (used by
+            // upstream `docutils.nodes.Text.pformat`): "\n" yields
+            // one empty line, not two. Without this, a trailing `\n`
+            // in a text node produces a spurious blank line.
+            if s.is_empty() {
+                return;
+            }
+            let body = s.strip_suffix('\n').unwrap_or(s);
+            for line in body.split('\n') {
+                out.push_str(&indent);
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+        NodeKind::Title => {
+            let _ = writeln!(out, "{indent}<title>");
+        }
+        NodeKind::TitleReference => {
+            let _ = writeln!(out, "{indent}<title_reference>");
+        }
+        NodeKind::Toctree { .. } => {
+            let _ = writeln!(out, "{indent}<toctree>");
+        }
+        NodeKind::Transition => {
+            let _ = writeln!(out, "{indent}<transition>");
         }
         NodeKind::SubstitutionDefinition { names } => {
             let _ = writeln!(out, "{indent}<substitution_definition names=\"{names}\">");
@@ -333,164 +486,11 @@ fn write_node_once(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) {
             s.push('\n');
             out.push_str(&s);
         }
-        NodeKind::Attribution => {
-            let _ = writeln!(out, "{indent}<attribution>");
-        }
-        NodeKind::Figure { .. } => {
-            let _ = writeln!(out, "{indent}<figure>");
-        }
-        NodeKind::Caption => {
-            let _ = writeln!(out, "{indent}<caption>");
-        }
-        NodeKind::Legend => {
-            let _ = writeln!(out, "{indent}<legend>");
-        }
-        NodeKind::Label => {
-            let _ = writeln!(out, "{indent}<label>");
-        }
-        NodeKind::Footnote {
-            ids,
-            names,
-            backrefs,
-            auto,
-        } => {
-            // Attribute order (alphabetical): auto, backrefs, ids, names.
-            let mut s = format!("{indent}<footnote");
-            if let Some(a) = auto {
-                let _ = write!(s, " auto=\"{a}\"");
-            }
-            if !backrefs.is_empty() {
-                let _ = write!(s, " backrefs=\"{backrefs}\"");
-            }
-            let _ = write!(s, " ids=\"{ids}\"");
-            // Autosymbol footnotes have no `names` attribute (label is `*`).
-            if !names.is_empty() && !matches!(*auto, Some("*")) {
-                let _ = write!(s, " names=\"{names}\"");
-            }
-            s.push('>');
-            s.push('\n');
-            out.push_str(&s);
-        }
-        NodeKind::FootnoteReference { ids, refid, auto } => {
-            let mut s = format!("{indent}<footnote_reference");
-            if let Some(a) = auto {
-                let _ = write!(s, " auto=\"{a}\"");
-            }
-            let _ = write!(s, " ids=\"{ids}\" refid=\"{refid}\"");
-            s.push('>');
-            s.push('\n');
-            out.push_str(&s);
-        }
-        NodeKind::Citation {
-            ids,
-            names,
-            backrefs,
-        } => {
-            let mut s = format!("{indent}<citation");
-            if !backrefs.is_empty() {
-                let _ = write!(s, " backrefs=\"{backrefs}\"");
-            }
-            let _ = write!(s, " ids=\"{ids}\" names=\"{names}\"");
-            s.push('>');
-            s.push('\n');
-            out.push_str(&s);
-        }
-        NodeKind::CitationReference { ids, refid } => {
-            let _ = writeln!(
-                out,
-                "{indent}<citation_reference ids=\"{ids}\" refid=\"{refid}\">"
-            );
-        }
-        NodeKind::Problematic { ids, refid } => {
-            let _ = writeln!(out, "{indent}<problematic ids=\"{ids}\" refid=\"{refid}\">");
-        }
-        NodeKind::SystemMessage {
-            level,
-            line,
-            ty,
-            ids,
-            backrefs,
-        } => {
-            let mut s = format!("{indent}<system_message");
-            if !backrefs.is_empty() {
-                let _ = write!(s, " backrefs=\"{backrefs}\"");
-            }
-            if !ids.is_empty() {
-                let _ = write!(s, " ids=\"{ids}\"");
-            }
-            let _ = write!(s, " level=\"{level}\"");
-            if let Some(l) = line {
-                let _ = write!(s, " line=\"{l}\"");
-            }
-            // SystemMessage always carries source="..." in upstream output;
-            // we omit it because we don't track per-message source paths.
-            let _ = write!(s, " source=\"<string>\"");
-            let _ = write!(s, " type=\"{ty}\"");
-            s.push('>');
-            s.push('\n');
-            out.push_str(&s);
-        }
-        NodeKind::Extension { class_name, attrs } => {
-            let mut s = format!("{indent}<{class_name}");
-            let mut keys: Vec<&String> = attrs.keys().collect();
-            keys.sort();
-            for k in keys {
-                let _ = write!(s, " {k}=\"{}\"", attrs[k]);
-            }
-            s.push('>');
-            s.push('\n');
-            out.push_str(&s);
-        }
-        NodeKind::Abbreviation { explanation } => {
-            if explanation.is_empty() {
-                let _ = writeln!(out, "{indent}<abbreviation>");
-            } else {
-                let _ = writeln!(out, "{indent}<abbreviation explanation=\"{explanation}\">");
-            }
-        }
-        NodeKind::Subscript => {
-            let _ = writeln!(out, "{indent}<subscript>");
-        }
-        NodeKind::Superscript => {
-            let _ = writeln!(out, "{indent}<superscript>");
-        }
-        NodeKind::Keyboard => {
-            let _ = writeln!(out, "{indent}<keyboard>");
-        }
-        NodeKind::Rubric => {
-            let _ = writeln!(out, "{indent}<rubric>");
-        }
         NodeKind::VersionModified { kind, version } => {
             let _ = writeln!(
                 out,
                 "{indent}<versionmodified type=\"{kind}\" version=\"{version}\">"
             );
-        }
-        NodeKind::PendingXref {
-            reftype, reftarget, ..
-        } => {
-            let _ = writeln!(
-                out,
-                "{indent}<pending_xref reftype=\"{reftype}\" reftarget=\"{reftarget}\">"
-            );
-        }
-        NodeKind::ObjectDescription {
-            classes,
-            ids,
-            sig_text,
-            ..
-        } => {
-            let mut s = format!("{indent}<object_description");
-            if !classes.is_empty() {
-                let _ = write!(s, " classes=\"{classes}\"");
-            }
-            if !ids.is_empty() {
-                let _ = write!(s, " ids=\"{ids}\"");
-            }
-            let _ = write!(s, " sig=\"{sig_text}\"");
-            s.push('>');
-            s.push('\n');
-            out.push_str(&s);
         }
     }
 }

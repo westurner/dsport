@@ -1884,42 +1884,6 @@ fn parse_directive(
     }
 
     match name.as_str() {
-        "note" | "warning" | "tip" | "hint" | "important" | "attention" | "caution" | "danger"
-        | "error" | "seealso" => {
-            let kind: &'static str = match name.as_str() {
-                "note" => "note",
-                "warning" => "warning",
-                "tip" => "tip",
-                "hint" => "hint",
-                "important" => "important",
-                "attention" => "attention",
-                "caution" => "caution",
-                "danger" => "danger",
-                "error" => "error",
-                "seealso" => "seealso",
-                _ => unreachable!(),
-            };
-            let mut child_blocks: Vec<Block> = Vec::new();
-            if !args.is_empty() {
-                child_blocks.push(Block::Paragraph {
-                    text: args.to_string(),
-                    line: 0,
-                });
-            }
-            *i_ref += 1;
-            // Skip blank lines, then collect indented content.
-            let content_indent = peek_inner_indent(lines, *i_ref, base_indent);
-            if let Some(ci) = content_indent {
-                let inner = consume_indented_lines(lines, i_ref, ci);
-                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                let mut more = parse_blocks(&refs, ci, 0);
-                child_blocks.append(&mut more);
-            }
-            Block::Admonition {
-                kind,
-                children: child_blocks,
-            }
-        }
         "admonition" => {
             // `.. admonition:: Title` (optionally `:class: extra`) \u2014
             // generic admonition with an arbitrary title.
@@ -1970,6 +1934,143 @@ fn parse_directive(
                 children,
             }
         }
+        "attention" | "caution" | "danger" | "error" | "hint" | "important" | "note" | 
+        "seealso" | "tip" | "warning" => {
+            let kind: &'static str = match name.as_str() {
+                "attention" => "attention",
+                "caution" => "caution",
+                "danger" => "danger",
+                "error" => "error",
+                "hint" => "hint",
+                "important" => "important",
+                "note" => "note",
+                "seealso" => "seealso",
+                "tip" => "tip",
+                "warning" => "warning",
+                _ => unreachable!(),
+            };
+            let mut child_blocks: Vec<Block> = Vec::new();
+            if !args.is_empty() {
+                child_blocks.push(Block::Paragraph {
+                    text: args.to_string(),
+                    line: 0,
+                });
+            }
+            *i_ref += 1;
+            // Skip blank lines, then collect indented content.
+            let content_indent = peek_inner_indent(lines, *i_ref, base_indent);
+            if let Some(ci) = content_indent {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                let mut more = parse_blocks(&refs, ci, 0);
+                child_blocks.append(&mut more);
+            }
+            Block::Admonition {
+                kind,
+                children: child_blocks,
+            }
+        }
+        "attribute" | "autoattribute" | "autoclass" | "autodata" | "autoexception" 
+        | "autofunction" | "automethod" | "autosummary" => {
+            let title = args.trim().to_string();
+            let qualified_attribute = name == "autoattribute" && title.contains('.');
+            let qualified_autoclass = name == "autoclass" && title.contains('.');
+            *i_ref += 1;
+            let mut children = Vec::new();
+            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                children = parse_blocks(&refs, ci, 0);
+            }
+            Block::ObjectDescription {
+                classes: format!("autodoc {}", name),
+                ids: if qualified_attribute || qualified_autoclass {
+                    title.clone()
+                } else {
+                    normalize_id(&title)
+                },
+                sig_text: if qualified_attribute {
+                    title.rsplit('.').next().unwrap_or(&title).to_string()
+                } else if qualified_autoclass {
+                    format!("class {title}")
+                } else {
+                    format!("py:{name} {title}")
+                },
+                aliases: Vec::new(),
+                children,
+            }
+        }
+        "class" | "cssclass" | "rst-class" => {
+            let classes = args
+                .trim()
+                .replace(',', " ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            *i_ref += 1;
+            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                let children = parse_blocks(&refs, ci, 0);
+                Block::Container { classes, children }
+            } else {
+                Block::PendingClass(classes)
+            }
+        }
+        "code" | "code-block" | "sourcecode" => {
+            let lang = args.trim();
+            *i_ref += 1;
+            let mut caption = None;
+            let mut line_numbers = false;
+            let mut j = *i_ref;
+            while j < lines.len() && lines[j].trim().is_empty() {
+                j += 1;
+            }
+            if j < lines.len()
+                && let Some(ind) = leading_spaces(lines[j])
+                && ind > base_indent
+            {
+                while j < lines.len() {
+                    let line = lines[j];
+                    if line.trim().is_empty() {
+                        j += 1;
+                        continue;
+                    }
+                    if leading_spaces(line).unwrap_or(0) < ind {
+                        break;
+                    }
+                    let stripped = &line[ind..];
+                    if let Some((key, value)) = field_marker(stripped) {
+                        if key == "caption" {
+                            caption = Some(value.trim().to_string());
+                        } else if key == "linenos" {
+                            line_numbers = true;
+                        }
+                        j += 1;
+                    } else {
+                        break;
+                    }
+                }
+                *i_ref = j;
+            }
+            let inner = consume_indented_text(lines, i_ref, base_indent);
+            let mut classes = if lang.is_empty() {
+                "code".to_string()
+            } else {
+                format!("code {}", lang)
+            };
+            if line_numbers {
+                classes.push_str(" linenos");
+            }
+            let text = inner.join("\n");
+            let tokens = crate::code_block::tokenize(lang, &text);
+            Block::LiteralBlock {
+                text,
+                classes,
+                caption,
+                tokens,
+            }
+        }
         "container" => {
             let classes = args.trim().to_string();
             *i_ref += 1;
@@ -1980,6 +2081,148 @@ fn parse_directive(
                 children = parse_blocks(&refs, ci, 0);
             }
             Block::Container { classes, children }
+        }
+        "contents" | "topic" => {
+            let title = if args.trim().is_empty() {
+                if name == "contents" {
+                    "Contents".to_string()
+                } else {
+                    String::new()
+                }
+            } else {
+                args.trim().to_string()
+            };
+            *i_ref += 1;
+            let mut children = Vec::new();
+            if !title.is_empty() {
+                children.push(Block::Paragraph {
+                    text: title,
+                    line: 0,
+                });
+            }
+            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                let mut body = parse_blocks(&refs, ci, 0);
+                children.append(&mut body);
+            }
+            Block::Container {
+                classes: format!("topic {}", name),
+                children,
+            }
+        }
+        "csv-table" => {
+            let _title = args.trim().to_string();
+            *i_ref += 1;
+            let mut header_rows = 0;
+            let mut j = *i_ref;
+            while j < lines.len() && lines[j].trim().is_empty() {
+                j += 1;
+            }
+            if j < lines.len() && leading_spaces(lines[j]).unwrap_or(0) > base_indent {
+                let ind = leading_spaces(lines[j]).unwrap();
+                while j < lines.len() {
+                    let l = lines[j];
+                    if l.trim().is_empty() {
+                        j += 1;
+                        continue;
+                    }
+                    if leading_spaces(l).unwrap_or(0) < ind {
+                        break;
+                    }
+                    let stripped = &l[ind..];
+                    if let Some((k, v)) = field_marker(stripped) {
+                        if k.as_str() == "header-rows" {
+                            header_rows = v.trim().parse().unwrap_or(0);
+                        }
+                        j += 1;
+                    } else {
+                        break;
+                    }
+                }
+                *i_ref = j;
+            }
+            let inner = consume_indented_text(lines, i_ref, base_indent);
+            let mut head = Vec::new();
+            let mut body = Vec::new();
+            for (idx, line) in inner.into_iter().enumerate() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let cells: Vec<Option<TableCell>> = line
+                    .split(',')
+                    .map(|cell_text| {
+                        Some(TableCell {
+                            lines: vec![cell_text.trim().to_string()],
+                            morecols: 0,
+                            morerows: 0,
+                        })
+                    })
+                    .collect();
+                if (idx as u32) < header_rows {
+                    head.push(cells);
+                } else {
+                    body.push(cells);
+                }
+            }
+            let col_count = head
+                .first()
+                .or_else(|| body.first())
+                .map(|r| r.len())
+                .unwrap_or(0);
+            let cols = vec![10; col_count];
+            Block::Table(TableData { cols, head, body })
+        }
+        "currentmodule" => {
+            *i_ref += 1;
+            let _options = consume_indented_text(lines, i_ref, base_indent);
+            Block::Comment(String::new())
+        }
+        "default-role" => {
+            *i_ref += 1;
+            let name = args.trim();
+            Block::DefaultRole((!name.is_empty()).then(|| name.to_owned()))
+        }
+        "deprecated" | "version-added" | "version-changed" | "version-deprecated"
+        | "version-removed" | "versionadded" | "versionchanged"
+        | "versiondeprecated" | "versionremoved" => {
+            let kind = match name.as_str() {
+                "versionadded" | "version-added" => "added",
+                "versionchanged" | "version-changed" => "changed",
+                "versiondeprecated" | "version-deprecated" | "deprecated" => "deprecated",
+                "versionremoved" | "version-removed" => "removed",
+                _ => "changed",
+            };
+            let version = args.trim().to_string();
+            *i_ref += 1;
+            let mut children = Vec::new();
+            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                children = parse_blocks(&refs, ci, 0);
+            }
+            Block::VersionModified {
+                kind,
+                version,
+                children,
+            }
+        }
+        "describe" | "object" => {
+            let title = args.trim().to_string();
+            *i_ref += 1;
+            let mut children = Vec::new();
+            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                children = parse_blocks(&refs, ci, 0);
+            }
+            Block::ObjectDescription {
+                classes: name.clone(),
+                ids: normalize_id(&title),
+                sig_text: title,
+                aliases: Vec::new(),
+                children,
+            }
         }
         "epigraph" => {
             let mut child_blocks: Vec<Block> = Vec::new();
@@ -2001,72 +2244,7 @@ fn parse_directive(
                 children: child_blocks,
             }
         }
-        "class" | "cssclass" | "rst-class" => {
-            let classes = args
-                .trim()
-                .replace(',', " ")
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ");
-            *i_ref += 1;
-            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
-                let inner = consume_indented_lines(lines, i_ref, ci);
-                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                let children = parse_blocks(&refs, ci, 0);
-                Block::Container { classes, children }
-            } else {
-                Block::PendingClass(classes)
-            }
-        }
-        "toctree" => {
-            *i_ref += 1;
-            let mut maxdepth: i32 = 0;
-            let mut caption: Option<String> = None;
-            let mut hidden = false;
-            let mut entries: Vec<String> = Vec::new();
-            let mut j = *i_ref;
-            while j < lines.len() && lines[j].trim().is_empty() {
-                j += 1;
-            }
-            if j < lines.len()
-                && let Some(ind) = leading_spaces(lines[j])
-                && ind > base_indent
-            {
-                while j < lines.len() {
-                    let l = lines[j];
-                    if l.trim().is_empty() {
-                        j += 1;
-                        continue;
-                    }
-                    if leading_spaces(l).unwrap_or(0) < ind {
-                        break;
-                    }
-                    let stripped = &l[ind..];
-                    if let Some((k, v)) = field_marker(stripped) {
-                        match k.as_str() {
-                            "maxdepth" => maxdepth = v.trim().parse().unwrap_or(0),
-                            "caption" => caption = Some(v.trim().to_string()),
-                            "hidden" => hidden = true,
-                            _ => {}
-                        }
-                    } else {
-                        let entry = stripped.trim();
-                        if !entry.is_empty() {
-                            entries.push(entry.to_string());
-                        }
-                    }
-                    j += 1;
-                }
-                *i_ref = j;
-            }
-            Block::Toctree {
-                caption,
-                maxdepth,
-                hidden,
-                entries,
-            }
-        }
-        "image" | "figure" => {
+        "figure" | "image" => {
             let is_figure = name == "figure";
             let uri = args.trim().to_string();
             *i_ref += 1;
@@ -2198,34 +2376,87 @@ fn parse_directive(
                 legend,
             }
         }
-        "code" | "code-block" | "sourcecode" => {
-            let lang = args.trim();
+        "glossary" => {
             *i_ref += 1;
-            let mut caption = None;
-            let mut line_numbers = false;
+            let mut children = Vec::new();
+            if peek_inner_indent(lines, *i_ref, base_indent).is_some() {
+                let inner = consume_indented_text(lines, i_ref, base_indent);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                children = parse_blocks(&refs, 0, 0);
+            }
+            Block::Container {
+                classes: "glossary".to_string(),
+                children,
+            }
+        }
+        "graphviz" | "inheritance-diagram" => {
+            let code = args.trim().to_string();
+            *i_ref += 1;
+            let inner = consume_indented_text(lines, i_ref, base_indent);
+            let body = if inner.is_empty() {
+                code
+            } else if code.is_empty() {
+                inner.join("\n")
+            } else {
+                format!("{}\n{}", code, inner.join("\n"))
+            };
+            Block::Container {
+                classes: format!("graphviz {}", name),
+                children: vec![Block::LiteralBlock {
+                    text: body,
+                    classes: "graphviz".to_string(),
+                    caption: None,
+                    tokens: None,
+                }],
+            }
+        }
+        "highlight" => {
+            let lang = args.trim().to_string();
+            *i_ref += 1;
+            let _inner = consume_indented_text(lines, i_ref, base_indent);
+            Block::Highlight(lang)
+        }
+        "include" => {
+            let path = args.trim();
+            *i_ref += 1;
+            let _inner = consume_indented_text(lines, i_ref, base_indent);
+            if let Ok(content) = std::fs::read_to_string(path) {
+                let inc_lines: Vec<&str> = content.lines().collect();
+                let blocks = parse_blocks(&inc_lines, 0, 0);
+                Block::PluginResult(blocks)
+            } else {
+                Block::Comment(format!("include: file not found: {path}"))
+            }
+        }
+        "index" => {
+            let spec = args.trim().to_string();
+            *i_ref += 1;
+            let _inner = consume_indented_text(lines, i_ref, base_indent);
+            Block::Comment(format!("index: {}", spec))
+        }
+        "literalinclude" => {
+            let path = args.trim();
+            *i_ref += 1;
+            let mut language = String::new();
             let mut j = *i_ref;
             while j < lines.len() && lines[j].trim().is_empty() {
                 j += 1;
             }
-            if j < lines.len()
-                && let Some(ind) = leading_spaces(lines[j])
-                && ind > base_indent
-            {
+            if j < lines.len() && leading_spaces(lines[j]).unwrap_or(0) > base_indent {
+                let ind = leading_spaces(lines[j]).unwrap();
                 while j < lines.len() {
-                    let line = lines[j];
-                    if line.trim().is_empty() {
+                    let l = lines[j];
+                    if l.trim().is_empty() {
                         j += 1;
                         continue;
                     }
-                    if leading_spaces(line).unwrap_or(0) < ind {
+                    if leading_spaces(l).unwrap_or(0) < ind {
                         break;
                     }
-                    let stripped = &line[ind..];
-                    if let Some((key, value)) = field_marker(stripped) {
-                        if key == "caption" {
-                            caption = Some(value.trim().to_string());
-                        } else if key == "linenos" {
-                            line_numbers = true;
+                    let stripped = &l[ind..];
+                    if let Some((k, v)) = field_marker(stripped) {
+                        if k == "language" {
+                            language = v.trim().to_string();
                         }
                         j += 1;
                     } else {
@@ -2234,31 +2465,22 @@ fn parse_directive(
                 }
                 *i_ref = j;
             }
-            let inner = consume_indented_text(lines, i_ref, base_indent);
-            let mut classes = if lang.is_empty() {
-                "code".to_string()
+            let _inner = consume_indented_text(lines, i_ref, base_indent);
+            if let Ok(content) = std::fs::read_to_string(path) {
+                let classes = if language.is_empty() {
+                    "code".to_string()
+                } else {
+                    format!("code {language}")
+                };
+                let tokens = crate::code_block::tokenize(&language, &content);
+                Block::LiteralBlock {
+                    text: content,
+                    classes,
+                    caption: None,
+                    tokens,
+                }
             } else {
-                format!("code {}", lang)
-            };
-            if line_numbers {
-                classes.push_str(" linenos");
-            }
-            let text = inner.join("\n");
-            let tokens = crate::code_block::tokenize(lang, &text);
-            Block::LiteralBlock {
-                text,
-                classes,
-                caption,
-                tokens,
-            }
-        }
-        "raw" => {
-            let format = args.trim().to_string();
-            *i_ref += 1;
-            let inner = consume_indented_text(lines, i_ref, base_indent);
-            Block::Raw {
-                format,
-                text: inner.join("\n"),
+                Block::Comment(format!("literalinclude: file not found: {path}"))
             }
         }
         "math" => {
@@ -2277,39 +2499,11 @@ fn parse_directive(
             };
             Block::MathBlock { latex }
         }
-        "default-role" => {
+        "module" => {
+            let module_name = args.trim();
             *i_ref += 1;
-            let name = args.trim();
-            Block::DefaultRole((!name.is_empty()).then(|| name.to_owned()))
-        }
-        "rubric" => {
-            let title = args.trim().to_string();
-            *i_ref += 1;
-            Block::Rubric(title)
-        }
-        "versionadded" | "versionchanged" | "versiondeprecated" | "versionremoved"
-        | "version-added" | "version-changed" | "version-deprecated" | "version-removed"
-        | "deprecated" => {
-            let kind = match name.as_str() {
-                "versionadded" | "version-added" => "added",
-                "versionchanged" | "version-changed" => "changed",
-                "versiondeprecated" | "version-deprecated" | "deprecated" => "deprecated",
-                "versionremoved" | "version-removed" => "removed",
-                _ => "changed",
-            };
-            let version = args.trim().to_string();
-            *i_ref += 1;
-            let mut children = Vec::new();
-            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
-                let inner = consume_indented_lines(lines, i_ref, ci);
-                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                children = parse_blocks(&refs, ci, 0);
-            }
-            Block::VersionModified {
-                kind,
-                version,
-                children,
-            }
+            let _options = consume_indented_text(lines, i_ref, base_indent);
+            Block::TargetId(format!("module-{module_name}"))
         }
         "only" => {
             let tag = args.trim().to_string();
@@ -2325,107 +2519,21 @@ fn parse_directive(
                 children,
             }
         }
-        "highlight" => {
-            let lang = args.trim().to_string();
-            *i_ref += 1;
-            let _inner = consume_indented_text(lines, i_ref, base_indent);
-            Block::Highlight(lang)
-        }
-        "index" => {
-            let spec = args.trim().to_string();
-            *i_ref += 1;
-            let _inner = consume_indented_text(lines, i_ref, base_indent);
-            Block::Comment(format!("index: {}", spec))
-        }
-        "todo" => {
-            *i_ref += 1;
-            let mut children = Vec::new();
-            if !args.trim().is_empty() {
-                children.push(Block::Paragraph {
-                    text: args.trim().to_string(),
-                    line: 0,
-                });
-            }
-            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
-                let inner = consume_indented_lines(lines, i_ref, ci);
-                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                let mut body = parse_blocks(&refs, ci, 0);
-                children.append(&mut body);
-            }
-            Block::GenericAdmonition {
-                title: "Todo".to_string(),
-                classes: "todo".to_string(),
-                children,
-            }
-        }
-        "glossary" => {
-            *i_ref += 1;
-            let mut children = Vec::new();
-            if peek_inner_indent(lines, *i_ref, base_indent).is_some() {
-                let inner = consume_indented_text(lines, i_ref, base_indent);
-                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                children = parse_blocks(&refs, 0, 0);
-            }
-            Block::Container {
-                classes: "glossary".to_string(),
-                children,
-            }
-        }
-        "module" => {
-            let module_name = args.trim();
-            *i_ref += 1;
-            let _options = consume_indented_text(lines, i_ref, base_indent);
-            Block::TargetId(format!("module-{module_name}"))
-        }
-        "currentmodule" => {
-            *i_ref += 1;
-            let _options = consume_indented_text(lines, i_ref, base_indent);
-            Block::Comment(String::new())
-        }
         "program" => {
             let name = args.trim();
             *i_ref += 1;
             Block::Program((name != "None").then(|| name.to_string()))
         }
-        "describe" | "object" => {
-            let title = args.trim().to_string();
-            *i_ref += 1;
-            let mut children = Vec::new();
-            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
-                let inner = consume_indented_lines(lines, i_ref, ci);
-                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                children = parse_blocks(&refs, ci, 0);
-            }
-            Block::ObjectDescription {
-                classes: name.clone(),
-                ids: normalize_id(&title),
-                sig_text: title,
-                aliases: Vec::new(),
-                children,
-            }
-        }
-        "py:module"
-        | "py:function"
-        | "py:class"
-        | "py:method"
-        | "py:classmethod"
-        | "py:staticmethod"
-        | "py:attribute"
-        | "py:property"
-        | "py:data"
-        | "py:exception"
-        | "py:decorator"
-        | "py:decoratormethod"
-        | "py:type"
-        | "c:alias"
+        "c:alias"
         | "c:function"
         | "c:macro"
         | "c:namespace-pop"
         | "c:namespace-push"
         | "c:struct"
-        | "c:union"
         | "c:type"
+        | "c:union"
         | "c:var"
+        | "confval"
         | "cpp:alias"
         | "cpp:class"
         | "cpp:concept"
@@ -2436,51 +2544,63 @@ fn parse_directive(
         | "cpp:namespace-pop"
         | "cpp:namespace-push"
         | "cpp:struct"
-        | "cpp:union"
         | "cpp:type"
+        | "cpp:union"
         | "cpp:var"
-        | "js:class"
-        | "js:function"
-        | "rust:module"
-        | "rust:function"
-        | "rust:struct"
-        | "rust:enum"
-        | "rust:union"
-        | "rust:trait"
-        | "rust:impl"
-        | "rust:method"
-        | "rust:associatedtype"
-        | "rust:associatedconst"
-        | "rust:constant"
-        | "rust:static"
-        | "rust:type"
-        | "rust:macro"
-        | "rust:variant"
-        | "rust:field"
-        | "lean:module"
-        | "lean:namespace"
-        | "lean:def"
-        | "lean:theorem"
-        | "lean:lemma"
-        | "lean:inductive"
-        | "lean:structure"
-        | "lean:class"
-        | "lean:instance"
-        | "lean:abbrev"
-        | "lean:axiom"
-        | "lean:opaque"
-        | "lean:constructor"
-        | "lean:field"
-        | "lean:notation"
-        | "confval"
         | "data"
         | "envvar"
         | "event"
         | "exception"
         | "function"
+        | "js:class"
+        | "js:function"
+        | "lean:abbrev"
+        | "lean:axiom"
+        | "lean:class"
+        | "lean:constructor"
+        | "lean:def"
+        | "lean:field"
+        | "lean:inductive"
+        | "lean:instance"
+        | "lean:lemma"
+        | "lean:module"
+        | "lean:namespace"
+        | "lean:notation"
+        | "lean:opaque"
+        | "lean:structure"
+        | "lean:theorem"
         | "method"
+        | "moduleauthor" 
         | "option"
-        | "moduleauthor" => {
+        | "py:attribute"
+        | "py:class"
+        | "py:classmethod"
+        | "py:data"
+        | "py:decorator"
+        | "py:decoratormethod"
+        | "py:exception"
+        | "py:function"
+        | "py:method"
+        | "py:module"
+        | "py:property"
+        | "py:staticmethod"
+        | "py:type"
+        | "rust:associatedconst"
+        | "rust:associatedtype"
+        | "rust:constant"
+        | "rust:enum"
+        | "rust:field"
+        | "rust:function"
+        | "rust:impl"
+        | "rust:macro"
+        | "rust:method"
+        | "rust:module"
+        | "rust:static"
+        | "rust:struct"
+        | "rust:trait"
+        | "rust:type"
+        | "rust:union"
+        | "rust:variant" => {
             let (objtype, sig) = if let Some(stripped) = name.strip_prefix("py:") {
                 ("py", format!("py:{stripped} {}", args.trim()))
             } else if let Some(stripped) = name.strip_prefix("c:") {
@@ -2586,89 +2706,13 @@ fn parse_directive(
                 children,
             }
         }
-        "autoclass" | "autofunction" | "automethod" | "autoattribute" | "autodata"
-        | "autoexception" | "attribute" | "autosummary" => {
-            let title = args.trim().to_string();
-            let qualified_attribute = name == "autoattribute" && title.contains('.');
-            let qualified_autoclass = name == "autoclass" && title.contains('.');
-            *i_ref += 1;
-            let mut children = Vec::new();
-            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
-                let inner = consume_indented_lines(lines, i_ref, ci);
-                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                children = parse_blocks(&refs, ci, 0);
-            }
-            Block::ObjectDescription {
-                classes: format!("autodoc {}", name),
-                ids: if qualified_attribute || qualified_autoclass {
-                    title.clone()
-                } else {
-                    normalize_id(&title)
-                },
-                sig_text: if qualified_attribute {
-                    title.rsplit('.').next().unwrap_or(&title).to_string()
-                } else if qualified_autoclass {
-                    format!("class {title}")
-                } else {
-                    format!("py:{name} {title}")
-                },
-                aliases: Vec::new(),
-                children,
-            }
-        }
-        "graphviz" | "inheritance-diagram" => {
-            let code = args.trim().to_string();
+        "raw" => {
+            let format = args.trim().to_string();
             *i_ref += 1;
             let inner = consume_indented_text(lines, i_ref, base_indent);
-            let body = if inner.is_empty() {
-                code
-            } else if code.is_empty() {
-                inner.join("\n")
-            } else {
-                format!("{}\n{}", code, inner.join("\n"))
-            };
-            Block::Container {
-                classes: format!("graphviz {}", name),
-                children: vec![Block::LiteralBlock {
-                    text: body,
-                    classes: "graphviz".to_string(),
-                    caption: None,
-                    tokens: None,
-                }],
-            }
-        }
-        "tabularcolumns" => {
-            *i_ref += 1;
-            let _inner = consume_indented_text(lines, i_ref, base_indent);
-            Block::Comment(format!("tabularcolumns: {}", args))
-        }
-        "contents" | "topic" => {
-            let title = if args.trim().is_empty() {
-                if name == "contents" {
-                    "Contents".to_string()
-                } else {
-                    String::new()
-                }
-            } else {
-                args.trim().to_string()
-            };
-            *i_ref += 1;
-            let mut children = Vec::new();
-            if !title.is_empty() {
-                children.push(Block::Paragraph {
-                    text: title,
-                    line: 0,
-                });
-            }
-            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
-                let inner = consume_indented_lines(lines, i_ref, ci);
-                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                let mut body = parse_blocks(&refs, ci, 0);
-                children.append(&mut body);
-            }
-            Block::Container {
-                classes: format!("topic {}", name),
-                children,
+            Block::Raw {
+                format,
+                text: inner.join("\n"),
             }
         }
         "role" => {
@@ -2689,6 +2733,195 @@ fn parse_directive(
             *i_ref += 1;
             let _inner = consume_indented_text(lines, i_ref, base_indent);
             Block::Comment(format!("role: {}", spec))
+        }
+        "rst:directive" | "rst:role" => {
+            // `.. rst:directive:: sig` / `.. rst:role:: name` (Tier H3c).
+            // Mirrors `sphinx.domains.rst.ReSTDirective`/`ReSTRole`:
+            // the visible signature is always synthesized as
+            // `.. {name}::` (directive) or `:{name}:` (role), regardless
+            // of whether the source `sig` used the full `.. name::`
+            // syntax or a bare name.
+            let objtype = if name == "rst:directive" {
+                "directive"
+            } else {
+                "role"
+            };
+            let (bare_name, extra_args) = parse_domain_object_sig(args.trim());
+            let sig_text = if objtype == "directive" {
+                if extra_args.is_empty() {
+                    format!(".. {bare_name}::")
+                } else {
+                    format!(".. {bare_name}:: {extra_args}")
+                }
+            } else {
+                format!(":{bare_name}:")
+            };
+            let ids = format!("{objtype}-{}", normalize_id(&bare_name));
+            let classes = format!("rst {objtype}");
+            *i_ref += 1;
+            if objtype == "directive" {
+                let signature_indent = base_indent + ".. rst:directive:: ".len();
+                let mut next = *i_ref;
+                while next < lines.len() {
+                    if lines[next].trim().is_empty() {
+                        next += 1;
+                        continue;
+                    }
+                    let line = lines[next];
+                    let indent = leading_spaces(line).unwrap_or(0);
+                    if indent < signature_indent || !line[indent..].starts_with(".. ") {
+                        break;
+                    }
+                    next += 1;
+                }
+                if next > *i_ref {
+                    *i_ref = next;
+                }
+            }
+            let content_indent = peek_inner_indent(lines, *i_ref, base_indent);
+            let mut children = Vec::new();
+            if let Some(ci) = content_indent {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                children = parse_blocks(&refs, ci, 0);
+            }
+            Block::ObjectDescription {
+                classes,
+                ids,
+                sig_text,
+                aliases: Vec::new(),
+                children,
+            }
+        }
+        "rst:directive:option" => {
+            let raw_option = args.trim();
+            let (option, description, owner) = if let Some(rest) = raw_option.strip_prefix('@') {
+                if let Some((owner, option)) = rest.split_once('@') {
+                    let (option, description) = option
+                        .split_once(':')
+                        .map_or((option.trim(), ""), |(option, description)| {
+                            (option.trim(), description.trim())
+                        });
+                    (option, description, Some(owner.trim().to_string()))
+                } else {
+                    (raw_option, "", None)
+                }
+            } else {
+                let (option, description) = raw_option
+                    .split_once(':')
+                    .map_or((raw_option, ""), |(option, description)| {
+                        (option.trim(), description.trim())
+                    });
+                (option, description, None)
+            };
+            let sig_text = if description.is_empty() {
+                format!(":{option}:")
+            } else {
+                format!(":{option}: {description}")
+            };
+            let ids = if let Some(owner) = owner {
+                format!(
+                    "directive-option-{}-{}",
+                    normalize_id(&owner),
+                    normalize_id(option)
+                )
+            } else {
+                format!("directive-option-{}", normalize_id(option))
+            };
+            *i_ref += 1;
+            let content_indent = peek_inner_indent(lines, *i_ref, base_indent);
+            let mut children = Vec::new();
+            if let Some(ci) = content_indent {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                children = parse_blocks(&refs, ci, 0);
+            }
+            Block::ObjectDescription {
+                classes: "rst directive:option".to_string(),
+                ids,
+                sig_text,
+                aliases: Vec::new(),
+                children,
+            }
+        }
+        "rubric" => {
+            let title = args.trim().to_string();
+            *i_ref += 1;
+            Block::Rubric(title)
+        }
+        "tabularcolumns" => {
+            *i_ref += 1;
+            let _inner = consume_indented_text(lines, i_ref, base_indent);
+            Block::Comment(format!("tabularcolumns: {}", args))
+        }
+        "toctree" => {
+            *i_ref += 1;
+            let mut maxdepth: i32 = 0;
+            let mut caption: Option<String> = None;
+            let mut hidden = false;
+            let mut entries: Vec<String> = Vec::new();
+            let mut j = *i_ref;
+            while j < lines.len() && lines[j].trim().is_empty() {
+                j += 1;
+            }
+            if j < lines.len()
+                && let Some(ind) = leading_spaces(lines[j])
+                && ind > base_indent
+            {
+                while j < lines.len() {
+                    let l = lines[j];
+                    if l.trim().is_empty() {
+                        j += 1;
+                        continue;
+                    }
+                    if leading_spaces(l).unwrap_or(0) < ind {
+                        break;
+                    }
+                    let stripped = &l[ind..];
+                    if let Some((k, v)) = field_marker(stripped) {
+                        match k.as_str() {
+                            "maxdepth" => maxdepth = v.trim().parse().unwrap_or(0),
+                            "caption" => caption = Some(v.trim().to_string()),
+                            "hidden" => hidden = true,
+                            _ => {}
+                        }
+                    } else {
+                        let entry = stripped.trim();
+                        if !entry.is_empty() {
+                            entries.push(entry.to_string());
+                        }
+                    }
+                    j += 1;
+                }
+                *i_ref = j;
+            }
+            Block::Toctree {
+                caption,
+                maxdepth,
+                hidden,
+                entries,
+            }
+        }
+        "todo" => {
+            *i_ref += 1;
+            let mut children = Vec::new();
+            if !args.trim().is_empty() {
+                children.push(Block::Paragraph {
+                    text: args.trim().to_string(),
+                    line: 0,
+                });
+            }
+            if let Some(ci) = peek_inner_indent(lines, *i_ref, base_indent) {
+                let inner = consume_indented_lines(lines, i_ref, ci);
+                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
+                let mut body = parse_blocks(&refs, ci, 0);
+                children.append(&mut body);
+            }
+            Block::GenericAdmonition {
+                title: "Todo".to_string(),
+                classes: "todo".to_string(),
+                children,
+            }
         }
         "list-table" => {
             let _title = args.trim().to_string();
@@ -2806,239 +3039,6 @@ fn parse_directive(
                 vec![10; col_count]
             };
             Block::Table(TableData { cols, head, body })
-        }
-        "csv-table" => {
-            let _title = args.trim().to_string();
-            *i_ref += 1;
-            let mut header_rows = 0;
-            let mut j = *i_ref;
-            while j < lines.len() && lines[j].trim().is_empty() {
-                j += 1;
-            }
-            if j < lines.len() && leading_spaces(lines[j]).unwrap_or(0) > base_indent {
-                let ind = leading_spaces(lines[j]).unwrap();
-                while j < lines.len() {
-                    let l = lines[j];
-                    if l.trim().is_empty() {
-                        j += 1;
-                        continue;
-                    }
-                    if leading_spaces(l).unwrap_or(0) < ind {
-                        break;
-                    }
-                    let stripped = &l[ind..];
-                    if let Some((k, v)) = field_marker(stripped) {
-                        if k.as_str() == "header-rows" {
-                            header_rows = v.trim().parse().unwrap_or(0);
-                        }
-                        j += 1;
-                    } else {
-                        break;
-                    }
-                }
-                *i_ref = j;
-            }
-            let inner = consume_indented_text(lines, i_ref, base_indent);
-            let mut head = Vec::new();
-            let mut body = Vec::new();
-            for (idx, line) in inner.into_iter().enumerate() {
-                if line.trim().is_empty() {
-                    continue;
-                }
-                let cells: Vec<Option<TableCell>> = line
-                    .split(',')
-                    .map(|cell_text| {
-                        Some(TableCell {
-                            lines: vec![cell_text.trim().to_string()],
-                            morecols: 0,
-                            morerows: 0,
-                        })
-                    })
-                    .collect();
-                if (idx as u32) < header_rows {
-                    head.push(cells);
-                } else {
-                    body.push(cells);
-                }
-            }
-            let col_count = head
-                .first()
-                .or_else(|| body.first())
-                .map(|r| r.len())
-                .unwrap_or(0);
-            let cols = vec![10; col_count];
-            Block::Table(TableData { cols, head, body })
-        }
-        "include" => {
-            let path = args.trim();
-            *i_ref += 1;
-            let _inner = consume_indented_text(lines, i_ref, base_indent);
-            if let Ok(content) = std::fs::read_to_string(path) {
-                let inc_lines: Vec<&str> = content.lines().collect();
-                let blocks = parse_blocks(&inc_lines, 0, 0);
-                Block::PluginResult(blocks)
-            } else {
-                Block::Comment(format!("include: file not found: {path}"))
-            }
-        }
-        "literalinclude" => {
-            let path = args.trim();
-            *i_ref += 1;
-            let mut language = String::new();
-            let mut j = *i_ref;
-            while j < lines.len() && lines[j].trim().is_empty() {
-                j += 1;
-            }
-            if j < lines.len() && leading_spaces(lines[j]).unwrap_or(0) > base_indent {
-                let ind = leading_spaces(lines[j]).unwrap();
-                while j < lines.len() {
-                    let l = lines[j];
-                    if l.trim().is_empty() {
-                        j += 1;
-                        continue;
-                    }
-                    if leading_spaces(l).unwrap_or(0) < ind {
-                        break;
-                    }
-                    let stripped = &l[ind..];
-                    if let Some((k, v)) = field_marker(stripped) {
-                        if k == "language" {
-                            language = v.trim().to_string();
-                        }
-                        j += 1;
-                    } else {
-                        break;
-                    }
-                }
-                *i_ref = j;
-            }
-            let _inner = consume_indented_text(lines, i_ref, base_indent);
-            if let Ok(content) = std::fs::read_to_string(path) {
-                let classes = if language.is_empty() {
-                    "code".to_string()
-                } else {
-                    format!("code {language}")
-                };
-                let tokens = crate::code_block::tokenize(&language, &content);
-                Block::LiteralBlock {
-                    text: content,
-                    classes,
-                    caption: None,
-                    tokens,
-                }
-            } else {
-                Block::Comment(format!("literalinclude: file not found: {path}"))
-            }
-        }
-        "rst:directive:option" => {
-            let raw_option = args.trim();
-            let (option, description, owner) = if let Some(rest) = raw_option.strip_prefix('@') {
-                if let Some((owner, option)) = rest.split_once('@') {
-                    let (option, description) = option
-                        .split_once(':')
-                        .map_or((option.trim(), ""), |(option, description)| {
-                            (option.trim(), description.trim())
-                        });
-                    (option, description, Some(owner.trim().to_string()))
-                } else {
-                    (raw_option, "", None)
-                }
-            } else {
-                let (option, description) = raw_option
-                    .split_once(':')
-                    .map_or((raw_option, ""), |(option, description)| {
-                        (option.trim(), description.trim())
-                    });
-                (option, description, None)
-            };
-            let sig_text = if description.is_empty() {
-                format!(":{option}:")
-            } else {
-                format!(":{option}: {description}")
-            };
-            let ids = if let Some(owner) = owner {
-                format!(
-                    "directive-option-{}-{}",
-                    normalize_id(&owner),
-                    normalize_id(option)
-                )
-            } else {
-                format!("directive-option-{}", normalize_id(option))
-            };
-            *i_ref += 1;
-            let content_indent = peek_inner_indent(lines, *i_ref, base_indent);
-            let mut children = Vec::new();
-            if let Some(ci) = content_indent {
-                let inner = consume_indented_lines(lines, i_ref, ci);
-                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                children = parse_blocks(&refs, ci, 0);
-            }
-            Block::ObjectDescription {
-                classes: "rst directive:option".to_string(),
-                ids,
-                sig_text,
-                aliases: Vec::new(),
-                children,
-            }
-        }
-        "rst:directive" | "rst:role" => {
-            // `.. rst:directive:: sig` / `.. rst:role:: name` (Tier H3c).
-            // Mirrors `sphinx.domains.rst.ReSTDirective`/`ReSTRole`:
-            // the visible signature is always synthesized as
-            // `.. {name}::` (directive) or `:{name}:` (role), regardless
-            // of whether the source `sig` used the full `.. name::`
-            // syntax or a bare name.
-            let objtype = if name == "rst:directive" {
-                "directive"
-            } else {
-                "role"
-            };
-            let (bare_name, extra_args) = parse_domain_object_sig(args.trim());
-            let sig_text = if objtype == "directive" {
-                if extra_args.is_empty() {
-                    format!(".. {bare_name}::")
-                } else {
-                    format!(".. {bare_name}:: {extra_args}")
-                }
-            } else {
-                format!(":{bare_name}:")
-            };
-            let ids = format!("{objtype}-{}", normalize_id(&bare_name));
-            let classes = format!("rst {objtype}");
-            *i_ref += 1;
-            if objtype == "directive" {
-                let signature_indent = base_indent + ".. rst:directive:: ".len();
-                let mut next = *i_ref;
-                while next < lines.len() {
-                    if lines[next].trim().is_empty() {
-                        next += 1;
-                        continue;
-                    }
-                    let line = lines[next];
-                    let indent = leading_spaces(line).unwrap_or(0);
-                    if indent < signature_indent || !line[indent..].starts_with(".. ") {
-                        break;
-                    }
-                    next += 1;
-                }
-                if next > *i_ref {
-                    *i_ref = next;
-                }
-            }
-            let content_indent = peek_inner_indent(lines, *i_ref, base_indent);
-            let mut children = Vec::new();
-            if let Some(ci) = content_indent {
-                let inner = consume_indented_lines(lines, i_ref, ci);
-                let refs: Vec<&str> = inner.iter().map(|s| s.as_str()).collect();
-                children = parse_blocks(&refs, ci, 0);
-            }
-            Block::ObjectDescription {
-                classes,
-                ids,
-                sig_text,
-                aliases: Vec::new(),
-                children,
-            }
         }
         _ => {
             // Unknown directive: consult native Rust registry first, then Python plugin registry.

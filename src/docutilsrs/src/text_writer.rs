@@ -95,19 +95,19 @@ fn render_deep_blocks(tree: &Doctree, root: NodeId) -> Vec<String> {
             let split = values.len().saturating_sub(child_count);
             let children = values.split_off(split);
             let rendered = match &tree.node(id).kind {
-                NodeKind::Paragraph | NodeKind::Title | NodeKind::Subtitle { .. } => {
-                    vec![inline_text(tree, id)]
-                }
-                NodeKind::Transition => vec!["-".repeat(20)],
+                NodeKind::Comment
+                | NodeKind::Image { .. }
+                | NodeKind::Problematic { .. } 
+                | NodeKind::Raw { .. }
+                | NodeKind::SystemMessage { .. } => Vec::new(),
                 NodeKind::LiteralBlock { .. } => {
                     vec![indent_lines(&inline_text(tree, id), INDENT_STEP)]
                 }
                 NodeKind::MathBlock { latex } => vec![indent_lines(latex, INDENT_STEP)],
-                NodeKind::Image { .. }
-                | NodeKind::Raw { .. }
-                | NodeKind::Comment
-                | NodeKind::SystemMessage { .. }
-                | NodeKind::Problematic { .. } => Vec::new(),
+                NodeKind::Paragraph | NodeKind::Subtitle { .. } | NodeKind::Title => {
+                    vec![inline_text(tree, id)]
+                }
+                NodeKind::Transition => vec!["-".repeat(20)],
                 _ => children.into_iter().flatten().collect(),
             };
             values.push(rendered);
@@ -124,56 +124,29 @@ fn render_deep_blocks(tree: &Doctree, root: NodeId) -> Vec<String> {
 fn render_block_recursive(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut Vec<String>) {
     let node = tree.node(id);
     match &node.kind {
-        NodeKind::Section { .. } => {
-            let mut title_text = String::new();
-            let mut body_blocks: Vec<String> = Vec::new();
-            for &child in &node.children {
-                if matches!(tree.node(child).kind, NodeKind::Title) {
-                    title_text = inline_text(tree, child);
+        NodeKind::Admonition { kind } => {
+            let mut inner = Vec::new();
+            for &c in &node.children {
+                render_block(tree, c, depth, &mut inner);
+            }
+            let title = format!("{}{}:", &kind[..1].to_uppercase(), &kind[1..]);
+            blocks.push(title);
+            blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
+        }
+        NodeKind::Bibliographic { tag } => {
+            blocks.push(format!(":{tag}: {}", inline_text(tree, id)))
+        }
+        NodeKind::BlockQuote => {
+            let mut inner = Vec::new();
+            for &c in &node.children {
+                if matches!(tree.node(c).kind, NodeKind::Attribution) {
+                    inner.push(format!("-- {}", inline_text(tree, c)));
                 } else {
-                    render_block(tree, child, depth + 1, &mut body_blocks);
+                    render_block(tree, c, depth, &mut inner);
                 }
             }
-            if !title_text.is_empty() {
-                let underline_char = section_underline_char(depth);
-                let underline: String = underline_char
-                    .to_string()
-                    .repeat(display_width(&title_text));
-                blocks.push(format!("{title_text}\n{underline}"));
-            }
-            blocks.extend(body_blocks);
+            blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
         }
-        NodeKind::Title => {
-            // Only reached for the root-level `Title` node left behind by
-            // `promote_document_title` (a real `Section`'s `Title` child is
-            // consumed directly by the `Section` arm above, never dispatched
-            // here). Real Sphinx never promotes document titles
-            // (`doctitle_xform`/`sectsubtitle_xform` are both `False`), so
-            // this heading is really still "depth 0" from
-            // `text_sectionchars`' point of view — render it with the same
-            // underline rule as a genuine depth-0 section title.
-            let t = inline_text(tree, id);
-            let underline = section_underline_char(0)
-                .to_string()
-                .repeat(display_width(&t));
-            blocks.push(format!("{t}\n{underline}"));
-        }
-        NodeKind::Subtitle { .. } => {
-            // Promoted by `promote_document_title` when a document has a
-            // single top-level section containing a single nested section;
-            // render one level deeper than the document title itself.
-            let t = inline_text(tree, id);
-            let underline = section_underline_char(1)
-                .to_string()
-                .repeat(display_width(&t));
-            blocks.push(format!("{t}\n{underline}"));
-        }
-        NodeKind::Transition => blocks.push("-".repeat(20)),
-        NodeKind::Paragraph => blocks.push(inline_text(tree, id)),
-        NodeKind::LiteralBlock { .. } => {
-            blocks.push(indent_lines(&inline_text(tree, id), INDENT_STEP));
-        }
-        NodeKind::MathBlock { latex } => blocks.push(indent_lines(latex, INDENT_STEP)),
         NodeKind::BulletList { bullet } => {
             for &item in &node.children {
                 let mut item_blocks = Vec::new();
@@ -181,6 +154,70 @@ fn render_block_recursive(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut
                     render_block(tree, c, depth, &mut item_blocks);
                 }
                 blocks.push(bullet_item(*bullet, &item_blocks));
+            }
+        }
+        NodeKind::Citation {
+            ids: _,
+            names,
+            backrefs: _,
+        } => {
+            let mut inner = Vec::new();
+            for &c in &node.children {
+                if !matches!(tree.node(c).kind, NodeKind::Label) {
+                    render_block(tree, c, depth, &mut inner);
+                }
+            }
+            if let Some(first) = inner.first() {
+                blocks.push(format!("[{names}] {first}"));
+                blocks.extend(inner.into_iter().skip(1));
+            } else {
+                blocks.push(format!("[{names}]"));
+            }
+        }
+        NodeKind::Container { .. } => {
+            for &c in &node.children {
+                render_block(tree, c, depth, blocks);
+            }
+        }
+        // Image / Raw / Comment / SystemMessage / Problematic: silent.
+        NodeKind::Comment
+        | NodeKind::Image { .. }
+        | NodeKind::Problematic { .. } 
+        | NodeKind::Raw { .. }
+        | NodeKind::SystemMessage { .. } => {}
+        NodeKind::DefinitionList => {
+            for &item in &node.children {
+                render_block(tree, item, depth, blocks);
+            }
+        }
+        NodeKind::DefinitionListItem => {
+            let mut term_line = String::new();
+            let mut def_blocks = Vec::new();
+            for &c in &node.children {
+                match &tree.node(c).kind {
+                    NodeKind::Classifier => {
+                        term_line.push_str(" : ");
+                        term_line.push_str(&inline_text(tree, c));
+                    }
+                    NodeKind::Definition => {
+                        for &dc in &tree.node(c).children {
+                            render_block(tree, dc, depth, &mut def_blocks);
+                        }
+                    }
+                    NodeKind::Term => term_line.push_str(&inline_text(tree, c)),
+                    _ => {}
+                }
+            }
+            blocks.push(term_line);
+            blocks.extend(
+                def_blocks
+                    .into_iter()
+                    .map(|b| indent_lines(&b, INDENT_STEP)),
+            );
+        }
+        NodeKind::Docinfo => {
+            for &c in &node.children {
+                render_block(tree, c, depth, blocks);
             }
         }
         NodeKind::EnumeratedList { prefix, suffix, .. } => {
@@ -193,52 +230,53 @@ fn render_block_recursive(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut
                 blocks.push(numbered_item(&marker, &item_blocks));
             }
         }
-        NodeKind::DefinitionList => {
-            for &item in &node.children {
-                render_block(tree, item, depth, blocks);
-            }
-        }
-        NodeKind::DefinitionListItem => {
-            let mut term_line = String::new();
-            let mut def_blocks = Vec::new();
+        NodeKind::Epigraph { .. } => {
+            let mut inner = Vec::new();
             for &c in &node.children {
-                match &tree.node(c).kind {
-                    NodeKind::Term => term_line.push_str(&inline_text(tree, c)),
-                    NodeKind::Classifier => {
-                        term_line.push_str(" : ");
-                        term_line.push_str(&inline_text(tree, c));
-                    }
-                    NodeKind::Definition => {
-                        for &dc in &tree.node(c).children {
-                            render_block(tree, dc, depth, &mut def_blocks);
-                        }
-                    }
-                    _ => {}
+                if matches!(tree.node(c).kind, NodeKind::Attribution) {
+                    inner.push(format!("-- {}", inline_text(tree, c)));
+                } else {
+                    render_block(tree, c, depth, &mut inner);
                 }
             }
-            blocks.push(term_line);
-            blocks.extend(
-                def_blocks
-                    .into_iter()
-                    .map(|b| indent_lines(&b, INDENT_STEP)),
-            );
+            blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
         }
-        NodeKind::FieldList => {
-            for &field in &node.children {
-                render_block(tree, field, depth, blocks);
+        NodeKind::Extension { class_name, attrs } => {
+            let mut inner = Vec::new();
+            for &c in &node.children {
+                render_block(tree, c, depth, &mut inner);
             }
+            let visit = crate::plugins::invoke_node_visit(class_name, "text", attrs);
+            let depart = crate::plugins::invoke_node_depart(class_name, "text", attrs);
+            if visit.is_some() || depart.is_some() {
+                if let Some(open) = visit {
+                    if let Some(first) = inner.first_mut() {
+                        *first = format!("{open}{first}");
+                    } else {
+                        inner.push(open);
+                    }
+                }
+                if let Some(close) = depart {
+                    if let Some(last) = inner.last_mut() {
+                        last.push_str(&close);
+                    } else {
+                        inner.push(close);
+                    }
+                }
+            }
+            blocks.extend(inner);
         }
         NodeKind::Field => {
             let mut name = String::new();
             let mut body_blocks = Vec::new();
             for &c in &node.children {
                 match &tree.node(c).kind {
-                    NodeKind::FieldName => name = inline_text(tree, c),
                     NodeKind::FieldBody => {
                         for &bc in &tree.node(c).children {
                             render_block(tree, bc, depth, &mut body_blocks);
                         }
                     }
+                    NodeKind::FieldName => name = inline_text(tree, c),
                     _ => {}
                 }
             }
@@ -254,66 +292,17 @@ fn render_block_recursive(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut
                 blocks.push(format!(":{name}: {body}"));
             }
         }
-        NodeKind::Docinfo => {
-            for &c in &node.children {
-                render_block(tree, c, depth, blocks);
+        NodeKind::FieldList => {
+            for &field in &node.children {
+                render_block(tree, field, depth, blocks);
             }
         }
-        NodeKind::Bibliographic { tag } => {
-            blocks.push(format!(":{tag}: {}", inline_text(tree, id)))
-        }
-        NodeKind::Reference { .. } => blocks.push(inline_text(tree, id)),
-        NodeKind::BlockQuote => {
-            let mut inner = Vec::new();
-            for &c in &node.children {
-                if matches!(tree.node(c).kind, NodeKind::Attribution) {
-                    inner.push(format!("-- {}", inline_text(tree, c)));
-                } else {
-                    render_block(tree, c, depth, &mut inner);
-                }
-            }
-            blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
-        }
-        NodeKind::Admonition { kind } => {
-            let mut inner = Vec::new();
-            for &c in &node.children {
-                render_block(tree, c, depth, &mut inner);
-            }
-            let title = format!("{}{}:", &kind[..1].to_uppercase(), &kind[1..]);
-            blocks.push(title);
-            blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
-        }
-        NodeKind::Container { .. } => {
-            for &c in &node.children {
-                render_block(tree, c, depth, blocks);
-            }
-        }
-        NodeKind::GenericAdmonition { title, .. } => {
-            let mut inner = Vec::new();
-            for &c in &node.children {
-                render_block(tree, c, depth, &mut inner);
-            }
-            blocks.push(format!("{title}:"));
-            blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
-        }
-        NodeKind::Epigraph { .. } => {
-            let mut inner = Vec::new();
-            for &c in &node.children {
-                if matches!(tree.node(c).kind, NodeKind::Attribution) {
-                    inner.push(format!("-- {}", inline_text(tree, c)));
-                } else {
-                    render_block(tree, c, depth, &mut inner);
-                }
-            }
-            blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
-        }
-        NodeKind::Toctree { .. } => {}
         NodeKind::Figure { .. } => {
             let mut inner = Vec::new();
             for &c in &node.children {
                 match &tree.node(c).kind {
-                    NodeKind::Image { .. } => {} // no textual content
                     NodeKind::Caption => inner.push(inline_text(tree, c)),
+                    NodeKind::Image { .. } => {} // no textual content
                     NodeKind::Legend => {
                         for &lc in &tree.node(c).children {
                             render_block(tree, lc, depth, &mut inner);
@@ -348,35 +337,18 @@ fn render_block_recursive(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut
                 blocks.push(format!("[{label}]"));
             }
         }
-        NodeKind::Citation {
-            ids: _,
-            names,
-            backrefs: _,
-        } => {
+        NodeKind::GenericAdmonition { title, .. } => {
             let mut inner = Vec::new();
             for &c in &node.children {
-                if !matches!(tree.node(c).kind, NodeKind::Label) {
-                    render_block(tree, c, depth, &mut inner);
-                }
+                render_block(tree, c, depth, &mut inner);
             }
-            if let Some(first) = inner.first() {
-                blocks.push(format!("[{names}] {first}"));
-                blocks.extend(inner.into_iter().skip(1));
-            } else {
-                blocks.push(format!("[{names}]"));
-            }
+            blocks.push(format!("{title}:"));
+            blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
         }
-        NodeKind::Table => {
-            let mut rows: Vec<String> = Vec::new();
-            collect_table_rows(tree, id, &mut rows);
-            blocks.push(rows.join("\n"));
+        NodeKind::LiteralBlock { .. } => {
+            blocks.push(indent_lines(&inline_text(tree, id), INDENT_STEP));
         }
-        // Image / Raw / Comment / SystemMessage / Problematic: silent.
-        NodeKind::Image { .. }
-        | NodeKind::Raw { .. }
-        | NodeKind::Comment
-        | NodeKind::SystemMessage { .. }
-        | NodeKind::Problematic { .. } => {}
+        NodeKind::MathBlock { latex } => blocks.push(indent_lines(latex, INDENT_STEP)),
         NodeKind::ObjectDescription { sig_text, .. } => {
             let mut inner = Vec::new();
             for &c in &node.children {
@@ -385,31 +357,59 @@ fn render_block_recursive(tree: &Doctree, id: NodeId, depth: usize, blocks: &mut
             blocks.push(sig_text.clone());
             blocks.extend(inner.into_iter().map(|b| indent_lines(&b, INDENT_STEP)));
         }
-        NodeKind::Extension { class_name, attrs } => {
-            let mut inner = Vec::new();
-            for &c in &node.children {
-                render_block(tree, c, depth, &mut inner);
-            }
-            let visit = crate::plugins::invoke_node_visit(class_name, "text", attrs);
-            let depart = crate::plugins::invoke_node_depart(class_name, "text", attrs);
-            if visit.is_some() || depart.is_some() {
-                if let Some(open) = visit {
-                    if let Some(first) = inner.first_mut() {
-                        *first = format!("{open}{first}");
-                    } else {
-                        inner.push(open);
-                    }
-                }
-                if let Some(close) = depart {
-                    if let Some(last) = inner.last_mut() {
-                        last.push_str(&close);
-                    } else {
-                        inner.push(close);
-                    }
+        NodeKind::Paragraph => blocks.push(inline_text(tree, id)),
+        NodeKind::Reference { .. } => blocks.push(inline_text(tree, id)),
+        NodeKind::Section { .. } => {
+            let mut title_text = String::new();
+            let mut body_blocks: Vec<String> = Vec::new();
+            for &child in &node.children {
+                if matches!(tree.node(child).kind, NodeKind::Title) {
+                    title_text = inline_text(tree, child);
+                } else {
+                    render_block(tree, child, depth + 1, &mut body_blocks);
                 }
             }
-            blocks.extend(inner);
+            if !title_text.is_empty() {
+                let underline_char = section_underline_char(depth);
+                let underline: String = underline_char
+                    .to_string()
+                    .repeat(display_width(&title_text));
+                blocks.push(format!("{title_text}\n{underline}"));
+            }
+            blocks.extend(body_blocks);
         }
+        NodeKind::Subtitle { .. } => {
+            // Promoted by `promote_document_title` when a document has a
+            // single top-level section containing a single nested section;
+            // render one level deeper than the document title itself.
+            let t = inline_text(tree, id);
+            let underline = section_underline_char(1)
+                .to_string()
+                .repeat(display_width(&t));
+            blocks.push(format!("{t}\n{underline}"));
+        }
+        NodeKind::Table => {
+            let mut rows: Vec<String> = Vec::new();
+            collect_table_rows(tree, id, &mut rows);
+            blocks.push(rows.join("\n"));
+        }
+        NodeKind::Title => {
+            // Only reached for the root-level `Title` node left behind by
+            // `promote_document_title` (a real `Section`'s `Title` child is
+            // consumed directly by the `Section` arm above, never dispatched
+            // here). Real Sphinx never promotes document titles
+            // (`doctitle_xform`/`sectsubtitle_xform` are both `False`), so
+            // this heading is really still "depth 0" from
+            // `text_sectionchars`' point of view — render it with the same
+            // underline rule as a genuine depth-0 section title.
+            let t = inline_text(tree, id);
+            let underline = section_underline_char(0)
+                .to_string()
+                .repeat(display_width(&t));
+            blocks.push(format!("{t}\n{underline}"));
+        }
+        NodeKind::Transition => blocks.push("-".repeat(20)),
+        NodeKind::Toctree { .. } => {}
         // Anything else that reaches block position (targets, substitution
         // defs, labels, etc.) has no standalone textual form.
         _ => {
@@ -495,21 +495,21 @@ fn inline_text(tree: &Doctree, id: NodeId) -> String {
         match task {
             InlineTextTask::Append(text) => out.push_str(&text),
             InlineTextTask::Enter(id) => match &tree.node(id).kind {
-                NodeKind::Text(text) => out.push_str(text),
                 NodeKind::Emphasis => schedule_inline_wrapper(tree, id, "*", "*", &mut tasks),
                 NodeKind::Strong => schedule_inline_wrapper(tree, id, "**", "**", &mut tasks),
                 NodeKind::Literal => schedule_inline_wrapper(tree, id, "`", "`", &mut tasks),
-                NodeKind::TitleReference => {
-                    schedule_inline_wrapper(tree, id, "\u{2018}", "\u{2019}", &mut tasks)
-                }
-                NodeKind::Math { latex } => out.push_str(&format!(":math:`{latex}`")),
-                NodeKind::FootnoteReference { .. } | NodeKind::CitationReference { .. } => {
+                NodeKind::CitationReference { .. } | NodeKind::FootnoteReference { .. } => {
                     out.push_str("[?]")
                 }
+                NodeKind::Comment | NodeKind::Image { .. } | NodeKind::Raw { .. } => {}
+                NodeKind::Math { latex } => out.push_str(&format!(":math:`{latex}`")),
                 NodeKind::Reference { name, .. } if tree.node(id).children.is_empty() => {
                     out.push_str(name)
                 }
-                NodeKind::Image { .. } | NodeKind::Comment | NodeKind::Raw { .. } => {}
+                NodeKind::Text(text) => out.push_str(text),
+                NodeKind::TitleReference => {
+                    schedule_inline_wrapper(tree, id, "\u{2018}", "\u{2019}", &mut tasks)
+                }
                 _ => {
                     for &child in tree.node(id).children.iter().rev() {
                         tasks.push(InlineTextTask::Enter(child));

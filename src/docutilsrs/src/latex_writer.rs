@@ -60,49 +60,184 @@ pub fn latex_body(
 fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
     let node = tree.node(id);
     match &node.kind {
-        NodeKind::Text(s) => out.push_str(&escape(s)),
+        NodeKind::Emphasis => wrap_cmd(tree, &node.children, "\\emph", section_depth, out),
+        NodeKind::Strong => wrap_cmd(tree, &node.children, "\\textbf", section_depth, out),
+        NodeKind::Literal => wrap_cmd(tree, &node.children, "\\texttt", section_depth, out),
+        NodeKind::Abbreviation { .. }
+        | NodeKind::Keyboard
+        | NodeKind::PendingXref { .. } 
+        | NodeKind::Rubric
+        | NodeKind::Subscript
+        | NodeKind::Superscript
+        | NodeKind::VersionModified { .. } => {
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::Admonition { kind } => {
+            let _ = writeln!(out, "\\textbf{{{}}}\\par", escape(kind));
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::Attribution => {
+            out.push_str("\\par\\hfill --- ");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            out.push('\n');
+        }
+        NodeKind::Bibliographic { tag } => {
+            let _ = write!(out, "\\item[{}] ", escape(tag));
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::BlockQuote => {
+            out.push_str("\\begin{quote}\n");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            out.push_str("\\end{quote}\n");
+        }
+        NodeKind::BulletList { .. } => {
+            out.push_str("\\begin{itemize}\n");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            out.push_str("\\end{itemize}\n");
+        }
+        NodeKind::Caption => {
+            out.push_str("\\caption{");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            out.push_str("}\n");
+        }
+        NodeKind::Classifier => {
+            out.push_str(" : ");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::Comment => {
+            for &c in &node.children {
+                if let NodeKind::Text(s) = &tree.node(c).kind {
+                    out.push_str("% ");
+                    out.push_str(s);
+                    out.push('\n');
+                }
+            }
+        }
+        NodeKind::Citation { .. } | NodeKind::Footnote { .. } | NodeKind::Label { .. } => {
+            // Rendered inline by their references; suppress definitions.
+        }
+        NodeKind::CitationReference { .. } | NodeKind::FootnoteReference { .. } => {
+            out.push_str("\\footnotemark{}");
+        }
+        NodeKind::Container { .. } => {
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::Definition | NodeKind::FieldBody => {
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::DefinitionList | NodeKind::FieldList | NodeKind::Docinfo => {
+            out.push_str("\\begin{description}\n");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            out.push_str("\\end{description}\n");
+        }
+        NodeKind::DefinitionListItem | NodeKind::Field => {
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
         NodeKind::Document { .. } => {
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
             }
         }
-        NodeKind::Section { .. } => {
-            for &c in &node.children {
-                emit(tree, c, section_depth + 1, out);
-            }
-        }
-        NodeKind::Title => {
-            let cmd = SECTION_CMDS
-                .get(section_depth.saturating_sub(1))
-                .unwrap_or(&"\\paragraph");
-            let _ = write!(out, "{cmd}{{");
+        NodeKind::EnumeratedList { .. } => {
+            out.push_str("\\begin{enumerate}\n");
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
             }
-            out.push_str("}\n");
+            out.push_str("\\end{enumerate}\n");
         }
-        NodeKind::Subtitle { .. } => {
-            out.push_str("\\subsection*{");
+        NodeKind::Epigraph { .. } => {
+            out.push_str("\\begin{quote}\n");
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
             }
-            out.push_str("}\n");
+            out.push_str("\\end{quote}\n");
         }
-        NodeKind::Transition => out.push_str("\\hrulefill\n"),
-        NodeKind::Paragraph => {
+        NodeKind::Extension { class_name, attrs } => {
+            let visit = crate::plugins::invoke_node_visit(class_name, "latex", attrs);
+            if let Some(open) = &visit {
+                out.push_str(open);
+            }
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
             }
-            out.push_str("\n\n");
+            if visit.is_some() {
+                if let Some(close) = crate::plugins::invoke_node_depart(class_name, "latex", attrs)
+                {
+                    out.push_str(&close);
+                }
+            }
         }
-        NodeKind::Emphasis => wrap_cmd(tree, &node.children, "\\emph", section_depth, out),
-        NodeKind::Strong => wrap_cmd(tree, &node.children, "\\textbf", section_depth, out),
-        NodeKind::Literal => wrap_cmd(tree, &node.children, "\\texttt", section_depth, out),
-        NodeKind::TitleReference => wrap_cmd(tree, &node.children, "\\textit", section_depth, out),
+        NodeKind::FieldName | NodeKind::Term => {
+            out.push_str("\\item[");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            out.push_str("] ");
+        }
+        NodeKind::Figure { .. } => {
+            out.push_str("\\begin{figure}[h]\n\\centering\n");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            out.push_str("\\end{figure}\n");
+        }
+        NodeKind::GenericAdmonition { title, .. } => {
+            let _ = writeln!(out, "\\textbf{{{}}}\\par", escape(title));
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::Image { uri, .. } => {
+            let _ = writeln!(out, "\\includegraphics{{{}}}", escape(uri));
+        }
         NodeKind::Inline { .. } => {
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
             }
+        }
+        NodeKind::Legend => {
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::ListItem => {
+            out.push_str("\\item ");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+        }
+        NodeKind::LiteralBlock { .. } => {
+            out.push_str("\\begin{verbatim}\n");
+            for &c in &node.children {
+                if let NodeKind::Text(s) = &tree.node(c).kind {
+                    out.push_str(s);
+                }
+            }
+            out.push_str("\n\\end{verbatim}\n");
         }
         NodeKind::Math { latex } => {
             // Inline math in LaTeX output round-trips as `$…$`.
@@ -121,105 +256,27 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
             }
             out.push_str("\\end{equation*}\n");
         }
-        NodeKind::LiteralBlock { .. } => {
-            out.push_str("\\begin{verbatim}\n");
-            for &c in &node.children {
-                if let NodeKind::Text(s) = &tree.node(c).kind {
-                    out.push_str(s);
-                }
-            }
-            out.push_str("\n\\end{verbatim}\n");
-        }
-        NodeKind::BulletList { .. } => {
-            out.push_str("\\begin{itemize}\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("\\end{itemize}\n");
-        }
-        NodeKind::EnumeratedList { .. } => {
-            out.push_str("\\begin{enumerate}\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("\\end{enumerate}\n");
-        }
-        NodeKind::ListItem => {
-            out.push_str("\\item ");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
-        NodeKind::DefinitionList | NodeKind::FieldList | NodeKind::Docinfo => {
-            out.push_str("\\begin{description}\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("\\end{description}\n");
-        }
-        NodeKind::DefinitionListItem | NodeKind::Field => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
-        NodeKind::Term | NodeKind::FieldName => {
-            out.push_str("\\item[");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("] ");
-        }
-        NodeKind::Classifier => {
-            out.push_str(" : ");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
-        NodeKind::Definition | NodeKind::FieldBody => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
-        NodeKind::Bibliographic { tag } => {
-            let _ = write!(out, "\\item[{}] ", escape(tag));
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
-        NodeKind::BlockQuote => {
-            out.push_str("\\begin{quote}\n");
+        NodeKind::ObjectDescription { sig_text, .. } => {
+            out.push_str("\\begin{quote}\n\\texttt{");
+            out.push_str(sig_text);
+            out.push_str("}\n\n");
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
             }
             out.push_str("\\end{quote}\n");
         }
-        NodeKind::Admonition { kind } => {
-            let _ = writeln!(out, "\\textbf{{{}}}\\par", escape(kind));
+        NodeKind::Paragraph => {
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
             }
+            out.push_str("\n\n");
         }
-        NodeKind::Container { .. } => {
+        NodeKind::Problematic { .. } => {
+            out.push_str("\\textcolor{red}{");
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
             }
-        }
-        NodeKind::GenericAdmonition { title, .. } => {
-            let _ = writeln!(out, "\\textbf{{{}}}\\par", escape(title));
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
-        NodeKind::Epigraph { .. } => {
-            out.push_str("\\begin{quote}\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("\\end{quote}\n");
-        }
-        NodeKind::Toctree { .. } => {}
-        NodeKind::Image { uri, .. } => {
-            let _ = writeln!(out, "\\includegraphics{{{}}}", escape(uri));
+            out.push('}');
         }
         NodeKind::Raw { format } => {
             if format == "latex" {
@@ -227,15 +284,6 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                     if let NodeKind::Text(s) = &tree.node(c).kind {
                         out.push_str(s);
                     }
-                }
-            }
-        }
-        NodeKind::Comment => {
-            for &c in &node.children {
-                if let NodeKind::Text(s) = &tree.node(c).kind {
-                    out.push_str("% ");
-                    out.push_str(s);
-                    out.push('\n');
                 }
             }
         }
@@ -252,10 +300,24 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 out.push('}');
             }
         }
-        NodeKind::Target { .. } => {}
+        NodeKind::Section { .. } => {
+            for &c in &node.children {
+                emit(tree, c, section_depth + 1, out);
+            }
+        }
+        NodeKind::Subtitle { .. } => {
+            out.push_str("\\subsection*{");
+            for &c in &node.children {
+                emit(tree, c, section_depth, out);
+            }
+            out.push_str("}\n");
+        }
         NodeKind::SubstitutionDefinition { .. } => {}
         NodeKind::SubstitutionReference { refname } => {
             out.push_str(&escape(refname));
+        }
+        NodeKind::SystemMessage { .. } => {
+            // Suppressed in body output.
         }
         NodeKind::Table => {
             // Minimal: tabular with l columns; counts cols from first row.
@@ -297,83 +359,21 @@ fn emit(tree: &Doctree, id: NodeId, section_depth: usize, out: &mut String) {
                 }
             }
         }
-        NodeKind::Attribution => {
-            out.push_str("\\par\\hfill --- ");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push('\n');
-        }
-        NodeKind::Figure { .. } => {
-            out.push_str("\\begin{figure}[h]\n\\centering\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("\\end{figure}\n");
-        }
-        NodeKind::Caption => {
-            out.push_str("\\caption{");
+        NodeKind::Target { .. } => {}
+        NodeKind::Text(s) => out.push_str(&escape(s)),
+        NodeKind::Title => {
+            let cmd = SECTION_CMDS
+                .get(section_depth.saturating_sub(1))
+                .unwrap_or(&"\\paragraph");
+            let _ = write!(out, "{cmd}{{");
             for &c in &node.children {
                 emit(tree, c, section_depth, out);
             }
             out.push_str("}\n");
         }
-        NodeKind::Legend => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
-        NodeKind::Label | NodeKind::Footnote { .. } | NodeKind::Citation { .. } => {
-            // Rendered inline by their references; suppress definitions.
-        }
-        NodeKind::FootnoteReference { .. } | NodeKind::CitationReference { .. } => {
-            out.push_str("\\footnotemark{}");
-        }
-        NodeKind::Problematic { .. } => {
-            out.push_str("\\textcolor{red}{");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push('}');
-        }
-        NodeKind::SystemMessage { .. } => {
-            // Suppressed in body output.
-        }
-        NodeKind::Extension { class_name, attrs } => {
-            let visit = crate::plugins::invoke_node_visit(class_name, "latex", attrs);
-            if let Some(open) = &visit {
-                out.push_str(open);
-            }
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            if visit.is_some() {
-                if let Some(close) = crate::plugins::invoke_node_depart(class_name, "latex", attrs)
-                {
-                    out.push_str(&close);
-                }
-            }
-        }
-        NodeKind::ObjectDescription { sig_text, .. } => {
-            out.push_str("\\begin{quote}\n\\texttt{");
-            out.push_str(sig_text);
-            out.push_str("}\n\n");
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-            out.push_str("\\end{quote}\n");
-        }
-        NodeKind::Abbreviation { .. }
-        | NodeKind::Subscript
-        | NodeKind::Superscript
-        | NodeKind::Keyboard
-        | NodeKind::Rubric
-        | NodeKind::VersionModified { .. }
-        | NodeKind::PendingXref { .. } => {
-            for &c in &node.children {
-                emit(tree, c, section_depth, out);
-            }
-        }
+        NodeKind::TitleReference => wrap_cmd(tree, &node.children, "\\textit", section_depth, out),
+        NodeKind::Toctree { .. } => {}
+        NodeKind::Transition => out.push_str("\\hrulefill\n"),
     }
 }
 

@@ -199,28 +199,6 @@ fn emit_enter(
 ) {
     let node = tree.node(id);
     match &node.kind {
-        NodeKind::Text(s) => out.push_str(&escape(s)),
-        NodeKind::Document { .. } => schedule_children(node, section_depth, tasks),
-        NodeKind::Section { .. } => schedule_children(node, section_depth + 1, tasks),
-        NodeKind::Title => {
-            let level = section_depth.clamp(1, 5);
-            let _ = write!(
-                out,
-                "<text:h text:style-name=\"Heading_20_{level}\" text:outline-level=\"{level}\">"
-            );
-            schedule(node, section_depth, "</text:h>\n", tasks);
-        }
-        NodeKind::Subtitle { .. } => {
-            out.push_str("<text:p text:style-name=\"Subtitle\">");
-            schedule(node, section_depth, "</text:p>\n", tasks);
-        }
-        NodeKind::Paragraph => {
-            out.push_str("<text:p text:style-name=\"Standard\">");
-            schedule(node, section_depth, "</text:p>\n", tasks);
-        }
-        NodeKind::Transition => {
-            out.push_str("<text:p text:style-name=\"Standard\">* * *</text:p>\n");
-        }
         NodeKind::Emphasis | NodeKind::TitleReference => {
             out.push_str("<text:span text:style-name=\"Emphasis\">");
             schedule(node, section_depth, "</text:span>", tasks);
@@ -233,40 +211,31 @@ fn emit_enter(
             out.push_str("<text:span text:style-name=\"Source_20_Text\">");
             schedule(node, section_depth, "</text:span>", tasks);
         }
-        NodeKind::Inline { .. } => schedule_children(node, section_depth, tasks),
-        NodeKind::Math { latex } => {
-            // ODT has no native math container in this minimal writer;
-            // emit the LaTeX source inside a styled span so the
-            // information round-trips for downstream tooling.
+        NodeKind::Abbreviation { .. }
+        | NodeKind::Keyboard
+        | NodeKind::PendingXref { .. } 
+        | NodeKind::Rubric
+        | NodeKind::Subscript
+        | NodeKind::Superscript
+        | NodeKind::VersionModified { .. } => schedule_children(node, section_depth, tasks),
+        NodeKind::Admonition { kind } => {
+            let _ = writeln!(
+                out,
+                "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">{}:</text:span></text:p>",
+                kind.to_uppercase()
+            );
+            schedule_children(node, section_depth, tasks);
+        }
+        NodeKind::Attribution => {
+            out.push_str("<text:p text:style-name=\"Standard\"><text:tab/>\u{2014} ");
+            schedule(node, section_depth, "</text:p>\n", tasks);
+        }
+        NodeKind::Bibliographic { tag } => {
             let _ = write!(
                 out,
-                "<text:span text:style-name=\"Math\">{}</text:span>",
-                escape(latex)
+                "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">{tag}:</text:span> "
             );
-        }
-        NodeKind::MathBlock { latex } => {
-            let _ = write!(
-                out,
-                "<text:p text:style-name=\"Math_20_Block\">{}</text:p>",
-                escape(latex)
-            );
-        }
-        NodeKind::LiteralBlock { .. } => {
-            for &c in &node.children {
-                if let NodeKind::Text(s) = &tree.node(c).kind {
-                    for (i, line) in s.split('\n').enumerate() {
-                        if i > 0 {
-                            out.push('\n');
-                        }
-                        let _ = write!(
-                            out,
-                            "<text:p text:style-name=\"Preformatted_20_Text\">{}</text:p>",
-                            escape(line)
-                        );
-                    }
-                    out.push('\n');
-                }
-            }
+            schedule(node, section_depth, "</text:p>\n", tasks);
         }
         NodeKind::BlockQuote => {
             out.push_str("<text:p text:style-name=\"Quotations\">");
@@ -285,30 +254,46 @@ fn emit_enter(
             out.push_str("<text:list>\n");
             schedule(node, section_depth, "</text:list>\n", tasks);
         }
-        NodeKind::ListItem => {
-            out.push_str("<text:list-item>\n");
-            schedule(node, section_depth, "</text:list-item>\n", tasks);
-        }
-        NodeKind::DefinitionList | NodeKind::DefinitionListItem => {
-            schedule_children(node, section_depth, tasks)
-        }
-        NodeKind::Term => {
-            out.push_str("<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">");
+        NodeKind::Caption => {
+            out.push_str(
+                "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Emphasis\">",
+            );
             schedule(node, section_depth, "</text:span></text:p>\n", tasks);
         }
-        NodeKind::Definition => schedule_children(node, section_depth, tasks),
+        NodeKind::Citation { .. }
+        | NodeKind::CitationReference { .. }
+        | NodeKind::Footnote { .. }
+        | NodeKind::FootnoteReference { .. }
+        | NodeKind::Label 
+        | NodeKind::Problematic { .. }
+        | NodeKind::SystemMessage { .. } => schedule_children(node, section_depth, tasks),
         NodeKind::Classifier => {
             out.push_str(" : ");
             schedule_children(node, section_depth, tasks);
         }
-        NodeKind::FieldList | NodeKind::Docinfo => schedule_children(node, section_depth, tasks),
+        NodeKind::Comment => {}
+        NodeKind::Container { .. } => schedule_children(node, section_depth, tasks),
+        NodeKind::Definition => schedule_children(node, section_depth, tasks),
+        NodeKind::DefinitionList | NodeKind::DefinitionListItem => {
+            schedule_children(node, section_depth, tasks)
+        }
+        NodeKind::Document { .. } => schedule_children(node, section_depth, tasks),
+        NodeKind::Epigraph { .. } => schedule_children(node, section_depth, tasks),
+        NodeKind::Extension { class_name, attrs } => {
+            let visit = crate::plugins::invoke_node_visit(class_name, "odt", attrs);
+            if let Some(open) = &visit {
+                out.push_str(open);
+            }
+            let close = if visit.is_some() {
+                crate::plugins::invoke_node_depart(class_name, "odt", attrs)
+            } else {
+                None
+            };
+            schedule(node, section_depth, close.unwrap_or_default(), tasks);
+        }
         NodeKind::Field => {
             out.push_str("<text:p text:style-name=\"Standard\">");
             schedule(node, section_depth, "</text:p>\n", tasks);
-        }
-        NodeKind::FieldName => {
-            out.push_str("<text:span text:style-name=\"Strong_20_Emphasis\">");
-            schedule(node, section_depth, ":</text:span> ", tasks);
         }
         NodeKind::FieldBody => {
             let mut sub = Vec::new();
@@ -317,22 +302,12 @@ fn emit_enter(
             }
             push_all(tasks, sub);
         }
-        NodeKind::Bibliographic { tag } => {
-            let _ = write!(
-                out,
-                "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">{tag}:</text:span> "
-            );
-            schedule(node, section_depth, "</text:p>\n", tasks);
+        NodeKind::FieldList | NodeKind::Docinfo => schedule_children(node, section_depth, tasks),
+        NodeKind::FieldName => {
+            out.push_str("<text:span text:style-name=\"Strong_20_Emphasis\">");
+            schedule(node, section_depth, ":</text:span> ", tasks);
         }
-        NodeKind::Admonition { kind } => {
-            let _ = writeln!(
-                out,
-                "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">{}:</text:span></text:p>",
-                kind.to_uppercase()
-            );
-            schedule_children(node, section_depth, tasks);
-        }
-        NodeKind::Container { .. } => schedule_children(node, section_depth, tasks),
+        NodeKind::Figure { .. } => schedule_children(node, section_depth, tasks),
         NodeKind::GenericAdmonition { title, .. } => {
             let _ = writeln!(
                 out,
@@ -341,8 +316,6 @@ fn emit_enter(
             );
             schedule_children(node, section_depth, tasks);
         }
-        NodeKind::Epigraph { .. } => schedule_children(node, section_depth, tasks),
-        NodeKind::Toctree { .. } => {}
         NodeKind::Image { uri, alt, .. } => {
             let _ = write!(
                 out,
@@ -358,17 +331,64 @@ fn emit_enter(
             }
             out.push_str("</draw:frame></text:p>\n");
         }
-        NodeKind::Figure { .. } => schedule_children(node, section_depth, tasks),
-        NodeKind::Caption => {
-            out.push_str(
-                "<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Emphasis\">",
-            );
-            schedule(node, section_depth, "</text:span></text:p>\n", tasks);
-        }
+        NodeKind::Inline { .. } => schedule_children(node, section_depth, tasks),
         NodeKind::Legend => schedule_children(node, section_depth, tasks),
-        NodeKind::Attribution => {
-            out.push_str("<text:p text:style-name=\"Standard\"><text:tab/>\u{2014} ");
+        NodeKind::ListItem => {
+            out.push_str("<text:list-item>\n");
+            schedule(node, section_depth, "</text:list-item>\n", tasks);
+        }
+        NodeKind::LiteralBlock { .. } => {
+            for &c in &node.children {
+                if let NodeKind::Text(s) = &tree.node(c).kind {
+                    for (i, line) in s.split('\n').enumerate() {
+                        if i > 0 {
+                            out.push('\n');
+                        }
+                        let _ = write!(
+                            out,
+                            "<text:p text:style-name=\"Preformatted_20_Text\">{}</text:p>",
+                            escape(line)
+                        );
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        NodeKind::Math { latex } => {
+            // ODT has no native math container in this minimal writer;
+            // emit the LaTeX source inside a styled span so the
+            // information round-trips for downstream tooling.
+            let _ = write!(
+                out,
+                "<text:span text:style-name=\"Math\">{}</text:span>",
+                escape(latex)
+            );
+        }
+        NodeKind::MathBlock { latex } => {
+            let _ = write!(
+                out,
+                "<text:p text:style-name=\"Math_20_Block\">{}</text:p>",
+                escape(latex)
+            );
+        }
+        NodeKind::ObjectDescription { sig_text, .. } => {
+            out.push_str("<text:p>");
+            out.push_str(sig_text);
+            out.push_str("</text:p>\n");
+            schedule_children(node, section_depth, tasks);
+        }
+        NodeKind::Paragraph => {
+            out.push_str("<text:p text:style-name=\"Standard\">");
             schedule(node, section_depth, "</text:p>\n", tasks);
+        }
+        NodeKind::Raw { format } => {
+            if format == "odt" {
+                for &c in &node.children {
+                    if let NodeKind::Text(s) = &tree.node(c).kind {
+                        out.push_str(s);
+                    }
+                }
+            }
         }
         NodeKind::Reference { refuri, .. } => {
             let _ = write!(
@@ -378,19 +398,31 @@ fn emit_enter(
             );
             schedule(node, section_depth, "</text:a>", tasks);
         }
-        NodeKind::Target { .. } | NodeKind::SubstitutionDefinition { .. } => {}
+        NodeKind::Section { .. } => schedule_children(node, section_depth + 1, tasks),
+        NodeKind::Subtitle { .. } => {
+            out.push_str("<text:p text:style-name=\"Subtitle\">");
+            schedule(node, section_depth, "</text:p>\n", tasks);
+        }
+        NodeKind::Term => {
+            out.push_str("<text:p text:style-name=\"Standard\"><text:span text:style-name=\"Strong_20_Emphasis\">");
+            schedule(node, section_depth, "</text:span></text:p>\n", tasks);
+        }
+        NodeKind::Text(s) => out.push_str(&escape(s)),
+        NodeKind::Title => {
+            let level = section_depth.clamp(1, 5);
+            let _ = write!(
+                out,
+                "<text:h text:style-name=\"Heading_20_{level}\" text:outline-level=\"{level}\">"
+            );
+            schedule(node, section_depth, "</text:h>\n", tasks);
+        }
+        NodeKind::Toctree { .. } => {}
+        NodeKind::Transition => {
+            out.push_str("<text:p text:style-name=\"Standard\">* * *</text:p>\n");
+        }
+        NodeKind::SubstitutionDefinition { .. } | NodeKind::Target { .. } => {}
         NodeKind::SubstitutionReference { refname } => {
             out.push_str(&escape(&format!("|{refname}|")));
-        }
-        NodeKind::Comment => {}
-        NodeKind::Raw { format } => {
-            if format == "odt" {
-                for &c in &node.children {
-                    if let NodeKind::Text(s) = &tree.node(c).kind {
-                        out.push_str(s);
-                    }
-                }
-            }
         }
         NodeKind::Table => {
             out.push_str("<table:table>\n");
@@ -418,38 +450,6 @@ fn emit_enter(
             out.push_str(">\n");
             schedule(node, section_depth, "</table:table-cell>\n", tasks);
         }
-        NodeKind::SystemMessage { .. }
-        | NodeKind::Problematic { .. }
-        | NodeKind::Footnote { .. }
-        | NodeKind::FootnoteReference { .. }
-        | NodeKind::Citation { .. }
-        | NodeKind::CitationReference { .. }
-        | NodeKind::Label => schedule_children(node, section_depth, tasks),
-        NodeKind::Extension { class_name, attrs } => {
-            let visit = crate::plugins::invoke_node_visit(class_name, "odt", attrs);
-            if let Some(open) = &visit {
-                out.push_str(open);
-            }
-            let close = if visit.is_some() {
-                crate::plugins::invoke_node_depart(class_name, "odt", attrs)
-            } else {
-                None
-            };
-            schedule(node, section_depth, close.unwrap_or_default(), tasks);
-        }
-        NodeKind::ObjectDescription { sig_text, .. } => {
-            out.push_str("<text:p>");
-            out.push_str(sig_text);
-            out.push_str("</text:p>\n");
-            schedule_children(node, section_depth, tasks);
-        }
-        NodeKind::Abbreviation { .. }
-        | NodeKind::Subscript
-        | NodeKind::Superscript
-        | NodeKind::Keyboard
-        | NodeKind::Rubric
-        | NodeKind::VersionModified { .. }
-        | NodeKind::PendingXref { .. } => schedule_children(node, section_depth, tasks),
     }
 }
 

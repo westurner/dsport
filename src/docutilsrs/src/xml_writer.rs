@@ -116,17 +116,74 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
     let node = tree.node(id);
     let indent = "    ".repeat(depth);
     match &node.kind {
-        NodeKind::Text(s) => {
-            if s.is_empty() {
-                return;
-            }
-            let body = s.strip_suffix('\n').unwrap_or(s);
-            for line in body.split('\n') {
-                out.push_str(&indent);
-                out.push_str(&escape_text(line));
-                out.push('\n');
+        NodeKind::Emphasis => emit(tree, id, depth, "emphasis", &[], out),
+        NodeKind::Strong => emit(tree, id, depth, "strong", &[], out),
+        NodeKind::Literal => emit(tree, id, depth, "literal", &[], out),
+        NodeKind::Abbreviation { explanation } => {
+            if explanation.is_empty() {
+                emit(tree, id, depth, "abbreviation", &[], out);
+            } else {
+                emit(
+                    tree,
+                    id,
+                    depth,
+                    "abbreviation",
+                    &[("explanation", explanation.as_str())],
+                    out,
+                );
             }
         }
+        NodeKind::Attribution => emit(tree, id, depth, "attribution", &[], out),
+        NodeKind::Admonition { kind } => emit(tree, id, depth, kind, &[], out),
+        NodeKind::Bibliographic { tag } => emit(tree, id, depth, tag, &[], out),
+        NodeKind::BlockQuote => emit(tree, id, depth, "block_quote", &[], out),
+        NodeKind::BulletList { bullet } => {
+            let b = bullet.to_string();
+            emit(tree, id, depth, "bullet_list", &[("bullet", &b)], out);
+        }
+        NodeKind::Caption => emit(tree, id, depth, "caption", &[], out),
+        NodeKind::Citation {
+            ids,
+            names,
+            backrefs,
+        } => {
+            let mut attrs = Vec::new();
+            if !backrefs.is_empty() {
+                attrs.push(("backrefs", backrefs.as_str()));
+            }
+            attrs.push(("ids", ids.as_str()));
+            attrs.push(("names", names.as_str()));
+            emit(tree, id, depth, "citation", &attrs, out);
+        }
+        NodeKind::CitationReference { ids, refid } => emit(
+            tree,
+            id,
+            depth,
+            "citation_reference",
+            &[("ids", ids), ("refid", refid)],
+            out,
+        ),
+        NodeKind::Classifier => emit(tree, id, depth, "classifier", &[], out),
+        NodeKind::Comment => emit(
+            tree,
+            id,
+            depth,
+            "comment",
+            &[("xml:space", "preserve")],
+            out,
+        ),
+        NodeKind::Container { classes } => emit(
+            tree,
+            id,
+            depth,
+            "container",
+            &[("classes", classes.as_str())],
+            out,
+        ),
+        NodeKind::Definition => emit(tree, id, depth, "definition", &[], out),
+        NodeKind::DefinitionList => emit(tree, id, depth, "definition_list", &[], out),
+        NodeKind::DefinitionListItem => emit(tree, id, depth, "definition_list_item", &[], out),
+        NodeKind::Docinfo => emit(tree, id, depth, "docinfo", &[], out),
         NodeKind::Document {
             source,
             ids,
@@ -141,38 +198,6 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             }
             emit(tree, id, depth, "document", &attrs, out);
         }
-        NodeKind::Section {
-            ids,
-            names,
-            classes,
-        } => {
-            let mut attrs = Vec::new();
-            if !classes.is_empty() {
-                attrs.push(("classes", classes.as_str()));
-            }
-            if !ids.is_empty() {
-                attrs.push(("ids", ids.as_str()));
-            }
-            if !names.is_empty() {
-                attrs.push(("names", names.as_str()));
-            }
-            emit(tree, id, depth, "section", &attrs, out);
-        }
-        NodeKind::Title => emit(tree, id, depth, "title", &[], out),
-        NodeKind::Subtitle { ids, names } => emit(
-            tree,
-            id,
-            depth,
-            "subtitle",
-            &[("ids", ids), ("names", names)],
-            out,
-        ),
-        NodeKind::Transition => emit(tree, id, depth, "transition", &[], out),
-        NodeKind::Paragraph => emit(tree, id, depth, "paragraph", &[], out),
-        NodeKind::Emphasis => emit(tree, id, depth, "emphasis", &[], out),
-        NodeKind::Strong => emit(tree, id, depth, "strong", &[], out),
-        NodeKind::Literal => emit(tree, id, depth, "literal", &[], out),
-        NodeKind::TitleReference => emit(tree, id, depth, "title_reference", &[], out),
         NodeKind::Inline { classes } => {
             let attrs: Vec<(&str, &str)> = if classes.is_empty() {
                 vec![]
@@ -180,31 +205,6 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
                 vec![("classes", classes.as_str())]
             };
             emit(tree, id, depth, "inline", &attrs, out);
-        }
-        NodeKind::Math { latex } => emit_with_inline_text(depth, "math", &[], latex, out),
-        NodeKind::MathBlock { latex } => emit_with_inline_text(
-            depth,
-            "math_block",
-            &[("xml:space", "preserve")],
-            latex,
-            out,
-        ),
-        NodeKind::LiteralBlock {
-            classes, source, ..
-        } => {
-            let mut attrs = Vec::new();
-            if !classes.is_empty() {
-                attrs.push(("classes", classes.as_str()));
-            }
-            if let Some(source) = source.as_deref() {
-                attrs.push(("source", source));
-            }
-            attrs.push(("xml:space", "preserve"));
-            emit(tree, id, depth, "literal_block", &attrs, out);
-        }
-        NodeKind::BulletList { bullet } => {
-            let b = bullet.to_string();
-            emit(tree, id, depth, "bullet_list", &[("bullet", &b)], out);
         }
         NodeKind::EnumeratedList {
             enumtype,
@@ -223,36 +223,6 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             }
             emit(tree, id, depth, "enumerated_list", &attrs, out);
         }
-        NodeKind::ListItem => emit(tree, id, depth, "list_item", &[], out),
-        NodeKind::DefinitionList => emit(tree, id, depth, "definition_list", &[], out),
-        NodeKind::DefinitionListItem => emit(tree, id, depth, "definition_list_item", &[], out),
-        NodeKind::Term => emit(tree, id, depth, "term", &[], out),
-        NodeKind::Classifier => emit(tree, id, depth, "classifier", &[], out),
-        NodeKind::Definition => emit(tree, id, depth, "definition", &[], out),
-        NodeKind::FieldList => emit(tree, id, depth, "field_list", &[], out),
-        NodeKind::Field => emit(tree, id, depth, "field", &[], out),
-        NodeKind::FieldName => emit(tree, id, depth, "field_name", &[], out),
-        NodeKind::FieldBody => emit(tree, id, depth, "field_body", &[], out),
-        NodeKind::Docinfo => emit(tree, id, depth, "docinfo", &[], out),
-        NodeKind::Bibliographic { tag } => emit(tree, id, depth, tag, &[], out),
-        NodeKind::BlockQuote => emit(tree, id, depth, "block_quote", &[], out),
-        NodeKind::Admonition { kind } => emit(tree, id, depth, kind, &[], out),
-        NodeKind::Container { classes } => emit(
-            tree,
-            id,
-            depth,
-            "container",
-            &[("classes", classes.as_str())],
-            out,
-        ),
-        NodeKind::GenericAdmonition { title, classes } => emit(
-            tree,
-            id,
-            depth,
-            "admonition",
-            &[("title", title.as_str()), ("classes", classes.as_str())],
-            out,
-        ),
         NodeKind::Epigraph { classes } => emit(
             tree,
             id,
@@ -261,7 +231,58 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             &[("classes", classes.as_str())],
             out,
         ),
-        NodeKind::Toctree { .. } => emit(tree, id, depth, "toctree", &[], out),
+        NodeKind::Extension { class_name, attrs } => {
+            let values: Vec<(String, String)> = attrs
+                .iter()
+                .map(|(key, value)| (key.clone(), value.to_string()))
+                .collect();
+            let mut xml_attrs: Vec<(&str, &str)> = vec![("classes", class_name.as_str())];
+            for (key, value) in &values {
+                xml_attrs.push((key.as_str(), value.as_str()));
+            }
+            emit(tree, id, depth, class_name, &xml_attrs, out);
+        }
+        NodeKind::Field => emit(tree, id, depth, "field", &[], out),
+        NodeKind::FieldBody => emit(tree, id, depth, "field_body", &[], out),
+        NodeKind::FieldList => emit(tree, id, depth, "field_list", &[], out),
+        NodeKind::FieldName => emit(tree, id, depth, "field_name", &[], out),
+        NodeKind::Figure { .. } => emit(tree, id, depth, "figure", &[], out),
+        NodeKind::Footnote {
+            ids,
+            names,
+            backrefs,
+            auto,
+        } => {
+            let mut attrs = Vec::new();
+            if let Some(a) = auto {
+                attrs.push(("auto", *a));
+            }
+            if !backrefs.is_empty() {
+                attrs.push(("backrefs", backrefs.as_str()));
+            }
+            attrs.push(("ids", ids.as_str()));
+            if !names.is_empty() && !matches!(*auto, Some("*")) {
+                attrs.push(("names", names.as_str()));
+            }
+            emit(tree, id, depth, "footnote", &attrs, out);
+        }
+        NodeKind::FootnoteReference { ids, refid, auto } => {
+            let mut attrs = Vec::new();
+            if let Some(a) = auto {
+                attrs.push(("auto", *a));
+            }
+            attrs.push(("ids", ids.as_str()));
+            attrs.push(("refid", refid.as_str()));
+            emit(tree, id, depth, "footnote_reference", &attrs, out);
+        }
+        NodeKind::GenericAdmonition { title, classes } => emit(
+            tree,
+            id,
+            depth,
+            "admonition",
+            &[("title", title.as_str()), ("classes", classes.as_str())],
+            out,
+        ),
         NodeKind::Image {
             uri,
             alt,
@@ -282,20 +303,75 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             }
             emit(tree, id, depth, "image", &attrs, out);
         }
+        NodeKind::Keyboard => emit(tree, id, depth, "keyboard", &[], out),
+        NodeKind::Label => emit(tree, id, depth, "label", &[], out),
+        NodeKind::Legend => emit(tree, id, depth, "legend", &[], out),
+        NodeKind::ListItem => emit(tree, id, depth, "list_item", &[], out),
+        NodeKind::LiteralBlock {
+            classes, source, ..
+        } => {
+            let mut attrs = Vec::new();
+            if !classes.is_empty() {
+                attrs.push(("classes", classes.as_str()));
+            }
+            if let Some(source) = source.as_deref() {
+                attrs.push(("source", source));
+            }
+            attrs.push(("xml:space", "preserve"));
+            emit(tree, id, depth, "literal_block", &attrs, out);
+        }
+        NodeKind::Math { latex } => emit_with_inline_text(depth, "math", &[], latex, out),
+        NodeKind::MathBlock { latex } => emit_with_inline_text(
+            depth,
+            "math_block",
+            &[("xml:space", "preserve")],
+            latex,
+            out,
+        ),
+        NodeKind::ObjectDescription {
+            classes,
+            ids,
+            sig_text,
+            ..
+        } => {
+            let mut xml_attrs: Vec<(&str, &str)> = Vec::new();
+            if !classes.is_empty() {
+                xml_attrs.push(("classes", classes.as_str()));
+            }
+            if !ids.is_empty() {
+                xml_attrs.push(("ids", ids.as_str()));
+            }
+            xml_attrs.push(("sig", sig_text.as_str()));
+            emit(tree, id, depth, "object_description", &xml_attrs, out);
+        }
+        NodeKind::Paragraph => emit(tree, id, depth, "paragraph", &[], out),
+        NodeKind::PendingXref {
+            reftype, reftarget, ..
+        } => emit(
+            tree,
+            id,
+            depth,
+            "pending_xref",
+            &[
+                ("reftype", reftype.as_str()),
+                ("reftarget", reftarget.as_str()),
+            ],
+            out,
+        ),
+        NodeKind::Problematic { ids, refid } => emit(
+            tree,
+            id,
+            depth,
+            "problematic",
+            &[("ids", ids), ("refid", refid)],
+            out,
+        ),
         NodeKind::Raw { format } => emit(
             tree,
             id,
             depth,
             "raw",
             &[("format", format.as_str()), ("xml:space", "preserve")],
-            out,
-        ),
-        NodeKind::Comment => emit(
-            tree,
-            id,
-            depth,
-            "comment",
-            &[("xml:space", "preserve")],
             out,
         ),
         NodeKind::Reference {
@@ -315,37 +391,30 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             attrs.push(("refuri", refuri.as_str()));
             emit(tree, id, depth, "reference", &attrs, out);
         }
-        NodeKind::Target {
+        NodeKind::Rubric => emit(tree, id, depth, "rubric", &[], out),
+        NodeKind::Section {
             ids,
             names,
-            refuri,
-            anonymous,
+            classes,
         } => {
             let mut attrs = Vec::new();
-            if *anonymous {
-                attrs.push(("anonymous", "1"));
+            if !classes.is_empty() {
+                attrs.push(("classes", classes.as_str()));
             }
-            attrs.push(("ids", ids.as_str()));
+            if !ids.is_empty() {
+                attrs.push(("ids", ids.as_str()));
+            }
             if !names.is_empty() {
                 attrs.push(("names", names.as_str()));
             }
-            attrs.push(("refuri", refuri.as_str()));
-            emit(tree, id, depth, "target", &attrs, out);
+            emit(tree, id, depth, "section", &attrs, out);
         }
-        NodeKind::SubstitutionDefinition { names } => emit(
+        NodeKind::Subtitle { ids, names } => emit(
             tree,
             id,
             depth,
-            "substitution_definition",
-            &[("names", names)],
-            out,
-        ),
-        NodeKind::SubstitutionReference { refname } => emit(
-            tree,
-            id,
-            depth,
-            "substitution_reference",
-            &[("refname", refname)],
+            "subtitle",
+            &[("ids", ids), ("names", names)],
             out,
         ),
         NodeKind::Table => emit(tree, id, depth, "table", &[], out),
@@ -379,68 +448,57 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             }
             emit(tree, id, depth, "entry", &attrs, out);
         }
-        NodeKind::Attribution => emit(tree, id, depth, "attribution", &[], out),
-        NodeKind::Figure { .. } => emit(tree, id, depth, "figure", &[], out),
-        NodeKind::Caption => emit(tree, id, depth, "caption", &[], out),
-        NodeKind::Legend => emit(tree, id, depth, "legend", &[], out),
-        NodeKind::Label => emit(tree, id, depth, "label", &[], out),
-        NodeKind::Footnote {
+        NodeKind::Target {
             ids,
             names,
-            backrefs,
-            auto,
+            refuri,
+            anonymous,
         } => {
             let mut attrs = Vec::new();
-            if let Some(a) = auto {
-                attrs.push(("auto", *a));
-            }
-            if !backrefs.is_empty() {
-                attrs.push(("backrefs", backrefs.as_str()));
+            if *anonymous {
+                attrs.push(("anonymous", "1"));
             }
             attrs.push(("ids", ids.as_str()));
-            if !names.is_empty() && !matches!(*auto, Some("*")) {
+            if !names.is_empty() {
                 attrs.push(("names", names.as_str()));
             }
-            emit(tree, id, depth, "footnote", &attrs, out);
+            attrs.push(("refuri", refuri.as_str()));
+            emit(tree, id, depth, "target", &attrs, out);
         }
-        NodeKind::FootnoteReference { ids, refid, auto } => {
-            let mut attrs = Vec::new();
-            if let Some(a) = auto {
-                attrs.push(("auto", *a));
+        NodeKind::Term => emit(tree, id, depth, "term", &[], out),
+        NodeKind::Text(s) => {
+            if s.is_empty() {
+                return;
             }
-            attrs.push(("ids", ids.as_str()));
-            attrs.push(("refid", refid.as_str()));
-            emit(tree, id, depth, "footnote_reference", &attrs, out);
-        }
-        NodeKind::Citation {
-            ids,
-            names,
-            backrefs,
-        } => {
-            let mut attrs = Vec::new();
-            if !backrefs.is_empty() {
-                attrs.push(("backrefs", backrefs.as_str()));
+            let body = s.strip_suffix('\n').unwrap_or(s);
+            for line in body.split('\n') {
+                out.push_str(&indent);
+                out.push_str(&escape_text(line));
+                out.push('\n');
             }
-            attrs.push(("ids", ids.as_str()));
-            attrs.push(("names", names.as_str()));
-            emit(tree, id, depth, "citation", &attrs, out);
         }
-        NodeKind::CitationReference { ids, refid } => emit(
+        NodeKind::Title => emit(tree, id, depth, "title", &[], out),
+        NodeKind::TitleReference => emit(tree, id, depth, "title_reference", &[], out),
+        NodeKind::Transition => emit(tree, id, depth, "transition", &[], out),
+        NodeKind::Toctree { .. } => emit(tree, id, depth, "toctree", &[], out),
+        NodeKind::Subscript => emit(tree, id, depth, "subscript", &[], out),
+        NodeKind::SubstitutionDefinition { names } => emit(
             tree,
             id,
             depth,
-            "citation_reference",
-            &[("ids", ids), ("refid", refid)],
+            "substitution_definition",
+            &[("names", names)],
             out,
         ),
-        NodeKind::Problematic { ids, refid } => emit(
+        NodeKind::SubstitutionReference { refname } => emit(
             tree,
             id,
             depth,
-            "problematic",
-            &[("ids", ids), ("refid", refid)],
+            "substitution_reference",
+            &[("refname", refname)],
             out,
         ),
+        NodeKind::Superscript => emit(tree, id, depth, "superscript", &[], out),
         NodeKind::SystemMessage {
             level,
             line,
@@ -465,35 +523,6 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             attrs.push(("type", *ty));
             emit(tree, id, depth, "system_message", &attrs, out);
         }
-        NodeKind::Extension { class_name, attrs } => {
-            let values: Vec<(String, String)> = attrs
-                .iter()
-                .map(|(key, value)| (key.clone(), value.to_string()))
-                .collect();
-            let mut xml_attrs: Vec<(&str, &str)> = vec![("classes", class_name.as_str())];
-            for (key, value) in &values {
-                xml_attrs.push((key.as_str(), value.as_str()));
-            }
-            emit(tree, id, depth, class_name, &xml_attrs, out);
-        }
-        NodeKind::Abbreviation { explanation } => {
-            if explanation.is_empty() {
-                emit(tree, id, depth, "abbreviation", &[], out);
-            } else {
-                emit(
-                    tree,
-                    id,
-                    depth,
-                    "abbreviation",
-                    &[("explanation", explanation.as_str())],
-                    out,
-                );
-            }
-        }
-        NodeKind::Subscript => emit(tree, id, depth, "subscript", &[], out),
-        NodeKind::Superscript => emit(tree, id, depth, "superscript", &[], out),
-        NodeKind::Keyboard => emit(tree, id, depth, "keyboard", &[], out),
-        NodeKind::Rubric => emit(tree, id, depth, "rubric", &[], out),
         NodeKind::VersionModified { kind, version } => emit(
             tree,
             id,
@@ -502,107 +531,78 @@ fn write_node_enter(tree: &Doctree, id: NodeId, depth: usize, out: &mut String) 
             &[("type", *kind), ("version", version.as_str())],
             out,
         ),
-        NodeKind::PendingXref {
-            reftype, reftarget, ..
-        } => emit(
-            tree,
-            id,
-            depth,
-            "pending_xref",
-            &[
-                ("reftype", reftype.as_str()),
-                ("reftarget", reftarget.as_str()),
-            ],
-            out,
-        ),
-        NodeKind::ObjectDescription {
-            classes,
-            ids,
-            sig_text,
-            ..
-        } => {
-            let mut xml_attrs: Vec<(&str, &str)> = Vec::new();
-            if !classes.is_empty() {
-                xml_attrs.push(("classes", classes.as_str()));
-            }
-            if !ids.is_empty() {
-                xml_attrs.push(("ids", ids.as_str()));
-            }
-            xml_attrs.push(("sig", sig_text.as_str()));
-            emit(tree, id, depth, "object_description", &xml_attrs, out);
-        }
     }
 }
 
 fn xml_name(kind: &NodeKind) -> Option<String> {
     Some(match kind {
-        NodeKind::Text(_) | NodeKind::Math { .. } | NodeKind::MathBlock { .. } => return None,
-        NodeKind::Document { .. } => "document".to_string(),
-        NodeKind::Section { .. } => "section".to_string(),
-        NodeKind::Title => "title".to_string(),
-        NodeKind::Subtitle { .. } => "subtitle".to_string(),
-        NodeKind::Transition => "transition".to_string(),
-        NodeKind::Paragraph => "paragraph".to_string(),
-        NodeKind::Emphasis => "emphasis".to_string(),
-        NodeKind::Strong => "strong".to_string(),
-        NodeKind::Literal => "literal".to_string(),
-        NodeKind::TitleReference => "title_reference".to_string(),
-        NodeKind::Inline { .. } => "inline".to_string(),
-        NodeKind::LiteralBlock { .. } => "literal_block".to_string(),
-        NodeKind::BulletList { .. } => "bullet_list".to_string(),
-        NodeKind::EnumeratedList { .. } => "enumerated_list".to_string(),
-        NodeKind::ListItem => "list_item".to_string(),
-        NodeKind::DefinitionList => "definition_list".to_string(),
-        NodeKind::DefinitionListItem => "definition_list_item".to_string(),
-        NodeKind::Term => "term".to_string(),
-        NodeKind::Classifier => "classifier".to_string(),
-        NodeKind::Definition => "definition".to_string(),
-        NodeKind::FieldList => "field_list".to_string(),
-        NodeKind::Field => "field".to_string(),
-        NodeKind::FieldName => "field_name".to_string(),
-        NodeKind::FieldBody => "field_body".to_string(),
-        NodeKind::Docinfo => "docinfo".to_string(),
+        NodeKind::Abbreviation { .. } => "abbreviation".to_string(),
+        NodeKind::Admonition { kind } => (*kind).to_string(),
+        NodeKind::Attribution => "attribution".to_string(),
         NodeKind::Bibliographic { tag } => (*tag).to_string(),
         NodeKind::BlockQuote => "block_quote".to_string(),
-        NodeKind::Admonition { kind } => (*kind).to_string(),
-        NodeKind::Container { .. } => "container".to_string(),
-        NodeKind::GenericAdmonition { .. } => "admonition".to_string(),
-        NodeKind::Epigraph { .. } => "block_quote".to_string(),
-        NodeKind::Toctree { .. } => "toctree".to_string(),
-        NodeKind::Image { .. } => "image".to_string(),
-        NodeKind::Raw { .. } => "raw".to_string(),
-        NodeKind::Comment => "comment".to_string(),
-        NodeKind::Reference { .. } => "reference".to_string(),
-        NodeKind::Target { .. } => "target".to_string(),
-        NodeKind::SubstitutionDefinition { .. } => "substitution_definition".to_string(),
-        NodeKind::SubstitutionReference { .. } => "substitution_reference".to_string(),
-        NodeKind::Table => "table".to_string(),
-        NodeKind::Tgroup { .. } => "tgroup".to_string(),
-        NodeKind::Colspec { .. } => "colspec".to_string(),
-        NodeKind::Thead => "thead".to_string(),
-        NodeKind::Tbody => "tbody".to_string(),
-        NodeKind::Row => "row".to_string(),
-        NodeKind::Entry { .. } => "entry".to_string(),
-        NodeKind::Attribution => "attribution".to_string(),
-        NodeKind::Figure { .. } => "figure".to_string(),
+        NodeKind::BulletList { .. } => "bullet_list".to_string(),
         NodeKind::Caption => "caption".to_string(),
-        NodeKind::Legend => "legend".to_string(),
-        NodeKind::Label => "label".to_string(),
-        NodeKind::Footnote { .. } => "footnote".to_string(),
-        NodeKind::FootnoteReference { .. } => "footnote_reference".to_string(),
         NodeKind::Citation { .. } => "citation".to_string(),
         NodeKind::CitationReference { .. } => "citation_reference".to_string(),
-        NodeKind::Problematic { .. } => "problematic".to_string(),
-        NodeKind::SystemMessage { .. } => "system_message".to_string(),
+        NodeKind::Classifier => "classifier".to_string(),
+        NodeKind::Colspec { .. } => "colspec".to_string(),
+        NodeKind::Comment => "comment".to_string(),
+        NodeKind::Container { .. } => "container".to_string(),
+        NodeKind::Definition => "definition".to_string(),
+        NodeKind::DefinitionList => "definition_list".to_string(),
+        NodeKind::DefinitionListItem => "definition_list_item".to_string(),
+        NodeKind::Docinfo => "docinfo".to_string(),
+        NodeKind::Document { .. } => "document".to_string(),
+        NodeKind::Emphasis => "emphasis".to_string(),
+        NodeKind::Entry { .. } => "entry".to_string(),
+        NodeKind::EnumeratedList { .. } => "enumerated_list".to_string(),
+        NodeKind::Epigraph { .. } => "block_quote".to_string(),
         NodeKind::Extension { class_name, .. } => class_name.clone(),
-        NodeKind::Abbreviation { .. } => "abbreviation".to_string(),
-        NodeKind::Subscript => "subscript".to_string(),
-        NodeKind::Superscript => "superscript".to_string(),
+        NodeKind::Field => "field".to_string(),
+        NodeKind::FieldBody => "field_body".to_string(),
+        NodeKind::FieldList => "field_list".to_string(),
+        NodeKind::FieldName => "field_name".to_string(),
+        NodeKind::Figure { .. } => "figure".to_string(),
+        NodeKind::Footnote { .. } => "footnote".to_string(),
+        NodeKind::FootnoteReference { .. } => "footnote_reference".to_string(),
+        NodeKind::GenericAdmonition { .. } => "admonition".to_string(),
+        NodeKind::Image { .. } => "image".to_string(),
+        NodeKind::Inline { .. } => "inline".to_string(),
         NodeKind::Keyboard => "keyboard".to_string(),
-        NodeKind::Rubric => "rubric".to_string(),
-        NodeKind::VersionModified { .. } => "versionmodified".to_string(),
-        NodeKind::PendingXref { .. } => "pending_xref".to_string(),
+        NodeKind::Label => "label".to_string(),
+        NodeKind::Legend => "legend".to_string(),
+        NodeKind::ListItem => "list_item".to_string(),
+        NodeKind::Literal => "literal".to_string(),
+        NodeKind::LiteralBlock { .. } => "literal_block".to_string(),
         NodeKind::ObjectDescription { .. } => "object_description".to_string(),
+        NodeKind::Paragraph => "paragraph".to_string(),
+        NodeKind::PendingXref { .. } => "pending_xref".to_string(),
+        NodeKind::Problematic { .. } => "problematic".to_string(),
+        NodeKind::Raw { .. } => "raw".to_string(),
+        NodeKind::Reference { .. } => "reference".to_string(),
+        NodeKind::Row => "row".to_string(),
+        NodeKind::Rubric => "rubric".to_string(),
+        NodeKind::Section { .. } => "section".to_string(),
+        NodeKind::Strong => "strong".to_string(),
+        NodeKind::Subscript => "subscript".to_string(),
+        NodeKind::SubstitutionDefinition { .. } => "substitution_definition".to_string(),
+        NodeKind::SubstitutionReference { .. } => "substitution_reference".to_string(),
+        NodeKind::Subtitle { .. } => "subtitle".to_string(),
+        NodeKind::Superscript => "superscript".to_string(),
+        NodeKind::SystemMessage { .. } => "system_message".to_string(),
+        NodeKind::Table => "table".to_string(),
+        NodeKind::Target { .. } => "target".to_string(),
+        NodeKind::Tbody => "tbody".to_string(),
+        NodeKind::Term => "term".to_string(),
+        NodeKind::Text(_) | NodeKind::Math { .. } | NodeKind::MathBlock { .. } => return None,
+        NodeKind::Tgroup { .. } => "tgroup".to_string(),
+        NodeKind::Thead => "thead".to_string(),
+        NodeKind::Title => "title".to_string(),
+        NodeKind::TitleReference => "title_reference".to_string(),
+        NodeKind::Toctree { .. } => "toctree".to_string(),
+        NodeKind::Transition => "transition".to_string(),
+        NodeKind::VersionModified { .. } => "versionmodified".to_string(),
     })
 }
 

@@ -5224,33 +5224,33 @@ pub(crate) fn promote_docinfo(tree: &mut Doctree) {
 
 #[derive(Clone, Copy)]
 enum InlineKind {
-    Strong,
-    Literal,
     Emphasis,
+    Literal,
+    Strong,
 }
 
 impl InlineKind {
     fn marker(self) -> &'static str {
         match self {
-            InlineKind::Strong => "**",
-            InlineKind::Literal => "``",
             InlineKind::Emphasis => "*",
+            InlineKind::Literal => "``",
+            InlineKind::Strong => "**",
         }
     }
 
     fn node(self) -> NodeKind {
         match self {
-            InlineKind::Strong => NodeKind::Strong,
-            InlineKind::Literal => NodeKind::Literal,
             InlineKind::Emphasis => NodeKind::Emphasis,
+            InlineKind::Literal => NodeKind::Literal,
+            InlineKind::Strong => NodeKind::Strong,
         }
     }
 }
 
 const ORDER: [InlineKind; 3] = [
-    InlineKind::Strong,
-    InlineKind::Literal,
     InlineKind::Emphasis,
+    InlineKind::Literal,
+    InlineKind::Strong,
 ];
 
 struct Escaped {

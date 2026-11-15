@@ -5580,23 +5580,7 @@ fn emit_role(
         return;
     }
     match canonical.as_str() {
-        "emphasis" => {
-            let n = tree.append(parent, NodeKind::Emphasis);
-            push_text(tree, n, content);
-        }
-        "strong" => {
-            let n = tree.append(parent, NodeKind::Strong);
-            push_text(tree, n, content);
-        }
-        "literal" | "code" => {
-            let n = tree.append(parent, NodeKind::Literal);
-            push_text(tree, n, content);
-        }
-        "title" | "title-reference" | "t" => {
-            let n = tree.append(parent, NodeKind::TitleReference);
-            push_text(tree, n, content);
-        }
-        "abbreviation" | "ab" | "abbr" => {
+        "ab" | "abbr" | "abbreviation" => {
             let (abbr_text, explanation) = if let Some(idx) = content.rfind('(') {
                 if content.ends_with(')') {
                     let text = content[..idx].trim().to_string();
@@ -5611,17 +5595,50 @@ fn emit_role(
             let n = tree.append(parent, NodeKind::Abbreviation { explanation });
             push_text(tree, n, &abbr_text);
         }
-        "subscript" | "sub" => {
-            let n = tree.append(parent, NodeKind::Subscript);
-            push_text(tree, n, content);
-        }
-        "superscript" | "sup" => {
-            let n = tree.append(parent, NodeKind::Superscript);
-            push_text(tree, n, content);
-        }
-        "keyboard" | "kbd" => {
-            let n = tree.append(parent, NodeKind::Keyboard);
-            push_text(tree, n, content);
+        "attr" 
+        | "c:expr" | "c:texpr" | "c:var" 
+        | "class"
+        | "cpp:class" | "cpp:expr" | "cpp:func" | "cpp:texpr" | "cpp:type" | "cpp:var"
+        | "data" | "doc" | "download" | "envvar" | "event" | "exc" | "func" | "meth" | "mod" | "option" 
+        | "py:attr" | "py:class" | "py:data" | "py:deco" | "py:func" | "py:meth" | "py:mod" 
+        | "ref"
+        | "rst:dir" | "rst:role"
+        | "term" => {
+            let (explicit_title, target) = if let Some(idx) = content.find('<') {
+                if content.ends_with('>') {
+                    let title = content[..idx].trim().to_string();
+                    let tgt = content[idx + 1..content.len() - 1].trim().to_string();
+                    (Some(title), tgt)
+                } else {
+                    (None, content.to_string())
+                }
+            } else {
+                (None, content.to_string())
+            };
+            let refexplicit = explicit_title.is_some();
+            let display_text = explicit_title.unwrap_or_else(|| target.clone());
+            let (domain, reftype) = if let Some((dom, rt)) = canonical.split_once(':') {
+                (dom.to_string(), rt.to_string())
+            } else if matches!(
+                canonical.as_str(),
+                "attr" | "class" | "data" | "exc" | "func" | "meth" | "mod"
+            ) {
+                ("py".to_string(), canonical.clone())
+            } else {
+                ("std".to_string(), canonical.clone())
+            };
+            let n = tree.append(
+                parent,
+                NodeKind::PendingXref {
+                    reftype,
+                    reftarget: target,
+                    refdoc: String::new(),
+                    refdomain: domain,
+                    refexplicit,
+                    warn_missing: true,
+                },
+            );
+            push_text(tree, n, &display_text);
         }
         "code-py" | "code-rst" | "code-tex" => {
             let lang = match canonical.as_str() {
@@ -5697,50 +5714,17 @@ fn emit_role(
             );
             push_text(tree, n, &display_name);
         }
-        "attr" 
-        | "c:expr" | "c:texpr" | "c:var" 
-        | "class"
-        | "cpp:class" | "cpp:expr" | "cpp:func" | "cpp:texpr" | "cpp:type" | "cpp:var"
-        | "data" | "doc" | "download" | "envvar" | "event" | "exc" | "func" | "meth" | "mod" | "option" 
-        | "py:attr" | "py:class" | "py:data" | "py:deco" | "py:func" | "py:meth" | "py:mod" 
-        | "ref"
-        | "rst:dir" | "rst:role"
-        | "term" => {
-            let (explicit_title, target) = if let Some(idx) = content.find('<') {
-                if content.ends_with('>') {
-                    let title = content[..idx].trim().to_string();
-                    let tgt = content[idx + 1..content.len() - 1].trim().to_string();
-                    (Some(title), tgt)
-                } else {
-                    (None, content.to_string())
-                }
-            } else {
-                (None, content.to_string())
-            };
-            let refexplicit = explicit_title.is_some();
-            let display_text = explicit_title.unwrap_or_else(|| target.clone());
-            let (domain, reftype) = if let Some((dom, rt)) = canonical.split_once(':') {
-                (dom.to_string(), rt.to_string())
-            } else if matches!(
-                canonical.as_str(),
-                "attr" | "class" | "data" | "exc" | "func" | "meth" | "mod"
-            ) {
-                ("py".to_string(), canonical.clone())
-            } else {
-                ("std".to_string(), canonical.clone())
-            };
-            let n = tree.append(
-                parent,
-                NodeKind::PendingXref {
-                    reftype,
-                    reftarget: target,
-                    refdoc: String::new(),
-                    refdomain: domain,
-                    refexplicit,
-                    warn_missing: true,
-                },
-            );
-            push_text(tree, n, &display_text);
+        "emphasis" => {
+            let n = tree.append(parent, NodeKind::Emphasis);
+            push_text(tree, n, content);
+        }
+        "keyboard" | "kbd" => {
+            let n = tree.append(parent, NodeKind::Keyboard);
+            push_text(tree, n, content);
+        }
+        "literal" | "code" => {
+            let n = tree.append(parent, NodeKind::Literal);
+            push_text(tree, n, content);
         }
         "math" => {
             // Inline math role: `:math:`E=mc^2``. The renderer side
@@ -5753,6 +5737,22 @@ fn emit_role(
                     latex: content.to_string(),
                 },
             );
+        }
+        "strong" => {
+            let n = tree.append(parent, NodeKind::Strong);
+            push_text(tree, n, content);
+        }
+        "subscript" | "sub" => {
+            let n = tree.append(parent, NodeKind::Subscript);
+            push_text(tree, n, content);
+        }
+        "superscript" | "sup" => {
+            let n = tree.append(parent, NodeKind::Superscript);
+            push_text(tree, n, content);
+        }
+        "title" | "title-reference" | "t" => {
+            let n = tree.append(parent, NodeKind::TitleReference);
+            push_text(tree, n, content);
         }
         _ => {
             let n = tree.append(

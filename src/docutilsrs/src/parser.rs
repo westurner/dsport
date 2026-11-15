@@ -5697,11 +5697,15 @@ fn emit_role(
             );
             push_text(tree, n, &display_name);
         }
-        "ref" | "doc" | "download" | "envvar" | "event" | "option" | "term" | "py:attr"
-        | "py:class" | "py:data" | "py:deco" | "py:func" | "py:meth" | "py:mod" | "attr"
-        | "class" | "data" | "exc" | "func" | "meth" | "mod" | "c:expr" | "c:texpr" | "c:var"
+        "attr" 
+        | "c:expr" | "c:texpr" | "c:var" 
+        | "class"
         | "cpp:class" | "cpp:expr" | "cpp:func" | "cpp:texpr" | "cpp:type" | "cpp:var"
-        | "rst:dir" | "rst:role" => {
+        | "data" | "doc" | "download" | "envvar" | "event" | "exc" | "func" | "meth" | "mod" | "option" 
+        | "py:attr" | "py:class" | "py:data" | "py:deco" | "py:func" | "py:meth" | "py:mod" 
+        | "ref"
+        | "rst:dir" | "rst:role"
+        | "term" => {
             let (explicit_title, target) = if let Some(idx) = content.find('<') {
                 if content.ends_with('>') {
                     let title = content[..idx].trim().to_string();
